@@ -1,0 +1,72 @@
+# PROJECT.yaml — the project contract. AUTHORITATIVE, frozen after human
+# authorization (HITL row 1, policy/hitl-matrix.md). Changing it after
+# authorization is explicit change control, recorded in DECISIONS.md — not a
+# silent edit.
+#
+# Nothing here names a worker configuration beyond the role class. The
+# instantiated routing choices are private policy (policy/routing-policy.md).
+
+project:
+  name:                          # product-facing name
+  repo_path:                     # absolute path to the working repository
+  integration_ref:                # e.g. integration        — autonomous merges land here
+  release_ref:                    # e.g. main / release      — human-gated only, HITL row 2
+  autonomous_integration_merges:  # true | false — PROJECT.yaml is the sole authority for this
+
+pack:
+  version_adopted:                # runtime-pack-2 VERSION this project is pinned to
+  adoption_boundary: "a newer pack version is adopted only at a capability boundary, never mid-capability"
+
+dimensions:
+  # Declared validation dimensions for this project. Every capability's
+  # SCOPE.md selects a subset of these; a dimension not selected here may not
+  # be invented mid-capability.
+  - name:
+    real_system_required:        # true | false
+    critical:                    # true | false — critical dimensions require the two-auditor tier (policy/auditor-strategy.md)
+
+validation_profiles:
+  # The actual command for each. Task gates run `focused` only; capability
+  # closure runs `full` once, at the exact head.
+  focused:
+    command:
+    typical_wall_clock_seconds:
+  integration:
+    command:
+    typical_wall_clock_seconds:
+  full:
+    command:
+    typical_wall_clock_seconds:
+
+mutation_policy:
+  autonomous_fix_paths:          # paths where a capability's mutation boundary permits autonomous repair
+  escalation_on_boundary_exit: "HITL row 10 — scope insufficiency crossing a capability boundary"
+
+private_terms:
+  default_set: policy/private-terms.default.json
+  project_additions:             # this project's own vocabulary; never replaces the universal rules
+
+critical_domains:
+  # Domains whose capabilities require the two-auditor tier and the human
+  # acceptance protocol at closure, regardless of the routine default.
+  - name:
+    reason:
+
+hitl_selections:
+  cadence: "batched at capability boundaries"     # the vNext/RP2.0 default; record if this project departs
+  audit_sampling_rate:            # 0-100, used in sha256(head_sha || salt) mod 100 < rate (policy/auditor-strategy.md)
+  audit_sampling_salt:            # recorded so the sampling is independently verifiable
+
+capabilities:
+  # One row per capability. The authoritative detail for each lives in
+  # capabilities/<id>/SCOPE.md; this is the index, not a duplicate record.
+  - id:
+    goal:
+    depends_on: []
+    requirements: []              # requirement IDs from the coverage register this capability closes
+
+approval:
+  proposed_at:
+  approved_by:
+  approved_at:
+  frozen_at_revision:

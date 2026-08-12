@@ -1,0 +1,33 @@
+# PROGRESS — capability <id>
+
+**Current state, replaced in place per task.** Not a log — DECISIONS.md and
+FINDINGS.md are the append-only records; this file is where things stand now.
+
+## Task list
+
+| Task | Declared paths | Worker configuration | Status | Validation | Commit |
+|---|---|---|---|---|---|
+
+## Routing deliberations
+
+One entry per task where more than one candidate was eligible
+(`skills/core/delegation.md`). A task with only one eligible candidate needs no
+entry here.
+
+| Task | Chosen | Not-chosen candidate(s) | Reason not chosen |
+|---|---|---|---|
+
+## Budget counters — live
+
+Mirrors SCOPE.md's initial counters; this copy is the one actually spent.
+Update it as attempts happen, not at the end.
+
+| Counter | Bound | Spent |
+|---|---|---|
+
+## Risks
+
+## Next safe action
+
+One sentence. See `skills/core/continuation.md` if this file is being read
+cold.

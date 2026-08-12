@@ -1,0 +1,21 @@
+# ROADMAP
+
+AUTHORITATIVE, current. Replaced in place as capability status changes — this
+is the state of the plan, not a log of how it changed (that is DECISIONS.md).
+
+## Capabilities
+
+| ID | Goal | Depends on | Status | Branch | Critical domain? |
+|---|---|---|---|---|---|
+|   |      |            | PLANNED / SCOPE_FROZEN / BRANCH_OPEN / TASKING / INTEGRATION_VALIDATION / CLOSURE_AUDIT / REPAIRING / CLOSED / INTEGRATED | | |
+
+## Dependency notes
+
+State anything the table's "Depends on" column cannot express on its own —
+soft ordering preferences, resource contention between capabilities that are
+not formal dependencies, anything a reader would otherwise have to infer.
+
+## Version layer (only if this project uses one)
+
+Long-lived products may insert a Version → Capability → Task layer. If unused,
+delete this section rather than leave it as a placeholder nobody filled in.

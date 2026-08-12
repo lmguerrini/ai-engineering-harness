@@ -1,0 +1,47 @@
+# SCOPE — capability <id>
+
+**Frozen at `SCOPE_FROZEN`.** Changing it after freeze is scope escalation
+(HITL row 10, `policy/hitl-matrix.md`) if it crosses the mutation boundary
+below — not a silent edit.
+
+## Goal
+
+## Acceptance criteria
+
+Each stated as a property that must be true, with the observation that would
+settle it (`skills/core/requirement-interpretation.md`).
+
+| ID | Property that must hold | How it would be shown |
+|---|---|---|
+
+## Declared dimensions
+
+Subset of `PROJECT.yaml`'s dimensions this capability closes against. A
+dimension not listed here may not be invented mid-capability.
+
+| Dimension | Real-system required? | Status |
+|---|---|---|
+|   |   | NOT_RUN |
+
+## Mutation boundary
+
+Paths this capability may change autonomously. Anything outside this boundary
+is scope escalation the instant it is touched — HITL row 10, not a judgement
+call made in the moment.
+
+## Budget counters (initialised from policy/BUDGETS.md)
+
+| Counter | Bound | Spent |
+|---|---|---|
+| Repair attempts per finding | 3 | — |
+| Repair rounds per capability | 2 | 0 |
+| Closure-audit cycles | 1 | 0 |
+| Oracle-correction cycles (per material invariant) | 2 | — |
+| Implementation attempts (per material invariant) | 2 | — |
+| Post-audit sibling-repair cycles (per material invariant) | 1 | — |
+
+## Audit tier for this capability
+
+ROUTINE (one blind auditor + seeded cross-vendor sampling) | CRITICAL/MATERIAL
+(two blind auditors, one cross-vendor where available) — state which and why,
+per `policy/auditor-strategy.md`.

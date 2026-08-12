@@ -1,0 +1,31 @@
+# Requirement coverage — <project or capability>
+
+**One authority per fact.** `REQUIREMENTS.md` (verbatim transcription of the
+official specification, one stable ID per requirement — `R1`, `R2`, …) is the
+sole authority for *which* requirements exist. This file,
+`REQUIREMENT_COVERAGE.md`, is a **derived view** of how each one is being met.
+Every requirement holds its own row here, independently — no grouping by
+capability, task, or commit may erase an individual requirement's row.
+
+Checked by `validate_requirement_coverage.py`, which compares this file
+against `REQUIREMENTS.md` **by identifier, in both directions** — not against
+a count either file declares about itself. A requirement present in
+`REQUIREMENTS.md` with no row here fails the check; a row here naming a
+requirement `REQUIREMENTS.md` does not declare also fails it.
+
+| ID | Source | Capability | Task | Implementation status | Required validation | Evidence | Status |
+|---|---|---|---|---|---|---|---|
+
+`Status` is tri-state-aware: `PASSED` / `N/A` / `N/A-with-reason` /
+`HITL_ACCEPTED_LIMITATION` / `BLOCKED`, or left open while work continues. A
+row whose status is not one of those and carries no evidence fails the check —
+that combination means nobody decided (test-or-stated-gap rule,
+`skills/core/requirement-interpretation.md`).
+
+## Validation
+
+    python3 templates/validate_requirement_coverage.py REQUIREMENTS.md REQUIREMENT_COVERAGE.md
+
+Application points: capability closure (coordinator runs it before `CLOSED` is
+recorded) and project close (coordinator runs it before the human acceptance
+packet).

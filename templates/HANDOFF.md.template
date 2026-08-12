@@ -1,0 +1,43 @@
+# HANDOFF
+
+**REPLACED each update, never accreted. Hard bound: 200 lines.** If this file
+is growing, something durable is living here that belongs in SCOPE.md,
+PROGRESS.md, FINDINGS.md or DECISIONS.md instead — move it, then point at it.
+
+Last updated: <date> by <COORDINATOR session identifier or "human">
+
+## Where things stand
+
+- Active capability:
+- Capability lifecycle state: PLANNED | SCOPE_FROZEN | BRANCH_OPEN | TASKING | INTEGRATION_VALIDATION | CLOSURE_AUDIT | REPAIRING | CLOSED | INTEGRATED
+- Branch:
+- HEAD:
+- Active task, if any:
+
+## Budgets consumed (see policy/BUDGETS.md for bounds)
+
+- Repair attempts this finding:
+- Repair rounds this capability:
+- Closure-audit cycles this capability:
+
+## What is unrecoverable from this session
+
+State plainly what a fresh reader cannot reconstruct — an auditor's full
+reasoning, an unpersisted intermediate judgement, a discarded worker attempt.
+If nothing, say "nothing known."
+
+## Immediate next action
+
+One sentence. If it is a resume, say resume-from-checkpoint explicitly; if it
+is a re-dispatch, say so explicitly. Never both (`skills/core/continuation.md`).
+
+## Open questions for a human
+
+Only if one is genuinely open. Otherwise: "none."
+
+## Pointers, not copies
+
+- SCOPE.md: `capabilities/<id>/SCOPE.md`
+- PROGRESS.md: `capabilities/<id>/PROGRESS.md`
+- FINDINGS.md: `capabilities/<id>/FINDINGS.md`
+- ROADMAP.md: `ROADMAP.md`

@@ -1,0 +1,19 @@
+# FINDINGS — capability <id>
+
+**Append-only.** Newest last. A finding is never deleted; a closed finding is
+marked closed in place, with the closing evidence, not removed.
+
+---
+
+## F<n> — <one-line description>
+
+- Raised by: AUDIT_PRIMARY | AUDIT_CROSS | COORDINATOR | worker self-report (label as such — worker-reported is the weakest evidence class)
+- Date:
+- Classification (`skills/core/convergence.md`): NEW_BLOCKER | NEW_MATERIAL_DEFECT | REPAIR_REGRESSION | DOCUMENTED_BOUNDED_LIMITATION | DELTA_GATE_HARDENING | NON_MATERIAL_OBSERVATION | ENVIRONMENT | AUDIT_DISAGREEMENT
+- Reproduced by coordinator: yes / no — a finding is not repaired until it is reproduced (`skills/core/evidence.md`)
+- Reproduction evidence:
+- Repair attempt count: (bounded by `policy/BUDGETS.md`)
+- Status: OPEN | REPAIRED | REFUTED | ACCEPTED_LIMITATION
+- Closing evidence:
+
+---
