@@ -45,3 +45,24 @@ The coordinator reproduces every material claim before it counts. An
 unreproduced claim does not gate closure on its own. If this audit is
 interrupted by a quota, session, or turn limit, it is **incomplete**, not
 clean, and does not consume the closure-audit-cycle counter.
+
+## Where the auditor works — coordinator sets this up BEFORE dispatch
+
+The auditor gets a **disposable checkout of its own**, never the coordinator's
+live working tree:
+
+    git worktree add --detach <private_root>/worktrees/audit-<capability> <sha>
+
+State that path in the brief as the auditor's working directory, and state that
+it must not touch any other tree.
+
+**Why this is mandatory.** An auditor told "read-only, at this immutable SHA"
+and handed a live repository has no compliant way to pin the revision — it must
+either run `git checkout --detach` (a write) or trust that HEAD will not move
+underneath it. That happened: an auditor detached HEAD in the coordinator's tree
+while a second auditor was reading it. The git fence caught it and nothing was
+damaged, but the brief was the defect. An instruction that forbids the only
+available means of compliance is a specification error.
+
+Remove the worktree at closure: `git worktree remove <path>`.
+

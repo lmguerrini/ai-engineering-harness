@@ -256,6 +256,54 @@ after the bullets still trips `EXTRA_CONTENT`.
 
 ---
 
+---
+
+## F7 — an auditor ran a Git write in the coordinator's live working tree
+
+**Severity:** MATERIAL (protocol, not code). **Status:** CLOSED — protocol
+amended; no damage, verified by the fence.
+**Found by:** coordinator, reading the auditor's own incremental findings file.
+
+**What happened.** The blind primary auditor was instructed "read-only; do not
+run any git command that writes." To pin the immutable revision it ran
+
+    git checkout --detach 3f2c334…
+
+in the **coordinator's live repository**, while a second (cross-vendor) auditor
+was reading the same tree.
+
+**Blast radius, measured against the fence snapshot taken before dispatch:**
+
+    pre-HEAD  3f2c334…      now-HEAD  3f2c334…      (same commit)
+    refs      UNCHANGED     stash     UNCHANGED     tree clean
+
+No commit created, no ref moved, no content changed — only the symbolic ref
+detached from the branch to the same commit. **The capability branch still
+points at `3f2c334`.** The git fence did exactly what it exists to do: made an
+unauthorized Git write detectable rather than trusted-not-to-happen.
+
+**Why it is a finding anyway.** Two auditors and the coordinator were sharing one
+working tree. The pack already carries the rule *"the coordinator must not edit a
+working tree while a worker runs in it"* and *"serialize workers sharing a tree"*
+— and the symmetric case was never written down: **an auditor must not operate in
+the coordinator's live tree at all.** The project structure already provides
+`worktrees/` for exactly this, and the architecture's own worker topology is
+"detached, credential-free, disposable". The audit path simply never used it.
+
+**The brief was the defect, not the auditor.** It named the immutable SHA but
+gave the auditor the live repository and no checkout of its own, so pinning the
+revision *required* either a Git write or trusting that HEAD would not move. An
+instruction that forbids the only available means of compliance is a
+specification error.
+
+**Repair (protocol).** `templates/audit-brief.template.md` now requires the
+coordinator to provide the auditor a **disposable read-only checkout** —
+`git worktree add --detach <path> <sha>` under `worktrees/`, created by the
+coordinator before dispatch — and to state that the auditor must not touch any
+other tree. `capability-closure` names the same step at `CLOSURE_AUDIT`.
+
+---
+
 **Not a finding — checked and cleared:**
 - `clean` is correctly tri-state at the data level: `not leaks and not skipped`.
 - The baseline-exempt-from-itself fix works: without `--exempt` the reviewed
