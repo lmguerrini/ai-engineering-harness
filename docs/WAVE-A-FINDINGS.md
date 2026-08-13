@@ -304,6 +304,52 @@ other tree. `capability-closure` names the same step at `CLOSURE_AUDIT`.
 
 ---
 
+---
+
+## F8 — the pack's append-only routing evidence was never tracked
+
+**Severity:** MATERIAL. **Status:** CLOSED — verified by extracting a fresh
+checkout. **Found by:** `workspace_report` run against the pack itself, at the
+end of Wave B.
+
+**Mechanism.** The user's **global** gitignore (`~/.gitignore_global:60`)
+contains `*.jsonl`. It silently excluded `policy/observations.jsonl` from the
+pack repository. Six commits were made without it.
+
+    $ git check-ignore -v policy/observations.jsonl
+    ~/.gitignore_global:60:*.jsonl    policy/observations.jsonl
+
+**Why it is material.** `observations.jsonl` is one of the five things the
+architecture designates **append-only authority**, and `routing-table.md` is
+explicitly *"regenerated wholesale from it, the full log each time."* Untracked,
+it is not versioned, not reviewable in a pack-evolution session, and absent from
+any restored checkout — so the derived view would be regenerated **from
+nothing**, and would look fine while doing it. A generated view rebuilt from a
+missing authority is the most confident kind of wrong.
+
+It also silently defeats the rule that a project adopting a pack VERSION gets
+that version's evidence.
+
+**Repair.** A negation rule in the pack's own `.gitignore`
+(`!policy/observations.jsonl`), placed after the broader patterns, plus
+`git add -f` for the already-excluded file.
+
+**Closure evidence** — the test is not "git says it is tracked" but "a fresh
+checkout has it":
+
+    $ git archive HEAD | tar -x -C $tmp && wc -l < $tmp/policy/observations.jsonl
+    14
+
+    $ workspace_report .
+    workspace: 67 tracked, 0 ignored, 23 generated    exit=0
+
+**The tool found this, not a person.** `workspace_report`'s four-bucket rule —
+an artifact nobody classified is `unknown` and blocks closure — is what surfaced
+it. An inherited global ignore rule is invisible to `git status`, invisible in
+review, and invisible to any check that only looks at what *is* tracked. This is
+the strongest argument in the record for running the hygiene check at capability
+close rather than trusting a clean `git status`.
+
 **Not a finding — checked and cleared:**
 - `clean` is correctly tri-state at the data level: `not leaks and not skipped`.
 - The baseline-exempt-from-itself fix works: without `--exempt` the reviewed
