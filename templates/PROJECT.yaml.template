@@ -81,6 +81,12 @@ hitl_selections:
 capabilities:
   # One row per capability. The authoritative detail for each lives in
   # capabilities/<id>/SCOPE.md; this is the index, not a duplicate record.
+  #
+  # DO NOT add a `status:` field here. Lifecycle status is owned by ROADMAP.md
+  # (across capabilities) and PROGRESS.md (within one). A status recorded here
+  # goes stale the moment work starts, and a cold-continuation drill caught
+  # exactly that: PROJECT.yaml said PLANNED while PROGRESS.md said TASKING, and
+  # the reconstructing coordinator had to infer which file wins.
   - id:
     goal:
     depends_on: []

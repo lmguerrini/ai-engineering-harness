@@ -96,24 +96,21 @@ Each enumeration was mechanically flawless **over the wrong question.**
 
 ## Evidence package (per material invariant)
 
-State generically, in one Markdown file under the capability's `evidence/`: the
-invariant; the **mechanism**; the mechanically derived domain and the question
-the enumeration asked; the fault-injection proof that the domain reaches the
-mechanism; who played designer / writer / implementer / auditor; the frozen
-digest before and after; the RED evidence; mutation results **including the
-mutations that did not fire and why**; budget consumed.
+One Markdown file under the capability's `evidence/`, stated generically: the
+invariant; the **mechanism**; the derived domain and the question the enumeration
+asked; the fault-injection proof that the domain reaches the mechanism; who
+played designer / writer / implementer / auditor; the frozen digest before and
+after; the RED evidence; mutation results **including the mutations that did not
+fire and why**; budget consumed.
 
 ## Right-sizing (do not over-apply)
 
-Separation of actors costs real tokens: one 18-line repair once consumed a
-959-line frozen oracle, five probes, and eighty-five calibration trials. Scale
-it:
+Separation of actors costs real tokens — one 18-line repair once consumed a
+959-line frozen oracle, five probes and eighty-five calibration trials. Scale it:
+**always**, implementer-authored tests are never sole acceptance; **material
+invariants only**, independent oracle design and write, the
+domain-reaches-mechanism proof, sibling mutation on repairs; **deferred**, the
+full four-actor ceremony, until a real project shows it pays.
 
-- **Always:** implementer-authored tests are never sole acceptance.
-- **Material invariants only:** independent oracle design + write, the
-  domain-reaches-mechanism proof, sibling mutation on repairs.
-- **Deferred:** the full four-actor ceremony, until a real project shows it pays.
-
-Note for the coordinator: in the recorded history the dominant error source was
-the **coordinator's own specification**, not the workers. Separation's real value
-was catching that.
+In the recorded history the dominant error source was the **coordinator's own
+specification**, not the workers. Catching that is separation's real value.
