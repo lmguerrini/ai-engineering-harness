@@ -39,6 +39,15 @@ they are pulled on demand, not held.
              + ~/.claude/skills/capability-closure/SKILL.md
              + ~/.claude/skills/codex-worker/SKILL.md
 
+**What `policy/` may contain, so the count stays an honest proxy.** `policy/`
+holds what *governs* — rules the coordinator applies. Records of what *happened*
+(gate records, wave results, audit outcomes, probe results) live in `docs/` and
+are read once, not held. Filing a record under `policy/` would inflate the count
+and pressure a future coordinator to delete live policy to make room for
+evidence, which inverts the budget's purpose. `observations.jsonl` is the
+deliberate exception: it is append-only evidence that `policy/` owns because the
+routing table is regenerated from it, and it is not `.md` so it is not counted.
+
 **(b) Overhead share** — tokens spent producing and consuming pack artifacts,
 divided by total session tokens, measured per capability closure.
 

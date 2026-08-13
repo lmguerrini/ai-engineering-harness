@@ -46,6 +46,27 @@ private_terms:
   default_set: policy/private-terms.default.json
   project_additions:             # this project's own vocabulary; never replaces the universal rules
 
+workspace_classification:
+  # Inputs to `tools/workspace_report.py`, run at capability OPEN and CLOSE.
+  # The tool ships with an EMPTY safe-generated set on purpose: an artifact is
+  # classified because the project said so, not because a tool guessed. Anything
+  # undeclared is `unknown` and blocks closure.
+  #
+  # Patterns follow GITIGNORE semantics, not fnmatch: a trailing slash covers a
+  # directory and everything beneath it, a leading slash anchors to the
+  # repository root, and a bare name matches at any depth. `*` does NOT cross a
+  # directory separator — `__pycache__/*` will silently miss `src/x/__pycache__/y`.
+  safe_generated:                # e.g. ["__pycache__/", ".pytest_cache/", "dist/"]
+  ignore_private:                # ignored files that are private, not merely generated
+
+  # Content-exempt paths for `tools/outgoing_scan.py`. Narrow and deliberate:
+  # a file that IS the denylist, a negative fixture, or a reviewed-baseline
+  # record naming a prior match. Exemption covers blob CONTENT only — the path,
+  # every ref and tag name, every message and identity are still scanned, and
+  # each exempted file is named in the report, so a clean scan still discloses
+  # what it declined to read.
+  content_exempt:                # e.g. ["REVIEWED-BASELINE.md"]
+
 critical_domains:
   # Domains whose capabilities require the two-auditor tier and the human
   # acceptance protocol at closure, regardless of the routine default.

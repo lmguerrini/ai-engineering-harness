@@ -27,10 +27,26 @@ def normalise(path: object) -> str | None:
 
     ``None`` means the path cannot be made into a promise about where changes
     land: it is absolute, it climbs out with ``..``, it names a drive, it is
-    padded with whitespace, or it is not a string at all. Refusing is the whole
-    behaviour — a boundary that admits an unnormalisable path is not a boundary.
+    padded with whitespace, it carries a record separator, or it is not a string
+    at all. Refusing is the whole behaviour — a boundary that admits an
+    unnormalisable path is not a boundary.
+
+    On record separators specifically: **one argument must denote exactly one
+    path.** A candidate containing a newline, carriage return or NUL is refused
+    outright, wherever in the string it appears. Stripping the ends is not
+    enough — `"src/ok.py\\ntests/evil.py"` normalises to something that starts
+    under an allowed root, so an interior separator smuggles a second,
+    never-checked path through a single CONTAINED verdict. That is not
+    hypothetical: the natural shell invocation
+    `git status --porcelain | awk '{print $2}'` produces exactly this blob under
+    a shell that does not word-split, and the coordinator wrote it that way on
+    the first attempt. POSIX permits these bytes in a filename; a boundary gate
+    refuses them anyway, because "refuse when the answer is unclear" is the rule
+    that has held.
     """
     if not isinstance(path, str) or not path or path != path.strip() or path.startswith(("/", "\\")):
+        return None
+    if any(separator in path for separator in ("\n", "\r", "\x00")):
         return None
     converted = path.replace("\\", "/")
     normal = posixpath.normpath(converted)

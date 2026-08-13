@@ -251,7 +251,12 @@ def _structural_violations(message: str) -> list[ContractViolation]:
             )
         )
 
-    body = message[:-1] if message.endswith("\n") else message
+    # Trailing blank lines are not content, on any input path. `git log -1
+    # --format=%B` terminates a message with TWO newlines, so stripping only
+    # one left a blank line that read as EXTRA_CONTENT — which failed the
+    # read-back half of the double-sided contract on every well-formed
+    # commit. Real prose after the bullets still trips EXTRA_CONTENT.
+    body = message.rstrip("\n")
     lines = body.split("\n")
 
     # Content checks run unconditionally. Gating them behind a shape match is
@@ -297,7 +302,10 @@ def _structural_violations(message: str) -> list[ContractViolation]:
             )
         )
 
-    if not out and not SHAPE.fullmatch(message):
+    # Match the SAME normalised body the line checks used. Matching the raw
+    # message here meant one rule had two representations, and they
+    # disagreed on git's own read-back output.
+    if not out and not SHAPE.fullmatch(body):
         out.append(ContractViolation("SHAPE", "message does not match the required shape"))
     return out
 

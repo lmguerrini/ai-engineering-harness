@@ -110,3 +110,30 @@ def test_cli_rejects_and_prints_each_violation():
     result = _run_cli(_message("only one"))
     assert result.returncode != 0
     assert "VIOLATION" in result.stdout
+
+
+# --- F5: the read-back side must accept git's own output -------------------
+# `git log -1 --format=%B` terminates the message with TWO newlines. Stripping
+# only one leaves a blank line that reads as EXTRA_CONTENT, so the read-back
+# half of the double-sided contract failed on every well-formed commit.
+
+GOOD = (
+    "Summarize a numeric column from a CSV file\n"
+    "\n"
+    "- Report count, minimum, maximum and mean for a named column\n"
+    "- Refuse a missing column, naming what was wrong\n"
+)
+
+
+def test_git_format_B_readback_is_accepted():
+    assert commit_gate.validate_message(GOOD + "\n", commit_gate.NO_PRIVATE_TERMS) == []
+
+
+def test_many_trailing_newlines_are_still_accepted():
+    assert commit_gate.validate_message(GOOD + "\n\n\n", commit_gate.NO_PRIVATE_TERMS) == []
+
+
+def test_real_prose_after_bullets_is_still_refused():
+    bad = GOOD + "\nThis trailing paragraph is real content.\n"
+    codes = [v.rule for v in commit_gate.validate_message(bad, commit_gate.NO_PRIVATE_TERMS)]
+    assert "EXTRA_CONTENT" in codes

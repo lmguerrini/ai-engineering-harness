@@ -18,6 +18,10 @@
 *   **Required "what I attacked and could not break."** The only defence
     against a padded finding list, and the most informative section in a
     report.
+*   **Barred from the design documents and the repair reports.** An auditor who
+    reads the design reviews somebody else's conclusions instead of the artifact.
+*   **Findings written incrementally to a durable file**, never held until a
+    final message. An auditor that dies mid-run must still leave what it found.
 
 ## Cross-vendor diversity
 

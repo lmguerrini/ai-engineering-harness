@@ -122,6 +122,140 @@ original drift case → fail; the sibling mutation → fail.
 
 ---
 
+---
+
+## F3 — two toolbelt inputs had no declared source in `PROJECT.yaml`
+
+**Severity:** MINOR (structural). **Status:** CLOSED — repaired by coordinator.
+**Found by:** coordinator, by execution against the fixture repository.
+
+`workspace_report` ships with an intentionally **empty** default safe-generated
+set — deny-by-default, so an artifact is classified because the project said so,
+not because a tool guessed. That design is right. But `PROJECT.yaml.template`
+declared no field to say it in, and likewise none for `outgoing_scan`'s
+content-exempt paths. A tool input with no declared home is *"built but
+unwired"* — the pack's own refusal criterion, applied to itself.
+
+Left unrepaired, every capability close would trip on ordinary `__pycache__`
+artifacts, and the coordinator would improvise flags per invocation until
+somebody switched the check off — the exact failure mode the audit warns about.
+
+**Repair.** Added a `workspace_classification:` section to
+`PROJECT.yaml.template` carrying `safe_generated`, `ignore_private` and
+`content_exempt`, each with its semantics stated. Template re-parsed as valid
+YAML after the change.
+
+**Coordinator error worth recording (twice now).** Both times this section
+looked like a tool defect, it was the coordinator assuming an interface instead
+of reading it: fnmatch-style `__pycache__/*` patterns against a matcher that
+documents **gitignore** semantics (trailing slash covers a directory; `*` does
+not cross a separator). The documented form classifies all 7 artifacts and exits
+0. The same error shape produced the first leak-injection instrument. Recorded
+because "the tool is broken" is the most expensive wrong conclusion available to
+a coordinator, and it was reached twice from the same cause.
+
+---
+
+---
+
+## F4 — `scope_check` accepted a path with an interior record separator
+
+**Severity:** MATERIAL. **Status:** CLOSED — repaired and verified by execution.
+**Found by:** coordinator, by execution during the Wave-B T1 ingestion.
+
+**Mechanism.** `normalise()` refused leading and trailing whitespace via
+`path != path.strip()`, but nothing rejected a separator *inside* the string.
+`"src/ok.py\ntests/evil.py"` normalises to a value beginning under an allowed
+root, so it was reported **CONTAINED** — carrying a second path that was never
+checked against the mutation boundary through a single approving verdict.
+
+**Reproduction (before repair).**
+
+    scope_check --allow src -- "src/ok.py\ntests/evil.py"
+    CONTAINED: 'src/ok.py
+    tests/evil.py' -> 'src/ok.py
+    tests/evil.py'
+    exit=0
+
+**Why it is material, not cosmetic.** This is the tool the architecture audit
+singled out as having "resisted every attack from both lenses across four
+rounds", applied at ingestion *before validation spends anything*. The delivery
+mechanism is not exotic: `git status --porcelain | awk '{print $2}'` piped into
+the tool produces exactly this blob under a shell that does not word-split
+unquoted expansions — and **the coordinator wrote precisely that invocation on
+the first attempt.** A boundary defeated by the most natural way to call it is
+defeated.
+
+The recorded attack matrix (`..` climbing, absolute, UNC, drive letter, NUL,
+whitespace) covered *leading and trailing* whitespace. Interior separators were
+never in the domain. Same shape as every other finding in this register: the
+enumeration was sound over the wrong question.
+
+**Class named before repair:** *one argument must denote exactly one path* —
+therefore every record separator, not merely the newline that surfaced.
+
+**Repair.** `normalise()` refuses any candidate containing `\n`, `\r` or `\x00`
+anywhere. POSIX permits these in filenames; a boundary gate refuses them anyway,
+because "refuse when the answer is unclear" is the rule that has held.
+
+**Sibling-mutation check — RESULT.** The named-site-only repair is "refuse
+`\n`". Re-introduced exactly that: **3 tests went RED**
+(`test_interior_carriage_return_is_refused`, `test_interior_nul_is_refused`,
+`test_nul_byte_is_refused_without_crashing`). The class-level fix was restored;
+suite 95 passed.
+
+**Deliberate behaviour change, recorded.** One pre-existing test asserted that a
+NUL byte was *not* refused and that the byte was preserved. That test pinned the
+implementation; its stated intent was a property — never crash, never silently
+change containment. Refusing satisfies that intent strictly more conservatively,
+and the operating system rejects a NUL in `argv` before an invoked tool sees it,
+so acceptance bought nothing. This **strengthens** a boundary control, so it
+needs no governance waiver; a weakening would have.
+
+---
+
+---
+
+## F5 — the commit contract's read-back half rejected git's own output
+
+**Severity:** MATERIAL. **Status:** CLOSED — repaired and verified by execution.
+**Found by:** coordinator, by execution, while committing Wave-B task T1.
+
+**Mechanism.** `git log -1 --format=%B` terminates a message with **two**
+newlines. `_structural_violations` stripped exactly one (`message[:-1]`), so a
+blank line survived and read as `EXTRA_CONTENT`. Separately, the `SHAPE` regex
+was matched against the **raw** message while the line checks used the stripped
+body — one rule with two representations.
+
+**Reproduction.** The pre-commit side of the contract passed on the T1 message
+and the read-back side failed on the *same commit*:
+
+    commit_gate /tmp/t1msg.txt   -> VALID          (exit 0)
+    git log -1 --format=%B | commit_gate
+                                 -> VIOLATION EXTRA_CONTENT: no prose or blank
+                                    lines are permitted after the bullets, found ''
+
+**Why it is material.** Double-sided validation is a governance control, and its
+read-back half was unusable in its documented form: **every well-formed commit
+failed it.** A control that always fails is a control that gets bypassed, and
+the operator learns to ignore it — the false-positive cost the pivot warns about
+in exactly these bespoke gates.
+
+**Class named before repair:** *trailing blank lines are not content, on every
+validation path, and every path validates the same normalised body.*
+
+**The first repair was the named-site-only fix, and the mutation caught it.**
+Changing only `message[:-1]` → `message.rstrip("\n")` moved the failure from
+`EXTRA_CONTENT` to `SHAPE`, because the shape regex still matched the raw
+message. The class fix points both paths at `body`.
+
+**Sibling-mutation check — RESULT.** Re-introduced exactly the named-site-only
+repair (line checks stripped, `SHAPE.fullmatch(message)` restored): **2 tests
+went RED**. Restored; suite **98 passed**. Negative control holds — real prose
+after the bullets still trips `EXTRA_CONTENT`.
+
+---
+
 **Not a finding — checked and cleared:**
 - `clean` is correctly tri-state at the data level: `not leaks and not skipped`.
 - The baseline-exempt-from-itself fix works: without `--exempt` the reviewed

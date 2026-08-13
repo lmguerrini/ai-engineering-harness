@@ -2,8 +2,15 @@
 
 **Classification: PRIVATE.** Names model configurations and observed capacity
 economics, both excluded from tracked history by the public-safety invariant.
-The generic, role-level reasoning is `skills/core/audit-strategy.md`; this file
-is the part that cannot be public.
+
+**The generic, role-level reasoning lives in `skills/core/audit-strategy.md` and
+is not restated here.** That file owns the audit non-negotiables (fresh context,
+read-only, exact immutable revision, blind to each other, falsification-
+instructed, bounded turns, "what I attacked and could not break", barred from
+design documents and repair reports, findings written incrementally), the
+interrupted-audit rule, and the disagreement procedure. A rule stated in two
+files drifts, and the one that is wrong is whichever the current reader is not
+looking at. This file is only the part that cannot be public.
 
 ## Default audit depth (owner-approved, `DECISIONS.md` D6.4)
 
@@ -18,17 +25,7 @@ is the part that cannot be public.
     the routine default (HITL row 12, `policy/hitl-matrix.md`).
 *   This routine-case default is a **deliberate, labeled, cost-driven
     weakening** of the pivot's finding that two auditors is the calibration
-    minimum — not a claim that one auditor is as good as two. A skipped audit
-    is never recorded as passed, at either tier.
-
-## Non-negotiables, every audit, both tiers
-
-Fresh context; read-only; an exact immutable SHA; barred from design documents
-and repair reports; falsification-instructed ("here are the claims this makes
-about itself — try to break them"); a required "what I attacked and could not
-break" section; findings written incrementally to a durable file, not held to
-the final message; every material claim reproduced by the coordinator before it
-counts.
+    minimum — not a claim that one auditor is as good as two.
 
 ## Configurations in use today
 
@@ -37,6 +34,10 @@ by a fresh strong cross-vendor session — blind to each other, read-only, same
 immutable HEAD, bounded turns. A scarce top-tier specialist is reserved, not
 default: a material dispute surviving both default auditors, or a final review
 whose expected information gain clearly justifies the capacity cost.
+
+**Both audit roles are `unprobed` under this pack** (`policy/routing-table.md`).
+The first real closure audit is the first data point; nothing above is a measured
+claim about audit yield.
 
 ## The observation behind the scarce-capacity rule
 
@@ -47,19 +48,11 @@ The cross-vendor side, a separate pool, completed every audit asked of it. An
 **economic** fact about a shared pool, dated and revisable — never a capability
 judgement, and it may never narrow an evidence envelope.
 
-## Rules that hold regardless of configuration
-
-An audit terminated by a quota, session, or turn limit is **incomplete**, never
-clean, and does not consume the audit-cycle counter. If a fresh strong auditor
-cannot run with enough reserve left for the coordinator to close the cycle,
-wait for capacity — do not degrade the audit or substitute automatically. Do
-not use configurations that implicitly spawn additional agents unless that is
-explicitly intended and separately budgeted.
-
-## Disagreement
-
-Reconcile the facts once, in bounded fashion, by reproducing what each auditor
-claims. If bounded reconciliation cannot settle it: HITL row 17.
+Operationally: if a fresh strong auditor cannot run with enough reserve left for
+the coordinator to close the cycle, **wait for capacity** — do not degrade the
+audit or substitute automatically. Do not use configurations that implicitly
+spawn additional agents unless that is explicitly intended and separately
+budgeted.
 
 ## Scope sizing
 

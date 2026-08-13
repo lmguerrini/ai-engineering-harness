@@ -57,14 +57,19 @@ def test_drive_letter_is_refused():
     assert scope_check.normalise("C:/Users/secret") is None
 
 
-def test_nul_byte_is_not_refused_by_shape_but_stays_a_string():
-    # A NUL byte does not itself defeat normalisation (posixpath does not
-    # treat it specially), but it must never crash the boundary check, and the
-    # normalised value must not silently drop the byte in a way that changes
-    # containment.
-    normal = scope_check.normalise("src/lo\x00ader.py")
-    assert normal is not None
-    assert "\x00" in normal
+def test_nul_byte_is_refused_without_crashing():
+    # DELIBERATE CHANGE (F4). This test previously pinned the *implementation*
+    # — that normalisation returned a value and preserved the byte. Its stated
+    # intent was a *property*: the boundary check must never crash, and must
+    # never silently drop the byte in a way that changes containment.
+    #
+    # Refusing outright satisfies both concerns strictly more conservatively
+    # than accepting-and-preserving: there is no crash, and a refused path
+    # cannot change containment at all. A NUL is also rejected by the operating
+    # system before an argv-invoked tool could ever see it, so accepting it
+    # bought nothing. This strengthens a boundary control rather than weakening
+    # one, so no governance waiver is required.
+    assert scope_check.normalise("src/lo\x00ader.py") is None
 
 
 def test_leading_whitespace_is_refused():
@@ -154,3 +159,23 @@ def test_cli_refuses_climbing_candidate():
 def test_cli_refuses_bad_declared_root():
     result = _run_cli("--allow", "/etc", "src/loader.py")
     assert result.returncode != 0
+
+
+# --- F4: one argument must denote exactly one path -------------------------
+# An interior record separator smuggles a second, never-checked path through a
+# single CONTAINED verdict. Leading/trailing stripping does not catch it.
+
+def test_interior_newline_is_refused():
+    assert scope_check.normalise("src/ok.py\ntests/evil.py") is None
+
+
+def test_interior_carriage_return_is_refused():
+    assert scope_check.normalise("src/ok.py\rtests/evil.py") is None
+
+
+def test_interior_nul_is_refused():
+    assert scope_check.normalise("src/ok\x00.py") is None
+
+
+def test_ordinary_path_still_contained():
+    assert scope_check.normalise("src/tally/summary.py") == "src/tally/summary.py"
