@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+
+# The append-only routing evidence MUST be versioned. The user's global
+# gitignore excludes *.jsonl, which silently kept this file untracked for six
+# commits — the routing table is regenerated from it, so losing it would mean
+# regenerating a view from nothing. Negation must come after any broader rule.
+!policy/observations.jsonl
