@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.0.0 — Wave A + Wave B complete, ready for a real project
+
+Wave A built the pack; Wave B proved it by taking a disposable fixture project
+end to end. Both gates are recorded in `docs/WAVE-A-GATE.md` and
+`docs/WAVE-B-GATE.md`.
+
+- `tools/` — eight stateless, non-authoritative checkers plus a read-only Git
+  layer, 98 standalone tests, importing nothing outside `tools/`. `gitread.py`
+  is a 272-line read-only subset of a 1,455-line module and carries no Git write
+  verb (`DECISIONS.md` D2).
+- Seven findings in Wave A (F1–F7), eight in Wave B (C1–C8), **all reproduced by
+  coordinator execution and all closed**. None was caught by an implementing
+  worker's own passing suite.
+- The rehearsal's two most valuable findings were **test-domain** defects: two
+  independently written obviously-wrong implementations each passed a fully green
+  suite. Neither was reachable by mutating production code.
+- Wave B ran a real cold-continuation drill (passed from 4 file reads), a
+  deliberate leak injection (blocked at both gates), a failure-classification
+  exercise (environmental, budget correctly not charged), and **two blind
+  audits** whose unique-discovery counts are recorded rather than pooled.
+
+Not in this version, deliberately: no database, event store, reducer, lifecycle
+engine, release-identity authority, or trust root; no automated Core evolution;
+no Pilot Run Project. The pack exists to start real work, not to be the work.
+
 ## 2.0.0-wave-a — pack skeleton, Core Skills, policy, templates
 
 Runtime Pack 2.0 is the successor to a deterministic-kernel architecture that
