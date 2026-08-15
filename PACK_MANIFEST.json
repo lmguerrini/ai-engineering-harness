@@ -1,0 +1,33 @@
+{
+  "pack": "runtime-pack-2",
+  "version": "2.1.0",
+  "sha": "2056ec932e98cad840d95e6c57533ce36ce450d3",
+  "qualified_at": "2026-08-15",
+  "tracked_files": 81,
+  "tree_digest_sha256": "ad14b2dacb7b297745d10661fa45d87dc53e864261598f9564c6fe8182a726d3",
+  "tests": {
+    "command": "python3 -m pytest tools/tests/ -q",
+    "passed": 167
+  },
+  "gate_record": "docs/RP2.1-GATE.md",
+  "delta_audit": "docs/RP2.1-DELTA-AUDIT.md",
+  "supersedes": "2.0.0 (0ec6726) \u2014 not replaced; prior runs stay pinned to it",
+  "pin_instruction": "a project pins this exact version AND sha in PROJECT.yaml pack.version_adopted; adoption happens only at a capability boundary",
+  "installed_skills_amended_in_place": [
+    "~/.claude/skills/capability-closure/SKILL.md",
+    "~/.claude/skills/codex-worker/SKILL.md"
+  ],
+  "known_limitations": [
+    "held prose 2204 lines against a ~2000 target (10% over, recorded; next cuts named in docs/RP2.1-GATE.md)",
+    "installed skills live outside this repository and are not covered by tree_digest_sha256",
+    "REVIEW_LOCAL contradicted on one observation; EXTRACT_LOCAL provisional on two",
+    "relative yield between AUDIT_PRIMARY and AUDIT_CROSS still unmeasured (3 audits is not a rate)"
+  ],
+  "deferred": {
+    "EC-O": "second project blocked by the machine-path rule",
+    "EC-T": "unscannable-blob volume makes the exemption total unreadable"
+  },
+  "rejected_for_core": {
+    "EC-Z": "project-specific lesson; would couple Core to one project's internals"
+  }
+}
