@@ -1,0 +1,39 @@
+# REQUIREMENTS — <project>
+
+The official task text, **verbatim**, with one id per independently checkable
+obligation. This file is the source; `REQUIREMENT_COVERAGE.md` is the register
+that tracks it. Never paraphrase here — paraphrase is where a requirement
+quietly narrows, and the coverage gate cannot detect a narrowing that happened
+before the register was written.
+
+Ids are `R1`, `R2`, … `R12a` where one sentence carries two obligations. They
+are anchored: `validate_requirement_coverage.py` matches `^(R\d+[a-z]?)$`, so
+prose cannot contribute one.
+
+## Source
+
+| | |
+|---|---|
+| Document | |
+| Retrieved | |
+| Revision / version | |
+
+## Requirements
+
+| ID | Verbatim text | Notes on scope |
+|---|---|---|
+| R1 | | |
+| R2 | | |
+
+**Notes on scope** records only what the text itself bounds — "the brief says
+*at least* three", "the brief names no language". Judgement about how to satisfy
+a requirement belongs in the coverage register's interpretation section, not
+here, so that this file stays comparable to the source it quotes.
+
+## Requirements deliberately read as out of scope
+
+One row each, with the sentence that supports the reading. A requirement dropped
+without a row is a requirement nobody decided about.
+
+| ID | Why out of scope | Who decided |
+|---|---|---|

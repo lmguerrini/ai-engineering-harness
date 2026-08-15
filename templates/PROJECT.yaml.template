@@ -37,6 +37,29 @@ validation_profiles:
   full:
     command:
     typical_wall_clock_seconds:
+  # A data-science project usually needs a notebook-execution profile. Two
+  # traps, both measured, both cheap to avoid:
+  #   - PYTHONPATH must be ABSOLUTE. `nbconvert --execute` launches the kernel
+  #     with the NOTEBOOK's directory as cwd, so a relative `src` resolves to
+  #     `notebooks/src` and every import fails. It looks exactly like a missing
+  #     install, and rebuilding the virtualenv does not fix it.
+  #   - execute and check output hygiene separately: a notebook that runs is not
+  #     a notebook whose committed outputs are clean.
+  # notebook:
+  #   command: >
+  #     PYTHONPATH="$PWD/src" jupyter nbconvert --to notebook --execute
+  #     --inplace notebooks/analysis.ipynb && python3 scripts/check_outputs.py
+  #   typical_wall_clock_seconds:
+
+data_provenance:
+  # Optional, and required in practice for any project whose result depends on
+  # data it did not generate — without these a "reproducible" pipeline is not.
+  # source_url:
+  # licence:
+  # snapshot_date:
+  # revision:                    # upstream revision or dump id, where one exists
+  # sha256:                      # of the retrieved artifact, not of your copy
+  # expected_record_count:
 
 mutation_policy:
   autonomous_fix_paths:          # paths where a capability's mutation boundary permits autonomous repair
@@ -44,7 +67,27 @@ mutation_policy:
 
 private_terms:
   default_set: policy/private-terms.default.json
-  project_additions:             # this project's own vocabulary; never replaces the universal rules
+  # This project's own vocabulary. It EXTENDS the default set; it never replaces
+  # it, and every tool loads the defaults whether or not this file names them.
+  #
+  # Run a candidate term against your own tree BEFORE adopting it. Private
+  # vocabularies are chosen by process people and collide with domain
+  # vocabularies chosen by nobody: one project declared `bootstrap` and its own
+  # domain use of the word tripped the gate. Prefer multi-word terms.
+  project_additions:
+  project_patterns:              # regexes; verify each against your own tree first
+  # Opt-in pattern groups from the default set. `ticket_ids` is off by default:
+  # `\b[A-Z]{2,4}-\d{1,4}\b` matches utf-8, SHA-256, post-2011 and nearly every
+  # lockfile entry — 7 findings, 0 true positives, on one project's first six
+  # commits. Adopt it only if this project really emits ticket identifiers.
+  optional_pattern_groups: []    # e.g. ["ticket_ids"]
+
+publication:
+  # Refs a push may carry. Everything else — notes refs, recovery branches,
+  # agent worktree branches — fails `tools/publication_gate.py`. A clean branch
+  # history is not a publishable repository: `refs/notes/*` is invisible to
+  # git log, status, ls-files, diff and show.
+  publishable_refs: ["refs/heads/*", "refs/tags/*"]
 
 workspace_classification:
   # Inputs to `tools/workspace_report.py`, run at capability OPEN and CLOSE.
@@ -59,13 +102,29 @@ workspace_classification:
   safe_generated:                # e.g. ["__pycache__/", ".pytest_cache/", "dist/"]
   ignore_private:                # ignored files that are private, not merely generated
 
+  # Paths this project REQUIRES to be tracked. The classification buckets ask
+  # "has somebody said what this file is"; a file that never arrived is not
+  # unclassified, it is absent, and absence is what a bucket check cannot see.
+  # A machine-level `core.excludesFile` once excluded `*.jsonl` while a
+  # project's required files were JSONL in a tracked directory. `git add` committed
+  # nothing, silently, and every gate stayed green.
+  must_be_tracked:               # e.g. ["annotations/", "data/gold.csv"]
+
   # Content-exempt paths for `tools/outgoing_scan.py`. Narrow and deliberate:
   # a file that IS the denylist, a negative fixture, or a reviewed-baseline
   # record naming a prior match. Exemption covers blob CONTENT only — the path,
   # every ref and tag name, every message and identity are still scanned, and
   # each exempted file is named in the report, so a clean scan still discloses
-  # what it declined to read.
-  content_exempt:                # e.g. ["REVIEWED-BASELINE.md"]
+  # what it declined to read. GITIGNORE semantics apply here too, as above:
+  # `annotations/` covers everything beneath it. (This field used fnmatch until
+  # RP2.1, under which `annotations/` matched nothing at all and said so
+  # nowhere — the scan simply reported normally. A declaration matching no path
+  # is now reported as matching nothing.)
+  #
+  # A capability whose mutation boundary writes into an exempt path cannot close
+  # without an evidence entry saying what actually landed there: exemptions are
+  # declared before the files exist and their scope grows silently otherwise.
+  content_exempt:                # e.g. ["REVIEWED-BASELINE.md", "annotations/"]
 
 critical_domains:
   # Domains whose capabilities require the two-auditor tier and the human

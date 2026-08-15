@@ -14,6 +14,26 @@ settle it (`skills/core/requirement-interpretation.md`).
 | ID | Property that must hold | How it would be shown |
 |---|---|---|
 
+**A metric with a tolerance still becomes a binary predicate — over the
+*recording*, not over the value.** Forcing a measured quantity into a pass/fail
+threshold either invents a number nobody chose or drops the criterion. Write it
+as a property of the evidence instead:
+
+> *"Macro-F1 is reported with a 95% confidence interval and the value is
+> recorded in evidence; a shortfall against the pre-specified threshold is
+> explained rather than hidden."*
+
+That is checkable, cannot be satisfied by hiding a bad result, and does not
+require guessing a threshold before the measurement exists. Say
+**pre-specified**, not "pre-registered", unless the history really carries a
+record predating the measurement.
+
+**A capability writing into a `content_exempt` path carries an acceptance row
+saying what actually landed there** and why it is still safe. Exemptions are
+declared at contract-authoring time, often before the directory exists, and
+their scope grows silently; this is the one point where the declaration is
+re-argued against real bytes.
+
 ## Declared dimensions
 
 Subset of `PROJECT.yaml`'s dimensions this capability closes against. A

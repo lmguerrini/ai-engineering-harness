@@ -1,0 +1,39 @@
+# DECISIONS — <project>
+
+Append-only. Newest last. **Never edited, never reordered, never deleted** — a
+decision that turned out wrong is superseded by a later entry that says so, and
+both stay. The value of this file is that it records what was believed at the
+time, which is exactly what an edit destroys.
+
+One entry per decision that a later reader could otherwise not reconstruct from
+the code. Not a changelog: if the diff explains it, it does not belong here.
+
+Format, kept short enough that recording a decision is not a tax:
+
+---
+
+## D-001 — <one line: what was decided>
+
+**Decided.** What is now true, in one or two sentences.
+
+**Evidence.** What was measured, read or executed. Name the file, the command,
+or the revision — a decision whose evidence is "it seemed better" is a
+preference, and should say so rather than borrow the authority of a measurement.
+
+**Reverses on.** The observation that would make this wrong. A decision with no
+stated reversal condition cannot be revisited honestly later, because there is
+nothing to check it against.
+
+---
+
+## D-002 — …
+
+## Conventions
+
+- Reference decisions as `D-0NN` in commit bodies, findings and handoffs. The
+  id is stable; the wording may be clarified only by a *later* entry.
+- A decision that supersedes another says so explicitly and names the id.
+- A decision taken by the human, rather than by the coordinator, says whose it
+  was. The distinction matters at audit: the coordinator may not overrule one.
+- Decisions forced by a gate refusing something are worth recording even when
+  they feel mechanical — the gate's reasoning is not visible in the result.

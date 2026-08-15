@@ -15,7 +15,8 @@ capability exists until the official specification is read.
 Confirm on disk, do not assume:
 
 - [ ] `runtime-pack-2/VERSION` is the pack version this project will pin.
-- [ ] Wave-B gate recorded green in `runtime-pack-2/policy/wave-b-gate.md`.
+- [ ] Wave-B gate recorded green in `runtime-pack-2/docs/WAVE-B-GATE.md`, and
+      the most recent gate record in `runtime-pack-2/docs/` alongside it.
 - [ ] `tools/` tests pass at the exact pack HEAD.
 - [ ] No project pins Kernel `042c1b9`. It is a frozen evidence archive.
 
@@ -52,16 +53,25 @@ Create `projects/<project>/REQUIREMENT_COVERAGE.md` from
 row, independently, forever** — even when several share a capability, a task, a
 commit, or a test.
 
-    | req | capability | task(s) | status | dimensions | evidence ref | interpretation note |
+The gate enforces **exactly these eight columns, in this order** — they are the
+`COLUMNS` list in `templates/validate_requirement_coverage.py`, and a table of
+any other shape fails on every row:
 
-- `status` is tri-state-aware: `PLANNED` / `IN_PROGRESS` / `PASSED` /
+    | ID | Source | Capability | Task | Implementation status | Required validation | Evidence | Status |
+
+- `Status` is tri-state-aware: `PLANNED` / `IN_PROGRESS` / `PASSED` /
   `BLOCKED` / `N/A-with-reason` / `HITL_ACCEPTED_LIMITATION`. **Not-run is never
   recorded as passed. Absent is never recorded as zero.**
-- `evidence ref` is a content-addressed reference produced by `evidence_put`, not
+- `Evidence` is a content-addressed reference produced by `evidence_put`, not
   a prose claim.
-- `interpretation note` is where Step 1's verbatim text meets judgment. Any
-  reading that narrows a requirement is recorded here and, if it has
-  cross-capability blast radius, escalated (HITL row 5).
+- **Interpretation notes have no column**, and adding a ninth breaks the gate.
+  They live in a keyed section beneath the table, one entry per requirement id.
+  That is where Step 1's verbatim text meets judgment: any reading that narrows
+  a requirement is recorded there and, if it has cross-capability blast radius,
+  escalated (HITL row 5). Do **not** drop the note to satisfy the tool — the
+  note is the anti-narrowing control. An earlier version of this sketch showed
+  seven columns ending in `interpretation note`; following it literally cost a
+  bootstrap author a full rewrite of the register.
 
 **The check:**
 

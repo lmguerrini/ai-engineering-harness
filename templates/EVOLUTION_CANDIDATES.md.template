@@ -1,0 +1,51 @@
+# EVOLUTION CANDIDATES — <project>
+
+Append-only. **Candidates are evidence, never policy.** Nothing here changes the
+Runtime Pack during this project. The pack is read-only for the project's
+duration; a dedicated pack-evolution session adjudicates these afterwards, and
+every adopted change must carry an acceptance criterion that fails when the
+change is removed.
+
+This separation is the whole point. A coordinator that repairs its own governance
+mid-project is a coordinator whose governance nobody reviewed, and a pack that
+changes under a running project makes that project's evidence uninterpretable.
+A pack deficiency found mid-project is recorded here and **worked around with
+judgement**; the project is never stopped to perfect the pack.
+
+Ids are `EC-A`, `EC-B`, … Record the ones that cost nothing to work around as
+well as the ones that hurt: the cheap ones are how a pattern becomes visible
+across projects, and a fourth instance of a small annoyance is a different fact
+from a first.
+
+---
+
+## EC-A — <one line: the observation, not the proposed fix>
+
+**Observation.** What happened, described as behaviour rather than as a defect
+verdict. Say what the procedure did and what was expected.
+
+**Evidence.** Reproduced how, at which revision, with what output. A candidate
+whose evidence is a recollection will not survive the delta audit, which
+re-verifies every candidate against pack source rather than accepting its own
+description.
+
+**Affected procedure.** The exact file — a skill, a policy file, a template, a
+tool.
+
+**Confidence.** High / medium / low, and why. Distinguish "mechanical, reproduced
+by running the gate" from "one instance, mechanism plausible".
+
+**Cost/risk.** Of adopting *and* of not adopting. Both, honestly: the risk of
+narrowing a safety rule is not the same as the risk of a noisy one.
+
+**Proposed direction.** What might close it — a direction, not a patch. The
+evolution pass decides placement (Core enforcement, skill policy, coordinator
+judgement, worker profile, or observability only).
+
+**Acceptance criterion if adopted.** The check that **fails when the change is
+removed.** Without this a candidate cannot be adopted, because nothing would
+later show that it still holds.
+
+---
+
+## EC-B — …
