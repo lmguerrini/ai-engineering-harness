@@ -41,7 +41,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import gitread
-from commit_gate import _CREDENTIAL_PATTERNS, _UUID, TermSet, NO_PRIVATE_TERMS, _redact, contains_local_path
+import pathmatch
+from commit_gate import (
+    _CREDENTIAL_PATTERNS,
+    _UUID,
+    TermSet,
+    NO_PRIVATE_TERMS,
+    _redact,
+    _term_set_from_args,
+    contains_local_path,
+)
 
 __all__ = ["Leak", "Scanner", "OutgoingReport", "SkippedObject", "scan_outgoing"]
 
@@ -78,6 +87,14 @@ class Leak:
             raise ValueError(f"unknown leak kind {self.kind!r}")
 
 
+#: Surfaces holding content nobody wrote as a deliberate label. The identity
+#: tier of the vocabulary does not reach these — see `TermSet` for the measured
+#: reason. Everything else (commit messages, ref and tag names, identities,
+#: repository paths) is something a person chose to write, and gets the whole
+#: vocabulary.
+CONTENT_LOCATIONS = ("blob",)
+
+
 class Scanner:
     """Finds every prohibited thing in a piece of text, not the first one."""
 
@@ -85,16 +102,21 @@ class Scanner:
 
     def __init__(self, term_set: TermSet) -> None:
         self._terms = term_set
-        compiled: list[tuple[str, re.Pattern[str]]] = []
-        for pattern_text in term_set.patterns:
+        compiled: dict[str, re.Pattern[str]] = {}
+        for pattern_text in (*term_set.patterns, *term_set.identity_patterns):
             try:
-                compiled.append((pattern_text, re.compile(pattern_text, re.IGNORECASE)))
+                compiled[pattern_text] = re.compile(pattern_text, re.IGNORECASE)
             except re.error as exc:
                 # A declared pattern that will not compile is a contract
                 # defect. Raising here is right: the alternative is a scanner
                 # that silently checks less than the project asked it to.
                 raise ValueError(f"declared private pattern {pattern_text!r} is not a regex: {exc}") from exc
-        self._patterns = tuple(compiled)
+        self._patterns = compiled
+
+    @property
+    def vocabulary(self) -> TermSet:
+        """The term set this scanner applies, so a report can disclose it."""
+        return self._terms
 
     def scan(self, text: object, *, location: str, subject: str) -> list[Leak]:
         """Every prohibited thing in ``text``, described without reproducing it."""
@@ -105,12 +127,13 @@ class Scanner:
         if not isinstance(text, str):
             raise TypeError(f"scannable text must be str or bytes, not {type(text).__name__}")
 
+        content_surface = location in CONTENT_LOCATIONS
         leaks: list[Leak] = []
-        for term, pattern in self._terms.compiled_terms():
+        for term, pattern in self._terms.compiled_terms(content_surface=content_surface):
             if pattern.search(text):
                 leaks.append(Leak("private_term", location, subject, f"declared private term {_redact(term)!r}"))
-        for pattern_text, compiled in self._patterns:
-            match = compiled.search(text)
+        for pattern_text in self._terms.applicable_patterns(content_surface=content_surface):
+            match = self._patterns[pattern_text].search(text)
             if match:
                 leaks.append(
                     Leak("private_pattern", location, subject,
@@ -151,6 +174,18 @@ class OutgoingReport:
     exempted: list[str] = field(default_factory=list)
     commits_examined: int = 0
     blobs_examined: int = 0
+    #: What vocabulary actually ran. A report that does not say what it loaded
+    #: cannot be audited, and the motivating defect was a scan that applied
+    #: none of the default rules and printed `clean`.
+    vocabulary: str = ""
+    #: Exemption patterns the project declared that matched no path in this
+    #: range. A dead declaration is silent otherwise, which is exactly how one
+    #: survived unnoticed until a deliberate A/B run.
+    unused_exemptions: list[str] = field(default_factory=list)
+    #: For each offending path, how many distinct blobs of it are reachable.
+    #: More than one means the earlier commit still carries the material and
+    #: amending the tip will not clear it.
+    blob_multiplicity: dict[str, int] = field(default_factory=dict)
 
     @property
     def clean(self) -> bool:
@@ -174,29 +209,43 @@ class OutgoingReport:
         for a disclosure. Every rendering path below must name what it did
         not read, whether or not the range is `clean`.
         """
-        if self.clean and not self.exempted:
-            return (
-                f"outgoing range {self.baseline or 'ROOT'}..{self.ref}: clean "
-                f"({self.commits_examined} commits, {self.blobs_examined} blobs)"
-            )
+        header = f"outgoing range {self.baseline or 'ROOT'}..{self.ref}"
+        provenance = [f"  rules applied: {self.vocabulary}"] if self.vocabulary else []
+        # An exemption count is printed even when it is zero. `0 file(s)
+        # content-exempt by declaration` beats silence: a declaration that
+        # matched nothing produced a report byte-identical to one where it
+        # matched, and that is what made a dead exemption invisible.
+        exemption_lines = [f"  {len(self.exempted)} file(s) content-exempt by declaration"]
+        exemption_lines.extend(f"    content exempt by declaration: {path}" for path in self.exempted)
+        exemption_lines.extend(
+            f"    DECLARED BUT MATCHED NOTHING: {pattern}" for pattern in self.unused_exemptions
+        )
+
         if self.clean:
-            # Clean implies no skips (`clean` is `not leaks and not skipped`),
-            # so the only thing left to disclose here is the exemption list.
             lines = [
-                f"outgoing range {self.baseline or 'ROOT'}..{self.ref}: clean, "
-                f"{len(self.exempted)} file(s) content-exempt by declaration "
-                f"({self.commits_examined} commits, {self.blobs_examined} blobs)"
+                f"{header}: clean ({self.commits_examined} commits, {self.blobs_examined} blobs)"
             ]
-            for path in self.exempted:
-                lines.append(f"  content exempt by declaration: {path}")
+            lines.extend(provenance)
+            lines.extend(exemption_lines)
             return "\n".join(lines)
-        lines = [f"outgoing range {self.baseline or 'ROOT'}..{self.ref}: {len(self.leaks)} leak(s)"]
+
+        lines = [f"{header}: {len(self.leaks)} leak(s)"]
+        lines.extend(provenance)
         for leak in self.leaks:
             lines.append(f"  {leak.location} {leak.subject}: {leak.detail}")
+            reachable = self.blob_multiplicity.get(leak.subject, 0)
+            if leak.location == "blob" and reachable > 1:
+                # The natural repair is to fix the text and amend. When the same
+                # path has more than one reachable blob, amending moves only the
+                # tip: the finding count drops, which reads as progress, and the
+                # range is still dirty. Say so where the remedy is chosen.
+                lines.append(
+                    f"    {reachable} distinct blobs of this path are reachable — "
+                    f"amending the tip will not clear the earlier one; rebuild the branch"
+                )
         for item in self.skipped:
             lines.append(f"  not scanned: {item.path or item.sha} ({item.reason})")
-        for path in self.exempted:
-            lines.append(f"  content exempt by declaration: {path}")
+        lines.extend(exemption_lines)
         return "\n".join(lines)
 
 
@@ -236,7 +285,10 @@ def scan_outgoing(
     """
     if not isinstance(scanner, Scanner):
         raise TypeError("an outgoing scan requires a Scanner built from the project's declared terms")
-    report = OutgoingReport(ref=ref, baseline=baseline)
+    report = OutgoingReport(ref=ref, baseline=baseline, vocabulary=scanner.vocabulary.summary())
+    exempt_patterns = tuple(content_exempt_paths)
+    exemptions_used: set[str] = set()
+    blobs_by_path: dict[str, set[str]] = {}
 
     # The ref name travels with the objects. `HEAD` is not a name anyone
     # receives, so it is not scanned as one.
@@ -270,13 +322,18 @@ def scan_outgoing(
             report.leaks.extend(scanner.scan(tag["tagger"], location="tag_tagger", subject=name))
             report.leaks.extend(scanner.scan_name(name, location="tag_name", subject=name))
         elif kind == "blob":
+            if path:
+                blobs_by_path.setdefault(path, set()).add(sha)
             size = gitread.object_size(repository, sha)
             if size > MAX_SCANNED_BLOB_BYTES:
                 report.skipped.append(SkippedObject(sha, path, f"{size} bytes exceeds the scan limit"))
                 continue
-            if path and _matches_exempt(path, content_exempt_paths):
-                report.exempted.append(path)
-                continue
+            if path:
+                matched = _matching_exemptions(path, exempt_patterns)
+                if matched:
+                    exemptions_used.update(matched)
+                    report.exempted.append(path)
+                    continue
             data = gitread.object_bytes(repository, sha)
             text = _decoded(data)
             if text is None:
@@ -288,14 +345,68 @@ def scan_outgoing(
             # Paths inside a tree arrive as the second column of the object
             # listing, so they are scanned with their blobs.
             continue
+
+    report.unused_exemptions = [p for p in exempt_patterns if p not in exemptions_used]
+    report.blob_multiplicity = {path: len(shas) for path, shas in blobs_by_path.items()}
     return report
 
 
-def _matches_exempt(path: str, patterns: Sequence[str]) -> bool:
-    """Whether a project declared this path's content to be denylist data."""
-    import fnmatch
+def scan_staged(
+    repository: str | Path,
+    *,
+    scanner: Scanner,
+    content_exempt_paths: Sequence[str] = (),
+) -> OutgoingReport:
+    """Scan what the index would commit, before the commit exists.
 
-    return any(path == pattern or fnmatch.fnmatch(path, pattern) for pattern in patterns)
+    The range scan is the gate that must hold, and it runs at closure. This one
+    runs while the sentence is still being written. Private vocabulary
+    reaches prose *about* the work — a test module docstring, a repair note, a
+    committed file's own description — and a range scan catches it only at
+    closure, where the remedy is a
+    commit, a fixup and a rebase rather than an edit.
+
+    It is deliberately not a hook. A hook is machine configuration outside the
+    pack's boundary, it does not travel with the project, and a gate a project
+    cannot see is a gate it cannot audit.
+    """
+    if not isinstance(scanner, Scanner):
+        raise TypeError("a staged scan requires a Scanner built from the project's declared terms")
+    report = OutgoingReport(ref="INDEX", baseline="HEAD", vocabulary=scanner.vocabulary.summary())
+    exempt_patterns = tuple(content_exempt_paths)
+    exemptions_used: set[str] = set()
+
+    for path, sha in gitread.staged_entries(repository):
+        report.leaks.extend(scanner.scan_name(path, location="path", subject=path))
+        matched = _matching_exemptions(path, exempt_patterns)
+        if matched:
+            exemptions_used.update(matched)
+            report.exempted.append(path)
+            continue
+        if gitread.object_size(repository, sha) > MAX_SCANNED_BLOB_BYTES:
+            report.skipped.append(SkippedObject(sha, path, "exceeds the scan limit"))
+            continue
+        text = _decoded(gitread.object_bytes(repository, sha))
+        if text is None:
+            report.skipped.append(SkippedObject(sha, path, "content is not decodable as text"))
+            continue
+        report.blobs_examined += 1
+        report.leaks.extend(scanner.scan(text, location="blob", subject=path))
+
+    report.unused_exemptions = [p for p in exempt_patterns if p not in exemptions_used]
+    return report
+
+
+def _matching_exemptions(path: str, patterns: Sequence[str]) -> list[str]:
+    """Which declared exemptions cover this path, under gitignore semantics.
+
+    One semantics for every path declaration in the pack (`pathmatch`). This
+    used to be `fnmatch`, which meant a directory exemption written the way the
+    contract template documents — `annotations/` — matched nothing at all, and
+    said so nowhere.
+    """
+    exact = [pattern for pattern in patterns if path == pattern]
+    return exact + [p for p in pathmatch.matching_patterns(path, patterns) if p not in exact]
 
 
 def _looks_like_sha(ref: str) -> bool:
@@ -313,19 +424,51 @@ def _cli(argv: list[str]) -> int:
         prog="outgoing_scan.py",
         description="Scan every object, name and identity an outgoing range would send.",
     )
-    parser.add_argument("repository", help="path to the Git repository")
-    parser.add_argument("ref", help="the ref or SHA whose outgoing range is scanned")
+    parser.add_argument("repository", nargs="?", help="path to the Git repository; defaults to the contract's repo_path")
+    parser.add_argument("ref", nargs="?", help="the ref or SHA whose outgoing range is scanned")
     parser.add_argument("baseline", nargs="?", default=None, help="the baseline the range is relative to; omit for the whole history")
-    parser.add_argument("--exempt", action="append", default=[], metavar="PATH", help="a path whose blob content is exempt (repeatable)")
-    parser.add_argument("--term", action="append", default=[], help="a declared private term (repeatable)")
-    parser.add_argument("--pattern", action="append", default=[], help="a declared private regex pattern (repeatable)")
+    parser.add_argument("--project", help="path to PROJECT.yaml; supplies vocabulary, exemptions and repo path")
+    parser.add_argument("--exempt", action="append", default=[], metavar="PATH", help="a path whose blob content is exempt (repeatable, additive)")
+    parser.add_argument("--term", action="append", default=[], help="a declared private term (repeatable, additive)")
+    parser.add_argument("--pattern", action="append", default=[], help="a declared private regex pattern (repeatable, additive)")
+    parser.add_argument("--staged", action="store_true", help="scan the staged diff instead of a committed range")
     args = parser.parse_args(argv)
 
-    term_set = TermSet.of(args.term, args.pattern) if (args.term or args.pattern) else NO_PRIVATE_TERMS
+    contract = None
+    if args.project:
+        from project_contract import ProjectContract
+
+        contract = ProjectContract.load(args.project)
+
+    try:
+        term_set = _term_set_from_args(args)
+    except Exception as exc:
+        print(f"CONTRACT UNREADABLE {exc}")
+        return 2
     scanner = Scanner(term_set)
+
+    repository = args.repository or (contract.repository() if contract else None)
+    if not repository:
+        print("a repository is required, either positionally or via --project")
+        return 2
+    exempt = [*(contract.content_exempt if contract else ()), *args.exempt]
+
+    if args.staged:
+        # The staged diff, checked before the commit exists. Process vocabulary
+        # reaching prose *about* the work — a test docstring, a repair note, a
+        # file's own description — is otherwise
+        # caught at closure, when the remedy costs a commit, a fixup and a
+        # rebase. Here the sentence is still being written.
+        report = scan_staged(repository, scanner=scanner, content_exempt_paths=exempt)
+        print(report.render())
+        return 0 if report.clean else 1
+
+    if not args.ref:
+        print("a ref is required unless --staged is given")
+        return 2
     report = scan_outgoing(
-        args.repository, ref=args.ref, baseline=args.baseline,
-        scanner=scanner, content_exempt_paths=args.exempt,
+        repository, ref=args.ref, baseline=args.baseline,
+        scanner=scanner, content_exempt_paths=exempt,
     )
     print(report.render())
     return 0 if report.clean else 1

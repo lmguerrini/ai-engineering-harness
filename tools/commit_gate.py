@@ -176,42 +176,99 @@ def _term_pattern(term: str) -> re.Pattern[str]:
 
 @dataclass(frozen=True)
 class TermSet:
-    """A project's declared private vocabulary.
+    """A project's declared private vocabulary, in two tiers.
 
     ``declared_empty`` distinguishes "this project has no private terms, and
     someone decided that" from "nobody supplied a term set".
+
+    ``terms`` and ``patterns`` apply to **every** surface. ``identity_terms``
+    and ``identity_patterns`` apply only where a person writes deliberately —
+    commit messages, ref and tag names, author and committer identities, and
+    repository paths — and not to blob content.
+
+    The split is measured, not aesthetic. A vocabulary of bare common words
+    (`claude`, `terra`, `sol`, `envelope`, `harness`) is unusable against the
+    contents of a prose corpus: `claude` matches Jean-Claude
+    Martin, `terra` is Italian for "ground". Four such findings on one real
+    project, zero true positives, and one cost a full history rebuild because
+    amending the tip does not reach an earlier blob. The failure that matters
+    is not the noise — it is that the only cheap remedy is a content exemption
+    over the whole directory, which converts a precise control into the hole
+    the public-safety rules exist to forbid. A worker name in a commit message
+    is still refused, which is the case that was ever a real leak.
     """
 
     terms: tuple[str, ...] = ()
     patterns: tuple[str, ...] = ()
+    identity_terms: tuple[str, ...] = ()
+    identity_patterns: tuple[str, ...] = ()
     declared_empty: bool = False
     _compiled: dict[str, re.Pattern[str]] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
-    def of(cls, terms: object = (), patterns: object = ()) -> "TermSet":
+    def of(
+        cls,
+        terms: object = (),
+        patterns: object = (),
+        identity_terms: object = (),
+        identity_patterns: object = (),
+    ) -> "TermSet":
         term_tuple = tuple(str(t) for t in terms)  # type: ignore[union-attr]
         pattern_tuple = tuple(str(p) for p in patterns)  # type: ignore[union-attr]
-        if not term_tuple and not pattern_tuple:
+        identity_term_tuple = tuple(str(t) for t in identity_terms)  # type: ignore[union-attr]
+        identity_pattern_tuple = tuple(str(p) for p in identity_patterns)  # type: ignore[union-attr]
+        if not (term_tuple or pattern_tuple or identity_term_tuple or identity_pattern_tuple):
             raise ValueError(
                 "an empty term set must be declared explicitly with NO_PRIVATE_TERMS"
             )
-        return cls(terms=term_tuple, patterns=pattern_tuple)
+        return cls(
+            terms=term_tuple,
+            patterns=pattern_tuple,
+            identity_terms=identity_term_tuple,
+            identity_patterns=identity_pattern_tuple,
+        )
 
-    def compiled_terms(self) -> list[tuple[str, re.Pattern[str]]]:
+    def compiled_terms(self, *, content_surface: bool = False) -> list[tuple[str, re.Pattern[str]]]:
+        """Every term that applies to this surface, compiled.
+
+        ``content_surface=True`` means blob content, which the identity tier
+        deliberately does not reach.
+        """
+        selected = self.terms if content_surface else (*self.terms, *self.identity_terms)
         out = []
-        for term in self.terms:
+        for term in selected:
             if term not in self._compiled:
                 self._compiled[term] = _term_pattern(term)
             out.append((term, self._compiled[term]))
         return out
 
-    def offenders(self, text: str) -> list[str]:
+    def applicable_patterns(self, *, content_surface: bool = False) -> tuple[str, ...]:
+        """Every declared regex that applies to this surface."""
+        if content_surface:
+            return self.patterns
+        return (*self.patterns, *self.identity_patterns)
+
+    def summary(self) -> str:
+        """What this set actually carries, for a report header.
+
+        A report that does not say what it loaded cannot be audited, and the
+        motivating defect was a scan that applied 0 of 59 rules and printed
+        `clean`.
+        """
+        if self.declared_empty:
+            return "no private vocabulary (declared empty)"
+        return (
+            f"{len(self.terms)} term(s), {len(self.identity_terms)} identity-only term(s), "
+            f"{len(self.patterns)} pattern(s), {len(self.identity_patterns)} identity-only pattern(s)"
+        )
+
+    def offenders(self, text: str, *, content_surface: bool = False) -> list[str]:
         """Every declared private term or pattern this text contains."""
         found: list[str] = []
-        for term, pattern in self.compiled_terms():
+        for term, pattern in self.compiled_terms(content_surface=content_surface):
             if pattern.search(text):
                 found.append(term)
-        for pattern_text in self.patterns:
+        for pattern_text in self.applicable_patterns(content_surface=content_surface):
             try:
                 compiled = re.compile(pattern_text, re.IGNORECASE)
             except re.error:
@@ -338,7 +395,10 @@ def _content_violations(message: str, term_set: TermSet) -> list[ContractViolati
                 ContractViolation("PRIVATE_TERM", f"private term {_redact(term)!r} is prohibited")
             )
 
-    for raw in term_set.patterns:
+    # A commit message is a surface a person wrote deliberately, so the whole
+    # vocabulary applies — including the identity tier that blob content does
+    # not receive.
+    for raw in term_set.applicable_patterns():
         try:
             compiled = re.compile(raw, re.IGNORECASE)
         except re.error as exc:
@@ -387,10 +447,70 @@ def assert_valid(message: str, term_set: TermSet, *, stage: str = "pre-commit") 
         )
 
 
-def _cli(argv: list[str]) -> int:
-    """Validate a commit message from a file or stdin.
+def validate_range(repository: str, ref: str, baseline: str | None, term_set: TermSet) -> list[tuple[str, list[ContractViolation]]]:
+    """Every non-conforming commit message in ``baseline..ref``.
 
-    Usage: ``commit_gate.py [FILE] [--term TERM ...] [--pattern REGEX ...]``
+    The single-message gate is applied before staging and again on read-back,
+    which protects the commit being made and says nothing about the ones
+    already made. A long project drifts: the convention is kept perfectly for
+    the first commits and then relaxes, and nothing notices, because no surface
+    ever re-reads a message after its own commit succeeded.
+
+    This is that surface. It is a report over a range, not a rewrite: history
+    that has already been published cannot be repaired by a checker, and
+    knowing where the drift starts is what lets a coordinator decide whether an
+    unpublished branch is worth rebuilding.
+    """
+    import gitread
+
+    out: list[tuple[str, list[ContractViolation]]] = []
+    for sha, _ in gitread.objects_in_outgoing_range(repository, ref, baseline):
+        if gitread.object_type(repository, sha) != "commit":
+            continue
+        violations = validate_message(gitread.commit_message(repository, sha), term_set)
+        if violations:
+            out.append((sha, violations))
+    return out
+
+
+def _term_set_from_args(args: object) -> TermSet:
+    """The vocabulary a CLI invocation actually applies.
+
+    `--project` reads the contract, which is the single source. The `--term`
+    flags remain, and are **additive** to whatever the contract supplies: a
+    flag that silently replaced the declared vocabulary is how a gate came to
+    apply 0 of 59 rules and report `clean`.
+    """
+    project = getattr(args, "project", None)
+    terms: list[str] = []
+    patterns: list[str] = []
+    identity_terms: list[str] = []
+    identity_patterns: list[str] = []
+
+    if project:
+        from project_contract import ProjectContract
+
+        contract = ProjectContract.load(project)
+        terms.extend(contract.default_terms)
+        terms.extend(contract.project_terms)
+        patterns.extend(contract.default_patterns)
+        patterns.extend(contract.project_patterns)
+        identity_terms.extend(contract.default_identity_terms)
+        identity_patterns.extend(contract.default_identity_patterns)
+
+    terms.extend(getattr(args, "term", None) or [])
+    patterns.extend(getattr(args, "pattern", None) or [])
+
+    if not (terms or patterns or identity_terms or identity_patterns):
+        return NO_PRIVATE_TERMS
+    return TermSet.of(terms, patterns, identity_terms, identity_patterns)
+
+
+def _cli(argv: list[str]) -> int:
+    """Validate a commit message, or every message in a range.
+
+    Usage: ``commit_gate.py [FILE] [--project PATH] [--term TERM ...] [--pattern REGEX ...]``
+           ``commit_gate.py --range REF [BASELINE] --repo PATH [--project PATH]``
 
     Reads ``FILE`` if given, otherwise stdin. Prints each violation and exits
     non-zero if the message does not conform.
@@ -402,9 +522,39 @@ def _cli(argv: list[str]) -> int:
         description="Validate a commit message against the public commit contract.",
     )
     parser.add_argument("file", nargs="?", help="path to the message file; stdin if omitted")
-    parser.add_argument("--term", action="append", default=[], help="a declared private term (repeatable)")
-    parser.add_argument("--pattern", action="append", default=[], help="a declared private regex pattern (repeatable)")
+    parser.add_argument("--project", help="path to PROJECT.yaml; supplies the declared vocabulary")
+    parser.add_argument("--term", action="append", default=[], help="a declared private term (repeatable, additive)")
+    parser.add_argument("--pattern", action="append", default=[], help="a declared private regex pattern (repeatable, additive)")
+    parser.add_argument("--range", metavar="REF", help="validate every commit message reachable in a range")
+    parser.add_argument("--baseline", default=None, help="the baseline for --range; omit for the whole history")
+    parser.add_argument("--repo", help="repository path for --range; defaults to the contract's repo_path")
     args = parser.parse_args(argv)
+
+    try:
+        term_set = _term_set_from_args(args)
+    except Exception as exc:  # ContractError and friends: state it, never degrade
+        print(f"CONTRACT UNREADABLE {exc}")
+        return 2
+
+    print(f"vocabulary: {term_set.summary()}")
+
+    if args.range:
+        repository = args.repo
+        if not repository and args.project:
+            from project_contract import ProjectContract
+
+            repository = ProjectContract.load(args.project).repository()
+        if not repository:
+            print("VIOLATION --range needs --repo or a --project declaring project.repo_path")
+            return 2
+        failures = validate_range(repository, args.range, args.baseline, term_set)
+        if not failures:
+            print(f"VALID every commit message in {args.baseline or 'ROOT'}..{args.range} conforms")
+            return 0
+        for sha, violations in failures:
+            for violation in violations:
+                print(f"VIOLATION {sha[:12]} {violation}")
+        return 1
 
     if args.file:
         with open(args.file, encoding="utf-8") as handle:
@@ -412,7 +562,6 @@ def _cli(argv: list[str]) -> int:
     else:
         message = sys.stdin.read()
 
-    term_set = TermSet.of(args.term, args.pattern) if (args.term or args.pattern) else NO_PRIVATE_TERMS
     violations = validate_message(message, term_set)
     if not violations:
         print("VALID")

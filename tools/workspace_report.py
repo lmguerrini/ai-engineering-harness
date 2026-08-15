@@ -14,20 +14,33 @@ there is no argument that makes it do so.
 
 from __future__ import annotations
 
-import fnmatch
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import gitread
+import pathmatch
 
-__all__ = ["WorkspaceReport", "classify_workspace"]
+__all__ = ["WorkspaceReport", "classify_workspace", "UntrackedRequirement"]
 
 #: Generated output a project may declare safe. Deliberately empty: what is
 #: safe to regenerate is a property of the project, not of this tool, and a
 #: default list here would silently classify somebody else's data.
 DEFAULT_SAFE_GENERATED: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class UntrackedRequirement:
+    """A path the project declared must be tracked, which is not.
+
+    ``rule`` names the ignore rule responsible, in `git check-ignore -v` form,
+    because "this file is not tracked" sends someone looking at their `git add`
+    while the cause is a line in a file they have never opened.
+    """
+
+    path: str
+    rule: str
 
 
 @dataclass
@@ -37,10 +50,16 @@ class WorkspaceReport:
     safe_generated: list[str] = field(default_factory=list)
     unknown: list[str] = field(default_factory=list)
     whitespace_damage: str = ""
+    #: Declared-required paths that exist on disk and are not tracked. The
+    #: motivating case: a machine-level `core.excludesFile` excluded `*.jsonl`,
+    #: and the project's required files were JSONL in a tracked directory. `git
+    #: add` committed nothing, silently, and every gate reported green. It was
+    #: caught by accident, in an unrelated throwaway repository.
+    untracked_requirements: list[UntrackedRequirement] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
-        return not self.unknown and not self.whitespace_damage
+        return not self.unknown and not self.whitespace_damage and not self.untracked_requirements
 
     def render(self) -> str:
         if self.clean:
@@ -51,57 +70,78 @@ class WorkspaceReport:
         lines = ["workspace is not in a closable state"]
         for path in self.unknown:
             lines.append(f"  unclassified: {path}")
+        for requirement in self.untracked_requirements:
+            lines.append(f"  declared must_be_tracked but NOT TRACKED: {requirement.path}")
+            lines.append(f"    excluded by: {requirement.rule}")
         if self.whitespace_damage:
             lines.append("  whitespace damage:")
             lines.extend(f"    {line}" for line in self.whitespace_damage.splitlines())
         return "\n".join(lines)
 
 
-def _segment_match(segment: str, pattern: str) -> bool:
-    """One path segment against one pattern segment.
+#: One path semantics for every path declaration in the pack, `pathmatch`.
+#: This module and the outgoing scanner read patterns out of the same contract
+#: block and used to interpret them differently.
+_matches_any = pathmatch.matches_any
 
-    `fnmatch` on the whole path is wrong here: its `*` crosses `/`, so a
-    project declaring `dist/*` safe silently classified everything at every
-    depth beneath `dist`. Matching segment by segment gives `*` the meaning a
-    project writing an ignore rule expects.
+
+def _check_required_tracking(
+    repository: str | Path, required: tuple[str, ...], tracked: set[str]
+) -> list[UntrackedRequirement]:
+    """Declared-required paths that exist on disk and are not in the index.
+
+    The classification buckets answer "has somebody said what this file is".
+    They have no notion of a file that *should* be there, so a path that never
+    arrived is not unclassified — it is absent, and absence is exactly what a
+    bucket check cannot see.
     """
-    return fnmatch.fnmatch(segment, pattern)
+    findings: list[UntrackedRequirement] = []
+    root = Path(repository)
+    for declaration in required:
+        candidates = [
+            path for path in _existing_paths(root, declaration)
+            if path not in tracked
+        ]
+        for path in sorted(candidates):
+            findings.append(UntrackedRequirement(path, _ignore_rule(repository, path)))
+    return findings
 
 
-def _matches_any(path: str, patterns: Sequence[str]) -> bool:
-    """Whether a repository-relative path matches a declared pattern.
+def _existing_paths(root: Path, declaration: str) -> list[str]:
+    """Paths on disk covered by one declaration, as repository-relative strings."""
+    target = root / declaration.strip("/")
+    if target.is_file():
+        return [str(target.relative_to(root))]
+    if target.is_dir():
+        return [
+            str(child.relative_to(root))
+            for child in sorted(target.rglob("*"))
+            if child.is_file() and ".git" not in child.parts
+        ]
+    # A glob, or a path that does not exist. Only what is on disk can be
+    # reported as untracked: a declaration naming work not yet done is not a
+    # defect, and failing on it would make the check unusable at capability
+    # open.
+    return [
+        str(child.relative_to(root))
+        for child in sorted(root.glob(declaration.strip("/")))
+        if child.is_file() and ".git" not in child.parts
+    ]
 
-    Follows `.gitignore` in the three ways that matter: a trailing slash names
-    a directory and covers everything beneath it, a leading slash anchors to
-    the repository root, and a bare name matches at any depth. What it does
-    *not* follow is `fnmatch`'s `*`, which crosses directory separators.
-    """
-    parts = Path(path).parts
-    for pattern in patterns:
-        anchored = pattern.startswith("/")
-        directory = pattern.endswith("/")
-        core = pattern.strip("/")
-        if not core:
-            continue
-        segments = core.split("/")
 
-        if directory and not anchored and len(segments) == 1:
-            # A bare directory name covers everything beneath it, at any depth.
-            if segments[0] in parts[:-1] or path == segments[0]:
-                return True
-            continue
-
-        starts = [0] if anchored or len(segments) > 1 else list(range(len(parts)))
-        for start in starts:
-            window = parts[start : start + len(segments)]
-            if len(window) != len(segments):
-                continue
-            if not all(_segment_match(part, spec) for part, spec in zip(window, segments)):
-                continue
-            covers_rest = directory or start + len(segments) < len(parts)
-            if directory or not covers_rest or start + len(segments) == len(parts):
-                return True
-    return False
+def _ignore_rule(repository: str | Path, path: str) -> str:
+    """Which rule excludes this path, in `git check-ignore -v` form."""
+    # `check-ignore` exits 0 when the path IS ignored and 1 when it is not, so
+    # 1 is this command's documented negative and every other status is a
+    # failure to look.
+    answer = gitread.probe(
+        repository, "check-ignore", "--no-index", "-v", "--", path, negative_statuses=(1,),
+    )
+    if not answer.answered:
+        return f"unknown — git could not be asked ({answer.cause})"
+    if not answer.ok:
+        return "no ignore rule; the path exists but was never added to the index"
+    return answer.value.strip() or "an ignore rule git declined to name"
 
 
 def _staged_additions(repository: str | Path) -> list[str]:
@@ -131,6 +171,7 @@ def classify_workspace(
     *,
     ignored_private: Iterable[str] = (),
     safe_generated: Iterable[str] = DEFAULT_SAFE_GENERATED,
+    must_be_tracked: Iterable[str] = (),
 ) -> WorkspaceReport:
     """Sort every artifact into exactly one bucket and report what blocks closure.
 
@@ -173,6 +214,9 @@ def classify_workspace(
             # nobody has said what it holds.
             report.unknown.append(path)
 
+    report.untracked_requirements = _check_required_tracking(
+        repository, tuple(must_be_tracked), tracked
+    )
     report.whitespace_damage = gitread.whitespace_damage(repository)
     return report
 
@@ -188,15 +232,36 @@ def _cli(argv: list[str]) -> int:
         prog="workspace_report.py",
         description="Classify every artifact in a Git workspace; report unknown artifacts as blocking.",
     )
-    parser.add_argument("repository")
+    parser.add_argument("repository", nargs="?", help="defaults to the contract's project.repo_path")
+    parser.add_argument("--project", help="path to PROJECT.yaml; supplies every declaration below")
     parser.add_argument("--ignore-private", action="append", default=[], metavar="PATTERN")
     parser.add_argument("--safe-generated", action="append", default=[], metavar="PATTERN")
+    parser.add_argument("--must-be-tracked", action="append", default=[], metavar="PATTERN")
     args = parser.parse_args(argv)
 
+    contract = None
+    if args.project:
+        from project_contract import ContractError, ProjectContract
+
+        try:
+            contract = ProjectContract.load(args.project)
+        except ContractError as exc:
+            # Stated, never degraded. A declaration reader that reports an
+            # empty set when it cannot parse its input turns "I could not read
+            # the contract" into "the contract asked for nothing".
+            print(f"CONTRACT UNREADABLE {exc}")
+            return 2
+
+    repository = args.repository or (contract.repository() if contract else None)
+    if not repository:
+        print("a repository is required, either positionally or via --project")
+        return 2
+
     report = classify_workspace(
-        args.repository,
-        ignored_private=args.ignore_private,
-        safe_generated=args.safe_generated,
+        repository,
+        ignored_private=[*(contract.ignore_private if contract else ()), *args.ignore_private],
+        safe_generated=[*(contract.safe_generated if contract else ()), *args.safe_generated],
+        must_be_tracked=[*(contract.must_be_tracked if contract else ()), *args.must_be_tracked],
     )
     print(report.render())
     return 0 if report.clean else 1
