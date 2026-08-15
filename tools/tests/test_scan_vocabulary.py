@@ -54,6 +54,40 @@ def _contract(tmp_path, repo, body=""):
     return path
 
 
+# --- EC-P: one --project invocation reproduces the runner script's verdict ----
+
+def test_the_project_flag_alone_reproduces_a_scan(repo, tmp_path, pack_defaults, capsys):
+    """EC-P's criterion: only `--project`, and the same answer.
+
+    With the contract supplying the repository, the positionals are
+    [REF] [BASELINE]. Getting that wrong bound the ref to `repository` and then
+    refused for want of a ref — the contract was supplying the repo path while
+    the command line was still read as though it were not.
+    """
+    (repo / "a.txt").write_text("ordinary content\n")
+    _git(repo, "add", "a.txt")
+    _git(repo, "commit", "--quiet", "-m", "first")
+
+    contract = tmp_path / "PROJECT.yaml"
+    contract.write_text(
+        f"project:\n  repo_path: {repo}\n"
+        f"private_terms:\n  default_set: {pack_defaults / 'policy' / 'private-terms.default.json'}\n"
+    )
+
+    assert outgoing_scan._cli(["--project", str(contract), "main"]) == 0
+    out = capsys.readouterr().out
+    assert "outgoing range ROOT..main: clean" in out
+    assert "rules applied:" in out
+
+
+def test_an_unreadable_contract_exits_distinctly_rather_than_scanning_nothing(tmp_path, capsys):
+    """Exit 2, not 0. A gate that could not read its rules has not passed."""
+    bad = tmp_path / "PROJECT.yaml"
+    bad.write_text("project:\n  name: a\n   bad_indent: b\n")
+    assert outgoing_scan._cli(["--project", str(bad), "main"]) == 2
+    assert "CONTRACT UNREADABLE" in capsys.readouterr().out
+
+
 # --- EC-M: bare common words must not fire on blob content -------------------
 
 def test_ordinary_prose_containing_a_worker_name_scans_clean_in_a_data_file(repo, tmp_path, pack_defaults):
@@ -282,6 +316,50 @@ def test_the_staged_scan_catches_vocabulary_before_it_becomes_a_commit(repo):
     report = outgoing_scan.scan_staged(repo, scanner=scanner)
     assert not report.clean
     assert any(leak.subject == "test_thing.py" for leak in report.leaks)
+
+
+def test_the_staged_gate_is_strict_where_the_history_gate_is_tiered(repo):
+    """The asymmetry, and the hole it closes.
+
+    Tiering keeps bare common words off committed blob content, because there
+    they found four false positives and no true one, and clearing one cost a
+    history rebuild. But process vocabulary
+    in prose about the work — in a test docstring, say — uses
+    exactly the bare words the tier stops applying.
+
+    So the staged gate applies everything: there a false positive costs one
+    reword before the text is committed, and the expense that justified tiering
+    does not exist.
+    """
+    (repo / "seed.txt").write_text("x\n")
+    _git(repo, "add", "seed.txt")
+    _git(repo, "commit", "--quiet", "-m", "seed")
+
+    (repo / "test_thing.py").write_text('"""Exercises the harness loader."""\n')
+    _git(repo, "add", "test_thing.py")
+
+    identity_only = TermSet.of(terms=["runtime pack"], identity_terms=["harness"])
+
+    strict = outgoing_scan.scan_staged(
+        repo, scanner=outgoing_scan.Scanner(identity_only, strict=True)
+    )
+    assert not strict.clean, "the staged gate must see a bare identity term in content"
+
+    tiered = outgoing_scan.scan_staged(
+        repo, scanner=outgoing_scan.Scanner(identity_only)
+    )
+    assert tiered.clean, "the history tiering must still exclude it, or nothing changed"
+
+
+def test_the_staged_report_says_it_ran_strict(repo):
+    """A stricter run that does not disclose its strictness is unauditable."""
+    (repo / "seed.txt").write_text("x\n")
+    _git(repo, "add", "seed.txt")
+    _git(repo, "commit", "--quiet", "-m", "seed")
+    (repo / "a.py").write_text("ordinary\n")
+    _git(repo, "add", "a.py")
+    scanner = outgoing_scan.Scanner(TermSet.of(terms=["absentword"]), strict=True)
+    assert "strict" in outgoing_scan.scan_staged(repo, scanner=scanner).render()
 
 
 def test_the_staged_scan_reads_the_index_not_the_working_tree(repo):

@@ -96,12 +96,26 @@ CONTENT_LOCATIONS = ("blob",)
 
 
 class Scanner:
-    """Finds every prohibited thing in a piece of text, not the first one."""
+    """Finds every prohibited thing in a piece of text, not the first one.
 
-    __slots__ = ("_terms", "_patterns")
+    ``strict`` applies the identity tier to blob content too. It is for the
+    **staged** gate, and the asymmetry is deliberate: strict where a correction
+    costs one edit, tiered where it costs a commit, a fixup and a rebase.
 
-    def __init__(self, term_set: TermSet) -> None:
+    Without it the tiering has a hole. Process vocabulary
+    reaches prose *about* the work — a test docstring, a
+    repair note, a committed file's own description — and the bare-word forms
+    (`harness`, `envelope`) are exactly what the identity tier stops applying to
+    content. The multi-word forms (`engineering harness`, `worker envelope`)
+    still fire everywhere and carry most of the real signal, but "most" is not
+    the claim to make about a leak gate.
+    """
+
+    __slots__ = ("_terms", "_patterns", "_strict")
+
+    def __init__(self, term_set: TermSet, *, strict: bool = False) -> None:
         self._terms = term_set
+        self._strict = strict
         compiled: dict[str, re.Pattern[str]] = {}
         for pattern_text in (*term_set.patterns, *term_set.identity_patterns):
             try:
@@ -127,7 +141,7 @@ class Scanner:
         if not isinstance(text, str):
             raise TypeError(f"scannable text must be str or bytes, not {type(text).__name__}")
 
-        content_surface = location in CONTENT_LOCATIONS
+        content_surface = location in CONTENT_LOCATIONS and not self._strict
         leaks: list[Leak] = []
         for term, pattern in self._terms.compiled_terms(content_surface=content_surface):
             if pattern.search(text):
@@ -369,10 +383,15 @@ def scan_staged(
     It is deliberately not a hook. A hook is machine configuration outside the
     pack's boundary, it does not travel with the project, and a gate a project
     cannot see is a gate it cannot audit.
+
+    This gate is **strict**: the identity tier applies to staged content as
+    well. Here a false positive costs one reword before the text is committed,
+    so the tiering that protects committed history from noise is not needed and
+    would only reopen the hole it was measured to leave.
     """
     if not isinstance(scanner, Scanner):
         raise TypeError("a staged scan requires a Scanner built from the project's declared terms")
-    report = OutgoingReport(ref="INDEX", baseline="HEAD", vocabulary=scanner.vocabulary.summary())
+    report = OutgoingReport(ref="INDEX", baseline="HEAD", vocabulary=scanner.vocabulary.summary() + ", strict")
     exempt_patterns = tuple(content_exempt_paths)
     exemptions_used: set[str] = set()
 
@@ -436,9 +455,24 @@ def _cli(argv: list[str]) -> int:
 
     contract = None
     if args.project:
-        from project_contract import ProjectContract
+        from project_contract import ContractError, ProjectContract
 
-        contract = ProjectContract.load(args.project)
+        try:
+            contract = ProjectContract.load(args.project)
+        except ContractError as exc:
+            # Stated, and distinctly: exit 2, never 0. A gate that could not
+            # read its own rules has not passed, and this is the one place
+            # where a traceback would be indistinguishable from a crash.
+            print(f"CONTRACT UNREADABLE {exc}")
+            return 2
+        # With `--project` supplying the repository, the positionals are
+        # [REF] [BASELINE] rather than [REPO] [REF] [BASELINE]. Without this
+        # shift `outgoing_scan --project P main` bound "main" to `repository`
+        # and then refused for want of a ref — the contract was supplying the
+        # repo path and the command line was still being read as though it
+        # were not.
+        if args.repository is not None and args.ref is None and contract.repo_path:
+            args.repository, args.ref, args.baseline = None, args.repository, args.baseline
 
     try:
         term_set = _term_set_from_args(args)
@@ -459,7 +493,9 @@ def _cli(argv: list[str]) -> int:
         # file's own description — is otherwise
         # caught at closure, when the remedy costs a commit, a fixup and a
         # rebase. Here the sentence is still being written.
-        report = scan_staged(repository, scanner=scanner, content_exempt_paths=exempt)
+        report = scan_staged(
+            repository, scanner=Scanner(term_set, strict=True), content_exempt_paths=exempt
+        )
         print(report.render())
         return 0 if report.clean else 1
 

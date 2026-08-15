@@ -41,19 +41,20 @@ reports settings and their source, and never concludes from them.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import gitread
-import pathmatch
 
 __all__ = [
     "PublicationReport",
     "RefFinding",
     "DEFAULT_PUBLISHABLE_REFS",
     "FORBIDDEN_PUSH_FORMS",
+    "matches_ref_glob",
     "inspect_namespace",
     "check_push_command",
     "verify_remote",
@@ -101,7 +102,14 @@ class RefFinding:
     refname: str
     reason: str
     identity: str = ""
-    reachable_from_public: bool = False
+    #: Whether this ref's tip is already an ancestor of the public ref. When it
+    #: is, the ref carries no object the public ref does not — it is untidy, not
+    #: dangerous. When it is **not**, the ref holds material outside the
+    #: published graph, which is the case that matters and the one an
+    #: ancestor-shaped question reports in the quieter direction. Naming the
+    #: field for containment rather than "reachability" keeps the alarming
+    #: rendering on the alarming case.
+    contained_in_public: bool = False
 
 
 @dataclass
@@ -130,9 +138,13 @@ class PublicationReport:
             return "\n".join(lines)
         lines = [f"publication namespace {self.repository}: NOT PUBLISHABLE"]
         for finding in self.findings:
-            reach = "REACHABLE FROM THE PUBLIC REF" if finding.reachable_from_public else "not reachable from the public ref"
+            containment = (
+                "already contained in the public ref — untidy, carries no extra object"
+                if finding.contained_in_public
+                else "CARRIES OBJECTS THE PUBLIC REF DOES NOT"
+            )
             lines.append(f"  {finding.refname}: {finding.reason}")
-            lines.append(f"    {reach}{f' · authored by {finding.identity}' if finding.identity else ''}")
+            lines.append(f"    {containment}{f' · authored by {finding.identity}' if finding.identity else ''}")
         for item in self.identity_findings:
             lines.append(f"  identity: {item}")
         for item in self.could_not_check:
@@ -175,20 +187,18 @@ def inspect_namespace(
         # rest of this delta exists to close.
         reason = _classify(name)
         if reason is None:
-            if pathmatch.matches_any(name, publishable):
+            if matches_ref_glob(name, publishable):
                 continue
-            reason = (
-                "outside the declared publishable allowlist, and not a namespace "
-                "this gate recognises"
-            )
+            reason = "outside the declared publishable allowlist"
         identity = f"{entry['authorname']} {entry['authoremail']}".strip()
         try:
-            reachable = gitread.is_ancestor(repository, entry["objectname"], public_ref)
+            contained = gitread.is_ancestor(repository, entry["objectname"], public_ref)
         except Exception:
-            # An unreachable answer is not "not reachable". Say so.
+            # Not knowing is not "not contained". An unanswerable ancestry
+            # question must not render as the reassuring answer.
             report.could_not_check.append(f"ancestry of {name} against {public_ref}")
-            reachable = False
-        report.findings.append(RefFinding(name, reason, identity, reachable))
+            contained = False
+        report.findings.append(RefFinding(name, reason, identity, contained))
 
     if human_identities:
         report.identity_findings.extend(
@@ -197,6 +207,21 @@ def inspect_namespace(
 
     report.config_notes.extend(_config_notes(repository, report))
     return report
+
+
+def matches_ref_glob(refname: str, globs: tuple[str, ...]) -> bool:
+    """Whether a refname matches a declared ref glob, under **git's** semantics.
+
+    Not `pathmatch`. A refname is not a filesystem path, and the difference is
+    load-bearing: in a git refspec `*` crosses `/`, so `refs/heads/*` covers
+    `refs/heads/feature/x` — which is exactly what a push with that refspec
+    would carry. Borrowing the gitignore matcher here would report every nested
+    feature branch as an unrecognised namespace, which is both wrong and noisy
+    enough to train a reader past the findings that matter.
+
+    A project that publishes only one branch says so: `["refs/heads/main"]`.
+    """
+    return any(fnmatch.fnmatchcase(refname, glob) for glob in globs)
 
 
 def _classify(refname: str) -> str | None:
@@ -282,7 +307,7 @@ def check_push_command(command: str, *, publishable_branches: tuple[str, ...] = 
     if publishable_branches:
         for spec in explicit:
             source = spec.split(":", 1)[0]
-            if not pathmatch.matches_any(source, publishable_branches):
+            if not matches_ref_glob(source, publishable_branches):
                 problems.append(f"{source} is not a declared publishable ref")
     return problems
 

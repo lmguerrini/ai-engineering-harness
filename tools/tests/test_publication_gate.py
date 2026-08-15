@@ -106,7 +106,30 @@ def test_an_unrecognised_namespace_is_reported_rather_than_ignored(repo):
     _git(repo, "update-ref", "refs/inventedbysomeone/x", "HEAD")
     report = inspect_namespace(repo, public_ref="refs/heads/main")
     finding = next(f for f in report.findings if f.refname == "refs/inventedbysomeone/x")
-    assert "not a namespace this gate recognises" in finding.reason
+    assert "outside the declared publishable allowlist" in finding.reason
+
+
+def test_a_nested_feature_branch_is_covered_by_the_branch_glob(repo):
+    """Ref globs follow git, not gitignore.
+
+    In a refspec `*` crosses `/`, so `refs/heads/*` covers
+    `refs/heads/feature/x` — which is what a push with that refspec would
+    actually carry. Borrowing the filesystem path matcher would report every nested
+    branch as an unrecognised namespace: wrong, and noisy enough to train a
+    reader straight past the findings that matter.
+    """
+    _git(repo, "branch", "feature/example-feature")
+    report = inspect_namespace(repo, public_ref="refs/heads/main")
+    assert all("feature/example-feature" not in f.refname for f in report.findings)
+
+
+def test_a_project_publishing_one_branch_still_flags_the_others(repo):
+    """The narrower declaration must remain expressible."""
+    _git(repo, "branch", "feature/example-feature")
+    report = inspect_namespace(
+        repo, public_ref="refs/heads/main", publishable=("refs/heads/main",)
+    )
+    assert any(f.refname == "refs/heads/feature/example-feature" for f in report.findings)
 
 
 def test_the_allowlist_is_a_declaration_not_a_hardcoded_set(repo):
@@ -118,13 +141,31 @@ def test_the_allowlist_is_a_declaration_not_a_hardcoded_set(repo):
     assert any(f.refname == "refs/heads/integration" for f in report.findings)
 
 
-def test_reachability_from_the_public_ref_is_measured_not_assumed(repo):
-    """Safety never rests on how notes refs 'normally' behave."""
+def test_containment_is_measured_not_assumed_and_the_alarm_lands_on_the_alarming_case(repo):
+    """Safety never rests on how notes refs 'normally' behave — and the
+    rendering must shout at the ref that carries extra objects, not at the one
+    that does not.
+
+    Rendering `REACHABLE FROM THE PUBLIC REF` in capitals and `not reachable`
+    in lower case would invert the emphasis: a ref already contained in the
+    public ref adds no object to the push, and a ref outside it is the one
+    holding material nobody reviewed.
+    """
     _add_notes_ref(repo)
-    report = inspect_namespace(repo, public_ref="refs/heads/main")
-    finding = next(f for f in report.findings if f.refname == "refs/notes/chatter")
-    assert finding.reachable_from_public is False
-    assert "not reachable from the public ref" in report.render()
+    _git(repo, "branch", "merged-already")
+    report = inspect_namespace(
+        repo, public_ref="refs/heads/main", publishable=("refs/heads/main",)
+    )
+
+    notes = next(f for f in report.findings if f.refname == "refs/notes/chatter")
+    assert notes.contained_in_public is False
+
+    merged = next(f for f in report.findings if f.refname == "refs/heads/merged-already")
+    assert merged.contained_in_public is True
+
+    rendered = report.render()
+    assert "CARRIES OBJECTS THE PUBLIC REF DOES NOT" in rendered
+    assert "already contained in the public ref" in rendered
 
 
 # --- authorship --------------------------------------------------------------

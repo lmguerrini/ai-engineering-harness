@@ -534,7 +534,7 @@ def _cli(argv: list[str]) -> int:
         term_set = _term_set_from_args(args)
     except Exception as exc:  # ContractError and friends: state it, never degrade
         print(f"CONTRACT UNREADABLE {exc}")
-        return 2
+        return 2  # distinct from 1: could-not-check is not a clean verdict
 
     print(f"vocabulary: {term_set.summary()}")
 
