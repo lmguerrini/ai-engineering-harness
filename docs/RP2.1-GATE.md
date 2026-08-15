@@ -4,12 +4,12 @@
 execution. Every claim below was re-run before it counted.
 
 Baseline at the start of this pass: VERSION `2.0.0`, HEAD `0ec6726`, **98 tests
-passing**. Final: **167 tests passing**, +69.
+passing**. Final: **175 tests passing**, +77.
 
 | # | Gate condition | Result | Evidence |
 |---|---|---|---|
-| 1 | All tests green | GREEN | `python3 -m pytest tools/tests/ -q` → **167 passed**, coordinator-re-executed |
-| 2 | Every tool standalone | GREEN | all 9 tools run `--help` and execute from `/tmp` |
+| 1 | All tests green | GREEN | `python3 -m pytest tools/tests/ -q` → **175 passed**, coordinator-re-executed, and again from a fresh `git clone` into `/tmp` |
+| 2 | Every tool standalone | GREEN | all 10 tools run `--help` and execute from `/tmp` |
 | 3 | Tool imports contained | GREEN | own AST check over `tools/*.py`: stdlib + `tools/` siblings only. **VIOLATIONS: none.** PyYAML is present on this host and deliberately **not** used (D3) |
 | 4 | No stateful authority reintroduced | GREEN | `publication_gate` and `project_contract` are a checker and a reader; no state held and adjudicated in one component |
 | 5 | No Git write verbs added | GREEN | the four new `gitread` verbs are `for-each-ref`, `config --list`, `merge-base --is-ancestor`, `rev-list`, plus `ls-files --stage`. All read |
@@ -20,6 +20,9 @@ passing**. Final: **167 tests passing**, +69.
 | 10 | Idempotency | GREEN | repeated invocations byte-identical; every tool is a pure function of repository state |
 | 11 | Held prose within budget | **QUALIFIED — 10% over, recorded** | see below |
 | 12 | Candidate-inbox separation preserved | GREEN | the pack was read-only during the project; every change here entered through this evolution pass |
+| 13 | Exact version / SHA / manifest pinning | GREEN | `pack_pin.py . --version 2.1.0 --sha <HEAD>` → **verified**; breaks on a changed, added or renamed file and on a wrong revision |
+| 14 | The pack's own ref namespace | GREEN | `refs/heads/main` only. No remote, no tag, nothing pushed (D5) |
+| 15 | Derived views are not authority | GREEN | `routing-table.md` regenerated wholesale from all 19 observations, never patched |
 
 ## Gate 7 — the publication gate, executed
 
@@ -39,8 +42,25 @@ its tests.**
    Renamed to containment and re-rendered.
 
 Both repaired, both now carry a falsification test. Neither was reachable from
-the test suite as written, because both tests and implementation shared the
-author's assumption about what the fixture looked like.
+the test suite as written, because tests and implementation shared the author's
+assumption about what the fixture would look like.
+
+**A third defect was found in the manifest, by trying to verify it.** The digest
+was computed over 81 tracked files and the manifest then became the 82nd, so
+recomputing it produced a different value permanently — the pin was unverifiable
+from the moment it was committed, and would have been believed. Same shape as
+EC-AD: the record was written by different code than any code that would check
+it. Fixed by excluding the manifest from its own digest, recording that
+exclusion inside it, dropping the self-referential `sha` field entirely (a
+manifest cannot name the commit that contains it — the *consumer* pins the
+revision), and shipping `tools/pack_pin.py` so one function serves both writing
+and verifying. Eight falsification tests.
+
+**All three qualification findings were in this pass's own work, and all three
+came from executing it rather than from reading it.** Two came from running the
+gate; one from asking whether a recorded digest
+could be recomputed. That is the pack's own central claim about green meaning
+"no known defect", reproduced on the pack for a third wave running.
 
 ## Gate 8 — commit-convention drift
 
@@ -102,7 +122,7 @@ number.
 ## Budgets consumed
 
     implementation passes                1 of 1
-    qualification repair passes          1 of 1
+    qualification repair passes          1 of 1  (3 findings, all in this pass's own work)
     final verification pass              1 of 1
     HITL stops                           0  (none genuine; none false)
 
