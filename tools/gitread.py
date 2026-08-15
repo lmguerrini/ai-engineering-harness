@@ -33,6 +33,11 @@ __all__ = [
     "whitespace_damage",
     "objects_in_outgoing_range",
     "paths_in_outgoing_range",
+    "staged_entries",
+    "refs",
+    "config_with_origin",
+    "is_ancestor",
+    "reachable_objects",
     "object_type",
     "object_size",
     "object_bytes",
@@ -389,6 +394,143 @@ def paths_in_outgoing_range(
             "--diff-filter=ACMRT", baseline, ref, timeout=timeout,
         )
     return [line for line in str(output).splitlines() if line]
+
+
+def staged_entries(
+    repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+) -> list[tuple[str, str]]:
+    """``(path, blob_sha)`` for everything the index adds or modifies.
+
+    Read from `ls-files --stage` rather than from the working tree: what a
+    commit will contain is what the index holds, and the two differ precisely
+    when a file was edited after being staged — which is the case where reading
+    the wrong one produces a gate that passed on text nobody is committing.
+
+    Deletions carry no blob and are not listed: there is no content to scan.
+    """
+    changed = _run(
+        repository, "diff", "--no-ext-diff", "--cached", "--name-only",
+        "--diff-filter=ACMR", "-z", timeout=timeout, text=False,
+    )
+    assert isinstance(changed, bytes)
+    paths = [item.decode("utf-8", "surrogateescape") for item in changed.split(b"\x00") if item]
+    if not paths:
+        return []
+
+    listing = _run(repository, "ls-files", "--stage", "-z", "--", *paths, timeout=timeout, text=False)
+    assert isinstance(listing, bytes)
+    entries: list[tuple[str, str]] = []
+    for record in listing.split(b"\x00"):
+        if not record:
+            continue
+        metadata, separator, path = record.partition(b"\t")
+        if not separator:
+            continue
+        fields = metadata.split()
+        if len(fields) < 3:
+            continue
+        if fields[2] != b"0":
+            # A non-zero stage is an unresolved merge conflict. Scanning one
+            # side of it would report on text that is not what gets committed.
+            raise GitRefusal(
+                "the index holds an unmerged path; resolve the conflict before scanning",
+                path=path.decode("utf-8", "surrogateescape"),
+            )
+        entries.append((path.decode("utf-8", "surrogateescape"), fields[1].decode("ascii")))
+    return entries
+
+
+def refs(repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> list[dict[str, str]]:
+    """Every ref in the repository, with its target and the identity behind it.
+
+    `git log`, `git status`, `git ls-files`, `git diff` and `git show` all read
+    the *branch history*. None of them can see `refs/notes/*`, and a repository
+    can therefore carry machine-readable AI-contribution attribution, private
+    session identifiers and non-human committer identities while every one of
+    those commands reports clean. That is not hypothetical: it was found in a
+    real repository.
+
+    So publication safety needs the *namespace*, which is what this returns.
+    """
+    output = _run(
+        repository, "for-each-ref",
+        "--format=%(refname)%09%(objectname)%09%(objecttype)%09%(authorname)%09%(authoremail)",
+        timeout=timeout,
+    )
+    found: list[dict[str, str]] = []
+    for line in str(output).splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        while len(fields) < 5:
+            fields.append("")
+        found.append({
+            "refname": fields[0], "objectname": fields[1], "objecttype": fields[2],
+            "authorname": fields[3], "authoremail": fields[4],
+        })
+    return found
+
+
+def config_with_origin(
+    repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+) -> list[dict[str, str]]:
+    """Every config setting **with the file it came from**.
+
+    Values alone cannot answer the question that matters — whether a setting is
+    the user's global preference or something written into this repository's
+    own `.git/config` by a process that was not the user. A forensic pass
+    depended on exactly that distinction, and a reader that returns values only
+    forces the reader to guess.
+    """
+    # `config --list` exits 1 when there is nothing to list, which is an
+    # ordinary negative; anything else means nobody looked.
+    answer = probe(
+        repository, "config", "--list", "--show-origin", "--null",
+        timeout=timeout, negative_statuses=(1,),
+    )
+    if not answer.answered:
+        raise GitRefusal("could not read git configuration", cause=answer.cause)
+    if not answer.ok:
+        return []
+    # Under `--null`, git emits `<origin>\0<key>\n<value>\0` — the origin is
+    # its own NUL-terminated record, and key and value are newline-separated.
+    # A value may itself contain newlines, so only the first one splits.
+    records = [record for record in answer.value.split("\x00") if record]
+    entries: list[dict[str, str]] = []
+    for index in range(0, len(records) - 1, 2):
+        origin = records[index]
+        key, _, value = records[index + 1].partition("\n")
+        entries.append({"origin": origin, "key": key, "value": value})
+    return entries
+
+
+def is_ancestor(
+    repository: str | Path, candidate: str, descendant: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+) -> bool:
+    """Whether ``candidate`` is reachable from ``descendant``.
+
+    Asked explicitly rather than inferred from how notes refs normally behave.
+    "Normally" is not a safety property.
+    """
+    # `merge-base --is-ancestor` exits 0 for yes and 1 for no. A 128 means the
+    # revision does not resolve, which is not an answer.
+    answer = probe(
+        repository, "merge-base", "--is-ancestor", candidate, descendant,
+        timeout=timeout, negative_statuses=(1,),
+    )
+    if not answer.answered:
+        raise GitRefusal("could not test ancestry", cause=answer.cause)
+    return answer.ok
+
+
+def reachable_objects(
+    repository: str | Path, *revisions: str, timeout: float = DEFAULT_TIMEOUT_SECONDS
+) -> set[str]:
+    """Every object reachable from the given revisions."""
+    if not revisions:
+        return set()
+    output = _run(repository, "rev-list", "--objects", "--no-object-names", *revisions, timeout=timeout)
+    return {line.strip() for line in str(output).splitlines() if line.strip()}
 
 
 def object_type(repository: str | Path, sha: str, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> str:
