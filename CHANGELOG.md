@@ -1,5 +1,52 @@
 # Changelog
 
+## 2.1.0 — evidence consolidation from the completed Pilot Run Project
+
+The first evolution pass driven by a **finished real project** rather than by a
+fixture. Its 32 recorded candidates were re-verified against pack source before
+any was adopted (`docs/RP2.1-DELTA-AUDIT.md`); the gate is `docs/RP2.1-GATE.md`.
+Tests **98 → 167**.
+
+- **Publication is now a ref-namespace contract** (`tools/publication_gate.py`).
+  A repository can pass every authorship check while carrying AI attribution and
+  session identifiers in `refs/notes/*`, invisible to `git log`, `git status`,
+  `git ls-files`, `git diff` and `git show`. Safety rests on an allowed source
+  ref **+** containment **+** an exact push refspec **+** a remote postcondition
+  verified after, all in the same step as the push — because a writer of
+  such refs can re-create them in under a minute and rewrite
+  `.git/config` between sessions.
+- **The contract is read once, not retyped per gate** (`tools/project_contract.py`,
+  `--project`). A scan invoked with a project's own terms used to apply *none* of
+  the 59 default rules and print `clean`. The reader fails loud on every parse
+  problem: an unreadable declaration must never reach a gate as an empty one.
+- **The private vocabulary is tiered.** Measured on the real corpus: the flat
+  RP2.0 set produced **102 findings, zero true positives**; the tiered set
+  produces **0, with no content exemption at all**. Bare common words (`claude` matching Jean-Claude
+  Martin, `terra` matching Italian for "ground") apply where a person writes
+  deliberately, not to blob content. The staged gate stays strict, closing the
+  hole tiering would otherwise leave.
+- **One path semantics** (`tools/pathmatch.py`). `content_exempt` used `fnmatch`
+  while the template documented gitignore, so `annotations/` matched nothing and
+  said so nowhere. A declaration matching no path is now reported as such.
+- **Commit-convention drift is detectable** (`commit_gate --range`): the whole
+  range is checked, not only the newest message.
+- **Permission, capability and qualification are three claims**, not one. A local
+  family validated for mechanical extraction is recorded `contradicted` for
+  analytical review. `AUDIT_PRIMARY` and `READER` move to `confirmed`; five Pilot
+  Run dispatches join `observations.jsonl` (14 → 19).
+- **Fan-out carries a recorded estimate, cost-versus-value and runway check.** A
+  standing opt-in once turned a bounded 52-item task into ~156 executions and
+  exhausted the runway without finishing it.
+- Also: `must_be_tracked` (a global ignore rule nearly dropped a project's
+  central artifact silently), the amend trap named where the remedy is chosen,
+  the read-only durable-output contradiction resolved, no worktree for read-only
+  reviewers, and the bootstrap's stale path and 7-vs-8-column trap corrected.
+
+**Known limitation:** held prose is 2,204 lines against a ~2,000 target — 10%
+over, recorded rather than shaved. Next cuts named in `docs/RP2.1-GATE.md`.
+
+**Deferred:** EC-O, EC-T, each with a trigger. **Rejected for Core:** EC-Z.
+
 ## 2.0.0 — Wave A + Wave B complete, ready for a real project
 
 Wave A built the pack; Wave B proved it by taking a disposable fixture project

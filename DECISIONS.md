@@ -88,3 +88,77 @@ Recorded here so a fresh coordinator does not re-ask (audit §12 open decisions
 7. Local model (Qwen): **not on the critical path**; one bounded non-blocking
    probe only if it does not delay Wave A/B.
 8. HITL question cadence: **batched at capability boundaries**.
+
+---
+
+## D7 — publication safety is a ref-namespace contract, not a history check (RP2.1)
+
+The pack asserted nothing about a repository's ref namespace. A repository can
+pass every authorship check of its branch history — one author, no
+trailers anywhere — while carrying AI contribution attribution,
+private orchestration identities and session identifiers in `refs/notes/*`,
+which `git log`, `git status`, `git ls-files`, `git diff` and `git show` cannot
+see. Those five were the whole hygiene surface.
+
+**Decided.** Safety derives from an allowed source ref **+** containment **+** an
+exact push refspec **+** a remote postcondition verified after, evaluated in the
+same step as the push — never from the namespace being clean at an earlier
+instant. A notes-ref writer can re-create deleted refs within seconds, survive
+history rewriting and rewrite repository-local `.git/config` between sessions;
+IDE and provenance services are named as a class of external `.git` mutator.
+
+**Evidence.** EC-R, EC-AF, and a live re-verification during this pass against
+a real repository.
+**Reverses on:** nothing short of a push form structurally safe against an
+arbitrary namespace — which the single-refspec rule already is.
+
+---
+
+## D8 — permission, capability and qualification are three claims (RP2.1)
+
+`read-only` was doing two jobs: describing what a worker *may* do, and being read
+as what it *can* do. A local family validated for mechanical extraction against
+AST-frozen ground truth was dispatched on analytical code review and produced
+zero substantiated findings of seven asserted and then self-retracted.
+
+**Decided.** The routing table grades per task class; `EXTRACT` and `REVIEW` are
+separate rows; availability is never qualification. A worker qualified at one
+class is `unprobed` at the other.
+**Evidence.** EC-W, and the measured run now in `observations.jsonl`.
+**Reverses on:** a family demonstrating hypothesis-*discarding* on a real review
+task. One observation is one observation in that direction too.
+
+---
+
+## D9 — the private vocabulary is tiered by surface (RP2.1)
+
+**Decided.** Distinctive multi-word terms apply to every surface; bare common
+words apply only where a person writes deliberately — commit messages, ref and
+tag names, identities, paths — and not to blob content. The **staged** gate is
+exempt from the tiering and applies everything.
+
+**Evidence.** On the real corpus the flat set produced 102 findings and zero true
+positives; the tiered set produces zero with no content exemption at
+all. The staged-gate exception exists because
+tiering otherwise reopens a hole — process vocabulary in prose *about*
+the work, the bare-word forms being exactly what the tier stops
+matching. Strict where a reword is cheap; tiered where the remedy is a rebuild.
+**Reverses on:** a true positive in blob content that only a bare common word
+would have caught — which would mean the multi-word forms are too narrow, not
+that the tiering is wrong.
+
+---
+
+## D10 — the project contract is the single source for every gate (RP2.1)
+
+**Decided.** `commit_gate`, `outgoing_scan`, `workspace_report` and
+`publication_gate` accept `--project` and read their own declarations.
+`--term` / `--pattern` / `--exempt` remain and are **additive**. The reader
+raises on every parse problem and the CLIs exit **2**, distinct from a clean 0.
+
+**Evidence.** EC-H and EC-P: the same scanner over the same range reported
+`clean (5 commits, 17 blobs)` and `7 leak(s)` depending on whether the caller
+remembered the defaults, and nothing in the first report disclosed that 59 rules
+were absent. Every report now states the rule counts it applied.
+**Reverses on:** nothing. A verdict that depends on flags a human retyped is a
+verdict obtainable twice with different answers.
