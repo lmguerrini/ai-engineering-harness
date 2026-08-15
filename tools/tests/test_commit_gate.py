@@ -137,3 +137,86 @@ def test_real_prose_after_bullets_is_still_refused():
     bad = GOOD + "\nThis trailing paragraph is real content.\n"
     codes = [v.rule for v in commit_gate.validate_message(bad, commit_gate.NO_PRIVATE_TERMS)]
     assert "EXTRA_CONTENT" in codes
+
+
+# --- the range gate: drift across a branch ----------------------------------
+#
+# `validate_range` shipped in 2.1.0 with **no test at all**,
+# although the drift it detects — a convention that breaks once and never
+# recovers — is easy to construct. A permanent regression test is cheap here
+# because the property is deterministic: build a branch whose drift point is
+# known, and assert the gate names exactly that point.
+
+
+def _git(repo, *args):
+    subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True, check=True)
+
+
+@pytest.fixture
+def drifting_history(tmp_path):
+    """Five conforming commits, then three that drift, in that order."""
+    repo = tmp_path / "history"
+    repo.mkdir()
+    _git(repo, "init", "--quiet", "--initial-branch", "main")
+    _git(repo, "config", "user.name", "Ordinary Human")
+    _git(repo, "config", "user.email", "human@example.invalid")
+    _git(repo, "config", "commit.gpgsign", "false")
+
+    conforming, drifting = [], []
+    for index in range(8):
+        (repo / f"f{index}.txt").write_text(f"{index}\n")
+        _git(repo, "add", f"f{index}.txt")
+        if index < 5:
+            message = _message("first outcome", "second outcome", title=f"Add file number {index}")
+        else:
+            message = f"wip {index}\n"
+        _git(repo, "commit", "--quiet", "-m", message)
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True, check=True
+        ).stdout.strip()
+        (conforming if index < 5 else drifting).append(sha)
+    return repo, conforming, drifting
+
+
+def test_a_range_reports_exactly_the_commits_that_drifted(drifting_history):
+    repo, conforming, drifting = drifting_history
+    failures = commit_gate.validate_range(str(repo), "refs/heads/main", None, commit_gate.NO_PRIVATE_TERMS)
+
+    reported = {sha for sha, _ in failures}
+    assert reported == set(drifting)
+    assert reported.isdisjoint(conforming)
+    assert all(violations for _, violations in failures)
+
+
+def test_a_range_of_conforming_commits_is_clean(drifting_history):
+    """The drift point is a boundary, so the clean side is asserted too."""
+    repo, conforming, _ = drifting_history
+    failures = commit_gate.validate_range(
+        str(repo), conforming[-1], None, commit_gate.NO_PRIVATE_TERMS
+    )
+    assert failures == []
+
+
+def test_a_baseline_excludes_history_before_it(drifting_history):
+    """Range drift is asked about an unpublished segment, not all of history."""
+    repo, conforming, drifting = drifting_history
+    failures = commit_gate.validate_range(
+        str(repo), "refs/heads/main", conforming[-1], commit_gate.NO_PRIVATE_TERMS
+    )
+    assert {sha for sha, _ in failures} == set(drifting)
+
+
+def test_the_single_message_gate_cannot_see_range_drift(drifting_history):
+    """Why the range surface exists, stated as a test rather than as a comment.
+
+    Every one of those commits passed a gate at the moment it was made — the
+    check runs before staging and on read-back, and then nothing ever re-reads
+    the message again.
+    """
+    repo, _, drifting = drifting_history
+    import gitread
+
+    drifted = gitread.commit_message(str(repo), drifting[0])
+    assert commit_gate.validate_message(drifted, commit_gate.NO_PRIVATE_TERMS)
+    failures = commit_gate.validate_range(str(repo), drifting[0], None, commit_gate.NO_PRIVATE_TERMS)
+    assert failures, "the range surface is the only one that re-reads a committed message"

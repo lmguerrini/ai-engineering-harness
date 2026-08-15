@@ -14,11 +14,24 @@ capability exists until the official specification is read.
 
 Confirm on disk, do not assume:
 
-- [ ] `runtime-pack-2/VERSION` is the pack version this project will pin.
-- [ ] Wave-B gate recorded green in `runtime-pack-2/docs/WAVE-B-GATE.md`, and
-      the most recent gate record in `runtime-pack-2/docs/` alongside it.
+- [ ] `runtime-pack-2/VERSION` is the pack version this project will pin, and
+      `PACK_MANIFEST.json` declares `state: QUALIFIED_AND_FROZEN`.
+- [ ] The pin **verifies**, all three fields at once — not read, run:
+
+      ```bash
+      python3 <pack_root>/tools/pack_pin.py <pack_root> \
+          --version <VERSION> --sha <full 40-char HEAD> \
+          --digest <tree_digest_sha256> --state QUALIFIED_AND_FROZEN
+      ```
+
+- [ ] The gate record named by the manifest exists in `runtime-pack-2/docs/`.
 - [ ] `tools/` tests pass at the exact pack HEAD.
 - [ ] No project pins Kernel `042c1b9`. It is a frozen evidence archive.
+
+Record all three pin fields in `PROJECT.yaml` `pack:`. Another project may be
+pinned to this same release right now — that is supported and requires nothing
+from either of them, because the release is read-only and no project state
+lives inside it.
 
 ## Step 1 — Transcribe requirements verbatim, before decomposing
 
@@ -129,7 +142,12 @@ Everything else gets the routine path.
 
 ## Step 6 — Run the loop
 
-Per `~/.claude/skills/capability-closure/SKILL.md`. Nothing here overrides it.
+Driven by the installed closure skill (`~/.claude/skills/capability-closure/`),
+which is an **adapter, not an authority**. It lives outside the pinned release,
+is covered by no digest, and can change under a running project without any pin
+noticing. Where it and the pinned pack disagree, **the pinned pack wins**; a
+project that genuinely needs an external skill to be normative pins and verifies
+it under its own dependency contract, exactly as it pins the pack.
 
 ## Step 7 — Project close
 

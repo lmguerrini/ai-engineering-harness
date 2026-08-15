@@ -95,6 +95,15 @@ whatever the namespace holds at that instant. The full sequence, including the
 bounded stop-clean-publish-verify-resume mode for a live writer, is
 `templates/publication-gate.template.md`.
 
+**A filesystem immutable flag is not a control against a live writer.** Making
+`.git` or a ref file immutable (`chflags uchg` and its equivalents) looks like a
+lock and is not one: the writer is a separate live process that can clear the
+flag, recreate the path, or write before the flag is set, and a coordinator that
+sets one has bought a belief rather than a guarantee. The same applies to any
+in-repository control against an out-of-repository mutator. The guarantee stays
+where it is checkable — **ref namespace + reachability + exact refspec + remote
+postcondition** — and stopping the writer stays a human step (`hitl-matrix.md`).
+
 **Never infer causation from configuration correlation.** Two sessions
 identified the writer from `notes.rewrite*` settings that plausibly explained
 the behaviour; an intervention test falsified it, the refs reappearing

@@ -1,4 +1,4 @@
-# Frozen budgets — Runtime Pack 2.0
+# Frozen budgets
 
 **Frozen 2026-08-13, before Wave A execution.** Owner-approved defaults from the
 governing prompt §3 and the architecture audit §3.0.5 / §11. These are counters,
@@ -35,9 +35,16 @@ session. Templates, worked examples, and reference material are excluded because
 they are pulled on demand, not held.
 
     Target: <= 2,000 lines
-    Counted: skills/core/*.md + policy/*.md
-             + ~/.claude/skills/capability-closure/SKILL.md
-             + ~/.claude/skills/codex-worker/SKILL.md
+    Counted: skills/core/*.md + policy/*.md               <- inside the release
+             + ~/.claude/skills/capability-closure/SKILL.md   <- adapters,
+             + ~/.claude/skills/codex-worker/SKILL.md            outside it
+
+The rule is unchanged, and the split is recorded rather than used to re-scope
+the number: the two installed skills are loaded every session, so they count.
+They are also **adapters, not authority** — outside the pinned release, covered
+by no digest, and changeable without a pin noticing. So the pack can *measure*
+them and cannot *freeze* them, and the measurement states both figures. Where an
+adapter and the pinned pack disagree, the pinned pack wins.
 
 **`policy/` holds what governs; `docs/` holds what happened.** Gate records, wave
 results, audit and probe outcomes are read once, not held, so they live in
@@ -52,8 +59,16 @@ divided by total session tokens, measured per capability closure.
     Target: <= 15%
 
 **On breach of either: delete before adding.** Measured at every capability
-closure and at every pack-evolution session. Recorded in
-`policy/overhead-measurements.md`.
+closure and at every pack-evolution session.
+
+**Recorded in the measuring project's own `PROGRESS.md`**, never in a shared
+file here. A per-project measurement written into the pack would be one mutable
+file several concurrently-pinned projects wrote to — which breaks the pin (a
+frozen release does not change during a run) and pools numbers from unrelated
+work. RP2.1.0 pointed at `policy/overhead-measurements.md`, which never existed;
+a pointer to a file nobody creates records nothing and reads as if it did. The
+pack's own evolution sessions record theirs in the gate record for the version
+they cut.
 
 ## Pack-construction cap
 

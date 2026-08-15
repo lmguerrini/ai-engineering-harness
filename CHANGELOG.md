@@ -1,5 +1,87 @@
 # Changelog
 
+## 2.1.1 — release integrity: the checks now mean what they said
+
+A **PATCH** release (`DECISIONS.md` D11): backward-compatible fixes, metadata
+corrections, and enforcement of guarantees 2.1.0 already promised. No new
+capability, no architecture change, no contract migration. An independent
+cross-vendor audit returned NOT_READY on 2.1.0's release integrity; every
+finding below was **reproduced by execution before it was repaired**, and every
+repaired guarantee carries a falsification test that fails against the old
+behaviour. Tests **175 → 237**. Gate: `docs/RP2.1.1-GATE.md`.
+
+- **`pack_pin.py` verified less than the sentence it printed.** Six ways, each
+  reproduced: a **one-character** `--sha` passed, because the comparison was
+  `startswith`; `PACK_MANIFEST.json` could claim any version, because nothing
+  compared it to `VERSION`; an untracked non-ignored file sat in the checkout
+  unmentioned; the digest concatenated path and content unframed, so path `ab` +
+  content `c` and path `a` + content `bc` hash identically; tracked paths were
+  split on whitespace, so a committed `a file.md` became two absent entries; and
+  every other manifest field — test count, gate record, state — was outside the
+  digest by design and checked by nothing. Now: full-SHA equality, NUL-safe
+  enumeration, length-framed digest, `VERSION` as the compared authority,
+  untracked files refused, manifest metadata validated, and `--digest`/`--state`
+  pins. A checker that passes for a reason weaker than its message is worse than
+  no checker, because it is believed.
+- **The push form was a blacklist, and passed everything its author did not
+  think of.** `git push origin refs/heads/main:refs/heads/main` was the only
+  supported form; the check accepted `git log refs/heads/main:refs/heads/main`
+  (any command at all, given a refspec-shaped token — `rm -rf /` included), a
+  second refspec beside the first, a destination different from the source, an
+  undeclared remote, and a trailing `--receive-pack=…`. Each rendered as "an
+  explicit single-branch refspec, which cannot carry refs/notes/\*" — a sentence
+  about a command that was not being run. Replaced by a whitelist of the one
+  shape. **The remote postcondition was also blind:** the CLI passed an empty
+  expected revision, so it asked only whether a ref of that name existed, which
+  a remote stuck on an older commit answers yes to. An expectation with no
+  revision is now refused, and the CLI resolves the local ref itself.
+- **No contract may forbid and require the same act.** `audit-strategy.md` and
+  the audit brief told a read-only reviewer to write findings to a file — the
+  failure that lost a repository-wide evidence sweep to a 315-byte apology. The
+  brief now states the capture channel **once**: final message when read-only,
+  a named file when write permission exists. A reviewer never creates its own
+  branch, ref or worktree; where a pinned revision is genuinely needed, the
+  **coordinator** prepares the snapshot before dispatch.
+- **A filesystem immutable flag is not a control against a live writer**
+  (EC-U, adopted in 2.1.0 and silently never implemented). `chflags uchg` and
+  its equivalents look like a lock and are not one. The guarantee stays where it
+  is checkable: ref namespace + reachability + exact refspec + remote
+  postcondition.
+- **One grade authority.** `policy/auditor-strategy.md` still asserted both
+  audit roles `unprobed` after the Pilot Run moved both to `confirmed`. The
+  duplicated grade is deleted; the regenerated `routing-table.md` is the single
+  authority.
+- **A project pin is now checkable.** `PROJECT.yaml` records version **+** full
+  revision **+** digest **+** state, not a version label. Several projects may
+  pin one frozen release concurrently, or different qualified releases; a frozen
+  release never mutates during a run; project state never enters the pack
+  (`DECISIONS.md` D13).
+- **Installed skills are adapters, not authority** (`DECISIONS.md` D12), and
+  per-project overhead is recorded in that project's `PROGRESS.md` — 2.1.0
+  pointed at `policy/overhead-measurements.md`, a file that never existed.
+- Also: a release-integrity test that reads the **real repository** rather than
+  a fixture, the first permanent regression test for `commit_gate --range`, a
+  repository tree in `README.md` derived from `git ls-files`, and stated
+  PATCH/MINOR/MAJOR semantics.
+
+### Errata against 2.1.0, as recorded rather than as corrected in place
+
+The 2.1.0 entry and manifest below are **wrong on two counts**, left standing so
+the drift stays visible:
+
+- **Tests: 98 → 175, not 98 → 167.** The suite collected and passed 175 at the
+  2.1.0 gate, and `docs/RP2.1-GATE.md` records 175 throughout. The CHANGELOG and
+  `PACK_MANIFEST.json` figure was never re-read against collection.
+- **Held prose: 2,256 lines, not 2,204.** Recounted under the rule
+  `policy/BUDGETS.md` declares, unchanged. 12.8% over the ~2,000 target rather
+  than 10.2% — still recorded rather than shaved, and 997 of those lines are the
+  two installed adapters, which sit outside the release envelope.
+
+`README.md` also still said "Runtime Pack 2.0" under `VERSION` 2.1.0.
+`docs/RP2.1-GATE.md` and `docs/RP2.1-DELTA-AUDIT.md` are **left exactly as
+written** — a gate record describes the pass that produced it, and correcting
+one after the fact destroys the evidence that the drift happened.
+
 ## 2.1.0 — evidence consolidation from the completed Pilot Run Project
 
 The first evolution pass driven by a **finished real project** rather than by a

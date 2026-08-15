@@ -14,8 +14,43 @@ project:
   autonomous_integration_merges:  # true | false — PROJECT.yaml is the sole authority for this
 
 pack:
-  version_adopted:                # runtime-pack-2 VERSION this project is pinned to
+  # The pinned release, identified by all three of version + revision + digest.
+  # The version alone is a label; two checkouts can carry it and differ. Record
+  # every field from the pack's own PACK_MANIFEST.json and VERSION, then verify
+  # them — a pin nobody checks is a sentence, not a pin:
+  #
+  #   python3 <pack_root>/tools/pack_pin.py <pack_root> \
+  #       --version <version_adopted> --sha <sha_adopted> \
+  #       --digest <tree_digest_sha256> --state QUALIFIED_AND_FROZEN
+  #
+  # Run it with the pack_pin.py inside the pinned root: the digest framing is
+  # release-local and named in the manifest's `digest_algorithm`.
+  version_adopted:                # runtime-pack-2 VERSION — the single version authority
+  sha_adopted:                    # the full 40-character pack revision; abbreviations are refused
+  tree_digest_sha256:             # PACK_MANIFEST.json tree_digest_sha256, verified not copied
+  state_adopted: QUALIFIED_AND_FROZEN   # the only state a project may adopt
+  adopted_at:                     # ISO date this pin was taken and verified
   adoption_boundary: "a newer pack version is adopted only at a capability boundary, never mid-capability"
+  #
+  # What this pin means, and what it deliberately does not:
+  #
+  # - A frozen release NEVER MUTATES during a project run. If verification stops
+  #   passing mid-project, the checkout changed and that is a stop — not a pin
+  #   to refresh.
+  # - Several projects MAY PIN THE SAME release concurrently. A verified release
+  #   root is read-only shared input; nothing in it is per-project state.
+  # - Projects MAY PIN DIFFERENT qualified releases at the same time. Different
+  #   versions must resolve to DISTINCT immutable roots — never one directory
+  #   moved between revisions, which would make both pins unverifiable at once.
+  # - Operational state and the Evolution Candidate inbox are PROJECT-LOCAL.
+  #   A project never writes into the pack root: measured overhead, budget
+  #   consumption and candidates live in this project's own PROGRESS.md and
+  #   EVOLUTION_CANDIDATES.md.
+  # - Candidates from several projects are pooled ONLY during a separate pack
+  #   evolution session, which produces a new version. No project run evolves
+  #   the pack it is pinned to.
+  # - Each project adopts a new release INDEPENDENTLY, at its own next safe
+  #   capability boundary. There is no coordinated upgrade and no scheduler.
 
 dimensions:
   # Declared validation dimensions for this project. Every capability's

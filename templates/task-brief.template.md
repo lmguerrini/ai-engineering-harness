@@ -48,5 +48,10 @@ no private/internal IDs, no orchestration vocabulary
 Patch (or committed diff inside the worker's own disposable checkout) +
 structured report: what was done, what was validated and how, identity
 observed-or-`requested_only`, anything the worker could not do and why.
-Findings, if any, written to a durable file incrementally — not held for the
-final message.
+
+**Where findings go — state one, never both** (`skills/core/worker-contract.md`):
+
+- [ ] this dispatch may write: findings appended to `<exact path>` incrementally,
+      so a run that dies mid-task still leaves what it found;
+- [ ] this dispatch is read-only: the whole report comes back in the final
+      message, and no file is attempted.

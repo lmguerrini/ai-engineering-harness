@@ -20,8 +20,13 @@
     report.
 *   **Barred from the design documents and the repair reports.** An auditor who
     reads the design reviews somebody else's conclusions instead of the artifact.
-*   **Findings written incrementally to a durable file**, never held until a
-    final message. An auditor that dies mid-run must still leave what it found.
+*   **Findings captured incrementally, by whichever channel the envelope
+    actually permits.** An auditor that dies mid-run must still leave what it
+    found — but a read-only sandbox denies *all* writes, so "write them to a
+    file" and "you are read-only" cannot both be instructions. Where the
+    auditor can write, it writes as it goes; where it cannot, it returns the
+    whole report in the final message and the brief says which
+    (`worker-contract.md`).
 
 ## Cross-vendor diversity
 

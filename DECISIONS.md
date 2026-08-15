@@ -1,4 +1,4 @@
-# Runtime Pack 2.0 — pack-level decisions
+# Runtime Pack — pack-level decisions
 
 Append-only. Newest last. Each entry: what was decided, on what evidence, and
 what would reverse it.
@@ -162,3 +162,75 @@ remembered the defaults, and nothing in the first report disclosed that 59 rules
 were absent. Every report now states the rule counts it applied.
 **Reverses on:** nothing. A verdict that depends on flags a human retyped is a
 verdict obtainable twice with different answers.
+
+---
+
+## D11 — release identity is version + revision + digest, and the bump semantics are stated (RP2.1.1)
+
+The pack had a version and no release *identity*. `README.md` still said 2.0
+under `VERSION` 2.1.0; `CHANGELOG.md` and `PACK_MANIFEST.json` recorded 167
+tests where the suite collected 175 and the gate record said so; nothing
+recorded a qualification state a consumer could read; and no file said what a
+version increment meant.
+
+**Decided.**
+
+*   `VERSION` is the **single machine-readable version authority**. Every other
+    file restates it, and `pack_pin.verify_pin` refuses a manifest that
+    disagrees — a restatement nothing compares is a second authority.
+*   A release is identified by **version + full 40-character revision + manifest
+    tree digest**, and `PACK_MANIFEST.json` carries an explicit `state`. The
+    version alone is a label: two checkouts can carry it and differ.
+*   **PATCH** — backward-compatible fixes, metadata and documentation
+    corrections, and enforcement of guarantees already promised. **MINOR** — a
+    new backward-compatible policy, tool or capability. **MAJOR** — an
+    incompatible authority, contract or migration change.
+*   The digest framing is **release-local**, named in the manifest's
+    `digest_algorithm`, and a release is verified with the `pack_pin.py` that
+    ships inside it. Improving the framing is therefore a PATCH, not a break.
+
+**Evidence.** Every drift above was reproduced by execution before repair, and
+`tools/tests/test_release_integrity.py` now fails on each of them against the
+real repository rather than against a fixture.
+**Reverses on:** nothing. A release whose identity is a label is not pinnable.
+
+---
+
+## D12 — installed skills are adapters, never authority (RP2.1.1)
+
+`PILOT_RUN_PROJECT_BOOTSTRAP.md` said of an installed skill "nothing here
+overrides it", and `PACK_MANIFEST.json` recorded two of them as *amended in
+place*. Both files live in `~/.claude/skills/`, outside the release envelope and
+covered by no digest, so a pinned, verified pack deferred to material that could
+change under a running project with nothing noticing.
+
+**Decided.** The pinned repository is the release authority. Installed skills
+are **adapters and integration surfaces**; where one disagrees with the pinned
+pack, the pinned pack wins. A project that needs an external skill to be
+normative pins and verifies it under its own dependency contract, exactly as it
+pins the pack. They are still *counted* against held prose, because they are
+still loaded every session — the pack can measure what it cannot freeze, and
+`BUDGETS.md` now states both figures rather than re-scoping the rule.
+**Reverses on:** an external skill being vendored into the release, which would
+make it pack material and subject to the digest.
+
+---
+
+## D13 — several projects may pin one frozen release, concurrently (RP2.1.1)
+
+`PROJECT.yaml.template` recorded the pack version only — no revision, no digest
+— so two projects claiming "2.1.0" could be reading different trees, and
+`BUDGETS.md` directed per-project overhead measurements into a shared pack file
+that did not exist.
+
+**Decided.** A project records and **verifies** version + revision + digest +
+state. A frozen release never mutates during a project run; verification failing
+mid-project is a stop, not a pin to refresh. Several projects may pin the same
+release concurrently, or different qualified releases, provided each version
+resolves to a distinct immutable root. Operational state and Evolution Candidate
+inboxes are project-local and never written into the pack. Candidates from
+several projects are pooled only in a separate pack-evolution session, which
+cuts a new version; each project adopts it independently at its own next safe
+capability boundary. No scheduler, no shared mutable runtime.
+**Reverses on:** nothing short of a project genuinely needing to write into a
+pinned pack, which would mean the release is not frozen.

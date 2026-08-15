@@ -35,9 +35,12 @@ immutable HEAD, bounded turns. A scarce top-tier specialist is reserved, not
 default: a material dispute surviving both default auditors, or a final review
 whose expected information gain clearly justifies the capacity cost.
 
-**Both audit roles are `unprobed` under this pack** (`policy/routing-table.md`).
-The first real closure audit is the first data point; nothing above is a measured
-claim about audit yield.
+**Grades live in `policy/routing-table.md` and are not restated here.** That
+file is regenerated wholesale from `policy/observations.jsonl`; a grade copied
+into a second file goes stale silently, and this one did — it still read "both
+audit roles are `unprobed`" after the Pilot Run moved both to `confirmed`. A
+rule stated in two places drifts, and the one that is wrong is whichever the
+current reader is not looking at.
 
 ## The observation behind the scarce-capacity rule
 

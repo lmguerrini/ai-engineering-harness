@@ -228,6 +228,67 @@ def test_every_form_that_carries_more_than_one_named_branch_is_refused(command):
     assert check_push_command(command), f"{command!r} was accepted"
 
 
+# --- falsification: every form the RP2.1.0 check accepted -------------------
+#
+# Each of these was reproduced against the previous implementation and returned
+# `[]`, which the CLI rendered as "an explicit single-branch refspec, which
+# cannot carry refs/notes/*" — a sentence about a command that was not being
+# run. The check enumerated bad forms; a blacklist passes everything its author
+# did not think of. RP2.1.1 replaced it with the single good form.
+
+@pytest.mark.parametrize(
+    "command, why",
+    [
+        ("git log refs/heads/main:refs/heads/main", "any command at all, given a refspec-shaped token"),
+        ("rm -rf / refs/heads/main:refs/heads/main", "not even a git command"),
+        ("git fetch origin refs/heads/main:refs/heads/main", "a git command that is not push"),
+        ("", "an empty command"),
+        ("   ", "whitespace"),
+        ("git push origin refs/heads/main:refs/heads/main refs/heads/secret:refs/heads/secret",
+         "a second refspec publishes a ref nobody judged"),
+        ("git push origin refs/heads/main:refs/heads/other",
+         "destination differs from source, so the remote carries a name nobody reviewed"),
+        ("git push origin refs/heads/main:refs/heads/main --receive-pack=/tmp/evil",
+         "a trailing option changes what runs on the far side"),
+        ("git push origin refs/heads/main:refs/heads/main extra-token",
+         "an extra positional alters the publication set"),
+        ("git push refs/heads/main:refs/heads/main", "no remote named at all"),
+        ("git push origin second-remote refs/heads/main:refs/heads/main", "two remotes"),
+        ("git push --force origin refs/heads/main:refs/heads/main", "an option nobody declared"),
+        ("git push origin refs/tags/v1:refs/tags/v1", "a tag is not a branch refspec"),
+        ("git push origin main:main", "abbreviated names are not full refs"),
+    ],
+)
+def test_every_form_the_previous_check_accepted_is_refused(command, why):
+    assert check_push_command(
+        command, publishable_branches=publication_gate.DEFAULT_PUBLISHABLE_REFS
+    ), f"{command!r} was accepted ({why})"
+
+
+def test_the_default_allowlist_does_not_rescue_an_extra_refspec():
+    """The CLI's default is `refs/heads/*`, which admits any branch.
+
+    The previous check only ever compared a refspec's *source* against the
+    allowlist, so under the default every additional refspec passed. Testing
+    with a narrowed allowlist would have hidden that.
+    """
+    problems = check_push_command(
+        "git push origin refs/heads/main:refs/heads/main refs/heads/recovery/x:refs/heads/recovery/x",
+        publishable_branches=publication_gate.DEFAULT_PUBLISHABLE_REFS,
+    )
+    assert any("exactly one" in problem for problem in problems)
+
+
+def test_the_remote_can_be_pinned():
+    assert check_push_command(
+        "git push origin refs/heads/main:refs/heads/main", expected_remote="origin"
+    ) == []
+    problems = check_push_command(
+        "git push attacker refs/heads/main:refs/heads/main", expected_remote="origin"
+    )
+    assert any("expected 'origin'" in problem for problem in problems)
+
+
 def test_a_refspec_naming_an_undeclared_branch_is_refused():
     problems = check_push_command(
         "git push origin refs/heads/integration:refs/heads/integration",
@@ -248,8 +309,45 @@ def test_the_explicit_refspec_is_safe_regardless_of_what_the_namespace_holds():
 
 # --- (f) the remote postcondition, failing closed ---------------------------
 
+def _head(repo, ref="refs/heads/main"):
+    return subprocess.run(
+        ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+        cwd=str(repo), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def test_an_expectation_with_no_revision_is_refused(repo):
+    """The RP2.1.0 CLI passed exactly this, and every caller inherited it.
+
+    "Does a ref with that name exist" is a question a remote still carrying
+    last week's commit answers yes to, so the postcondition — the *only*
+    observation of what actually happened, the reason the other three checks
+    are not enough — was satisfied by a stale remote.
+    """
+    problems = verify_remote(repo, "origin", expected={"refs/heads/main": ""})
+    assert any("carries no revision" in problem for problem in problems)
+
+
+def test_a_stale_remote_fails_the_postcondition(tmp_path, repo):
+    """The case the empty expectation could not see, end to end."""
+    remote = tmp_path / "remote.git"
+    _git(repo, "init", "--quiet", "--bare", str(remote))
+    _git(repo, "remote", "add", "origin", str(remote))
+    _git(repo, "push", "--quiet", "origin", "refs/heads/main:refs/heads/main")
+    stale = _head(repo)
+
+    (repo / "later.txt").write_text("a commit the remote never received\n")
+    _git(repo, "add", "later.txt")
+    _git(repo, "commit", "--quiet", "-m", "later")
+    current = _head(repo)
+    assert current != stale
+
+    problems = verify_remote(repo, "origin", expected={"refs/heads/main": current})
+    assert any("on the remote, expected" in problem for problem in problems)
+
+
 def test_an_unreadable_remote_is_a_failure_not_an_absence_of_findings(repo):
-    problems = verify_remote(repo, "nonexistent-remote", expected={"refs/heads/main": ""})
+    problems = verify_remote(repo, "nonexistent-remote", expected={"refs/heads/main": _head(repo)})
     assert problems
     assert "could not be read" in problems[0]
 
@@ -261,7 +359,7 @@ def test_an_unexpected_ref_on_the_remote_fails_the_postcondition(tmp_path, repo)
     _git(repo, "push", "--quiet", "origin", "refs/heads/main:refs/heads/main")
     _git(repo, "push", "--quiet", "origin", "refs/heads/main:refs/heads/leaked")
 
-    problems = verify_remote(repo, "origin", expected={"refs/heads/main": ""})
+    problems = verify_remote(repo, "origin", expected={"refs/heads/main": _head(repo)})
     assert any("unexpected ref refs/heads/leaked" in problem for problem in problems)
 
 
@@ -270,14 +368,14 @@ def test_a_remote_matching_exactly_what_was_published_passes(tmp_path, repo):
     _git(repo, "init", "--quiet", "--bare", str(remote))
     _git(repo, "remote", "add", "origin", str(remote))
     _git(repo, "push", "--quiet", "origin", "refs/heads/main:refs/heads/main")
-    assert verify_remote(repo, "origin", expected={"refs/heads/main": ""}) == []
+    assert verify_remote(repo, "origin", expected={"refs/heads/main": _head(repo)}) == []
 
 
 def test_a_missing_expected_ref_fails_the_postcondition(tmp_path, repo):
     remote = tmp_path / "remote.git"
     _git(repo, "init", "--quiet", "--bare", str(remote))
     _git(repo, "remote", "add", "origin", str(remote))
-    problems = verify_remote(repo, "origin", expected={"refs/heads/main": ""})
+    problems = verify_remote(repo, "origin", expected={"refs/heads/main": _head(repo)})
     assert any("does not carry refs/heads/main" in problem for problem in problems)
 
 
@@ -289,7 +387,7 @@ def test_a_notes_ref_reaches_the_remote_under_a_mirror_push(tmp_path, repo):
     _git(repo, "remote", "add", "origin", str(remote))
     _git(repo, "push", "--quiet", "--mirror", "origin")
 
-    problems = verify_remote(repo, "origin", expected={"refs/heads/main": ""})
+    problems = verify_remote(repo, "origin", expected={"refs/heads/main": _head(repo)})
     assert any("refs/notes/chatter" in problem for problem in problems)
 
 
@@ -301,7 +399,7 @@ def test_the_explicit_refspec_leaves_the_notes_ref_behind(tmp_path, repo):
     _git(repo, "remote", "add", "origin", str(remote))
     _git(repo, "push", "--quiet", "origin", "refs/heads/main:refs/heads/main")
 
-    assert verify_remote(repo, "origin", expected={"refs/heads/main": ""}) == []
+    assert verify_remote(repo, "origin", expected={"refs/heads/main": _head(repo)}) == []
 
 
 # --- fails closed ------------------------------------------------------------

@@ -54,6 +54,7 @@ __all__ = [
     "RefFinding",
     "DEFAULT_PUBLISHABLE_REFS",
     "FORBIDDEN_PUSH_FORMS",
+    "SUPPORTED_PUSH_FORM",
     "matches_ref_glob",
     "inspect_namespace",
     "check_push_command",
@@ -95,6 +96,15 @@ _KNOWN_PRIVATE_NAMESPACES = (
 )
 
 _PUSH_REFSPEC = re.compile(r"^refs/heads/[^:*\s]+:refs/heads/[^:*\s]+$")
+
+#: The whole supported publication form, as a token shape: `git push`, one
+#: remote, one refspec, nothing else. Written as a constant so the refusal
+#: message and the check cannot drift apart.
+SUPPORTED_PUSH_FORM = "git push <remote> refs/heads/<branch>:refs/heads/<branch>"
+
+#: Git answers `ls-remote` and `rev-parse` with full object names. Anything
+#: shorter reaching the postcondition comparison is a caller defect.
+_FULL_OBJECT_NAME = re.compile(r"^[0-9a-f]{40}$")
 
 
 @dataclass(frozen=True)
@@ -277,14 +287,31 @@ def _config_notes(repository: str | Path, report: PublicationReport) -> list[str
     return notes
 
 
-def check_push_command(command: str, *, publishable_branches: tuple[str, ...] = ()) -> list[str]:
+def check_push_command(
+    command: str,
+    *,
+    publishable_branches: tuple[str, ...] = (),
+    expected_remote: str | None = None,
+) -> list[str]:
     """Every reason this push command is not the supported publication form.
 
-    The supported form is one exact refspec: ``refs/heads/main:refs/heads/main``.
-    It is supported because it is *structurally* safe — it cannot carry
+    The supported form is exactly `SUPPORTED_PUSH_FORM`: `git push`, one remote,
+    one refspec whose source and destination are the same branch, and no other
+    token. It is supported because it is *structurally* safe — it cannot carry
     `refs/notes/*` regardless of what the namespace holds at that instant — so
     it does not depend on winning a race against a writer that re-creates refs
     in under a minute.
+
+    This check is a **whitelist of one shape**, and RP2.1.1 rewrote it as one
+    after the previous blacklist was falsified five ways by execution. It
+    accepted ``git log refs/heads/main:refs/heads/main`` (any command at all,
+    provided a refspec-shaped token appeared somewhere in it), a second refspec
+    alongside the first, a destination branch different from the source, a
+    remote nobody declared, and a trailing ``--receive-pack=…``. Each was
+    reported as "an explicit single-branch refspec, which cannot carry
+    refs/notes/*" — a sentence about a command that was not being run. A gate
+    that enumerates bad forms passes everything its author did not think of;
+    one that names the single good form does not.
     """
     problems: list[str] = []
     tokens = command.split()
@@ -293,21 +320,62 @@ def check_push_command(command: str, *, publishable_branches: tuple[str, ...] = 
         if flag in tokens:
             problems.append(f"{flag} is forbidden: it {why}")
 
-    refspecs = [token for token in tokens if ":" in token and token.startswith("refs/")]
-    wildcard = [token for token in refspecs if "*" in token]
-    if wildcard:
-        problems.append(f"wildcard refspec {wildcard[0]!r} is forbidden: it carries whatever the namespace holds")
-
-    explicit = [token for token in refspecs if _PUSH_REFSPEC.match(token)]
-    if not explicit and not problems:
+    if tokens[:2] != ["git", "push"]:
         problems.append(
-            "no explicit refs/heads/<branch>:refs/heads/<branch> refspec found; "
-            "a bare `git push` publishes whatever the branch's upstream names"
+            f"the command is not a push: expected {SUPPORTED_PUSH_FORM!r}, got {command.strip()!r}"
         )
-    if publishable_branches:
-        for spec in explicit:
-            source = spec.split(":", 1)[0]
-            if not matches_ref_glob(source, publishable_branches):
+        return problems
+
+    rest = tokens[2:]
+    options = [token for token in rest if token.startswith("-")]
+    for option in options:
+        if not any(option == flag for flag, _ in FORBIDDEN_PUSH_FORMS):
+            problems.append(
+                f"{option!r} is not part of the supported form: any option can change what the "
+                f"push carries or where it lands. The whole form is {SUPPORTED_PUSH_FORM}"
+            )
+
+    positional = [token for token in rest if not token.startswith("-")]
+    refspecs = [token for token in positional if ":" in token]
+    remotes = [token for token in positional if ":" not in token]
+
+    for spec in refspecs:
+        if "*" in spec:
+            problems.append(
+                f"wildcard refspec {spec!r} is forbidden: it carries whatever the namespace holds"
+            )
+
+    if len(refspecs) != 1:
+        problems.append(
+            f"{len(refspecs)} refspecs; the supported form carries exactly one. "
+            "A bare `git push` publishes whatever the branch's upstream names, and a second "
+            "refspec publishes a ref nobody judged"
+        )
+    if len(remotes) != 1:
+        problems.append(
+            f"{len(remotes)} non-refspec positional tokens; the supported form names exactly one "
+            f"remote. Extra positionals alter the publication set: {positional!r}"
+        )
+    if expected_remote is not None and remotes[:1] != [expected_remote]:
+        problems.append(
+            f"the push names remote {(remotes[:1] or ['<none>'])[0]!r}, expected {expected_remote!r}"
+        )
+
+    if len(refspecs) == 1 and "*" not in refspecs[0]:
+        spec = refspecs[0]
+        if not _PUSH_REFSPEC.match(spec):
+            problems.append(
+                f"{spec!r} is not a refs/heads/<branch>:refs/heads/<branch> refspec; tags, notes "
+                "and abbreviated names are all outside the supported form"
+            )
+        else:
+            source, _, destination = spec.partition(":")
+            if source != destination:
+                problems.append(
+                    f"{spec!r} publishes {source} as {destination}: source and destination must be "
+                    "the same ref, or the remote carries a branch whose name nobody reviewed"
+                )
+            if publishable_branches and not matches_ref_glob(source, publishable_branches):
                 problems.append(f"{source} is not a declared publishable ref")
     return problems
 
@@ -322,6 +390,21 @@ def verify_remote(
     closed: an unreadable remote is a failure, not an absence of findings.
     """
     problems: list[str] = []
+    # An expectation with no revision cannot detect the case this check exists
+    # for. The RP2.1.0 CLI passed `{public_ref: ""}` and every caller inherited
+    # it, so a remote still carrying last week's commit under the right name
+    # returned "namespace matches what was published". Refused, not tolerated:
+    # after a push the local revision is known, so there is no honest caller
+    # that does not have it.
+    for name, wanted in sorted(expected.items()):
+        if not wanted.strip():
+            problems.append(
+                f"the expectation for {name} carries no revision, so a stale remote would pass; "
+                "supply the exact revision that was pushed"
+            )
+    if problems:
+        return problems
+
     # No declared negative: `ls-remote` printing nothing and exiting 0 is the
     # "no refs" answer, so every non-zero status here means nobody looked.
     answer = gitread.probe(repository, "ls-remote", remote, negative_statuses=())
@@ -343,9 +426,7 @@ def verify_remote(
             problems.append(f"the remote carries an unexpected ref {name} at {sha[:12]}")
             continue
         wanted = expected[name]
-        # An empty expectation means "must exist, any revision" — the caller
-        # knows the ref should be there but not yet which commit it lands on.
-        if wanted and not _same_revision(sha, wanted):
+        if not _same_revision(sha, wanted):
             problems.append(f"{name} is at {sha[:12]} on the remote, expected {wanted[:12]}")
     for name in expected:
         if name not in seen:
@@ -354,11 +435,17 @@ def verify_remote(
 
 
 def _same_revision(left: str, right: str) -> bool:
-    """Whether two revisions match, tolerating one being abbreviated."""
-    shortest = min(len(left), len(right))
-    if shortest < 7:
+    """Whether two revisions are the same full revision.
+
+    `ls-remote` always answers with full object names and the caller always has
+    the local one, so there is no case here that needs abbreviation tolerance —
+    and tolerating it is how a comparison starts accepting prefixes short
+    enough to match by accident.
+    """
+    left, right = left.strip().lower(), right.strip().lower()
+    if not _FULL_OBJECT_NAME.match(left) or not _FULL_OBJECT_NAME.match(right):
         return False
-    return left[:shortest].lower() == right[:shortest].lower()
+    return left == right
 
 
 def _cli(argv: list[str]) -> int:
@@ -366,7 +453,8 @@ def _cli(argv: list[str]) -> int:
 
     Usage: ``publication_gate.py REPO --public-ref REF [--project PATH]
             [--publishable GLOB ...] [--author IDENTITY ...]
-            [--push-command "git push ..."] [--verify-remote NAME]``
+            [--push-command "git push ..."] [--remote NAME]
+            [--verify-remote NAME]``
     """
     import argparse
 
@@ -380,6 +468,7 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--publishable", action="append", default=[], metavar="GLOB")
     parser.add_argument("--author", action="append", default=[], metavar="IDENTITY")
     parser.add_argument("--push-command", help="the exact push command that would be run")
+    parser.add_argument("--remote", metavar="NAME", help="the remote the push command must name")
     parser.add_argument("--verify-remote", metavar="NAME", help="read this remote and check its namespace")
     args = parser.parse_args(argv)
 
@@ -411,24 +500,44 @@ def _cli(argv: list[str]) -> int:
     failed = not report.clean
 
     if args.push_command:
-        problems = check_push_command(args.push_command, publishable_branches=publishable)
+        problems = check_push_command(
+            args.push_command,
+            publishable_branches=publishable,
+            expected_remote=args.verify_remote or args.remote,
+        )
         if problems:
             failed = True
             print("push form: REFUSED")
             for problem in problems:
                 print(f"  {problem}")
         else:
-            print("push form: an explicit single-branch refspec, which cannot carry refs/notes/*")
+            print(f"push form: exactly {SUPPORTED_PUSH_FORM}, which cannot carry refs/notes/*")
 
     if args.verify_remote:
-        problems = verify_remote(repository, args.verify_remote, expected={public_ref: ""})
-        if problems:
+        # The expectation is the local public ref, resolved here. Passing an
+        # empty one — which this CLI used to do — asks only "does a ref with
+        # that name exist", which a remote stuck on an older commit answers
+        # yes to.
+        local = gitread.probe(repository, "rev-parse", "--verify", f"{public_ref}^{{commit}}")
+        if not local.answered or not local.ok:
             failed = True
             print(f"remote {args.verify_remote}: POSTCONDITION FAILED")
-            for problem in problems:
-                print(f"  {problem}")
+            print(f"  {public_ref} could not be resolved locally, so there is nothing to compare "
+                  f"the remote against: {local.cause}")
         else:
-            print(f"remote {args.verify_remote}: namespace matches what was published")
+            problems = verify_remote(
+                repository, args.verify_remote, expected={public_ref: local.value.strip()}
+            )
+            if problems:
+                failed = True
+                print(f"remote {args.verify_remote}: POSTCONDITION FAILED")
+                for problem in problems:
+                    print(f"  {problem}")
+            else:
+                print(
+                    f"remote {args.verify_remote}: carries {public_ref} at "
+                    f"{local.value.strip()[:12]} and nothing else"
+                )
 
     return 1 if failed else 0
 

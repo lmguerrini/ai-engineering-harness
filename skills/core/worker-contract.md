@@ -47,12 +47,22 @@ about the code. It could generate hypotheses and could not discard them — whic
 is the half that makes a review. Qualification is per task class; a worker
 qualified at one is `unprobed` at the other. Availability is not qualification.
 
-## Read-only dispatches get no worktree
+## A reviewer never creates a ref, a branch or a worktree
 
 Isolation is for work that mutates. A reviewer that cannot write has nothing to
 isolate, and giving one a worktree anyway cost 1.4 GB and created a branch ref
 named for the agent **inside the repository under review** — the one namespace
 the publication contract depends on. Isolation is opt-in, for mutating work.
+
+Where a review genuinely needs a pinned revision it cannot be moved off, the
+**coordinator prepares an immutable snapshot before dispatch** and names it in
+the brief as the working directory. Never the reviewer: an auditor told
+"read-only, at this exact revision" and handed a live repository has no
+compliant way to obey — it must either check out (a write) or trust that HEAD
+will not move under it. One did detach HEAD in the coordinator's tree while a
+second auditor was reading it. **An instruction that forbids the only available
+means of compliance is a specification error**, and the fix belongs on the
+dispatching side.
 
 ## Preflight includes a write probe, not just an auth check
 

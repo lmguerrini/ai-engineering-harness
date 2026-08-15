@@ -14,7 +14,8 @@ is not this kind of audit, and must not be recorded as a closure audit.
 
 - **Fresh context.** You have not seen this capability's design discussion or
   repair reports. If anything below looks like one, stop and say so.
-- **Read-only.** Make no edits. Report only.
+- **Read-only.** Make no edits, and create no branch, ref or worktree. Report
+  only. Where your report goes is stated below, once.
 - **Blind.** If another auditor is running in parallel, you do not see their
   findings and they do not see yours.
 - **Barred from:** design documents, repair reports, prior audit findings for
@@ -34,10 +35,22 @@ implementation and check whether the existing tests would let it pass.
 1. **What I attacked and could not break.** Not optional — the only defence
    against a padded finding list.
 2. **Findings**, each with: what is wrong, why, a reproduction, and severity.
-   Write findings to `capabilities/<id>/evidence/` incrementally as you find
-   them, not held for a final message.
 3. **What I could not evaluate**, and why (time, access, scope) — unknown is a
    third answer (`skills/core/evidence.md`).
+
+## Where your findings go — coordinator states ONE of these, never both
+
+- [ ] **Read-only dispatch (the default).** You have no write permission
+      anywhere, including outside the repository. **Return the entire report in
+      your final message.** Do not attempt to write a file.
+- [ ] **Write permission granted**, to `<exact path>` and nowhere else. Append
+      findings there incrementally as you find them, so a run that dies
+      mid-audit still leaves what it found.
+
+A brief that says both prohibits and requires the same act
+(`skills/core/worker-contract.md`). The observed failure is the expensive one: a
+repository-wide evidence sweep completed the whole analysis, discovered it could
+not write, and returned a 315-byte apology.
 
 ## What happens to your findings
 
@@ -48,21 +61,23 @@ clean, and does not consume the closure-audit-cycle counter.
 
 ## Where the auditor works — coordinator sets this up BEFORE dispatch
 
-The auditor gets a **disposable checkout of its own**, never the coordinator's
-live working tree:
+**The auditor never creates a ref, a branch or a worktree**
+(`skills/core/worker-contract.md`). It reads the path the brief names and
+nothing else.
+
+The default is the coordinator's checkout **already at the audited revision**,
+read-only. No snapshot is needed, and creating one anyway cost 1.4 GB and put a
+branch ref named for the agent inside the repository under review — the one
+namespace the publication contract depends on.
+
+Prepare a snapshot only when HEAD would otherwise move under the auditor —
+concurrent auditors, or work continuing during the audit. The **coordinator**
+creates it, outside the audited repository, and names it in the brief:
 
     git worktree add --detach <private_root>/worktrees/audit-<capability> <sha>
+    # removed by the coordinator at closure: git worktree remove <path>
 
-State that path in the brief as the auditor's working directory, and state that
-it must not touch any other tree.
-
-**Why this is mandatory.** An auditor told "read-only, at this immutable SHA"
-and handed a live repository has no compliant way to pin the revision — it must
-either run `git checkout --detach` (a write) or trust that HEAD will not move
-underneath it. That happened: an auditor detached HEAD in the coordinator's tree
-while a second auditor was reading it. The git fence caught it and nothing was
-damaged, but the brief was the defect. An instruction that forbids the only
-available means of compliance is a specification error.
-
-Remove the worktree at closure: `git worktree remove <path>`.
+Either way the brief states one working directory and says the auditor must not
+touch any other tree. An instruction that forbids the only available means of
+compliance is a specification error, and it is fixed on the dispatching side.
 
