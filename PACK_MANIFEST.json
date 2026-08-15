@@ -1,10 +1,11 @@
 {
   "pack": "runtime-pack-2",
   "version": "2.1.0",
-  "sha": "2056ec932e98cad840d95e6c57533ce36ce450d3",
+  "revision": "not recorded here \u2014 a manifest cannot name the commit that contains it. The consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <rev>`. The qualified revision is stated in docs/RP2.1-GATE.md.",
   "qualified_at": "2026-08-15",
-  "tracked_files": 81,
-  "tree_digest_sha256": "ad14b2dacb7b297745d10661fa45d87dc53e864261598f9564c6fe8182a726d3",
+  "tracked_files": 83,
+  "tree_digest_sha256": "fd15ea1d9fa39f7efb7fb3412133ac9ce3465bfca282720f77bf2b0f59dcd463",
+  "digest_excludes": "PACK_MANIFEST.json",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
     "passed": 167
