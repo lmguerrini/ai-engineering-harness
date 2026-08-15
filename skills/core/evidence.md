@@ -56,7 +56,5 @@ repairs. Separate:
     was being built. Resolve the disagreement, do not implement it;
 *   a **proposed improvement** — real, and not evidence of a defect.
 
-**Reproduce a finding before repairing it.** An auditor can be wrong, and a
-"fix" for something that was never broken changes working code on the strength
-of an assertion. A finding that will not reproduce should be refuted explicitly,
-with the reason, rather than quietly dropped.
+**Reproduce a finding before repairing it** (`repair.md` step 1). A finding that
+will not reproduce is refuted explicitly, with the reason, never quietly dropped.

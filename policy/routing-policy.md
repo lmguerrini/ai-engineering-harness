@@ -45,6 +45,13 @@ inherited** from a previous call in the same session.
 
 *   `ultra`-style nested delegation (a worker implicitly spawning its own
     sub-agents) is banned outright.
+*   **Standing opt-ins that make coordinator-level fan-out the default are off**
+    unless a human enables one for a bounded experiment with a stated stopping
+    condition. This is a *separate* ban from the one above, and was written
+    after it: that ban on workers spawning sub-agents was in force while a
+    *coordinator* elected ~156 executions for 52 units of work and exhausted the
+    runway. Every fan-out carries a recorded estimate, cost-versus-value and
+    runway check (`skills/core/delegation.md`).
 *   `max` effort requires explicit human instruction; it is never the routing
     default.
 

@@ -32,6 +32,47 @@ Below some size, setting up and reviewing a delegation costs more than doing the
 work. The floor exists because it is easy to delegate reflexively and call the
 overhead someone else's problem.
 
+## Estimate the fan-out before dispatching it
+
+Parallelism is not free, and its cost is invisible at the moment it is chosen —
+the coordinator's visible output stays small while hidden subagent work spends
+the window. A bounded 52-item task was once given two independent workers plus a
+reconciler per item: ~156 executions for 52 units of work, chosen because a
+standing opt-in made orchestration the default rather than a decision with a
+price. It exhausted several usage windows, consumed a large share of a freshly
+reset one, and **still did not finish**. A single coordinator then completed the
+remaining work from the salvaged drafts.
+
+Before any fan-out, state three numbers and record them:
+
+*   **the estimate** — units of work × agents per unit × expected retries;
+*   **cost against value** — duplicated context and reconciliation counted as
+    cost, not assumed away;
+*   **the runway** — whether the remaining window plausibly covers the estimate,
+    with margin.
+
+Then declare bounded concurrency and bounded spawn depth. **Target maximum safe
+parallelism, never maximum possible parallelism.** A standing configuration that
+makes fan-out the default is off unless a human has opted in, for a bounded
+experiment with a stated stopping condition.
+
+**Prefer single-agent execution when the marginal value does not justify the
+duplicated work** — the common case for uniform, bounded, per-item tasks. The
+evidence is narrow and worth stating plainly: across one full project, the
+dispatches that changed the deliverable were **adversarial reviews of finished
+work**, not delegated production. Bounded workers earned their place as
+independent verifiers, not as extra hands.
+
+## Prepare the ground truth and route down a tier
+
+When a check can be expressed as a diff against supplied ground truth, prepare
+the ground truth. A consistency sweep over every numeric claim in two documents
+ran in **56 seconds on the cheapest tier**, zero false positives, because the
+values had been recomputed into a file first. Without that file the same task is
+open-ended research needing a far stronger worker. The preparation is a few
+minutes of deterministic coordinator work and it changes which worker the task
+needs.
+
 ## What to send
 
 The capsule is what the worker sees. It should contain what the task needs and
@@ -46,12 +87,6 @@ Not: which other worker was considered, what a previous attempt did, or anything
 about the orchestration. A worker that knows it is being compared behaves
 differently, and a capsule carrying orchestration state is a capsule that leaks
 it.
-
-## Record the road not taken
-
-Whenever more than one candidate was eligible, record at least one not-chosen
-candidate and the reason, in PROGRESS.md. Without this the evidence base can
-only confirm existing preferences.
 
 ## Never
 

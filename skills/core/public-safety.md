@@ -18,7 +18,18 @@ history. Logs carrying any of the above. Datasets not explicitly cleared.
     throughout its source and is right to, while the same words in a product's
     history would be orchestration leaking out. The pack's own default set is
     `policy/private-terms.default.json`; a project extends it in PROJECT.yaml,
-    never replaces the universal rules below with it.
+    never replaces the universal rules below with it. Pass `--project` and each
+    tool reads that declaration itself: a rule set retyped as a flag is one that
+    can be forgotten, and forgetting it produced `clean` over a range holding
+    seven leaks.
+
+    **Test a term against your own tree before adopting it.** Private
+    vocabularies are chosen by process people and collide with domain
+    vocabularies chosen by nobody — a project declared `bootstrap` and its own
+    domain use of the word tripped the gate. Prefer multi-word terms
+    (`runtime pack`) over single common words. The asymmetry matters: a term
+    that is too broad produces noise that pressures a team into exempting whole
+    directories, which is worse than a term that is slightly too narrow.
 *   **Universal rules** — credentials, machine paths, generated identifiers —
     hold for every project, because what they find is private whoever wrote it.
 
@@ -49,4 +60,44 @@ before any push:
 
 Exceptions are recorded by exact object identity, with a note saying what was
 read and why it is safe. An exemption that names a *class* of check is not an
-exemption, it is a hole.
+exemption, it is a hole. A content exemption is also **re-argued against real
+bytes**: a capability whose mutation boundary includes an exempt path cannot
+close without an evidence entry saying what actually landed there. Exemptions
+are declared before the files exist and their scope grows silently otherwise.
+
+**A blob finding is repaired by rebuilding the branch, not by amending.**
+Amending moves only the tip, so when the same term is also in an earlier commit
+the finding count drops and the range stays dirty — and a smaller number reads
+as progress. The scan names how many distinct blobs of an offending path are
+reachable; more than one means rebuild.
+
+## Publication is a ref-namespace contract
+
+The history being clean is not the repository being publishable. `git log`,
+`git status`, `git ls-files`, `git diff` and `git show` all read *branch
+history*, and a repository can carry AI contribution attribution, private
+orchestration identities and session identifiers in `refs/notes/*` while every
+one of them reports clean. This is observed, not hypothetical.
+
+**IDE and provenance services are a known class of external `.git` mutator.**
+One writes notes refs, re-creates them within seconds of deletion, survives
+history rewriting, and rewrites repository-local `.git/config` between sessions.
+Deletion is therefore a race, not a control: safety cannot rest on the namespace
+being clean at some earlier instant. It rests on four things together, checked
+by `publication-gate` **in the same step as the push**:
+
+    an allowed source ref  +  reachability  +  an exact push refspec
+                           +  a remote postcondition verified after
+
+Publish with `refs/heads/<branch>:refs/heads/<branch>` and nothing else — never
+`--mirror`, `--all`, `--tags` or a wildcard `refs/*`, each of which carries
+whatever the namespace holds at that instant. The full sequence, including the
+bounded stop-clean-publish-verify-resume mode for a live writer, is
+`templates/publication-gate.template.md`.
+
+**Never infer causation from configuration correlation.** Two sessions
+identified the writer from `notes.rewrite*` settings that plausibly explained
+the behaviour; an intervention test falsified it, the refs reappearing
+with the config removed and no amend or rebase performed. Where
+a safety decision rests on a causal claim, run the intervention when it is safe
+to. Configuration is reported with its origin, never concluded from.

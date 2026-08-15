@@ -93,6 +93,24 @@ Each enumeration was mechanically flawless **over the wrong question.**
   contract tests must run. Some defects — a plain unhandled index error in
   delegated code — are caught by no tool and no prompt. They are caught by this
   rule.
+- **Enumerate a guard's dependency edges as a table before writing its tests,
+  including the edges the current change does not exercise.** An invalidation or
+  cache guard is naturally demonstrated on the change its author has in hand,
+  and that change is by construction one the guard already handles — otherwise
+  the author would have noticed. A freshness guard was demonstrated live and
+  correctly while **three of four dependency edges were missing**, and the
+  demonstration passed anyway. Three successive passes over that subsystem each
+  looked right and each left a real hole. The table is the design; the
+  demonstration is not.
+- **Provenance is reported by the component that did the work, or verified
+  against it.** A field assembled from configuration describes an *intention*; a
+  field reported by the executing code describes a *run*. Model revisions were
+  recorded as pinned in every provenance seal while only one of three was
+  actually passed to a loader — nothing failed, no test caught it, and the drift
+  made the record read *stronger*. The same shape reported the machine's best
+  accelerator, because the seal asked the machine rather than the stage.
+- **"Recorded" and "enforced" are different claims**, and the gap between them
+  is invisible precisely because the record reads as confirmation.
 
 ## Evidence package (per material invariant)
 
