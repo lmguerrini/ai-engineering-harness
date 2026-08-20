@@ -4,7 +4,8 @@
 
 A **MINOR** release (`DECISIONS.md` D11): new backward-compatible capability,
 plus enforcement of guarantees earlier versions already promised. **State
-`IN_PROGRESS` — this is an evolution candidate and is not adoptable.** Every
+`QUALIFIED_AND_FROZEN` — frozen by human authority on 2026-08-21, and adoptable
+at a project's next capability boundary.** Every
 defect below was reproduced by execution against the frozen 2.1.1 baseline
 before it was repaired, and every repaired guarantee carries an oracle that
 fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.

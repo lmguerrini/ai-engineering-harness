@@ -1,10 +1,14 @@
 # RP2.2 — gate record
 
-**State: `IN_PROGRESS`.** This release is an evolution candidate. It is not
-adoptable, and no project may pin it, until a human release authority moves it
-to `QUALIFIED_AND_FROZEN`. Version `2.2.0`, a MINOR bump under D11: new
-backward-compatible capability, plus enforcement of guarantees earlier versions
-already promised.
+**State: `QUALIFIED_AND_FROZEN`.** Frozen by human authority on 2026-08-21,
+against the exact revision the final delta audit examined. What follows is the
+record that decision was taken on, left exactly as it read when the decision was
+made. Version `2.2.0`, a MINOR bump under D11: new backward-compatible
+capability, plus enforcement of guarantees earlier versions already promised.
+
+Adoption is separate from freezing: a project moves to this release at its own
+next capability boundary, through the migration gate, and a project that stays
+on `2.1.1` is correctly pinned.
 
 ## Baseline
 

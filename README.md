@@ -11,7 +11,7 @@ every audit round while its stateless checkers survived every one
 | | |
 |---|---|
 | Version | **2.2.0** — `VERSION` is the single machine-readable authority |
-| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — an evolution candidate, not adoptable |
+| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) — frozen by human authority; adoptable at a project's next capability boundary |
 | Gate record | `docs/RP2.2-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
@@ -19,13 +19,13 @@ Verify a checkout — run it, do not read it:
 
 ```bash
 python3 tools/pack_pin.py . --version 2.2.0 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
 ```
 
-`--state` is the state this checkout actually declares, and it is currently
-`IN_PROGRESS`. **A project may only adopt `QUALIFIED_AND_FROZEN`**, so this
-release is not adoptable yet; the command a consumer will run names that state
-instead, and passing it against this checkout fails — correctly.
+`--state` is the state this checkout actually declares. **A project may only
+adopt `QUALIFIED_AND_FROZEN`**, which is what this release now declares, so the
+command above is the one a consumer runs unchanged. Passing any other state
+against this checkout fails — correctly.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a

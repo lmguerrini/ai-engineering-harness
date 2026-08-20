@@ -1,8 +1,10 @@
 # RP2.2 — founder release packet
 
-**The manifest declares `IN_PROGRESS`**, which is the closest state the existing
-model permits: `pack_pin` knows two, and `QUALIFIED_AND_FROZEN` is the one a
-project may adopt. Moving it there is a human act and was not performed.
+**The manifest declares `QUALIFIED_AND_FROZEN`.** A human release authority
+moved it there on 2026-08-21, against the exact revision the final delta audit
+examined, after that audit returned no blockers. Everything below is the record
+that decision was taken on, and it is left as it read at the time — including
+the audit history, which is the most decision-relevant thing in it.
 
 **Read this before deciding.** Six closure-audit rounds ran — twelve blind
 auditors on distinct lenses. **The first five rounds returned NOT READY.** In
@@ -125,7 +127,7 @@ saying otherwise would have been claiming work that was not done.
 # Verify the candidate WITHOUT checking it out in a root a project pins (D18):
 git clone --local --no-hardlinks --branch evolution/rp2.2 <pack_root> <scratch_dir>
 cd <scratch_dir>
-python3 tools/pack_pin.py . --version 2.2.0 --state IN_PROGRESS
+python3 tools/pack_pin.py . --version 2.2.0 --state QUALIFIED_AND_FROZEN
 python3 -m pytest tools/tests/ -q
 
 # Then record the identity, from the clone, for every LATER verification:
@@ -176,7 +178,7 @@ before this one, and be wrong from the moment it was committed.
 | Baseline | `4495e61850c08027e47eac6d0db84b4b3380e300` (2.1.1), **not rewritten** |
 | Candidate HEAD | the tip of `evolution/rp2.2`; read it with `git rev-parse` |
 | Version | `2.2.0` — MINOR under D11 |
-| State | `IN_PROGRESS` |
+| State | `QUALIFIED_AND_FROZEN` — frozen 2026-08-21 by human authority |
 | Tree digest | `PACK_MANIFEST.json` `tree_digest_sha256`; verified, not copied |
 | Files the digest covers | `PACK_MANIFEST.json` `digest_file_count` — every tracked file except the manifest |
 
