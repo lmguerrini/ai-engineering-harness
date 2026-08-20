@@ -716,7 +716,13 @@ def _cli(argv: list[str]) -> int:
         try:
             with open(args.file, encoding="utf-8") as handle:
                 message = handle.read()
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
+            # `UnicodeDecodeError` is a `ValueError`, not an `OSError`, so a file
+            # whose BYTES cannot be decoded escaped a guard whose own comment
+            # says a file that cannot be read is a refusal. An audit falsified
+            # that sentence in one command. The defect is pre-existing at 2.1.1;
+            # the claim above it was written by this release, which is what
+            # makes it this release's to fix.
             raise IntegrityError(
                 f"the commit message file could not be read: {exc}", path=args.file
             ) from exc

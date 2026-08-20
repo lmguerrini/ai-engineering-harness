@@ -622,7 +622,12 @@ class ProjectContract:
             contract_path = contract_path / "PROJECT.yaml"
         try:
             document = contract_path.read_text(encoding="utf-8")
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
+            # Bytes that are not UTF-8 are a failure to READ, and `read_text`
+            # signals that with a `ValueError` rather than an `OSError`. Without
+            # this, a contract with one bad byte reached every `--project` CLI as
+            # a traceback, and `open_capability` RAISED instead of reporting,
+            # because it catches `ContractError` and this was not one.
             raise ContractError(f"cannot read the project contract at {contract_path}: {exc}") from exc
         raw = parse_yaml_subset(document)
 

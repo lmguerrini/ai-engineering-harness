@@ -209,6 +209,8 @@ context-efficiency invariants, and the routing-table reduction.
 | Baseline maturity / convergence phase as a Core field | One project has reached closure. A maturity scale derived from one point describes that point, not a scale | A second project reaches capability closure, giving two comparable points |
 | Audit-cycle accounting as Core code | The counters live in `PROGRESS.md` against `BUDGETS.md` and are read by a coordinator. Moving them into Core buys enforcement of a number no one has yet exceeded unknowingly | A capability exceeds an audit budget without anyone noticing, or a second evolution session needs counters that cross sessions |
 | Delta-scoped requalification driven mechanically from SHAs | `surface_diff.py` already derives the changed public Python surface between two revisions, and `evidence_index` already binds certification to an exact `(base, head, digest)`. What is missing is deriving a *requalification scope* from those and checking that a run covered it | A candidate whose delta is large enough that full requalification, rather than the work, is the cost driver |
+| The `pack_release_state` / `pack_pin` reporting pair | `pack_release_state` reads the manifest at the pinned root regardless of whether that root *is* the pinned release, so it can read `VERIFIED` beside a `pack_pin` of `UNVERIFIABLE`. The aggregate is correct in every case an auditor constructed, and the docstring says it reports the state on disk — but the pairing reads oddly | a reader acting on the component rather than the aggregate, or any case where the pairing is not merely odd but wrong |
+| Prerelease-suffix ordering | `_sortable("2.2.0-rc1")` equals `_sortable("2.2.0")`, so a prerelease is never offered over a release and never hidden by one — conservative in both directions | a release channel that actually publishes prereleases into an index a project reads |
 | Vendoring any adapter into the release | Pinning was proved sufficient: `adapter_pin.py` catches the exact contradiction that motivated this release, by digest, before dispatch | Pinning demonstrably failing to provide a guarantee that vendoring would — which would also reverse D12 |
 
 ## Qualification
@@ -232,9 +234,16 @@ None is tracked, so none is inside the digest.
 finding either. It reports local filesystem paths — the adapter locators under a
 home directory, which are the whole point of that list — and credential-shaped
 tokens, which are the negative fixtures the commit gate is tested against. Both
-were already true of the frozen baseline: 15 tracked files there carry a local
-path, 21 here, and the growth is adapter and observation records added
-deliberately. The scan is the gate a **project** runs before publishing
+were already true of the frozen baseline, and the count has grown — the growth
+is adapter locators, observation records and test fixtures added deliberately.
+The figure is not written here, because it changes with every file added and
+this release has already shipped several that went stale exactly that way. It is
+one command:
+
+    python3 tools/outgoing_scan.py . <revision>
+
+run once against `4495e61` and once against the candidate, counting the lines
+reading `a local filesystem path`. The scan is the gate a **project** runs before publishing
 something; this pack is private, has no remote, and is never published (D5).
 Recorded because a reader who runs every tool in `tools/` against the pack
 should be told in advance which two refuse it and why, rather than discovering
@@ -636,7 +645,8 @@ them.** Every reproduction in this document was against constructed fixtures or
 against the pack itself.
 
 Running the shipped tools against all three, read-only, took two minutes and
-produced two defects, one of them the most serious in the release.
+produced three defects, one of them the most serious in the release — two in the
+first pass and a third from the same probe, described in order below.
 
 ### The contract reader refused a real project's contract outright
 
@@ -782,6 +792,22 @@ directory that holds four contracts.
 Every one of those answers is true of that project today, which is the bar the
 brief set: *a project being old or unverifiable is not a candidate defect; a
 false answer about that project is.*
+
+### Re-applying the mutations named in this record
+
+**Deselect the two release-identity tests first.** Any edit to a tracked file
+fails `test_the_recorded_digest_recomputes_from_this_checkout` and
+`test_this_checkout_verifies_against_its_own_manifest`, because they digest the
+tree they ship inside. A mutation that "dies" to only those two has not been
+caught by anything behavioural, and an auditor hit exactly that and had to
+re-run to find out which of its kills were real:
+
+    python3 -m pytest tools/tests/ -q \
+      --deselect tools/tests/test_release_integrity.py::test_the_recorded_digest_recomputes_from_this_checkout \
+      --deselect tools/tests/test_release_integrity.py::test_this_checkout_verifies_against_its_own_manifest
+
+Every mutation recorded in this document was confirmed against a real oracle
+that way, not against the digest.
 
 ### Mutation testing
 
@@ -985,3 +1011,85 @@ and correctly attributed it to a concurrent process rather than to itself. That
 was this coordinator repairing the crash the other auditor had just reported.
 Recorded because an auditor noticing the ground moving, saying so, and not
 drawing a conclusion from it is the behaviour the tier exists to buy.
+
+## Closure audit — round 6, the two lenses that had been interrupted
+
+Both dispatched against `5b0d1a7ec124fe4e03aa8135ae2fb45514bbb096` after two
+earlier attempts were killed by a usage limit mid-run. Neither found a defect in
+the code.
+
+### Convergence lens: **READY**
+
+Nine of the ten round-5 defects reproduced as closed by execution, the tenth
+closed for every named instance. Fourteen targeted mutations, all killed;
+fifteen constructed false-`READY` attacks, all correctly refused. It recomputed
+the digest with its own implementation of the framing algorithm, and measured
+the exit status of every contract-reading CLI before and after the error
+hierarchy changed — 2 in both, so the change is caller-neutral.
+
+Two recommendations, both reproduced and both taken:
+
+*   **`UnicodeDecodeError` is a `ValueError`, not an `OSError`**, so a file whose
+    *bytes* cannot be decoded still printed a raw traceback — from the guard
+    whose own comment says a file that cannot be read is a refusal. One command
+    falsified that sentence. It reaches every `--project` CLI, and
+    `open_capability` *raised* rather than reporting, because it catches
+    `ContractError` and this was not one. Pre-existing at 2.1.1; the claim above
+    it was written by this release, which is what makes it this release's to fix.
+*   **The corpus of the test written to forbid tracebacks was entirely UTF-8**,
+    so it could not constrain the invariant its own docstring states. Third time
+    this release has produced a test whose fixtures excluded the failure it was
+    written to catch. Widened with non-UTF-8 and binary inputs, and falsified by
+    reverting the repair with the wider corpus in place: it fails across three
+    tools.
+
+Two further items were declined as scope at a release gate and moved to
+`DEFER_WITH_TRIGGER`: the `pack_release_state` / `pack_pin` reporting pair, and
+prerelease-suffix ordering.
+
+### Release-authority lens: **NOT READY** — five blockers, none in the code
+
+Its own summary is the useful sentence: *the code, tests and release identity
+survived every attempt I made to break them.* All five were in the two documents
+a release authority actually reads, and every one is the same class this release
+has now repaired at least six times — **a figure typed beside a fact the
+repository can compute.**
+
+| Finding | Measured | Repair |
+|---|---|---|
+| the local-path growth figure was wrong | 15 at the baseline, 25 here, not 21 | the numbers are gone; the command that produces them is stated instead |
+| the packet asserted a consumer state the gate record had already corrected | the pin does not verify while this branch is checked out at the root that project pins | dated and qualified, as the gate record already was |
+| "All 28 commit messages" | 32 now, and 29 when the sentence was written | the count is gone; the property is checked over the whole range |
+| the disclosure of consumer-contact risk said "two defects" beside its own "three" | the manifest already said three plus two | made consistent at three plus two |
+| the pointers at the decision layer stopped at D19 | `DECISIONS.md` ends at D22 | **bound**: a range whose upper bound is a decision number must name the last decision in the file |
+
+The fifth is now structural rather than corrected, because correcting it is what
+was done last time. The guard exempts a range that says of itself that it is
+closed and historical — `D1–D13 are unchanged` — so an inherited set is not
+dragged forward every time a decision is added. It immediately found a third
+instance nobody had reported: the changelog's decision paragraph stopped at D19
+while the release had added three more.
+
+Two of its recommendations were also taken: the section that began "produced two
+defects" and then described three, and — more useful — **a warning that a
+mutation which dies only to the two release-identity tests has not been caught
+by anything behavioural.** Any edit to a tracked file fails those two, because
+they digest the tree they ship inside. The auditor hit it, had to re-run to find
+out which of its kills were real, and the record now tells a reader to deselect
+them. Every mutation in this document was confirmed that way.
+
+It also found that the manifest's machine-readable limitations carried no entry
+for D18, though the packet calls it the finding that most deserves a decision and
+a real consumer's pin fails today because of it. Added.
+
+### What neither could break
+
+Between them: the digest reproduced independently twice, from separate
+implementations; the whole suite green, and green from `/` with an empty `HOME`
+under a shifted timezone, hash seed and locale — the count is in the manifest,
+where a test binds it to what the suite actually collects; `--json` byte-identical across all
+three; the frozen baseline's own suite passing against this implementation with
+only its release-identity cases failing, which a hybrid tree cannot satisfy by
+construction; zero public names removed and zero signatures changed, by two
+independent AST walks; the public-safety claim reproduced in both halves; and no
+AI attribution anywhere in the history, the code or the documents.

@@ -184,11 +184,14 @@ fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
 ### Decisions
 
 D14 records the founder architecture decision as the current authority layer.
-D15–D19 record the rules the repairs established: an unanswerable question is
+D15–D22 record the rules the repairs established: an unanswerable question is
 never rendered as its reassuring answer; an exemption scopes the project's
 vocabulary and never a universal rule; the release states its push form once; a
-release root is a checkout nobody works in; and Project Context is a contract
-capability whose meaning stays project-local. D1–D13 are unchanged and no prior
+release root is a checkout nobody works in; Project Context is a contract
+capability whose meaning stays project-local; readiness is composed and is never
+a second source of truth; a newer release is information and only a broken
+prerequisite is a gate; and a requirement governs absence, while a declared
+thing that cannot be established always stops. D1–D13 are unchanged and no prior
 gate record was rewritten.
 
 ## 2.1.1 — release integrity: the checks now mean what they said

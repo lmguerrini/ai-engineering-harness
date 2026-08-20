@@ -582,6 +582,16 @@ def test_no_tool_cli_ever_prints_a_traceback_for_an_input_it_refuses(tmp_path):
         "project:\n  name: x\npack:\n  root_path: /x\n  version_adopted: 3\n"
         "  sha_adopted: aaaa\n  tree_digest_sha256: bbbb\n  state_adopted: QUALIFIED_AND_FROZEN\n"
     )
+    # Bytes, not text. The first version of this corpus was entirely UTF-8, so
+    # it could not constrain the invariant its own docstring states — an audit
+    # falsified that invariant in one command, on a class of input this list
+    # simply did not contain. `read_text` signals undecodable bytes with a
+    # `ValueError`, which is not an `OSError`, which is how it escaped.
+    not_utf8 = tmp_path / "not-utf8.yaml"
+    not_utf8.write_bytes(b'project:\n  name: "\xff\xfe\x00"\n')
+    binary = tmp_path / "binary.bin"
+    binary.write_bytes(bytes(range(256)) * 4)
+
     empty = tmp_path / "not-a-repo"
     empty.mkdir()
     missing = tmp_path / "does-not-exist"
@@ -591,9 +601,12 @@ def test_no_tool_cli_ever_prints_a_traceback_for_an_input_it_refuses(tmp_path):
         ["--project", str(unreadable_context)],
         ["--project", str(scalar_pack)],
         ["--project", str(unquoted_version)],
+        ["--project", str(not_utf8)],
         [str(malformed)],
         [str(scalar_pack)],
         [str(unquoted_version)],
+        [str(not_utf8)],
+        [str(binary)],
         [str(unreadable_context)],
         [str(missing)],
         [str(empty), "no-such-ref"],
@@ -716,6 +729,49 @@ def test_the_baseline_figure_this_release_quotes_is_the_baselines_own():
     assert stated.group(1) == percent, (
         f"this release says the baseline was {stated.group(1)}% over; the baseline's own "
         f"manifest records {percent}%"
+    )
+
+
+def test_every_pointer_at_the_decision_layer_reaches_the_last_decision():
+    """`DECISIONS.md` is append-only, so every range naming its end goes stale
+    the next time a decision is added — and two did: the README said `D1-D19`
+    and the packet said `D14-D19` while the file held D22, routing a reader
+    away from the three decisions that govern the capability this release adds.
+
+    Bound rather than corrected, because correcting it is what was done last
+    time. Any range whose upper bound is a decision number must name the highest
+    decision the file actually contains.
+    """
+    import re
+
+    decisions = (ROOT / "DECISIONS.md").read_text(encoding="utf-8")
+    numbers = [int(match) for match in re.findall(r"(?m)^## D(\d+)", decisions)]
+    assert numbers, "DECISIONS.md declares no decisions"
+    last = max(numbers)
+
+    #: `D<n>` followed by any dash and `D<m>` — the shape a range takes here.
+    ranges = re.compile(r"\bD(\d+)\s*[-\u2010-\u2015]\s*D(\d+)\b")
+    offenders = []
+    for pattern in ("README.md", "docs/RP2.2-*.md", "PACK_MANIFEST.json", "CHANGELOG.md"):
+        for path in sorted(ROOT.glob(pattern)):
+            if not path.is_file():
+                continue
+            name = str(path.relative_to(ROOT))
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                # A range describing a CLOSED historical set — "D1-D13 are
+                # unchanged" — is not a pointer at the decision layer and must
+                # not be dragged forward every time a decision is added. The
+                # exemption is by the words that make the line say so, so it
+                # stays visible in the text instead of hiding in a list here.
+                if any(word in line.lower() for word in ("unchanged", "inherited", "prior")):
+                    continue
+                for low, high in ranges.findall(line):
+                    if int(high) != last:
+                        offenders.append(f"{name}:{number}: D{low}-D{high}, but the file ends at D{last}")
+
+    assert not offenders, (
+        "these point at a decision range that stops short of the last decision: "
+        + "; ".join(offenders)
     )
 
 

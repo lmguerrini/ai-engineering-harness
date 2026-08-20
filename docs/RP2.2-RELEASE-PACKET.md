@@ -4,8 +4,13 @@
 model permits: `pack_pin` knows two, and `QUALIFIED_AND_FROZEN` is the one a
 project may adopt. Moving it there is a human act and was not performed.
 
-**Read this before deciding.** Five closure-audit rounds ran — ten blind
-auditors on distinct lenses — and **every round returned NOT READY**. Every
+**Read this before deciding.** Six closure-audit rounds ran — twelve blind
+auditors on distinct lenses. **The first five rounds returned NOT READY.** In
+the sixth, the convergence lens returned READY and the release-authority lens
+returned NOT READY on five findings, **every one of them in the documents rather
+than the code** — its own words were that the code, tests and release identity
+survived every attempt it made to break them. All five are repaired, and the one
+that was derivable is now bound by a test rather than corrected by hand. Every
 *material* finding was reproduced by the coordinator before it counted, and
 repaired; a few were artefacts of auditing a moving branch, and the gate record
 says which. Each round then found more, including in the repairs
@@ -48,8 +53,8 @@ project does not use. The other two: a pin classifier that answered about a
 project whose contract it had never opened, and every CLI printing a stack trace
 where it should have reported a refusal. Eight auditors were
 given the repository and audited the repository; nobody was asked to point the
-release at the world it ships into, and that omission is the coordinator's. Both
-defects are repaired and mutation-tested; the account is in
+release at the world it ships into, and that omission is the coordinator's. All
+three are repaired and mutation-tested; the account is in
 `docs/RP2.2-GATE.md`, under *After the audit budget closed*.
 
 **Read that section before the rest.** It is the strongest evidence in this
@@ -229,8 +234,12 @@ worktrees.
 ## Deferred, each with its trigger
 
 In `docs/RP2.2-GATE.md`: baseline maturity phase, audit-cycle accounting as
-Core code, delta-scoped requalification driven from SHAs, and vendoring any
-adapter. None is a blocker for a project adopting this release.
+Core code, delta-scoped requalification driven from SHAs, vendoring any adapter,
+the `pack_release_state`/`pack_pin` reporting pair, and prerelease-suffix
+ordering. The last two came from the final audits, which classified both as not
+required; they are recorded rather than done, because scope at a release gate is
+how a gate stops being one. None is a blocker for a project adopting this
+release.
 
 ## Public safety
 
@@ -239,8 +248,9 @@ rather than reading it in isolation.
 
 **Nothing in the listed categories is newly introduced**: no real username, no
 absolute personal path, no credential, no email address, no raw prompt or
-conversation, no private runtime state, no transcript data. All 28 commit
-messages are clear of private names and machine paths. Two things that *were*
+conversation, no private runtime state, no transcript data. Every commit message
+on the branch is clear of private names and machine paths — checked over the
+whole range rather than counted, because the count changes with every commit. Two things that *were*
 introduced this session were found by this check and removed before commit — a
 real session identifier in a test fixture, now pinned against by a guard, and
 private product names in two documents, replaced by the role each project plays.
@@ -255,8 +265,11 @@ No remote was created, nothing was pushed, no history was rewritten.
 
 ## Known limitations
 
-- **No audit round has returned READY.** Five rounds each returned NOT READY;
-  the last round's findings are repaired and unaudited. The fifth was
+- **One lens has returned READY; the other has not.** Five rounds returned NOT
+  READY outright. In the sixth, convergence returned READY with no blockers and
+  release-authority returned NOT READY on five document defects, all repaired
+  here and none touching code. The repairs to those five are themselves
+  unaudited, which is the standing condition of any final repair. The fifth was
   consumer-facing rather than another repository review, on the evidence that
   the first four had missed what contact with real projects found immediately —
   and it found six more blockers, including two components that answered by
@@ -266,11 +279,14 @@ No remote was created, nothing was pushed, no history was rewritten.
   audit budget closed**, and doing so immediately found three defects including
   the most serious in the release. Two of the three real projects are still on legacy pins
   — theirs to change at a capability boundary, and deliberately not touched —
-  and the third now reads correctly: a verified pack pin, and a Project Context
-  that names the one field it does not record. What is *not* established is
-  whether any other tool in this release behaves against real project data the
-  way it behaves against fixtures. One pass found two defects; nothing says the
-  second pass would find none.
+  and the third reads, correctly, as a pin whose four fields are all present and
+  a Project Context that names the one field it does not record. **Its pin does
+  not verify while this evolution branch is checked out at the root it pins** —
+  which is D18 happening, reported truthfully, and dated: it was not true when
+  that project was first probed. What is *not* established is whether any other
+  tool in this release behaves against real project data the way it behaves
+  against fixtures. The first pass found three defects and a second sweep across
+  every tool found two more; nothing says a third would find none.
 - **Prose claims about this release's own history are not checked by anything.**
   Two guards cover the two lies that actually recurred: no document may state a
   divergence figure, and every count in the derived routing view must match the
@@ -314,5 +330,5 @@ No remote was created, nothing was pushed, no history was rewritten.
 |---|---|
 | Gate record, per capability, with every reproduction | `docs/RP2.2-GATE.md` |
 | Capability map and dependency order | `docs/RP2.2-CAPABILITY-MAP.md` |
-| Architecture decision layer | `DECISIONS.md` D14–D19, `docs/RP2.2-ARCHITECTURE.md` |
+| Architecture decision layer | `DECISIONS.md` D14–D22, `docs/RP2.2-ARCHITECTURE.md` |
 | What changed, in release terms | `CHANGELOG.md` |
