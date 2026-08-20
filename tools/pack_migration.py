@@ -99,7 +99,16 @@ class Pin:
     @classmethod
     def from_contract(cls, contract: object) -> "Pin":
         raw = getattr(contract, "raw", None)
-        block = (raw or {}).get("pack") or {}
+        if not isinstance(raw, dict):
+            # A path string has no `raw`, and treating that as an empty pin
+            # answered "is this project's pin checkable?" with a confident
+            # UNVERIFIABLE_LEGACY_PIN about a project whose contract was never
+            # read. Reproduced against three real contracts at once.
+            raise ValueError(
+                "from_contract needs a loaded contract, not "
+                f"{type(contract).__name__} — load it with ProjectContract.load first"
+            )
+        block = raw.get("pack") or {}
         if not isinstance(block, dict):
             raise ValueError("`pack:` must be a mapping")
         retained = block.get("retained_roots") or ()

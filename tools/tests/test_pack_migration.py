@@ -354,3 +354,15 @@ def test_an_in_progress_entry_is_readable_and_still_not_adoptable(tmp_path, rele
     ]}))
     entry = read_release_index(index)[0]
     assert not migration_gate(_pin(current), entry, at_capability_boundary=True).clean
+
+
+def test_a_pin_cannot_be_read_from_something_that_is_not_a_contract():
+    """It used to answer anyway. Handed a PATH — the obvious mistake, and the
+    one actually made — it produced an all-empty pin and reported a real
+    project as UNVERIFIABLE_LEGACY_PIN, naming four fields that were sitting in
+    the file it had never opened. A confident wrong answer about somebody
+    else's project is worse than an error."""
+    for wrong in ("/some/path/PROJECT.yaml", 12, None, object()):
+        with pytest.raises(ValueError) as caught:
+            Pin.from_contract(wrong)
+        assert "loaded contract" in str(caught.value)

@@ -20,9 +20,11 @@ from project_context import (
     STALE,
     UNVERIFIABLE,
     ContextDeclaration,
+    UnreadableDeclaration,
     ContextError,
     assert_unchanged,
     declaration_from,
+    report_declared,
     tree_digest,
     verify,
 )
@@ -44,7 +46,7 @@ def _declare(root, **overrides):
     fields = {
         "context_id": "PROJECT-CONTEXT-001",
         "reference_path": str(root),
-        "revision": 12,
+        "control_revision": 12,
         "digest": digest,
         "authority_role": "DURABLE_SEMANTIC_PRODUCT_AUTHORITY",
     }
@@ -129,7 +131,7 @@ def test_a_declared_context_that_cannot_be_found_is_unverifiable_not_absent(tmp_
     """The distinction that matters: "nobody declared one" is fine, "one was
     declared and is missing" is a stop."""
     declaration = ContextDeclaration(
-        context_id="X", reference_path=str(tmp_path / "gone"), revision=1, digest="0" * 64
+        context_id="X", reference_path=str(tmp_path / "gone"), control_revision=1, digest="0" * 64
     )
     report = verify(declaration)
     assert report.state == UNVERIFIABLE
@@ -230,26 +232,80 @@ def test_an_absent_block_is_no_context():
 @pytest.mark.parametrize(
     "block, expected",
     [
-        ({"reference_path": "/x", "revision": 1, "digest": "a" * 64}, "context_id"),
-        ({"context_id": "X", "revision": 1, "digest": "a" * 64}, "reference_path"),
-        ({"context_id": "X", "reference_path": "/x", "digest": "a" * 64}, "revision"),
-        ({"context_id": "X", "reference_path": "/x", "revision": 1}, "digest"),
-        ({"context_id": "X", "reference_path": "/x", "revision": 1, "digest": "short"}, "digest"),
-        ({"context_id": "X", "reference_path": "/x", "revision": -1, "digest": "a" * 64}, "revision"),
+        ({"context_id": "X", "reference_path": "/x", "control_revision": 1, "digest": "short"}, "digest"),
+        ({"context_id": "X", "reference_path": "/x", "control_revision": -1, "digest": "a" * 64}, "revision"),
+        ({"context_id": "X", "reference_path": "/x", "control_revision": "twelve", "digest": "a" * 64}, "revision"),
+        ({"context_id": " ", "reference_path": "/x", "control_revision": 1, "digest": "a" * 64}, "context_id"),
     ],
 )
 def test_a_malformed_declaration_raises_rather_than_half_parsing(block, expected):
     """A declaration that half-parses is the worst outcome available: the
-    capability proceeds believing it has a verified semantic authority."""
+    capability proceeds believing it has a verified semantic authority.
+
+    These are values somebody WROTE and got wrong. An absent field is the
+    separate case below — it is a shape, not a typo, and it must not cost the
+    project the rest of its contract.
+    """
     with pytest.raises(ContextError) as caught:
         declaration_from(block)
     assert expected in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    "absent",
+    ["context_id", "reference_path", "control_revision", "digest"],
+)
+def test_an_absent_identity_field_is_unverifiable_rather_than_unloadable(absent):
+    """Reproduced against the only real Project Context in existence, which
+    records its digest in prose rather than in a field.
+
+    Raising here made `ProjectContract.load` fail, so that project's contract
+    could not be read AT ALL — by any tool, for any purpose, over one optional
+    block. `UNVERIFIABLE` blocks everything that requires a verified context
+    and costs the project nothing else.
+    """
+    block = {"context_id": "X", "reference_path": "/x", "control_revision": 1, "digest": "a" * 64}
+    del block[absent]
+
+    declaration = declaration_from(block)
+    assert isinstance(declaration, UnreadableDeclaration)
+    assert declaration.missing == (absent,)
+
+    for report in (report_declared(declaration), verify(declaration)):
+        assert report.state == UNVERIFIABLE
+        assert not report.clean
+        assert absent in report.findings[0]
+        assert "NOT `NOT_PRESENT`" in report.findings[0]
+
+
+def test_the_real_worlds_only_project_context_block_reads_as_unverifiable():
+    """The shape that broke this: identity fields present except the digest,
+    which that project keeps in prose. Named here as data rather than read from
+    the live contract, so the test says what the shape was even after it
+    changes."""
+    declaration = declaration_from({
+        "context_id": "CA-PROJECT-CONTEXT-001",
+        "reference_path": "/somewhere/.project_context",
+        "control_revision": 12,
+        "context_state": "CURRENTLY_VERIFIED",
+        "activated": True,
+        "authority_role": "DURABLE_SEMANTIC_PRODUCT_AUTHORITY",
+    })
+    assert isinstance(declaration, UnreadableDeclaration)
+    assert declaration.missing == ("digest",)
+    assert declaration.context_id == "CA-PROJECT-CONTEXT-001"
+
+    report = verify(declaration)
+    assert report.state == UNVERIFIABLE
+    assert "digest" in report.findings[0]
+    # And emphatically NOT the reassuring answer the block's own prose asserts.
+    assert report.state != CURRENTLY_VERIFIED
+
+
 def test_a_digest_algorithm_this_verifier_does_not_implement_is_refused():
     with pytest.raises(ContextError) as caught:
         declaration_from({
-            "context_id": "X", "reference_path": "/x", "revision": 1,
+            "context_id": "X", "reference_path": "/x", "control_revision": 1,
             "digest": "a" * 64, "digest_algorithm": "blake3-something",
         })
     assert DIGEST_ALGORITHM in str(caught.value)
@@ -258,7 +314,7 @@ def test_a_digest_algorithm_this_verifier_does_not_implement_is_refused():
 def test_a_boolean_is_not_accepted_as_a_revision():
     with pytest.raises(ContextError):
         declaration_from({
-            "context_id": "X", "reference_path": "/x", "revision": True, "digest": "a" * 64
+            "context_id": "X", "reference_path": "/x", "control_revision": True, "digest": "a" * 64
         })
 
 
@@ -267,7 +323,7 @@ def test_a_well_formed_block_parses(context):
     declaration = declaration_from({
         "context_id": "PROJECT-CONTEXT-001",
         "reference_path": str(context),
-        "revision": 12,
+        "control_revision": 12,
         "digest": digest,
         "authority_role": "DURABLE_SEMANTIC_PRODUCT_AUTHORITY",
         "activated": True,
@@ -291,7 +347,7 @@ def test_the_contract_loader_parses_the_declaration(tmp_path):
     contract_path.write_text(
         "project:\n  name: x\n"
         "project_context:\n"
-        f"  context_id: C1\n  reference_path: {root}\n  revision: 1\n  digest: {digest}\n"
+        f"  context_id: C1\n  reference_path: {root}\n  control_revision: 1\n  digest: {digest}\n"
     )
     contract = project_contract.ProjectContract.load(contract_path)
     assert contract.project_context is not None
@@ -300,14 +356,34 @@ def test_the_contract_loader_parses_the_declaration(tmp_path):
 
 
 def test_a_malformed_declaration_fails_at_contract_load(tmp_path):
+    """A value somebody wrote and got wrong still costs the whole contract."""
     import project_contract
 
     contract_path = tmp_path / "PROJECT.yaml"
     contract_path.write_text(
-        "project:\n  name: x\nproject_context:\n  context_id: C1\n  revision: 1\n"
+        "project:\n  name: x\nproject_context:\n  context_id: C1\n"
+        "  reference_path: /x\n  control_revision: 1\n  digest: short\n"
     )
     with pytest.raises(project_contract.ContractError):
         project_contract.ProjectContract.load(contract_path)
+
+
+def test_a_block_missing_a_field_still_lets_the_rest_of_the_contract_load(tmp_path):
+    """The regression this closes, at the layer where it actually hurt: a real
+    project's contract became unreadable by every tool over one optional block
+    it had written in an older shape."""
+    import project_contract
+
+    contract_path = tmp_path / "PROJECT.yaml"
+    contract_path.write_text(
+        "project:\n  name: x\n  repo_path: /somewhere\n"
+        "project_context:\n  context_id: C1\n  reference_path: /x\n  control_revision: 12\n"
+    )
+    contract = project_contract.ProjectContract.load(contract_path)
+
+    assert contract.repository() == "/somewhere"          # the rest still works
+    assert isinstance(contract.project_context, UnreadableDeclaration)
+    assert verify(contract.project_context).state == UNVERIFIABLE
 
 
 def test_a_contract_with_no_context_block_reports_none(tmp_path):

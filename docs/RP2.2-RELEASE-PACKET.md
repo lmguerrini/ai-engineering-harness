@@ -38,6 +38,22 @@ first two.
 **No round has yet returned READY.** The final round's findings are closed and
 the suite is green, but no auditor has seen the result of closing them.
 
+**And then, after the audit budget closed, two minutes of contact with reality
+beat four rounds of inspection.** Running the shipped tools read-only against
+the three real `PROJECT.yaml` files on this machine — which no round had ever
+done — found that the contract reader **raised on a live project's contract**,
+making it unreadable by every tool over one optional block, because this release
+had invented a field spelling that project does not use. Eight auditors were
+given the repository and audited the repository; nobody was asked to point the
+release at the world it ships into, and that omission is the coordinator's. Both
+defects are repaired and mutation-tested; the account is in
+`docs/RP2.2-GATE.md`, under *After the audit budget closed*.
+
+**Read that section before the rest.** It is the strongest evidence in this
+packet about what kind of defect this candidate is still likely to contain, and
+it argues for a specific next step: a round that runs the release against real
+consumers rather than against itself.
+
 ## What to check first
 
 ```bash
@@ -160,6 +176,15 @@ adapter. None is a blocker for a project adopting this release.
   the authorised budget and four ran, so a fifth round — not a smaller step — is
   what remains, and it is the release authority's call rather than a step that
   was skipped.
+- **The release was never exercised against a real consumer until after the
+  audit budget closed**, and doing so immediately found the most serious defect
+  in it. Two of the three real projects on this machine are still on legacy pins
+  — theirs to change at a capability boundary, and deliberately not touched —
+  and the third now reads correctly: a verified pack pin, and a Project Context
+  that names the one field it does not record. What is *not* established is
+  whether any other tool in this release behaves against real project data the
+  way it behaves against fixtures. One pass found two defects; nothing says the
+  second pass would find none.
 - **Prose claims about this release's own history are not checked by anything.**
   Two guards cover the two lies that actually recurred: no document may state a
   divergence figure, and every count in the derived routing view must match the

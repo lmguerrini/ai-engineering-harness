@@ -142,7 +142,9 @@ project_context:
   #
   # context_id:      PROJECT-CONTEXT-001    # project-local identity
   # reference_path:  /absolute/path/to/.project_context   # canonical locator, resolved
-  # revision:        12                     # project-local, monotonic
+  # control_revision: 12                    # project-local, monotonic. NAMED FOR WHAT THE ONLY
+  #                                          # REAL PROJECT CONTEXT IN EXISTENCE CALLS IT, after
+  #                                          # this verifier shipped an invented spelling
   # digest:          <64-char sha256 over the context tree>
   # digest_algorithm: sha256-framed-tree-v1 # named, so a checkout carrying another fails as a version mismatch
   # authority_role:  DURABLE_SEMANTIC_PRODUCT_AUTHORITY   # the project's own words; recorded, never interpreted
@@ -154,7 +156,10 @@ project_context:
   #   DECLARED            declared, not yet verified this session — neither pass nor fail
   #   CURRENTLY_VERIFIED  located, and matching the declared revision and digest
   #   STALE               located and readable, and not what the declaration describes
-  #   UNVERIFIABLE        declared and CANNOT BE FOUND — a stop, and not the same as NOT_PRESENT
+  #   UNVERIFIABLE        declared and CANNOT BE CHECKED — the locator does not resolve, OR the
+  #                       block leaves out an identity field. A stop, and not the same as
+  #                       NOT_PRESENT. An ABSENT field lands here; a field written WRONG is an
+  #                       error, because a typo somebody made is not an older shape.
   #
   # Verify at capability open, and observe a digest deliberately:
   #

@@ -626,3 +626,73 @@ exist — no document may state a divergence figure, and every count in the
 routing view must match the log — but they cover two specific recurring lies,
 not the general case. A sentence in the packet that misdescribes what an audit
 found would ship green today. The manifest's `known_limitations` says so.
+
+## After the audit budget closed: run it against the real projects
+
+Not an audit round. The audit budget was spent and this candidate was already
+written up as final when a background search returned the three `PROJECT.yaml`
+files on this machine. **The release had never been run against a single one of
+them.** Every reproduction in this document was against constructed fixtures or
+against the pack itself.
+
+Running the shipped tools against all three, read-only, took two minutes and
+produced two defects, one of them the most serious in the release.
+
+### The contract reader refused a real project's contract outright
+
+`ProjectContract.load` **raised** on the Consumer-A contract:
+`project_context.revision is missing or is not an integer revision`. That
+project declares `control_revision: 12`. This release invented the spelling
+`revision`, shipped it in the template, and validated the module against a
+fixture written to match the invention — while the digest half of the same
+module *was* validated against that project's real 90-file context directory.
+The half that could be checked conveniently was checked.
+
+Worse than the name: the block records its context digest **in prose**, inside a
+disposition string, not in a field. So no rename alone would have saved it — and
+because the reader raised on the absence, `ProjectContract.load` failed
+completely. That project's contract could not be read **by any tool, for any
+purpose**, over one optional block. A pack whose whole subject is not breaking
+its consumers had made a live consumer's contract unreadable, and nothing in
+four audit rounds could see it, because nothing had opened the file.
+
+The repair separates two things the code had conflated:
+
+*   an identity field that is **absent** is a *shape this verifier cannot
+    check* — `UNVERIFIABLE`, naming exactly which fields are missing, blocking
+    everything that requires a verified context and costing the project nothing
+    else;
+*   a field that is **present and malformed** still raises, because
+    `control_revision: "twelve"` is a typo somebody made, not an older shape,
+    and silence about it is the dangerous kind.
+
+The field is now spelled `control_revision`, after the only real Project Context
+in existence. With both repairs, that project reads as `VERIFIED_PIN` on its
+pack pin and `UNVERIFIABLE` on its context, naming the single missing field —
+which is exactly true.
+
+### A pin classifier that answered about a project it had never read
+
+`Pin.from_contract` accepted anything. Handed a **path** — the obvious mistake,
+and the one actually made in the probe above — it read no `raw`, produced an
+all-empty pin, and reported all three real projects as
+`UNVERIFIABLE_LEGACY_PIN`, naming four fields that were sitting in the files it
+had never opened. One of those reports was false: Consumer-A's pin carries all
+four. It now refuses a non-contract instead of answering.
+
+### What this says about the four rounds
+
+Eight blind auditors, four rounds, 143,820 and 111,267 and 120,000 pattern
+comparisons — and the defect that would have hurt a real user first was found by
+opening three files nobody had opened. The auditors were given the repository
+and audited the repository. **Nobody was asked to point the release at the world
+it ships into**, and that omission is the coordinator's.
+
+Four mutations of these repairs were run and all four are killed: absence
+raising again, the unreadable block reported as `NOT_PRESENT`, the invented
+field spelling returning, and `from_contract` answering about a path.
+
+Both defects were found **read-only**. No project file was modified, and the
+founder's instruction not to migrate the existing projects was not touched: this
+was observation, and what it observed is that two of the three are still on
+legacy pins, which is theirs to change at a capability boundary.

@@ -5,7 +5,7 @@ capability boundary — the full log each time, never patched, never a rolling
 summary that overwrites adverse evidence. If this file and `observations.jsonl`
 disagree, the log wins and this file is due for regeneration.
 
-Regenerated 2026-08-20 at the RP2.2 evolution boundary from **28** observations.
+Regenerated 2026-08-20 at the RP2.2 evolution boundary from **29** observations.
 The observation count,
 every grade and **every count in the evidence column** are compared against the
 log by `test_the_routing_table_grades_are_the_derived_ones` and

@@ -61,6 +61,7 @@ __all__ = [
     "UNVERIFIABLE",
     "CONTEXT_STATES",
     "ContextDeclaration",
+    "UnreadableDeclaration",
     "ContextReport",
     "tree_digest",
     "declaration_from",
@@ -143,7 +144,7 @@ class ContextDeclaration:
 
     context_id: str
     reference_path: str
-    revision: int
+    control_revision: int
     digest: str
     #: What this context is authoritative *for*, in the project's own words.
     #: Recorded and never interpreted — Core does not adjudicate product meaning.
@@ -158,6 +159,33 @@ class ContextDeclaration:
 
     def resolved(self) -> Path:
         return Path(self.reference_path).expanduser().resolve()
+
+
+#: What this verifier needs before it can check a context's identity at all.
+#: Absence of any of them is a shape it cannot read; presence with the wrong
+#: value is an error.
+_IDENTITY_KEYS = ("context_id", "reference_path", "control_revision", "digest")
+
+
+@dataclass(frozen=True)
+class UnreadableDeclaration:
+    """A `project_context:` block whose identity fields are ABSENT.
+
+    Not an error and not a declaration: the project said it has a context and
+    did not say it in the form this verifier can check. Distinguished from a
+    malformed value, which still raises — somebody who wrote `control_revision:
+    "twelve"` meant to declare a revision, and silence about a typo is the
+    dangerous kind. An absent field is more often an older shape, and refusing
+    to load the ENTIRE contract over one optional block would deny every
+    unrelated tool a project's contract to punish an omission in this one.
+
+    Found against the only real Project Context in existence, which records its
+    digest in prose rather than in a field: this verifier refused to load that
+    project's contract at all.
+    """
+
+    context_id: str | None
+    missing: tuple[str, ...]
 
 
 @dataclass
@@ -178,7 +206,7 @@ class ContextReport:
         lines = [f"project context: {self.state}"]
         if self.declaration is not None:
             lines.append(
-                f"  {self.declaration.context_id} revision {self.declaration.revision}"
+                f"  {self.declaration.context_id} revision {self.declaration.control_revision}"
                 f"{'' if self.declaration.activated else ' (declared, NOT activated)'}"
             )
             if self.declaration.authority_role:
@@ -197,16 +225,32 @@ class ContextReport:
 
 
 def declaration_from(value: object) -> ContextDeclaration | None:
-    """Parse a `project_context:` block. `None` means the project declared none.
+    """Parse a `project_context:` block.
 
-    Every malformed field raises. A context declaration that half-parses is the
-    worst outcome available: the capability would proceed believing it had a
-    verified semantic authority.
+    Three outcomes, and the difference between them is the point:
+
+    *   `None` — the project declared no context. A clean state.
+    *   :class:`UnreadableDeclaration` — it declared one and left out a field
+        this verifier needs, so its identity cannot be checked. Reported as
+        `UNVERIFIABLE`, never as verified and never as absent.
+    *   :class:`ContextDeclaration` — every identity field is present.
+
+    A field that is present and MALFORMED still raises. A declaration that
+    half-parses is the worst outcome available: the capability would proceed
+    believing it had a verified semantic authority.
     """
     if value is None:
         return None
     if not isinstance(value, dict):
         raise ContextError("`project_context:` must be a mapping")
+
+    absent = tuple(key for key in _IDENTITY_KEYS if key not in value)
+    if absent:
+        identifier = value.get("context_id")
+        return UnreadableDeclaration(
+            context_id=identifier if isinstance(identifier, str) else None,
+            missing=absent,
+        )
 
     def required(key: str, kind: type, description: str):
         item = value.get(key)
@@ -218,9 +262,9 @@ def declaration_from(value: object) -> ContextDeclaration | None:
 
     context_id = required("context_id", str, "an identifier")
     reference = required("reference_path", str, "a path")
-    revision = required("revision", int, "an integer revision")
-    if revision < 0:
-        raise ContextError("project_context.revision must not be negative")
+    control_revision = required("control_revision", int, "an integer revision")
+    if control_revision < 0:
+        raise ContextError("project_context.control_revision must not be negative")
     digest = required("digest", str, "a digest")
     if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
         raise ContextError("project_context.digest is not a 64-character lowercase sha256 digest")
@@ -245,7 +289,7 @@ def declaration_from(value: object) -> ContextDeclaration | None:
         raise ContextError("project_context.authority_role must be a string")
 
     return ContextDeclaration(
-        context_id=context_id, reference_path=reference, revision=revision,
+        context_id=context_id, reference_path=reference, control_revision=control_revision,
         digest=digest, authority_role=role, activated=activated,
         digest_algorithm=algorithm, proposals_pending=pending,
     )
@@ -265,6 +309,8 @@ def report_declared(declaration: ContextDeclaration | None) -> ContextReport:
     """
     if declaration is None:
         return ContextReport(state=NOT_PRESENT)
+    if isinstance(declaration, UnreadableDeclaration):
+        return _unreadable_report(declaration)
     return ContextReport(
         state=DECLARED,
         declaration=declaration,
@@ -272,10 +318,27 @@ def report_declared(declaration: ContextDeclaration | None) -> ContextReport:
     )
 
 
+def _unreadable_report(declaration: "UnreadableDeclaration") -> ContextReport:
+    """One rendering of an unreadable block, so the two entry points agree."""
+    named = f" {declaration.context_id}" if declaration.context_id else ""
+    return ContextReport(
+        state=UNVERIFIABLE,
+        findings=[
+            f"the declared project context{named} does not record "
+            + ", ".join(declaration.missing)
+            + ", so its identity cannot be checked. This is NOT `NOT_PRESENT`: a context "
+            "was declared. It is not repaired by recording today's values — that would "
+            "produce a declaration that verifies and establishes nothing"
+        ],
+    )
+
+
 def verify(declaration: ContextDeclaration | None) -> ContextReport:
     """Locate the declared context and check its identity. Only its identity."""
     if declaration is None:
         return ContextReport(state=NOT_PRESENT)
+    if isinstance(declaration, UnreadableDeclaration):
+        return _unreadable_report(declaration)
 
     root = declaration.resolved()
     if not root.is_dir():
@@ -306,7 +369,7 @@ def verify(declaration: ContextDeclaration | None) -> ContextReport:
         report.findings.append(
             f"the context at {declaration.reference_path} digests to {observed[:16]}…, "
             f"and the declaration records {declaration.digest[:16]}… at revision "
-            f"{declaration.revision}. Either the context moved or the declaration did; "
+            f"{declaration.control_revision}. Either the context moved or the declaration did; "
             "nothing here can tell which, and neither is repaired by copying the new digest in"
         )
     if not declaration.activated:

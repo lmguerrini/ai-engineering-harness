@@ -99,6 +99,22 @@ fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
   one had no `**` at all. Memoised; the same case is now under four
   milliseconds.
 
+### Found by running this release against the projects it ships to
+
+- **The contract reader refused a real project's contract outright.** This
+  release invented the field name `project_context.revision`; the only real
+  Project Context in existence calls it `control_revision` and records its
+  digest in prose rather than in a field. Because an absent identity field
+  raised, `ProjectContract.load` failed completely — that project's contract
+  could not be read **by any tool, for any purpose**, over one optional block.
+  An absent field is now `UNVERIFIABLE`, naming exactly what is missing; a field
+  present and malformed still raises, because a typo is not an older shape. The
+  field is spelled `control_revision`, after the project that has one.
+- **`Pin.from_contract` answered about contracts it had never opened.** Given
+  anything without a `raw` mapping — a path, for instance — it produced an empty
+  pin and reported a well-formed four-field pin as an unverifiable legacy one.
+  It now refuses a non-contract.
+
 ### Manifest schema
 
 - **`tracked_files` is now `digest_file_count`.** The old name read as the
