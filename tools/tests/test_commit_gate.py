@@ -355,3 +355,145 @@ def test_no_amount_of_prefix_or_whitespace_hides_a_trailer(subject):
 def test_extra_whitespace_and_repeated_prefixes_are_still_accepted_when_clean(subject):
     """The strengthening must not start refusing ordinary messages."""
     assert _codes(subject + BODY) == []
+
+
+# --- the whole surface, against the qualified baseline -------------------------
+
+
+def _baseline_commit_gate():
+    """The frozen 2.1.1 module, loaded from git rather than from disk."""
+    import importlib.util
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent.parent
+    source = subprocess.run(
+        ["git", "show", "4495e61850c08027e47eac6d0db84b4b3380e300:tools/commit_gate.py"],
+        cwd=str(root), capture_output=True, check=True,
+    ).stdout.decode("utf-8")
+    with tempfile.TemporaryDirectory() as scratch:
+        path = Path(scratch) / "baseline_commit_gate.py"
+        path.write_text(source, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("baseline_commit_gate", path)
+        module = importlib.util.module_from_spec(spec)
+        # Registered before execution: `dataclasses` resolves a string
+        # annotation through `sys.modules[cls.__module__]`, which does not
+        # exist yet while the class body is running.
+        import sys
+
+        sys.modules["baseline_commit_gate"] = module
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.modules.pop("baseline_commit_gate", None)
+        return module
+
+
+#: The one thing this release deliberately stopped refusing is EC-B: `fix` is in
+#: the trailer token set, so a Conventional `fix:` subject was refused for being
+#: a trailer when nothing about it was one.
+#:
+#: Deciding whether a given loss *is* that is not "does the subject start with
+#: `fix:`" — that exemption was written first and excused every `fix:` subject,
+#: including `fix: docs: Signed-off-by:`, which is precisely the regression this
+#: test exists to catch. A falsification run proved the exemption swallowed it.
+#:
+#: Substituting a neutral type word and re-asking the *baseline* was the second
+#: attempt, and it was also wrong: the baseline never detected a trailer sitting
+#: after a prefix — it is `^`-anchored, so `feat: Signed-off-by:` was clean there
+#: — which made it excuse the very losses it was meant to catch. The baseline is
+#: the wrong oracle for a hole the baseline could not see.
+#:
+#: So the question is answered independently of both modules: **does the tail
+#: bear a trailer at all?** Strip any leading `word:` groups from it and look. A
+#: subject that loses `TRAILER` while its tail bears one is a regression whatever
+#: the reason the baseline had for refusing it — the observable guarantee was
+#: "this message is refused", and it stopped holding.
+
+
+def _tail_bears_a_trailer(tail: str) -> bool:
+    """Whether this subject tail carries a trailer, judged without either module.
+
+    Deliberately a small reimplementation. Asking the module under test whether
+    its own input is trailer-shaped is not an oracle.
+    """
+    import re
+
+    remainder = tail
+    while True:
+        stripped = re.sub(r"^[A-Za-z][A-Za-z0-9]*(?:\([^()]*\))?!?:\s+", "", remainder)
+        if stripped == remainder:
+            break
+        remainder = stripped
+        if re.match(r"^(?:[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+|signed|reviewed|acked|tested"
+                    r"|reported|suggested|helped|cc|refs?|closes?|fixe?s?|resolves?|change-id"
+                    r"|bug|ticket|issue|see-also|link)\s*:", remainder, re.IGNORECASE):
+            return True
+    return bool(
+        re.match(r"^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+:", tail)
+        or re.match(r"^(?:signed|reviewed|acked|tested|reported|suggested|helped|cc|refs?"
+                    r"|closes?|fixe?s?|resolves?|change-id|bug|ticket|issue|see-also|link)\s*:",
+                    tail, re.IGNORECASE)
+    )
+
+
+def test_nothing_the_qualified_baseline_refused_is_accepted_except_the_one_intended_change():
+    """A differential over the whole subject surface, against 2.1.1.
+
+    Written because a repair to this module *did* regress it — `fix:` followed
+    by two spaces, and `fix: docs:`, let a trailer through that the baseline
+    refused, and two independent audits had to find it. A parametrised list of
+    literal cases could not have: it would have contained the forms somebody
+    thought of, which is the same failure the module's own history is about.
+    """
+    import itertools
+
+    baseline = _baseline_commit_gate()
+    old_terms = baseline.TermSet(declared_empty=True)
+    new_terms = commit_gate.TermSet(declared_empty=True)
+
+    types = ["fix", "feat", "docs", "chore", "refactor", "test", "perf", "build",
+             "ci", "style", "revert", "fixup", "wip"]
+    scopes = ["", "(core)", "(a/b)", "!"]
+    spacing = ["", " ", "  ", "   ", "\t", " \t "]
+    tails = ["Signed-off-by: A Person", "Reviewed-by: X", "Change-Id: I0123",
+             "Closes: #3", "Fixes: #12", "Co-authored-by: X", "Link: http://x",
+             "ordinary subject text", "Relates-to: Y",
+             # A second Conventional prefix in front of the trailer. Without
+             # these the grid cannot see a single-pass prefix strip, and a
+             # falsification run proved it could not — the same shape of gap as
+             # the pathmatch grid that could not see a trailing `**`.
+             "docs: Signed-off-by: A Person", "chore: Reviewed-by: X",
+             "test: Change-Id: I0123", "feat: ordinary subject text"]
+
+    def codes(module, terms, message):
+        return {str(violation).split(":")[0]
+                for violation in module.validate_message(message, terms)}
+
+    regressions = []
+    strengthened = 0
+    intended = 0
+    for kind, scope, gap, tail in itertools.product(types, scopes, spacing, tails):
+        subject = f"{kind}{scope}:{gap}{tail}"
+        message = subject + BODY
+        was = codes(baseline, old_terms, message)
+        now = codes(commit_gate, new_terms, message)
+        lost = was - now
+        if not lost:
+            strengthened += bool(now - was)
+            continue
+        if lost == {"TRAILER"} and not _tail_bears_a_trailer(tail):
+            intended += 1
+        else:
+            regressions.append((subject, sorted(lost)))
+        strengthened += bool(now - was)
+
+    assert not regressions, (
+        "the candidate accepts what the qualified baseline refused: "
+        + "; ".join(f"{subject!r} lost {lost}" for subject, lost in regressions[:10])
+    )
+    assert strengthened > 100, (
+        f"only {strengthened} subjects got stricter; the differential is not exercising the surface"
+    )
+    assert intended > 0, "the differential no longer covers the one intended weakening"
