@@ -115,6 +115,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── pack_migration.py       pin class, migration gate, rollback, release index
     │   ├── adapter_pin.py          verifies the executable adapters a project declares
     │   ├── project_context.py      verifies a project's declared semantic authority
+    │   ├── capability_open.py      one readiness path over all of the above, before work starts
     │   ├── backend_contract.py     backend identity and per-task-class qualification
     │   ├── resource_observation.py documented resource truth as routing evidence
     │   ├── evidence_index.py       certification bound to one exact candidate

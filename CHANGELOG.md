@@ -130,6 +130,33 @@ fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
   migration; a manifest carrying both, disagreeing, is refused rather than
   resolved by preference, and the digest writer leaves exactly one behind.
 
+### New capability — one readiness path
+
+- **`tools/capability_open.py`** answers, in one deterministic read-only pass,
+  whether a governed capability may open against a project: is the contract
+  readable, is the pin complete and does it verify, is the release it names
+  adoptable, do the declared adapters match, is the declared Project Context
+  established, is the named capability one this project declared. One aggregate
+  state — `READY`, `READY_WITH_UPDATE_AVAILABLE` or `NOT_READY` — over per
+  component results that stay semantically distinct.
+- **It introduces no new source of truth.** Every component is delegated to the
+  tool that already owns that question. It infers nothing only the caller can
+  know: the capability boundary is an input, and adoption is refused when it is
+  unstated rather than assumed.
+- **A newer release is information, never a gate.** A project pinned to an older
+  qualified immutable release is correctly pinned until it adopts at a boundary.
+  There is no state meaning "blocked because not latest", and an unreadable
+  release index leaves availability unknown without affecting readiness.
+- **`requires:` in the project contract** lets a project declare that it needs a
+  Project Context. A fixture or utility may omit one and be clean; a product
+  whose correctness depends on durable semantic authority declares the
+  requirement, and then absence is a stop. A requirement governs absence only —
+  a *declared* context that cannot be established stops the open either way. A
+  requirement key nothing checks is refused rather than ignored.
+- **Two questions that had been one:** *is this root what you pinned* and *is
+  what you pinned adoptable*. A project pinned to an `IN_PROGRESS` release
+  satisfied the first completely, and nothing asked the second.
+
 ### New capability
 
 - **`tools/pack_migration.py`** — `pack.root_path`, required, canonicalised and

@@ -57,6 +57,36 @@ packet about what kind of defect this candidate is still likely to contain, and
 it argues for a specific next step: a round that runs the release against real
 consumers rather than against itself.
 
+## What changed in the final hardening phase
+
+Authorised after the finding above, and shaped by it: consumer-facing, not
+another repository review.
+
+**One readiness path exists now** (`tools/capability_open.py`). Before it, every
+prerequisite a governed capability needs was checkable by running four tools by
+hand against a prose checklist — which is not a readiness path, because a step
+nobody ran and a step that passed look identical afterwards. It composes what
+the existing checkers already answer, adds no source of truth, authorises
+nothing, and infers nothing only the caller can know.
+
+**A newer release is information, not a gate.** `READY_WITH_UPDATE_AVAILABLE`
+is a ready state. There is no "blocked because not latest", because a project
+pinned to an older qualified immutable release is correctly pinned until it
+adopts at a boundary (D21).
+
+**A project can now say it requires a Project Context** (`requires:`), so a
+fixture may omit one and a semantic product may not — declared by the project,
+never by a list of project names in Core (D22).
+
+**Qualification is no longer self-tests alone.** A representative-consumer
+corpus, derived from the real consumers with the substance removed and depending
+on no private path, is part of the suite, and a guard requires it to stay
+substantial.
+
+Three reproductions before any code, and a fourth thing checked and found **not**
+broken — the migration gate never did conflate "newer exists" with failure, and
+saying otherwise would have been claiming work that was not done.
+
 ## What to check first
 
 ```bash
@@ -96,7 +126,7 @@ the one this document tells you to run, and it leaves you holding something the
 pack root deliberately does not have.
 
 **The clone is the point, not a convenience.** `<pack_root>` is the directory
-Consumer-A pins, and checking this branch out there is exactly what broke its
+a real consumer pins, and checking this branch out there is exactly what broke its
 pin — the finding below, and D18. A release is verified at a root nobody works
 in; a clone is how you get one without disturbing the pinned tree. Everything in
 the block resolves against `<scratch_dir>`, which is why the `cd` is there.
@@ -134,7 +164,7 @@ one for the push form.
 ## The finding that most deserves a decision
 
 **A release root and a working tree cannot be the same directory** (D18). The
-Consumer-A project pins `root_path` to this repository, and its pin — correctly
+one real consumer pins `root_path` to this repository, and its pin — correctly
 formed, every field present — stopped verifying the moment this evolution branch
 was checked out here. The verifier caught it precisely. The layout is what is
 wrong.
@@ -146,8 +176,8 @@ performed.** Nothing was migrated and no project file was touched.
 
 ## What was left alone deliberately
 
-- **No project was migrated or modified.** `consumer-d` and
-  `fixture-tally` still carry version-only pins, which classify as
+- **No project was migrated or modified.** Two of the three real consumers
+  still carry version-only pins, which classify as
   `UNVERIFIABLE_LEGACY_PIN`. They are evidence, not authorisation.
 - **No adapter was vendored.** Pinning was proved sufficient (D12, D14).
 - **No dependency was added.** D3 holds: 0 violations across 19 modules.
@@ -171,6 +201,27 @@ worktrees.
 In `docs/RP2.2-GATE.md`: baseline maturity phase, audit-cycle accounting as
 Core code, delta-scoped requalification driven from SHAs, and vendoring any
 adapter. None is a blocker for a project adopting this release.
+
+## Public safety
+
+Checked against the candidate as a whole, comparing it to the frozen baseline
+rather than reading it in isolation.
+
+**Nothing in the listed categories is newly introduced**: no real username, no
+absolute personal path, no credential, no email address, no raw prompt or
+conversation, no private runtime state, no transcript data. All 28 commit
+messages are clear of private names and machine paths. Two things that *were*
+introduced this session were found by this check and removed before commit — a
+real session identifier in a test fixture, now pinned against by a guard, and
+private product names in two documents, replaced by the role each project plays.
+
+**The repository is not yet public-safe by construction.** Ten occurrences of
+private project names remain, in four files inherited from the frozen 2.1.1
+baseline. They are historical evidence; rewriting them to look clean is exactly
+what the brief forbids, so they are recorded here for the separate publication
+audit instead. A private remote is not permission to store them.
+
+No remote was created, nothing was pushed, no history was rewritten.
 
 ## Known limitations
 

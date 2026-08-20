@@ -40,6 +40,27 @@ Confirm on disk, do not assume:
       already run by the time anyone reads the report. A required adapter that
       does not match is a stop.
 
+- [ ] **Or run the whole list as one command**, which is what it is for:
+
+      ```bash
+      python3 <pack_root>/tools/capability_open.py PROJECT.yaml --capability <id>
+      ```
+
+      It composes the checks above — contract, pin, pinned release state,
+      adapters, Project Context, the capability name — and returns one aggregate
+      readiness state with a per-component account of how it got there. It adds
+      no new source of truth; each component is answered by the tool that owns
+      that question.
+
+      **A checklist run by hand is not a readiness path.** A step nobody ran and
+      a step that passed look identical afterwards, and that is how this pack
+      shipped a release whose contract reader refused a real project outright
+      through four audit rounds.
+
+      `READY_WITH_UPDATE_AVAILABLE` is a **ready** state. A newer qualified
+      release existing is information; a project pinned to an older qualified
+      immutable release is correctly pinned until it adopts at a boundary.
+
 Record all four pin fields in `PROJECT.yaml` `pack:` — `root_path` included.
 A pin without it is `UNVERIFIABLE_LEGACY_PIN` (`tools/pack_migration.py`): the
 release it names cannot be identified, and it is not repaired by writing today's

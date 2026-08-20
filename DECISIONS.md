@@ -450,3 +450,95 @@ context and matches the count the project itself records.
 
 **Reverses on:** nothing short of Core needing to read context contents to make
 a governance decision — which would be the reversal of D1, not of this.
+
+---
+
+## D20 — readiness is composed, never a second source of truth (RP2.2)
+
+Every prerequisite a governed capability needs was checkable before this
+release, by running four tools by hand against a prose checklist. That is not a
+readiness path. It has no aggregate answer, nothing compares its parts, and **a
+step nobody ran is indistinguishable afterwards from a step that passed** — the
+same shape as the defect that let a real consumer's contract go unread through
+four audit rounds.
+
+So there is one deterministic readiness path, `tools/capability_open.py`, and it
+**introduces no new source of truth**. Each component result is delegated to the
+tool that owns that question: the contract parser reads the contract, `pack_pin`
+and `pack_migration` answer about the pin, `adapter_pin` about adapters,
+`project_context` about the context, `migration_gate` about adoption. What is
+added is composition, one truthful aggregate state, and the rule saying which
+components a given project must satisfy.
+
+It is stateless, read-only and deterministic, it infers nothing only the caller
+can know — the capability boundary is an input and `UNKNOWN` when unstated — and
+it **authorises nothing**: integration, release and human decisions stay where
+they are. A readiness checker that could approve its own findings would be a
+component holding state it also adjudicates (D1).
+
+Two questions that had been one are now separate, because only the first had an
+answer: *is this root what you pinned* (`verify_pin`, which a project pinned to
+an `IN_PROGRESS` release satisfies completely) and *is what you pinned
+adoptable*.
+
+**Reverses on:** a prerequisite that genuinely cannot be answered by delegation,
+which would mean some checker is missing rather than that this one should grow
+an opinion.
+
+---
+
+## D21 — a newer release is information; only a broken prerequisite is a gate (RP2.2)
+
+A project pinned to an older **qualified** immutable release is correctly
+pinned. It stays that way until it adopts at a capability boundary, through the
+migration gate, and choosing not to adopt is a supported outcome rather than a
+deficiency.
+
+So availability of a newer release produces `READY_WITH_UPDATE_AVAILABLE` — a
+**ready** state — and never a block. There is no `BLOCKED_BECAUSE_NOT_LATEST`,
+and an unreadable release index leaves availability `UNKNOWN` without affecting
+readiness, because a project runs against its own pin and not against an index.
+
+The alternative regresses the whole multi-project model (D13, D18) into one
+where cutting any release makes every project unready at once, and where the
+pressure to adopt comes from a checker rather than from a decision.
+
+Hard refusal is reserved for what is actually broken: a missing or malformed
+required declaration, a pin that cannot be verified where verification is
+required, root drift, a required adapter that does not match, a required Project
+Context that is missing or cannot be established, an unauthorised mid-capability
+release change, and a migration target that is not itself qualified and
+verifiable.
+
+**Reverses on:** a release carrying a security advisory severe enough that
+remaining is unsafe — which is a **human** decision the migration gate already
+records and refuses to make on its own, not a rule this checker should acquire.
+
+---
+
+## D22 — a requirement governs absence; a declared thing that cannot be established always stops (RP2.2)
+
+`adapter_pin` established this rule and `capability_open` reuses it rather than
+inventing a second semantics: `required: true` decides what happens when a thing
+is **absent**, and nothing else.
+
+A Project Context that is declared and cannot be verified stops a capability
+opening whether or not the project declared it required — something in that
+project consults it, and "nobody wrote `required: true`" does not make an
+unestablished semantic authority safe to proceed on. The same is true of a
+declared adapter whose digest does not match.
+
+What the requirement does decide is the one case it should: a fixture or a
+utility may declare no context and be clean; a product whose correctness depends
+on durable semantic authority declares `requires.project_context: true`, and
+then absence is a stop.
+
+**The project declares this, not Core.** Core cannot know which products have
+durable semantic authority, and a Core carrying a list of project names would be
+making that judgement in the wrong place — unchangeable without a release, and
+adjudicating product meaning, which D1 forbids. A requirement key nothing checks
+is refused rather than ignored: a requirement silently unread is worse than
+none, because the project believes it is enforced.
+
+**Reverses on:** nothing. The alternative was tried by omission — absence read as
+clean for every project, including products whose correctness depended on it.

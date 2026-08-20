@@ -22,7 +22,7 @@ from resource_observation import (
 NOW = 1_800_000_000.0
 
 FULL = {
-    "session_id": "5e551011-0000-4000-8000-000000000001",
+    "session_id": "00000000-0000-4000-8000-000000000000",  # fictional; a real one is private runtime state
     "transcript_path": "/Users/someone/.claude/projects/x/session.jsonl",
     "cwd": "/Users/someone/private/project",
     "model": {"id": "claude-opus-5", "display_name": "Opus 5"},

@@ -134,7 +134,7 @@ that arrived late cannot be skipped. A security advisory is disclosed loudly and
 authorises nothing.
 
 **Reproduced during this session, and it is the reason D18 exists.** The
-Consumer-A project carries a correctly formed pin — every field present — to
+one real consumer carries a correctly formed pin — every field present — to
 `root_path: …/runtime-pack-2`, which is the directory this evolution session
 works in. Its pin stopped verifying the moment the evolution branch was checked
 out there. The verifier reported it precisely, which is the system working; the
@@ -196,7 +196,7 @@ over a computation rather than a second authority.
 adapter integrity, first-party boundaries, provider-surface truthfulness, the
 mandatory-gate defects), every reproduced 2.1.1 defect, the migration/update/
 rollback essentials, the execution-backend truth contract, Execution Resource
-Truth, and the Project Context contract Consumer-A needs in order to use this
+Truth, and the Project Context contract a real semantic-product consumer needs in order to use this
 release safely.
 
 **SHOULD_THIS_RELEASE — delivered.** The bounded evidence strengthening, the
@@ -640,7 +640,7 @@ produced two defects, one of them the most serious in the release.
 
 ### The contract reader refused a real project's contract outright
 
-`ProjectContract.load` **raised** on the Consumer-A contract:
+`ProjectContract.load` **raised** on a real consumer's contract:
 `project_context.revision is missing or is not an integer revision`. That
 project declares `control_revision: 12`. This release invented the spelling
 `revision`, shipped it in the template, and validated the module against a
@@ -677,7 +677,7 @@ which is exactly true.
 and the one actually made in the probe above — it read no `raw`, produced an
 all-empty pin, and reported all three real projects as
 `UNVERIFIABLE_LEGACY_PIN`, naming four fields that were sitting in the files it
-had never opened. One of those reports was false: Consumer-A's pin carries all
+had never opened. One of those reports was false: that consumer's pin carries all
 four. It now refuses a non-contract instead of answering.
 
 ### What this says about the four rounds
@@ -721,3 +721,120 @@ Both defects were found **read-only**. No project file was modified, and the
 founder's instruction not to migrate the existing projects was not touched: this
 was observation, and what it observed is that two of the three are still on
 legacy pins, which is theirs to change at a capability boundary.
+
+## C13 — one readiness path, and the consumer oracle that keeps it honest
+
+Authorised as a final bounded hardening phase after the finding above. The
+brief's own instruction was to reproduce first and **not** assume the gap was
+real, so this records what was reproduced before any code was written.
+
+### Reproduced before repair
+
+| # | Claim | Reproduction |
+|---|---|---|
+| 1 | There is no single readiness path | The pieces exist and compose only by hand. `capability open` appears in a bootstrap checklist, a contract template and a policy file — as prose. No module, no aggregate, nothing that compares the parts. A coordinator runs four CLIs and forms the judgement itself, and a step nobody ran looks afterwards exactly like a step that passed |
+| 2 | Project Context REQUIRED cannot be expressed | No requirement key exists anywhere in the contract schema. Checked against all three real consumers: `validation_profiles` is about test commands, not prerequisites. A project whose correctness depends on durable semantic authority and that declares no context reports `NOT_PRESENT`, which is a **clean** state, for every project without exception |
+| 3 | A pin to an unqualified release verifies clean | Constructed a pin at this candidate — version, revision, digest and `state_adopted: IN_PROGRESS` — and `verify_pinned_root` returned no problems. Correct of that function: it answers *is this root what you pinned*. Nothing answered *is what you pinned adoptable* |
+| 4 | "Newer available" was **not** already conflated with failure | Read `migration_gate` before composing it. It fires only when a caller proposes a target, and refuses on boundary, target state and target verification — never on the existence of a newer release. The composition preserves that rather than repairing it |
+
+Only the first three were repaired. The fourth is recorded because a hardening
+phase that had "fixed" a defect the release did not have would be reporting work
+it did not do.
+
+### What was built
+
+`tools/capability_open.py`. One component result per prerequisite, each
+delegated to the tool that owns the question, plus one aggregate. Component
+states are kept semantically distinct — `VERIFIED`, `UNVERIFIABLE`, `LEGACY`,
+`NOT_PRESENT`, `NOT_REQUIRED`, `UNKNOWN`, `UPDATE_AVAILABLE` — because the whole
+subject of this pack is that collapsing them is how a false answer gets made.
+The aggregate is `READY`, `READY_WITH_UPDATE_AVAILABLE` or `NOT_READY`.
+
+`required` and `blocking` are separate fields and the difference is
+load-bearing (D22). A requirement governs **absence**; a declared thing that
+cannot be established stops the open regardless.
+
+The contract gains `requires:`, whose only key today is `project_context`.
+Unknown keys are refused rather than ignored.
+
+### The three real consumers, read-only, through the new path
+
+| Consumer role | Aggregate | Why |
+|---|---|---|
+| a fixture project | `NOT_READY` | `LEGACY` pin — version only. Reported as legacy, with the remedy named, and explicitly not as a defect in the project |
+| a semantic product | `NOT_READY` | its Project Context is declared in a shape whose identity cannot be established, and blocks despite not being declared required |
+| a course project | `NOT_READY` | `LEGACY` pin |
+
+Every one of those answers is true of that project today, which is the bar the
+brief set: *a project being old or unverifiable is not a candidate defect; a
+false answer about that project is.*
+
+### Mutation testing
+
+Seven mutations of the readiness semantics, all killed:
+
+| Mutation | Result |
+|---|---|
+| a newer release blocks the open | killed |
+| Project Context required by default | killed |
+| a declared-but-unverifiable context stops blocking | killed |
+| any pinned release state counts as adoptable | killed |
+| an undeclared capability opens | killed |
+| adoption proceeds when the boundary is unstated | killed |
+| `satisfied` keys off `required` instead of `blocking` | killed |
+
+### C14 — qualification is not self-tests
+
+The durable form of this release's worst finding. `tools/tests/consumer_shapes.py`
+carries representative project shapes derived from the real consumers with the
+substance removed: legacy pin, full pin, context verified, context declared
+without a digest, context required and absent, context required and satisfied,
+pin to an unqualified release. Each names the compatibility class it preserves,
+and every shape carries blocks Core never reads — because all three real
+consumers do, and a reader that refused them would have broken all three at once.
+
+`tools/tests/test_consumer_compatibility.py` exercises them end to end against a
+real pack root built in a temporary directory. **No private path, no home
+directory and no personal project is involved**: the real consumers were the
+primary evidence, and this is what was derived from them.
+
+A release-integrity guard requires the corpus to exist and to be substantial —
+at least five shapes, each describing its class, and at least ten probes. An
+empty module satisfying an import would restore exactly the state this exists to
+prevent.
+
+### Public-safety status of the candidate
+
+Checked before closure, against the categories the brief lists, comparing the
+candidate to the frozen baseline rather than looking at it in isolation.
+
+**Introduced by this candidate and removed before commit:**
+
+*   a **real session identifier** in a fixture payload in the resource-observation
+    tests. Harmless in isolation and exactly the category a private remote is not
+    permission to store. Replaced with an obviously-fictional UUID, and pinned by
+    a guard that refuses a UUID in the position of a session or transcript
+    identifier unless it is that reserved value;
+*   **private product names** in two documents written this session. Replaced by
+    the role each project plays in the evidence, which is all the evidence needed.
+
+**Introduced by this candidate and judged public-safe:** `~/.claude/...` adapter
+locators (`~` names no person and the path is identical on any machine), and
+`AKIAIOSFODNN7EXAMPLE`, which is a published documentation example used as a
+negative fixture.
+
+**Clean:** no real username, no absolute personal path, no credential, no email
+address, no raw prompt or conversation, no private runtime state and no
+transcript data is newly introduced. All 28 commit messages on the branch are
+clear of private names and machine paths.
+
+**NOT clean, and not repaired here:** ten occurrences of private project names
+remain, in four files **inherited from the frozen 2.1.1 baseline** —
+`docs/WAVE-B-GATE.md`, `docs/RP2.1-DELTA-AUDIT.md`, `docs/RP2.1-GATE.md` and
+`policy/observations.jsonl`. They are historical evidence, and the brief is
+explicit that historical evidence is not to be rewritten to look clean. **This
+repository is therefore not yet public-safe by construction**, and that is a
+finding for the separate publication audit, not something this phase resolved. A
+private remote does not make it resolved either.
+
+No remote was created, nothing was pushed, and no history was rewritten.

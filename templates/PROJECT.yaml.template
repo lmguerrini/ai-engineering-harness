@@ -126,11 +126,39 @@ adapters:
   # digest blocks either way. Unreadable blocks too — that is a failure to look,
   # not an absence.
 
+requires:
+  # WHICH PREREQUISITES THIS PROJECT MUST SATISFY before a capability opens.
+  # Read by `tools/capability_open.py`, which is the single readiness path.
+  #
+  # Declared BY THE PROJECT, because Core cannot know which products have
+  # durable semantic authority and a Core that decided would be adjudicating
+  # product meaning. Not a list of project names in Core — that would be the
+  # same decision, made in the wrong place and impossible to change without a
+  # release.
+  #
+  #   project_context: false   (default) a fixture or a utility. Absence is clean.
+  #   project_context: true    a product whose correctness depends on durable
+  #                            semantic authority. Missing, stale or unverifiable
+  #                            required context => NOT READY.
+  #
+  # A REQUIREMENT GOVERNS ABSENCE ONLY. A context that is DECLARED and cannot be
+  # verified stops the open whether or not it was required — the same rule
+  # `adapters:` already uses, and for the same reason: something in this project
+  # consults it. `required: false` is a statement about needing one, never a
+  # licence to proceed on one that could not be established.
+  #
+  # A key nothing checks is REFUSED rather than ignored, because a requirement
+  # silently unread is worse than no requirement: the project believes it is
+  # enforced.
+  #
+  # project_context: false
+
 project_context:
   # PROJECT CONTEXT — the project's DURABLE SEMANTIC AND PRODUCT AUTHORITY:
-  # what the product means, what it has decided, what is still open. Optional;
-  # a project that declares none simply has no semantic authority to consult and
-  # reports NOT_PRESENT, which is a clean state.
+  # what the product means, what it has decided, what is still open. Optional by
+  # default; a project that declares none simply has no semantic authority to
+  # consult and reports NOT_PRESENT, which is a clean state — unless the project
+  # declared `requires.project_context: true` above, and then absence is a stop.
   #
   # THE CORE DOES NOT ADJUDICATE PRODUCT MEANING. `tools/project_context.py`
   # verifies IDENTITY — is the thing at the locator the revision this project

@@ -549,6 +549,49 @@ def test_a_tool_given_a_ref_git_cannot_resolve_prints_no_traceback(tmp_path):
     assert "REFUSED" in result.stdout, result.stdout + result.stderr
 
 
+# --- qualification is not self-tests --------------------------------------
+
+def test_qualification_includes_probes_against_representative_consumer_shapes():
+    """The failure class this release was caught by, made structural.
+
+    Four audit rounds passed while the contract reader refused a real
+    consumer's contract outright. Repository self-tests were green; the release
+    was broken for the only consumer that had a Project Context. So a candidate
+    may not claim qualification from self-tests alone: the suite must carry
+    representative consumer shapes, and each must name the compatibility class
+    it preserves.
+
+    Deliberately checks the corpus is SUBSTANTIAL rather than merely present.
+    An empty module satisfying an import would restore exactly the state this
+    exists to prevent.
+    """
+    import consumer_shapes
+
+    assert len(consumer_shapes.SHAPES) >= 5, (
+        f"only {len(consumer_shapes.SHAPES)} representative consumer shapes; the corpus has "
+        "been reduced to the point where it no longer stands in for real consumers"
+    )
+    for name, (description, template) in consumer_shapes.SHAPES.items():
+        assert "project:" in template, f"{name} is not a project contract"
+        assert len(description) > 40, f"{name} does not say which compatibility class it preserves"
+
+    module = (ROOT / "tools" / "tests" / "test_consumer_compatibility.py")
+    assert module.is_file(), "the consumer compatibility probes are gone"
+    body = module.read_text(encoding="utf-8")
+    assert body.count("def test_") >= 10, "the consumer probes have been hollowed out"
+
+
+def test_no_representative_consumer_shape_depends_on_this_machine():
+    """The corpus must outlive these particular personal directories, and must
+    never carry private project content into the release."""
+    import consumer_shapes
+
+    for name, (description, template) in consumer_shapes.SHAPES.items():
+        blob = description + template
+        for forbidden in ("/Users/", "/home/", "C:\\\\"):
+            assert forbidden not in blob, f"{name} carries an absolute personal path"
+
+
 # --- the pin field set, bound the way D17 bound the push form ------------------
 
 
@@ -978,6 +1021,53 @@ def test_no_tracked_file_carries_a_real_machine_path():
             if real.search(line):
                 offenders.append(f"{entry.decode()}:{number}: {line.strip()[:80]}")
     assert not offenders, "these ship a real machine path: " + "; ".join(offenders)
+
+
+def test_no_tracked_file_carries_a_live_session_or_transcript_identifier():
+    """Session and transcript identifiers are private runtime state.
+
+    One shipped: a fixture payload in the resource-observation tests carried the
+    real session id of the session that wrote it. Harmless in isolation, and
+    exactly the category a private remote is not permission to store — which is
+    why it is pinned rather than argued about.
+
+    Deliberately narrow. A bare UUID is not evidence of anything, and banning
+    the shape would refuse every legitimate identifier fixture in the tree. What
+    is refused is a UUID sitting in the position of a session or transcript
+    identifier, unless it is the one obviously-fictional value reserved for that
+    use.
+    """
+    import re
+    import subprocess
+
+    #: A UUID whose shape announces it is not real. Anything else in this
+    #: position came from somewhere.
+    FICTIONAL = "00000000-0000-4000-8000-000000000000"
+    suspicious = re.compile(
+        r"(session_id|transcript_path|conversation_id)\W{0,4}"
+        r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        re.IGNORECASE,
+    )
+
+    listing = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=str(ROOT), capture_output=True, check=True
+    ).stdout
+    offenders = []
+    for entry in listing.split(b"\0"):
+        if not entry:
+            continue
+        name = entry.decode("utf-8", "surrogateescape")
+        try:
+            text = (ROOT / name).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):  # pragma: no cover - environment
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            match = suspicious.search(line)
+            if match and match.group(2).lower() != FICTIONAL:
+                offenders.append(f"{name}:{number}: {match.group(1)}")
+    assert not offenders, (
+        "these carry what looks like a live session identifier: " + "; ".join(offenders)
+    )
 
 
 def test_the_routing_table_states_the_observation_count_it_was_derived_from():

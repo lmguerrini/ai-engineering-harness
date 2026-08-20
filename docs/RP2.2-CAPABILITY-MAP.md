@@ -39,10 +39,19 @@ session. Each carries the observation that would reopen it.
 | C10 | Evidence and audit strengthening | SHOULD | C3 |
 | C11 | Context-efficiency invariants | SHOULD | C1 |
 | C12 | Qualification and release packet | MUST | all |
+| C13 | One capability-open readiness path | MUST | C2, C3, C6, C7 |
+| C14 | Representative-consumer compatibility oracle | MUST | C13 |
 
 C3 comes before C6–C7 because the migration and contract work is gated by the
 same contract reader and path matcher C3 repairs. Trusting an unrepaired gate
 to qualify later work is the failure this ordering exists to avoid.
+
+C13 and C14 were added after C12, in an authorised final hardening phase, and
+the ordering is the point: they exist **because** running the finished
+candidate against real consumers found three defects that four repository-only
+audit rounds had not. C13 composes what C2, C3, C6 and C7 already answer and
+adds no source of truth; C14 makes the discovery method durable, so a later
+release cannot claim readiness from self-tests alone.
 
 ## Reproduced before repair
 
@@ -60,6 +69,9 @@ is evidence about the oracle.
 | EC-C | publication reasoning ignores ref object type | an annotated tag reports "carries no extra object"; a blob ref reports "CARRIES OBJECTS THE PUBLIC REF DOES NOT" as fact when the question was never answered |
 | EC-E | evidence is created world-readable | directory `0o755`, file `0o644`, mode verified by nothing |
 | CA-AMD-6 | contract reader refuses valid multiline data | `\|`, `>`, `\|-`, `\|+` and multi-line flow sequences all raise |
+| C13-1 | no single readiness path exists; the prerequisites compose only by hand, through a prose checklist | `capability open` appears in a bootstrap template, a contract template and a policy file, and in no module. A step nobody ran is indistinguishable afterwards from a step that passed |
+| C13-2 | `requires.project_context` cannot be expressed | no requirement key exists in the schema; checked against all three real consumers. Absence reads as a clean `NOT_PRESENT` for every project, including products whose correctness depends on the context |
+| C13-3 | a pin to an UNQUALIFIED release verifies clean | a constructed pin at this candidate with `state_adopted: IN_PROGRESS` returns no problems from `verify_pinned_root` — correctly, since that function answers a different question |
 | RP-EC-3 | an undeclared git exit status renders as an ordinary negative | `is_ancestor`, `config_with_origin` and `_ignore_rule` check `answered` and never `failed`; an unreadable `.git/config` reports as having no settings, `notes.*` included |
 
 `RP-EC-3` was not on the inherited list. It was found by reproducing `EC-C` and
