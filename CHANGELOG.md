@@ -84,6 +84,29 @@ fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
   five more went unlisted while the edits meant to add them silently matched
   nothing. Now complete, and checked mechanically — an omission is harder to
   notice than a lie.
+- **Character classes did four different things git does not.** POSIX classes
+  (`[[:digit:]]`) matched nothing at all — a silently dead declaration; escapes
+  inside a class were passed through to a matcher that doubles backslashes, so
+  `[a\-c]` became a range and matched `]`, `^` and `_`; an unterminated bracket
+  was read as a literal `[` where git aborts and matches nothing; and an escaped
+  `!` was re-emitted in the one position where it means negation, so a class
+  written to match `!` matched everything except its members. All four widen or
+  invert an exemption silently. Class bodies are now parsed and re-emitted
+  rather than forwarded.
+- **`**` matching was exponential in the number of segments.** Seven of them
+  against a long path took nearly seven seconds, and patterns come from a
+  project's own contract — a cliff this release introduced, since the previous
+  one had no `**` at all. Memoised; the same case is now under four
+  milliseconds.
+
+### Manifest schema
+
+- **`tracked_files` is now `digest_file_count`.** The old name read as the
+  number of files git tracks and was always one fewer than that, because the
+  manifest excludes itself from its own digest. **The previous spelling is still
+  accepted**, so a 2.2.0 verifier can still check an older pinned root during
+  migration; a manifest carrying both, disagreeing, is refused rather than
+  resolved by preference, and the digest writer leaves exactly one behind.
 
 ### New capability
 
