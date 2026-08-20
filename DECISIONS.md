@@ -360,3 +360,40 @@ agreement is about behaviour and not only about text. Test fixtures, changelog
 entries and gate records are deliberately outside the comparison: their job is
 to carry the wrong forms, and history is left as written.
 **Reverses on:** nothing.
+
+---
+
+## D18 — a release root is a checkout nobody works in (RP2.2)
+
+D13 required different qualified releases to resolve to distinct immutable
+roots. It did not say where a release root comes from, and the pack's own
+installation answered that question badly: one directory was simultaneously the
+release a project pinned and the working tree in which the next release was
+developed.
+
+**Reproduced during this session, on a real project.** A correctly formed pin —
+version, revision, digest, state and `root_path`, all present — stopped
+verifying the moment the evolution branch was checked out in the root it named.
+The verifier reported it precisely, which is the system working; the situation
+it reported is a layout defect, not a pin defect.
+
+**Decided.**
+
+*   A **release root is a checkout nobody works in.** Evolution happens
+    elsewhere. A version becomes a release by being placed at its own root and
+    recorded in the release index.
+*   `pack.root_path` is **required, canonicalised and verified**. Version +
+    revision + digest say *what* a release is; the root says *which directory*
+    holds it, and without it nothing can confirm the two are the same thing.
+*   The **release index lives outside every release**, because a frozen release
+    cannot name its successors. It is untrusted input: an entry is a claim, and
+    the migration gate is the verification.
+*   A pin that cannot be checked is **`UNVERIFIABLE_LEGACY_PIN`** — reported at
+    every use, never repaired by writing today's values into it, and remedied by
+    migrating rather than by editing.
+
+**Evidence.** Two real projects carry version-only pins today, and a third
+carries a complete pin whose root was being written to. None was migrated or
+modified while this release was built: they are evidence, not authorisation.
+**Reverses on:** nothing. A release that shares a directory with the work that
+supersedes it is not frozen, whatever its manifest says.

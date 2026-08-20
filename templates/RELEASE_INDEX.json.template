@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "THE RELEASE INDEX LIVES OUTSIDE EVERY RELEASE. A frozen release cannot list",
+    "the releases that come after it, so this file sits beside them — typically at",
+    "the install root, one level above the version directories.",
+    "",
+    "It is UNTRUSTED INPUT, in the same category as an installed adapter. An entry",
+    "is a CLAIM that a release sits at a path; `tools/pack_migration.py` is what",
+    "verifies the claim against the release itself before offering it. An entry",
+    "missing any required field is REFUSED, never skipped: a skipped entry makes",
+    "the index describe fewer releases than it lists, silently.",
+    "",
+    "EACH VERSION MUST RESOLVE TO ITS OWN IMMUTABLE ROOT (DECISIONS.md D13).",
+    "Paths are canonicalised before comparison, so two entries cannot reach the",
+    "same directory through a symlink. One directory moved between revisions makes",
+    "every pin to it unverifiable at once — which is the failure D13 exists to",
+    "prevent, and it is reproducible: a release root that is also somebody's",
+    "working tree stops verifying the moment a branch is checked out in it.",
+    "",
+    "So a release root is a checkout NOBODY WORKS IN. Evolution happens somewhere",
+    "else, and a new version becomes a release by being placed at a new root and",
+    "added here.",
+    "",
+    "`security_advisory` is disclosed loudly and AUTHORISES NOTHING. Urgency is a",
+    "reason for a person to decide sooner, never a reason to skip the capability",
+    "boundary or the human (policy/hitl-matrix.md)."
+  ],
+  "releases": [
+    {
+      "version": "2.1.1",
+      "root_path": "/absolute/path/to/releases/runtime-pack-2-2.1.1",
+      "sha": "the full 40-character revision",
+      "digest": "the PACK_MANIFEST.json tree_digest_sha256",
+      "state": "QUALIFIED_AND_FROZEN"
+    },
+    {
+      "version": "2.2.0",
+      "root_path": "/absolute/path/to/releases/runtime-pack-2-2.2.0",
+      "sha": "the full 40-character revision",
+      "digest": "the PACK_MANIFEST.json tree_digest_sha256",
+      "state": "QUALIFIED_AND_FROZEN",
+      "security_advisory": "omit unless there is one; disclosed, never authorising"
+    }
+  ]
+}

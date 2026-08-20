@@ -25,12 +25,47 @@ pack:
   #
   # Run it with the pack_pin.py inside the pinned root: the digest framing is
   # release-local and named in the manifest's `digest_algorithm`.
+  root_path:                      # ABSOLUTE path to the pinned release directory
   version_adopted:                # runtime-pack-2 VERSION — the single version authority
   sha_adopted:                    # the full 40-character pack revision; abbreviations are refused
   tree_digest_sha256:             # PACK_MANIFEST.json tree_digest_sha256, verified not copied
   state_adopted: QUALIFIED_AND_FROZEN   # the only state a project may adopt
   adopted_at:                     # ISO date this pin was taken and verified
   adoption_boundary: "a newer pack version is adopted only at a capability boundary, never mid-capability"
+  # retained_roots: previously verified release roots kept as ROLLBACK TARGETS.
+  # Retention is not a guarantee: each is RE-VERIFIED before it is offered, and
+  # one that has been deleted, edited or moved is reported unavailable rather
+  # than used. Rolling back to a directory nobody has checked since it stopped
+  # being the release it claims to be is not a rollback.
+  # retained_roots: []
+  #
+  # ROOT_PATH IS REQUIRED FOR THE PIN TO BE CHECKABLE. Version + revision +
+  # digest say WHAT the release is; root_path says WHICH DIRECTORY holds it, and
+  # without it nothing can confirm the two are the same thing. It is
+  # canonicalised before use — symlinks resolved, `..` removed — because D13
+  # requires two qualified releases to resolve to DISTINCT immutable roots, and
+  # a symlink is how two declarations that look distinct become one directory.
+  #
+  # A pin missing root_path, sha_adopted or tree_digest_sha256 is classified
+  # UNVERIFIABLE_LEGACY_PIN (`tools/pack_migration.py`). That state is REPORTED
+  # AT EVERY USE and is never repaired by writing today's values into it: the
+  # release it named cannot be recovered, and today's values would produce a pin
+  # that verifies and describes nothing. The remedy is to MIGRATE — which is
+  # permitted from a legacy pin, and discloses that nothing can be concluded
+  # about what was left behind.
+  #
+  # Migrating to another qualified release:
+  #
+  #   python3 <pack_root>/tools/pack_migration.py --project PROJECT.yaml \
+  #       --index <install_root>/RELEASE_INDEX.json --to <version> \
+  #       --at-capability-boundary
+  #
+  # The RELEASE INDEX lives OUTSIDE every release — a frozen release cannot list
+  # the ones that come after it — so it is untrusted input: an entry is a CLAIM
+  # that a release sits at a path, and the gate is what verifies it. A security
+  # advisory on a target is disclosed loudly and authorises nothing: urgency is
+  # a reason for a person to decide sooner, not a reason to skip the capability
+  # boundary or the human.
   #
   # What this pin means, and what it deliberately does not:
   #
