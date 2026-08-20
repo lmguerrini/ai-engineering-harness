@@ -98,7 +98,7 @@ Derived from the tracked tree, not maintained by hand
     │   └── private-terms.default.json
     ├── templates/                  pull-on-demand, project-instantiated
     │   ├── PROJECT.yaml.template   the project contract, including the pack pin
-    │   ├── RELEASE_INDEX.json.template  the index, which lives outside every release
+    │   ├── RELEASE_INDEX.json.template  the release index, which lives outside every release
     │   ├── audit-brief.template.md
     │   ├── task-brief.template.md
     │   └── …                       scope, progress, findings, handoff, coverage
@@ -106,8 +106,22 @@ Derived from the tracked tree, not maintained by hand
     │   ├── gitread.py              read-only Git layer, carries no write verb
     │   ├── publication_gate.py     ref namespace + push form + remote postcondition
     │   ├── pack_pin.py             verifies this release against its own manifest
+    │   ├── pack_migration.py       pin class, migration gate, rollback, release index
+    │   ├── adapter_pin.py          verifies the executable adapters a project declares
+    │   ├── project_context.py      verifies a project's declared semantic authority
+    │   ├── backend_contract.py     backend identity and per-task-class qualification
+    │   ├── resource_observation.py documented resource truth as routing evidence
+    │   ├── evidence_index.py       certification bound to one exact candidate
     │   ├── outgoing_scan.py        leak scan over history, staged content and refs
     │   ├── commit_gate.py          one message, or a whole range
+    │   ├── project_contract.py     one contract, read by every gate that enforces it
+    │   ├── workspace_report.py     classifies every artifact; unknown is blocking
+    │   ├── surface_diff.py         the public Python surface two revisions apart
+    │   ├── pathmatch.py            one path-pattern semantics, oracled against git
+    │   ├── scope_check.py          one containment rule, for every gate that asks
+    │   ├── evidence_put.py         content-addressed, owner-only, write-then-verify
+    │   ├── confine.py              the sandbox profile a dispatched worker runs under
+    │   ├── errors.py               the refusal hierarchy; every refusal names its cause
     │   └── tests/                  the suite; `python3 -m pytest tools/tests/ -q`
     └── docs/                       what happened: gate records, findings, probes
         ├── RP2.1.1-GATE.md         the previous release's gate

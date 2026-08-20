@@ -314,3 +314,27 @@ def test_a_near_miss_of_the_canonical_form_is_refused():
         "git push origin refs/heads/main:refs/heads/main refs/tags/v1:refs/tags/v1",
     ):
         assert publication_gate.check_push_command(wrong, expected_remote="origin"), wrong
+
+
+def test_the_readme_tree_names_every_tool_module(readme):
+    """Caught in RP2.2 by accident and worth a check.
+
+    Five new tool modules shipped while the README tree still listed the
+    original five, because the edits that were supposed to add them silently
+    matched nothing. Nothing failed: the existing README tests assert that every
+    path the tree *claims* exists and that every top-level directory is reached,
+    and both stay true when the tree simply says less than the release contains.
+    A document that omits is harder to notice than one that lies.
+    """
+    claimed = set(_tree_paths(readme))
+    listing = subprocess.run(
+        ["git", "ls-files", "-z", "tools/*.py"], cwd=str(ROOT), capture_output=True, check=True
+    ).stdout
+    modules = sorted(
+        entry.decode("utf-8")
+        for entry in listing.split(b"\0")
+        if entry and b"/tests/" not in entry
+    )
+    assert modules, "no tool modules found to compare"
+    missing = [path for path in modules if path not in claimed]
+    assert not missing, f"the README tree does not name these tool modules: {missing}"
