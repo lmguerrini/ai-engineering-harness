@@ -150,3 +150,93 @@ def test_a_scalar_where_a_list_belongs_is_refused_with_the_fix_named(tmp_path):
 def test_an_unreadable_contract_raises_rather_than_returning_defaults(tmp_path):
     with pytest.raises(ContractError, match="cannot read"):
         ProjectContract.load(tmp_path / "absent" / "PROJECT.yaml")
+
+
+# --- CA-AMD-6: valid multi-line data was refused -----------------------------
+#
+# Reproduced against frozen 2.1.1: `|`, `>`, `|-`, `|+` and a flow sequence
+# spanning lines every one raised `line N: unexpected indentation`. Fail-closed,
+# which is the right direction and still a defect — D10 makes PROJECT.yaml the
+# single source for every gate, so a project that needs a multi-line value in it
+# cannot use the gates at all.
+#
+# The expectations below were produced by differential comparison against a
+# reference YAML implementation over the full cross-product of style, chomping
+# indicator and body shape (60 cases, zero divergences). That library is an
+# oracle used during development and is deliberately NOT imported here: the
+# toolbelt is import-closed (D3), and a test that needs an installed package to
+# run is a test that stops running exactly where the tool is most needed.
+
+
+@pytest.mark.parametrize(
+    "document, expected",
+    [
+        # literal: line breaks are kept
+        ("a:\n  n: |\n    x\n    y\n", "x\ny\n"),
+        # folded: a single break between content lines becomes a space
+        ("a:\n  n: >\n    x\n    y\n", "x y\n"),
+        # strip: no trailing break
+        ("a:\n  n: |-\n    x\n    y\n", "x\ny"),
+        ("a:\n  n: >-\n    x\n    y\n", "x y"),
+        # keep: every trailing break survives
+        ("a:\n  n: |+\n    x\n\n  m: 1\n", "x\n\n"),
+        # clip (the default): trailing breaks collapse to exactly one
+        ("a:\n  n: |\n    x\n\n\n  m: 1\n", "x\n"),
+        # a blank line BETWEEN content lines is content
+        ("a:\n  n: |\n    x\n\n    y\n", "x\n\ny\n"),
+        ("a:\n  n: >\n    x\n\n    y\n", "x\ny\n"),
+        # indentation inside the block is data
+        ("a:\n  n: |\n    x\n      deeper\n    y\n", "x\n  deeper\ny\n"),
+        # so is a `#`, a `:` and a `-`
+        ("a:\n  n: |\n    # not a comment\n", "# not a comment\n"),
+        ("a:\n  n: |\n    key: value\n", "key: value\n"),
+        ("a:\n  n: |\n    - not a list item\n", "- not a list item\n"),
+        # an empty block is the empty string, which is a value
+        ("a:\n  n: |\n  m: 1\n", ""),
+    ],
+)
+def test_a_block_scalar_parses(document, expected):
+    assert parse_yaml_subset(document)["a"]["n"] == expected
+
+
+def test_a_block_scalar_does_not_swallow_the_next_key():
+    assert parse_yaml_subset("a:\n  n: |\n    x\n  m: 2\n") == {"a": {"n": "x\n", "m": 2}}
+
+
+def test_a_block_scalar_does_not_swallow_a_dedented_key():
+    assert parse_yaml_subset("a:\n  n: |\n    x\nb: 2\n") == {"a": {"n": "x\n"}, "b": 2}
+
+
+def test_a_block_scalar_works_inside_a_sequence_item():
+    parsed = parse_yaml_subset("a:\n  - id: 1\n    note: |\n      x\n      y\n")
+    assert parsed == {"a": [{"id": 1, "note": "x\ny\n"}]}
+
+
+def test_a_flow_sequence_may_span_lines():
+    assert parse_yaml_subset("a:\n  n: [x,\n      y]\n") == {"a": {"n": ["x", "y"]}}
+    assert parse_yaml_subset("a:\n  n: [x,\n   y,\n   z]\n") == {"a": {"n": ["x", "y", "z"]}}
+
+
+def test_an_unterminated_flow_sequence_still_raises():
+    with pytest.raises(ContractError):
+        parse_yaml_subset("a:\n  n: [x,\n      y\nb: 2\n")
+
+
+def test_an_explicit_block_indentation_indicator_is_refused_by_name():
+    """Rare, and a scalar that is *nearly* right is worse here than a refusal."""
+    with pytest.raises(ContractError) as caught:
+        parse_yaml_subset("a:\n  n: |2\n    x\n")
+    assert "indentation indicator" in str(caught.value)
+
+
+def test_a_plain_scalar_continued_across_lines_is_refused_with_the_remedy():
+    """Still refused, because it cannot be told apart from an indentation typo
+    — but the refusal now names the construct that does work."""
+    with pytest.raises(ContractError) as caught:
+        parse_yaml_subset("a:\n  n: x\n    y\n")
+    assert "block scalar" in str(caught.value)
+
+
+def test_a_genuine_indentation_typo_is_still_refused():
+    with pytest.raises(ContractError):
+        parse_yaml_subset("a:\n  n: 1\n     oops: 2\n")

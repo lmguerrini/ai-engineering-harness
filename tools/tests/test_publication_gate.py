@@ -414,3 +414,90 @@ def test_a_namespace_that_cannot_be_enumerated_is_not_clean(tmp_path):
 
 def test_the_default_allowlist_does_not_silently_include_notes():
     assert "refs/notes/*" not in publication_gate.DEFAULT_PUBLISHABLE_REFS
+
+
+# --- EC-C: the explanation must be true, not merely safe ---------------------
+#
+# The verdict was already right — every ref below is refused. What was wrong was
+# the *sentence*, and a gate is read by people who act on its sentences.
+# Reproduced against frozen 2.1.1: a blob ref reported "CARRIES OBJECTS THE
+# PUBLIC REF DOES NOT" as a fact although the ancestry call had exited 128, and
+# an annotated tag reported "carries no extra object" although the tag object is
+# an extra object carrying a tagger identity.
+
+
+def _finding(report, refname):
+    return next(f for f in report.findings if f.refname == refname)
+
+
+def test_an_annotated_tag_is_not_reported_as_carrying_no_extra_object(repo):
+    """`merge-base` peels a tag to its commit, so the old boolean answered
+    "contained" — in the reassuring direction — for an object the public ref
+    does not carry and which holds a tagger name, email and message."""
+    _git(repo, "tag", "-a", "v1", "-m", "annotated")
+    report = inspect_namespace(repo, public_ref="refs/heads/main", publishable=("refs/heads/main",))
+
+    finding = _finding(report, "refs/tags/v1")
+    assert finding.objecttype == "tag"
+    assert "ANNOTATED TAG" in finding.sentence()
+    assert "carries no extra object" not in finding.sentence()
+    assert not report.clean
+
+
+def test_a_ref_naming_a_blob_reports_that_containment_does_not_apply(repo):
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"], cwd=str(repo), input=b"private payload",
+        capture_output=True, check=True,
+    ).stdout.decode().strip()
+    _git(repo, "update-ref", "refs/private/blob", blob)
+
+    report = inspect_namespace(repo, public_ref="refs/heads/main", publishable=("refs/heads/main",))
+    finding = _finding(report, "refs/private/blob")
+    assert finding.objecttype == "blob"
+    assert finding.containment == publication_gate.NOT_APPLICABLE
+    assert "containment does not apply" in finding.sentence()
+    assert "CARRIES OBJECTS THE PUBLIC REF DOES NOT" not in finding.sentence()
+    assert not report.clean
+
+
+def test_a_ref_naming_a_tree_reports_that_containment_does_not_apply(repo):
+    tree = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"], cwd=str(repo),
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    _git(repo, "update-ref", "refs/private/tree", tree)
+
+    report = inspect_namespace(repo, public_ref="refs/heads/main", publishable=("refs/heads/main",))
+    assert _finding(report, "refs/private/tree").containment == publication_gate.NOT_APPLICABLE
+
+
+def test_an_ordinary_branch_still_reports_containment_both_ways(repo):
+    """The repair must not blur the two states that were already correct."""
+    _git(repo, "branch", "contained-elsewhere")
+    _git(repo, "checkout", "--quiet", "-b", "carries-extra")
+    (repo / "extra.txt").write_text("extra\n")
+    _git(repo, "add", "extra.txt")
+    _git(repo, "commit", "--quiet", "-m", "extra")
+    _git(repo, "checkout", "--quiet", "main")
+
+    report = inspect_namespace(repo, public_ref="refs/heads/main", publishable=("refs/heads/main",))
+    assert _finding(report, "refs/heads/contained-elsewhere").containment == publication_gate.CONTAINED
+    assert _finding(report, "refs/heads/carries-extra").containment == publication_gate.NOT_CONTAINED
+    assert "carries no extra object" in _finding(report, "refs/heads/contained-elsewhere").sentence()
+    assert "CARRIES OBJECTS" in _finding(report, "refs/heads/carries-extra").sentence()
+
+
+def test_the_backward_compatible_field_is_true_only_for_contained(repo):
+    """`contained_in_public` survives for 2.1.1 callers, and is deliberately
+    false for NOT_APPLICABLE and UNKNOWN: neither is a statement that the ref
+    carries nothing extra."""
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"], cwd=str(repo), input=b"x",
+        capture_output=True, check=True,
+    ).stdout.decode().strip()
+    _git(repo, "update-ref", "refs/private/blob", blob)
+    _git(repo, "branch", "contained-elsewhere")
+
+    report = inspect_namespace(repo, public_ref="refs/heads/main", publishable=("refs/heads/main",))
+    assert _finding(report, "refs/heads/contained-elsewhere").contained_in_public is True
+    assert _finding(report, "refs/private/blob").contained_in_public is False

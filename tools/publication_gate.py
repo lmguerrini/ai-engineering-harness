@@ -107,19 +107,69 @@ SUPPORTED_PUSH_FORM = "git push <remote> refs/heads/<branch>:refs/heads/<branch>
 _FULL_OBJECT_NAME = re.compile(r"^[0-9a-f]{40}$")
 
 
+#: What a ref's containment in the public ref actually is. Four states, because
+#: there are four — and collapsing them to a boolean is how this gate printed a
+#: sentence nobody had established.
+#:
+#: `CONTAINED` — the ref's object is reachable from the public ref. Untidy,
+#: carries nothing extra.
+#: `NOT_CONTAINED` — it holds material outside the published graph. The case
+#: that matters.
+#: `NOT_APPLICABLE` — the ref does not name a commit at all. Ancestry is not a
+#: question that can be asked of a blob or a tree, and answering it anyway
+#: produced "CARRIES OBJECTS THE PUBLIC REF DOES NOT" as a statement of fact
+#: from a call that had exited 128.
+#: `UNKNOWN` — git was asked and could not answer.
+CONTAINED = "CONTAINED"
+NOT_CONTAINED = "NOT_CONTAINED"
+NOT_APPLICABLE = "NOT_APPLICABLE"
+UNKNOWN = "UNKNOWN"
+
+#: The sentence printed for each. An annotated tag gets its own, because it is
+#: the case that reported in the *reassuring* direction: `merge-base` peels a
+#: tag to its commit, so a tag whose commit is published answered "contained"
+#: — while the tag object itself is an object the public ref does not carry,
+#: and it holds a tagger name, a tagger email and a message.
+_CONTAINMENT_SENTENCE = {
+    CONTAINED: "already contained in the public ref — untidy, carries no extra object",
+    NOT_CONTAINED: "CARRIES OBJECTS THE PUBLIC REF DOES NOT",
+    NOT_APPLICABLE: "not a commit, so containment does not apply — this ref names an object outside commit history",
+    UNKNOWN: "CONTAINMENT UNKNOWN — git was asked and could not answer",
+}
+
+_TAG_SENTENCE = (
+    "an ANNOTATED TAG: the public ref carries the commit this tag points at, but not "
+    "the tag object itself, which is an extra object carrying a tagger identity and message"
+)
+
+
 @dataclass(frozen=True)
 class RefFinding:
     refname: str
     reason: str
     identity: str = ""
-    #: Whether this ref's tip is already an ancestor of the public ref. When it
-    #: is, the ref carries no object the public ref does not — it is untidy, not
-    #: dangerous. When it is **not**, the ref holds material outside the
-    #: published graph, which is the case that matters and the one an
-    #: ancestor-shaped question reports in the quieter direction. Naming the
-    #: field for containment rather than "reachability" keeps the alarming
-    #: rendering on the alarming case.
-    contained_in_public: bool = False
+    #: One of the four constants above. Was a `bool` through 2.1.1, which had
+    #: no way to say "not applicable" or "not established" and therefore said
+    #: "CARRIES OBJECTS THE PUBLIC REF DOES NOT" for both.
+    containment: str = NOT_CONTAINED
+    #: The ref's git object type, as `for-each-ref` reports it. Already
+    #: available and previously unread.
+    objecttype: str = ""
+
+    @property
+    def contained_in_public(self) -> bool:
+        """Retained for callers written against the 2.1.1 field.
+
+        Deliberately true only for `CONTAINED`: every other state — including
+        the two that did not exist before — is not a statement that the ref
+        carries nothing extra.
+        """
+        return self.containment == CONTAINED
+
+    def sentence(self) -> str:
+        if self.objecttype == "tag" and self.containment in (CONTAINED, NOT_CONTAINED):
+            return _TAG_SENTENCE
+        return _CONTAINMENT_SENTENCE.get(self.containment, _CONTAINMENT_SENTENCE[UNKNOWN])
 
 
 @dataclass
@@ -148,13 +198,11 @@ class PublicationReport:
             return "\n".join(lines)
         lines = [f"publication namespace {self.repository}: NOT PUBLISHABLE"]
         for finding in self.findings:
-            containment = (
-                "already contained in the public ref — untidy, carries no extra object"
-                if finding.contained_in_public
-                else "CARRIES OBJECTS THE PUBLIC REF DOES NOT"
-            )
             lines.append(f"  {finding.refname}: {finding.reason}")
-            lines.append(f"    {containment}{f' · authored by {finding.identity}' if finding.identity else ''}")
+            lines.append(
+                f"    {finding.sentence()}"
+                f"{f' · authored by {finding.identity}' if finding.identity else ''}"
+            )
         for item in self.identity_findings:
             lines.append(f"  identity: {item}")
         for item in self.could_not_check:
@@ -201,14 +249,26 @@ def inspect_namespace(
                 continue
             reason = "outside the declared publishable allowlist"
         identity = f"{entry['authorname']} {entry['authoremail']}".strip()
-        try:
-            contained = gitread.is_ancestor(repository, entry["objectname"], public_ref)
-        except Exception:
-            # Not knowing is not "not contained". An unanswerable ancestry
-            # question must not render as the reassuring answer.
-            report.could_not_check.append(f"ancestry of {name} against {public_ref}")
-            contained = False
-        report.findings.append(RefFinding(name, reason, identity, contained))
+        objecttype = entry.get("objecttype", "")
+        if objecttype in ("blob", "tree"):
+            # Ancestry is not a question that can be asked of these. Asking it
+            # anyway exited 128, and 2.1.1 rendered that as the definite
+            # sentence "CARRIES OBJECTS THE PUBLIC REF DOES NOT".
+            containment = NOT_APPLICABLE
+        else:
+            try:
+                answered = gitread.is_ancestor(repository, entry["objectname"], public_ref)
+            except Exception as exc:
+                # Not knowing is not "not contained". An unanswerable ancestry
+                # question must not render as the reassuring answer — nor as the
+                # alarming one, which is still a claim nobody established.
+                report.could_not_check.append(
+                    f"ancestry of {name} against {public_ref}: {exc}"
+                )
+                containment = UNKNOWN
+            else:
+                containment = CONTAINED if answered else NOT_CONTAINED
+        report.findings.append(RefFinding(name, reason, identity, containment, objecttype))
 
     if human_identities:
         report.identity_findings.extend(

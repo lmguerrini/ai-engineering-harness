@@ -106,3 +106,70 @@ def test_a_tracked_but_unstaged_required_path_is_not_reported(repo):
     _git(repo, "commit", "--quiet", "-m", "add gold")
     report = classify_workspace(repo, must_be_tracked=["data/"])
     assert report.untracked_requirements == []
+
+
+# --- EC-A(i): the classifier has to see the real path -----------------------
+#
+# `git ls-files` without `-z` C-quotes any path it cannot print literally, so
+# `annotations/café.txt` arrived at classification as the literal
+# `"annotations/caf\303\251.txt"` — which matches no declared pattern, and the
+# project's `annotations/` exemption then silently stopped covering it.
+# Reproduced against frozen 2.1.1.
+
+
+QUOTED_PATHS = [
+    "annotations/plain.txt",         # printed literally
+    "annotations/with space.txt",    # printed literally: the control
+    "annotations/café.txt",          # non-ASCII: quoted
+    'annotations/say"hi.txt',        # a quote: quoted
+]
+
+
+@pytest.fixture
+def repo_with_awkward_paths(tmp_path):
+    root = tmp_path / "awkward"
+    (root / "annotations").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
+    for key, value in (("user.email", "a@b.c"), ("user.name", "T"),
+                       ("core.excludesFile", "/dev/null")):
+        subprocess.run(["git", "config", key, value], cwd=root, check=True)
+    for path in QUOTED_PATHS:
+        (root / path).write_text("x")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+    return root
+
+
+def test_paths_git_quotes_arrive_unquoted(repo_with_awkward_paths):
+    report = classify_workspace(repo_with_awkward_paths)
+    seen = set(report.tracked_product)
+    assert seen == set(QUOTED_PATHS), sorted(seen)
+    assert not any(path.startswith('"') for path in seen)
+
+
+def test_a_declared_directory_exemption_covers_every_one_of_them(tmp_path):
+    """The consequence, stated as the property that actually matters: a
+    declaration means the same thing regardless of how git chose to print it.
+
+    Asserted on the *untracked* bucket, which is where `ignored_private`
+    classifies. An unclassified artifact blocks closure, so a quoted path
+    escaping its declared exemption turns a declared directory into a pile of
+    blockers — or, with the exemption written the other way, hides them.
+    """
+    root = tmp_path / "untracked"
+    (root / "annotations").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
+    for key, value in (("user.email", "a@b.c"), ("user.name", "T"),
+                       ("core.excludesFile", "/dev/null")):
+        subprocess.run(["git", "config", key, value], cwd=root, check=True)
+    (root / "seed.txt").write_text("x")
+    subprocess.run(["git", "add", "seed.txt"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+    for path in QUOTED_PATHS:
+        (root / path).write_text("x")
+
+    report = classify_workspace(root, ignored_private=["annotations/"])
+    assert sorted(report.ignored_private) == sorted(QUOTED_PATHS)
+    assert report.unknown == [], (
+        f"a declared exemption stopped covering the paths git quotes: {report.unknown}"
+    )

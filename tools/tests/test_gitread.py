@@ -132,3 +132,105 @@ def test_run_refuses_a_nonexistent_repository_path(tmp_path):
 def test_run_refuses_a_nonpositive_timeout(repo):
     with pytest.raises(GitRefusal):
         gitread._run(repo, "rev-parse", "--verify", "HEAD", timeout=0)
+
+
+# --- D15: an undeclared exit status is not the documented negative -----------
+#
+# `probe` distinguishes three outcomes and exposes `failed` for "git ran and
+# could not answer". Two callers consulted only `answered`, so exit 128 arrived
+# as the ordinary negative. Both reproduced against the frozen 2.1.1 baseline
+# before repair.
+
+
+def _repo(tmp_path, name="r"):
+    root = tmp_path / name
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
+    for key, value in (("user.email", "a@b.c"), ("user.name", "T")):
+        subprocess.run(["git", "config", key, value], cwd=root, check=True)
+    (root / "f.txt").write_text("hi")
+    subprocess.run(["git", "add", "f.txt"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+    return root
+
+
+def test_an_unreadable_config_is_a_refusal_not_an_empty_repository(tmp_path):
+    """The exact D7 surface: a repository whose `.git/config` cannot be parsed
+    reported as having no settings at all, `notes.*` keys included."""
+    root = _repo(tmp_path)
+    subprocess.run(["git", "config", "notes.rewriteRef", "refs/notes/commits"], cwd=root, check=True)
+    assert any(e["key"] == "notes.rewriteref" for e in gitread.config_with_origin(str(root)))
+
+    (root / ".git" / "config").write_text("[core\nthis is not valid\n")
+    with pytest.raises(GitRefusal):
+        gitread.config_with_origin(str(root))
+
+
+def test_ancestry_of_a_non_commit_is_a_refusal_not_a_no(tmp_path):
+    """`merge-base --is-ancestor` exits 128 on a blob. Returning `False` made
+    the publication gate print "CARRIES OBJECTS THE PUBLIC REF DOES NOT" as a
+    fact about a question that was never answered."""
+    root = _repo(tmp_path)
+    blob = subprocess.run(
+        ["git", "hash-object", "-w", "--stdin"], cwd=root, input=b"payload",
+        capture_output=True, check=True,
+    ).stdout.decode().strip()
+
+    with pytest.raises(GitRefusal):
+        gitread.is_ancestor(str(root), blob, "refs/heads/main")
+
+
+def test_ancestry_of_a_commit_still_answers_both_ways(tmp_path):
+    """The repair must not turn an ordinary negative into a refusal."""
+    root = _repo(tmp_path)
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert gitread.is_ancestor(str(root), head, "refs/heads/main") is True
+
+    subprocess.run(["git", "checkout", "-q", "-b", "other"], cwd=root, check=True)
+    (root / "g.txt").write_text("other")
+    subprocess.run(["git", "add", "g.txt"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "other"], cwd=root, check=True)
+    other = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert gitread.is_ancestor(str(root), other, "refs/heads/main") is False
+
+
+# --- a refusal that cannot be constructed is not a refusal -------------------
+
+
+def test_every_refusal_path_raises_a_named_refusal(tmp_path):
+    """Latent in 2.1.1 and reproduced against it: both "nobody looked" paths
+    passed `cause=` to a constructor whose first positional parameter is named
+    `cause`, so they raised `TypeError` — which carries neither the stable code
+    nor the specific cause `errors.py` promises."""
+    root = _repo(tmp_path)
+    with pytest.raises(GitRefusal):
+        gitread.config_with_origin(str(root), timeout=1e-9)
+    with pytest.raises(GitRefusal):
+        gitread.is_ancestor(str(root), "a" * 40, "b" * 40, timeout=1e-9)
+
+
+def test_no_tool_constructs_a_refusal_with_a_colliding_cause_keyword():
+    """Mechanical, because the defect above is invisible until the path runs.
+
+    `HxError.__init__(self, cause, **detail)` takes `cause` positionally, so any
+    construction passing it again by keyword raises `TypeError` at the moment
+    the refusal was supposed to be raised — the worst possible moment.
+    """
+    import re
+    from pathlib import Path
+
+    pattern = re.compile(
+        r"(?:GitRefusal|IntegrityError|GateRefusal|PreconditionError"
+        r"|CommitContractError|HxError)\([^)]*\bcause\s*="
+    )
+    offenders = [
+        f"{path.name}:{number}"
+        for path in sorted(Path(__file__).resolve().parent.parent.glob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert not offenders, f"these constructions raise TypeError instead of a refusal: {offenders}"

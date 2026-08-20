@@ -139,6 +139,12 @@ def _ignore_rule(repository: str | Path, path: str) -> str:
     )
     if not answer.answered:
         return f"unknown — git could not be asked ({answer.cause})"
+    # 1 is the documented negative; every other status means git ran and could
+    # not answer. Returning the negative's sentence for it stated, as a fact,
+    # that no ignore rule covers the path — a definite claim from a failed
+    # question (DECISIONS.md D15).
+    if answer.failed:
+        return f"unknown — git could not answer ({answer.cause})"
     if not answer.ok:
         return "no ignore rule; the path exists but was never added to the index"
     return answer.value.strip() or "an ignore rule git declined to name"
@@ -151,19 +157,29 @@ def _staged_additions(repository: str | Path) -> list[str]:
     # repository read as a clean report at the one gate where that must never
     # happen.
     answer = gitread.probe(
-        repository, "diff", "--no-ext-diff", "--cached", "--name-only", "--diff-filter=A",
+        repository, "diff", "--no-ext-diff", "--cached", "--name-only", "--diff-filter=A", "-z",
         # Declared empty on purpose. `git diff --name-only` has no documented
         # negative exit — it prints nothing and exits 0 when there is nothing
         # to report — so every non-zero status is a failure to look.
         negative_statuses=(),
     )
     output = answer.require("what is staged in the index")
-    return [line for line in output.splitlines() if line]
+    return gitread.nul_paths(output.encode("utf-8", "surrogateescape"))
 
 
 def _listing(repository: str | Path, *arguments: str) -> list[str]:
-    output = gitread._run(repository, "ls-files", *arguments)
-    return [line for line in str(output).splitlines() if line]
+    """Tracked or untracked paths, NUL-separated.
+
+    `-z` is not optional here. Without it git C-quotes any path it cannot print
+    literally, so `annotations/café.txt` arrives as the literal
+    `"annotations/caf\303\251.txt"` — which then matches no declared pattern,
+    and the project's `annotations/` exemption silently stops covering it.
+    Reproduced against frozen 2.1.1 (`pack_pin.py` already did this correctly;
+    this module did not).
+    """
+    output = gitread._run(repository, "ls-files", "-z", *arguments, text=False)
+    assert isinstance(output, bytes)
+    return gitread.nul_paths(output)
 
 
 def classify_workspace(

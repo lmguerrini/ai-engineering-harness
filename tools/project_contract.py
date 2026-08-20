@@ -21,10 +21,19 @@ empty".
 
 The parser accepts the subset of YAML the contract template actually uses:
 nested block mappings at two-space indent, block and flow sequences, comments,
-and quoted or bare scalars. Anything else raises rather than being guessed at.
-A full YAML implementation is deliberately not imported — the toolbelt is
-import-closed to the standard library (`DECISIONS.md` D3), so a checker keeps
-working in an environment where nothing has been installed.
+quoted or bare scalars, **block scalars** (`|` and `>`, with `-` and `+`
+chomping), and a flow sequence spanning several lines. Anything else raises
+rather than being guessed at. A full YAML implementation is deliberately not
+imported — the toolbelt is import-closed to the standard library
+(`DECISIONS.md` D3), so a checker keeps working in an environment where nothing
+has been installed.
+
+RP2.2 added the multi-line forms because their absence was a defect, not a
+scoping decision: every one of them raised `unexpected indentation`, so a
+project could not write a multi-line description in the one file D10 makes the
+single source for every gate. They were verified against a reference YAML
+implementation across the full cross-product of style, chomping indicator and
+body shape — as an oracle during development, never as a dependency.
 """
 
 from __future__ import annotations
@@ -143,20 +152,178 @@ class _Line:
     indent: int
     text: str
     number: int
+    #: A block scalar's resolved text, when this line opened one. Carried here
+    #: because a block scalar's body is *content* — a `#` in it is a hash, a
+    #: blank line is a blank line, and its indentation is data — so it cannot
+    #: survive the comment-stripping and blank-skipping the scanner applies to
+    #: structural lines. It is resolved once, during scanning, and the mapping
+    #: parser reads it instead of re-deriving it.
+    block: str | None = None
+
+
+#: `|`, `>`, and their chomping indicators. An explicit indentation indicator
+#: (`|2`) is refused by name rather than mis-read: it is rare, and guessing at
+#: it would produce a scalar that is *nearly* right, which is worse here than a
+#: refusal.
+_BLOCK_HEADER = re.compile(r"^(?P<style>[|>])(?P<chomp>[+-]?)$")
+_BLOCK_HEADER_WITH_INDENT = re.compile(r"^[|>][+-]?\d+[+-]?$|^[|>]\d")
+
+
+def _resolve_block(style: str, chomp: str, body: list[str]) -> str:
+    """A block scalar's text, from its already-dedented body lines.
+
+    Trailing blank lines are separated from content first, because all three
+    chomping indicators are defined in terms of them: `-` drops every trailing
+    break, `+` keeps every one, and the default clips them to exactly one.
+    """
+    content = _rstrip_blank(body)
+    trailing = len(body) - len(content)
+
+    if not content:
+        return "\n" * trailing if chomp == "+" else ""
+
+    if style == "|":
+        text = "\n".join(content)
+    else:
+        # Folded. A single break between two non-empty lines becomes a space; a
+        # run of blank lines becomes that many newlines; and a *more indented*
+        # line keeps its breaks, which is the rule that lets a folded scalar
+        # carry anything with structure in it.
+        pieces: list[str] = []
+        for line in content:
+            if not line.strip():
+                pieces.append("\n")
+            elif line[:1].isspace():
+                pieces.append("\n" + line + "\n")
+            elif pieces and not pieces[-1].endswith("\n"):
+                pieces.append(" " + line)
+            else:
+                pieces.append(line)
+        text = "".join(pieces).rstrip("\n")
+
+    if chomp == "-":
+        return text
+    if chomp == "+":
+        return text + "\n" * (1 + trailing)
+    return text + "\n"
+
+
+def _rstrip_blank(body: list[str]) -> list[str]:
+    """``body`` up to and including its last line with content."""
+    end = len(body)
+    while end and not body[end - 1].strip():
+        end -= 1
+    return body[:end]
 
 
 def _significant_lines(document: str) -> list[_Line]:
+    """The document's structural lines, with block scalars already resolved.
+
+    RP2.2 (CA-AMD-6): every form of valid multi-line data raised
+    `unexpected indentation` — `|`, `>`, `|-`, `|+`, and a flow sequence spanning
+    lines. Reproduced by execution. The reader was fail-closed about it, which is
+    the right direction and still wrong: a project cannot write a multi-line
+    description in the one file every gate reads, and `D10` makes that file the
+    single source. Repaired here rather than by importing a YAML library, because
+    the toolbelt is import-closed to the standard library (`DECISIONS.md` D3) and
+    a checker has to keep working where nothing has been installed.
+    """
+    raw_lines = document.splitlines()
     lines: list[_Line] = []
-    for number, raw in enumerate(document.splitlines(), start=1):
+    index = 0
+    while index < len(raw_lines):
+        raw = raw_lines[index]
+        number = index + 1
         if raw.strip().startswith("#"):
+            index += 1
             continue
         if "\t" in raw[: len(raw) - len(raw.lstrip())]:
             raise ContractError(f"line {number}: tab in indentation")
         stripped = _strip_comment(raw)
         if not stripped.strip():
+            index += 1
             continue
-        lines.append(_Line(len(stripped) - len(stripped.lstrip()), stripped.strip(), number))
+
+        indent = len(stripped) - len(stripped.lstrip())
+        text = stripped.strip()
+        index += 1
+
+        match = _KEY.match(text)
+        value = match.group("value").strip() if match and match.group("value") else ""
+
+        if value and _BLOCK_HEADER_WITH_INDENT.match(value):
+            raise ContractError(
+                f"line {number}: an explicit block indentation indicator ({value!r}) is not "
+                "supported; write the block at a consistent indent instead"
+            )
+
+        header = _BLOCK_HEADER.match(value) if value else None
+        if header:
+            body, index = _block_body(raw_lines, index, indent, number)
+            lines.append(
+                _Line(indent, f"{match.group('key')}:", number,
+                      block=_resolve_block(header.group("style"), header.group("chomp"), body))
+            )
+            continue
+
+        if value.startswith("[") and not value.endswith("]"):
+            text, index = _continue_flow(raw_lines, index, text, number)
+
+        lines.append(_Line(indent, text, number))
     return lines
+
+
+def _block_body(
+    raw_lines: list[str], index: int, key_indent: int, opened_at: int
+) -> tuple[list[str], int]:
+    """The dedented body of a block scalar, and the line after it.
+
+    Read from the **raw** lines: inside a block scalar a `#` is a hash and a
+    blank line is a blank line, so neither comment-stripping nor blank-skipping
+    may touch them.
+    """
+    body: list[str] = []
+    block_indent: int | None = None
+    while index < len(raw_lines):
+        raw = raw_lines[index]
+        if not raw.strip():
+            body.append("")
+            index += 1
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        if indent <= key_indent:
+            break
+        if block_indent is None:
+            block_indent = indent
+        if indent < block_indent:
+            raise ContractError(
+                f"line {index + 1}: this line is less indented than the block scalar "
+                f"opened on line {opened_at}, which ended it ambiguously"
+            )
+        body.append(raw[block_indent:])
+        index += 1
+    if block_indent is None:
+        # `key: |` with nothing under it. An empty block is an empty string,
+        # which is a value — not the absence of one.
+        return [], index
+    return body, index
+
+
+def _continue_flow(
+    raw_lines: list[str], index: int, text: str, opened_at: int
+) -> tuple[str, int]:
+    """Join a `[...]` flow sequence that spans lines into one logical line."""
+    depth = text.count("[") - text.count("]")
+    while depth > 0 and index < len(raw_lines):
+        piece = _strip_comment(raw_lines[index]).strip()
+        index += 1
+        if not piece:
+            continue
+        text = f"{text} {piece}"
+        depth += piece.count("[") - piece.count("]")
+    if depth > 0:
+        raise ContractError(f"line {opened_at}: unterminated flow sequence")
+    return text, index
 
 
 def parse_yaml_subset(document: str) -> dict:
@@ -192,7 +359,13 @@ def _parse_mapping(lines: list[_Line], index: int, indent: int) -> tuple[dict, i
         if line.indent < indent:
             break
         if line.indent > indent:
-            raise ContractError(f"line {line.number}: unexpected indentation")
+            raise ContractError(
+                f"line {line.number}: unexpected indentation. If this is a continued "
+                "value, write it as a block scalar (`key: |` for literal lines, "
+                "`key: >` for folded); a plain scalar continued across lines is not "
+                "in the supported subset because it cannot be told apart from this "
+                "being a typo"
+            )
         match = _KEY.match(line.text)
         if not match:
             raise ContractError(f"line {line.number}: expected 'key:', found {line.text!r}")
@@ -203,7 +376,12 @@ def _parse_mapping(lines: list[_Line], index: int, indent: int) -> tuple[dict, i
             # believe it declared.
             raise ContractError(f"line {line.number}: duplicate key {key!r}")
         raw_value = match.group("value")
+        block = line.block
         index += 1
+        if block is not None:
+            # Resolved during scanning, where the body was still intact.
+            mapping[key] = block
+            continue
         if raw_value:
             stripped = raw_value.strip()
             if stripped.startswith("["):

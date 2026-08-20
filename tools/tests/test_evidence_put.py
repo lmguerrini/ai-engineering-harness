@@ -92,3 +92,95 @@ def test_cli_exits_nonzero_on_refusal(tmp_path):
     (evidence_dir / reference).write_bytes(b"corrupted\n")
     result = _run_cli(str(evidence_dir), str(source))
     assert result.returncode != 0
+
+
+# --- EC-E: evidence is private material and was written world-readable -------
+#
+# Reproduced against frozen 2.1.1: directory `0o755`, entry `0o644`, and nothing
+# checked either. The mode is now requested AND read back, because `mkdir` and
+# `open` are both masked by the umask, so the mode a call asks for and the mode
+# a file has are two different facts.
+
+import os
+import stat
+
+
+def _mode(path):
+    return stat.S_IMODE(os.stat(path).st_mode)
+
+
+def test_the_evidence_directory_is_owner_only(tmp_path):
+    source = tmp_path / "finding.txt"
+    source.write_text("private reproduction output")
+    evidence = tmp_path / "evidence"
+
+    evidence_put.put(evidence, source)
+    assert _mode(evidence) == 0o700
+
+
+def test_every_evidence_entry_is_owner_only(tmp_path):
+    source = tmp_path / "finding.txt"
+    source.write_text("private reproduction output")
+    evidence = tmp_path / "evidence"
+
+    reference = evidence_put.put(evidence, source)
+    assert _mode(evidence / reference) == 0o600
+
+
+def test_the_mode_holds_under_a_permissive_umask(tmp_path):
+    """The reproduction condition. `mkdir(mode=0o700)` alone is masked by the
+    umask, so a permissive umask silently reopened the directory."""
+    source = tmp_path / "finding.txt"
+    source.write_text("private")
+    evidence = tmp_path / "evidence"
+
+    previous = os.umask(0o000)
+    try:
+        reference = evidence_put.put(evidence, source)
+    finally:
+        os.umask(previous)
+
+    assert _mode(evidence) == 0o700
+    assert _mode(evidence / reference) == 0o600
+
+
+def test_a_pre_existing_loose_directory_is_tightened(tmp_path):
+    """Directories created by earlier versions are `0o755`. Tightening cannot
+    open a hole, and refusing would strand every one of them."""
+    source = tmp_path / "finding.txt"
+    source.write_text("private")
+    evidence = tmp_path / "evidence"
+    evidence.mkdir(mode=0o755)
+    os.chmod(evidence, 0o755)
+
+    evidence_put.put(evidence, source)
+    assert _mode(evidence) == 0o700
+
+
+def test_an_entry_that_became_readable_is_refused_rather_than_retrusted(tmp_path):
+    """A put that finds its reference already present verifies it. Content was
+    already verified; the mode is now verified too, because an entry somebody
+    else can read is not the entry this module promised to store."""
+    source = tmp_path / "finding.txt"
+    source.write_text("private")
+    evidence = tmp_path / "evidence"
+    reference = evidence_put.put(evidence, source)
+
+    os.chmod(evidence / reference, 0o644)
+    with pytest.raises(IntegrityError) as caught:
+        evidence_put.put(evidence, source)
+    assert "readable beyond its owner" in caught.value.cause
+
+
+def test_the_content_guarantee_is_unchanged(tmp_path):
+    """Non-regression: the mode work must not have touched the digest rules."""
+    source = tmp_path / "finding.txt"
+    source.write_text("private")
+    evidence = tmp_path / "evidence"
+    reference = evidence_put.put(evidence, source)
+
+    assert evidence_put.put(evidence, source) == reference
+    (evidence / reference).chmod(0o600)
+    (evidence / reference).write_text("tampered")
+    with pytest.raises(IntegrityError):
+        evidence_put.put(evidence, source)

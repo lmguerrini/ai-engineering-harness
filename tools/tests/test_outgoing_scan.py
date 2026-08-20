@@ -137,3 +137,51 @@ def test_credential_in_a_blob_is_a_leak(repo):
 def test_scanner_rejects_non_scanner_argument(repo):
     with pytest.raises(TypeError):
         outgoing_scan.scan_outgoing(repo, ref="HEAD", baseline=None, scanner=object())
+
+
+# --- the path surface has to be the real path -------------------------------
+#
+# Git's default, line-based output C-quotes any path it cannot print literally.
+# The leak scanner read that output, so a declared private term appearing in a
+# non-ASCII directory name was matched against `"session\303\251-private/..."`
+# — which does not contain the term. Reproduced against frozen 2.1.1: the scan
+# reported `clean`. `pack_pin.py` already used `-z` and said why; this path did
+# not.
+
+
+@pytest.mark.parametrize(
+    "directory",
+    [
+        "sessioné-private",       # non-ASCII: C-quoted by git
+        "session private",        # a space: NOT quoted, so this must keep working
+        'session"private',        # a quote: C-quoted
+    ],
+)
+def test_a_private_term_in_a_path_git_must_quote_is_still_found(repo, directory):
+    (repo / directory).mkdir()
+    (repo / directory / "notes.md").write_text("ordinary content\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "--quiet", "-m", "add material")
+
+    scanner = outgoing_scan.Scanner(TermSet.of(terms=[directory]))
+    report = outgoing_scan.scan_outgoing(
+        repo, ref="refs/heads/main", baseline=None, scanner=scanner
+    )
+    assert not report.clean, "a declared private term in a path scanned as clean"
+    assert any(directory in leak.subject for leak in report.leaks)
+
+
+def test_the_report_does_not_echo_the_private_term_it_found(repo):
+    """The finding names the path; the term itself is redacted."""
+    (repo / "sessioné-private").mkdir()
+    (repo / "sessioné-private" / "notes.md").write_text("content\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "--quiet", "-m", "add material")
+
+    scanner = outgoing_scan.Scanner(TermSet.of(terms=["sessioné-private"]))
+    rendered = outgoing_scan.scan_outgoing(
+        repo, ref="refs/heads/main", baseline=None, scanner=scanner
+    ).render()
+    assert "declared private term" in rendered
+    assert "sessioné-private/notes.md" in rendered  # the path is named
+    assert "'sessioné-private'" not in rendered     # the term is not

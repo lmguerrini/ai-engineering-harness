@@ -343,8 +343,9 @@ def _module_name(path: str) -> str:
 
 
 def _python_files_at(repository: str, ref: str) -> list[str]:
-    output = gitread._run(repository, "ls-tree", "-r", "--name-only", ref)
-    return sorted(line for line in str(output).splitlines() if line.endswith(".py"))
+    output = gitread._run(repository, "ls-tree", "-r", "--name-only", "-z", ref, text=False)
+    assert isinstance(output, bytes)
+    return sorted(path for path in gitread.nul_paths(output) if path.endswith(".py"))
 
 
 def _read_source(repository: str, ref: str, path: str) -> str:

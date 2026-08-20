@@ -76,6 +76,35 @@ _TRAILER_TOKENS = re.compile(
     r"|issue|see-also|link)\s*:",
 )
 
+#: A Conventional Commit subject. `fix` is in the trailer token set above, so a
+#: perfectly ordinary `fix: correct the parser` was refused as `TRAILER` while
+#: `feat: …` passed — reproduced by execution, and blocking, because the commit
+#: contract asks for a Conventional Commit subject in the first place. A gate
+#: that refuses the form its own contract requires is not strict, it is wrong.
+#:
+#: The exemption is deliberately narrow. It applies to **the subject line only**
+#: — line 1 is not a trailer position in git, which parses trailers out of the
+#: final paragraph — and only to the declared type set. `Signed-off-by:` as a
+#: subject is still a trailer, and every body line is unchanged: a real trailer
+#: does not become legal by moving up one line.
+_CONVENTIONAL_SUBJECT = re.compile(
+    r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
+    r"(?:\([^()\n]+\))?!?:\s",
+)
+
+
+def _trailer_surface(message: str) -> str:
+    """The part of a message trailer detection applies to.
+
+    The subject is excluded **only** when it is a Conventional Commit subject,
+    and it is replaced rather than removed so that every other rule still sees
+    a well-formed message and reported line positions do not shift.
+    """
+    subject, separator, rest = message.partition("\n")
+    if separator and _CONVENTIONAL_SUBJECT.match(subject):
+        return "\n" + rest
+    return message
+
 # Path detection, in three shapes. A repository-relative path such as
 # ``src/loader.py`` is deliberately *not* matched: naming a file you changed is
 # ordinary project-facing language. What is prohibited is a path that reveals a
@@ -376,7 +405,8 @@ def _content_violations(message: str, term_set: TermSet) -> list[ContractViolati
         )
     if _COAUTHOR.search(message):
         out.append(ContractViolation("COAUTHOR", "Co-authored-by is prohibited"))
-    if _TRAILER_HYPHENATED.search(message) or _TRAILER_TOKENS.search(message):
+    trailer_surface = _trailer_surface(message)
+    if _TRAILER_HYPHENATED.search(trailer_surface) or _TRAILER_TOKENS.search(trailer_surface):
         out.append(ContractViolation("TRAILER", "commit trailers are prohibited"))
     if contains_local_path(message):
         out.append(ContractViolation("ABSOLUTE_PATH", "local filesystem paths are prohibited"))

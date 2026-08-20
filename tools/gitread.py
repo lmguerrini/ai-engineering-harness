@@ -28,6 +28,7 @@ __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
     "ProbeAnswer",
     "probe",
+    "nul_paths",
     "commit_message",
     "commit_metadata",
     "whitespace_damage",
@@ -144,10 +145,18 @@ def _run(
         raise GitRefusal("git timeout must be a finite number of seconds", timeout=repr(timeout))
     command = ("git", *arguments)
     environment = _environment(env_overlay)
+    # In text mode, decode with `surrogateescape`. A path is a byte string on
+    # POSIX and need not be valid UTF-8; the default strict decode raises
+    # `UnicodeDecodeError` from inside subprocess, which is neither a named
+    # refusal nor recoverable, so a repository containing one undecodable path
+    # takes down every text-mode read of it. Passed conditionally because
+    # supplying `errors` at all forces text mode, which would break every
+    # binary read.
+    decoding = {"errors": "surrogateescape"} if text else {}
     try:
         result = subprocess.run(
             command, cwd=_repository(repository), capture_output=True, check=False,
-            timeout=timeout, text=text, input=input_value, env=environment,
+            timeout=timeout, text=text, input=input_value, env=environment, **decoding,
         )
     except subprocess.TimeoutExpired as exc:
         raise GitRefusal(
@@ -166,6 +175,29 @@ def _run(
             stderr=_decode(result.stderr), stdout=_decode(result.stdout)[:4000],
         )
     return result.stdout
+
+
+def nul_paths(raw: bytes) -> list[str]:
+    """Paths as Git emitted them under ``-z``.
+
+    **Every** path enumeration in this toolbelt goes through `-z` and this
+    function. Git's default, line-based output *C-quotes* any path it cannot
+    print literally — non-ASCII, a newline, a quote, a backslash — so
+    `plain.md` arrives as itself while `sessioné-private/notes.md` arrives as
+    the eleven-character-longer literal `"session\303\251-private/notes.md"`,
+    quotes included.
+
+    That is not cosmetic. Reproduced against frozen 2.1.1: a repository
+    containing a directory whose name was a **declared private term** scanned
+    `clean`, because the leak scanner matched the term against the escaped
+    form and the escaped form does not contain the term. The rule was applied,
+    to the wrong bytes, and the report said so in no way a reader could see.
+
+    `surrogateescape` rather than a strict decode: a path is a byte string on
+    POSIX and need not be valid UTF-8. A path that cannot be decoded must still
+    reach a checker — refusing to represent it is how it goes unexamined.
+    """
+    return [item.decode("utf-8", "surrogateescape") for item in raw.split(b"\x00") if item]
 
 
 def _decode(value: str | bytes | None) -> str:
@@ -387,13 +419,14 @@ def paths_in_outgoing_range(
     what is read.
     """
     if baseline is None:
-        output = _run(repository, "ls-tree", "-r", "--name-only", ref, timeout=timeout)
+        output = _run(repository, "ls-tree", "-r", "--name-only", "-z", ref, timeout=timeout, text=False)
     else:
         output = _run(
             repository, "diff-tree", "-r", "--name-only", "--no-commit-id",
-            "--diff-filter=ACMRT", baseline, ref, timeout=timeout,
+            "--diff-filter=ACMRT", "-z", baseline, ref, timeout=timeout, text=False,
         )
-    return [line for line in str(output).splitlines() if line]
+    assert isinstance(output, bytes)
+    return nul_paths(output)
 
 
 def staged_entries(
@@ -413,7 +446,7 @@ def staged_entries(
         "--diff-filter=ACMR", "-z", timeout=timeout, text=False,
     )
     assert isinstance(changed, bytes)
-    paths = [item.decode("utf-8", "surrogateescape") for item in changed.split(b"\x00") if item]
+    paths = nul_paths(changed)
     if not paths:
         return []
 
@@ -489,7 +522,16 @@ def config_with_origin(
         timeout=timeout, negative_statuses=(1,),
     )
     if not answer.answered:
-        raise GitRefusal("could not read git configuration", cause=answer.cause)
+        raise GitRefusal("could not read git configuration", git_refusal=answer.cause)
+    # A repository whose `.git/config` cannot be parsed exits 128, and returning
+    # `[]` for it reports "this repository has no settings" — including no
+    # `notes.*` keys, which is the exact surface D7 exists to watch. Nothing was
+    # read, so nothing may be concluded.
+    if answer.failed:
+        raise GitRefusal(
+            "git configuration could not be read, so it must not be reported as empty",
+            git_refusal=answer.cause, returncode=answer.status,
+        )
     if not answer.ok:
         return []
     # Under `--null`, git emits `<origin>\0<key>\n<value>\0` — the origin is
@@ -519,7 +561,21 @@ def is_ancestor(
         timeout=timeout, negative_statuses=(1,),
     )
     if not answer.answered:
-        raise GitRefusal("could not test ancestry", cause=answer.cause)
+        raise GitRefusal("could not test ancestry", git_refusal=answer.cause)
+    # `answered` only says git ran. The comment above declares 1 the sole
+    # negative, and 128 — an unresolvable revision, a non-commit object, an
+    # unreadable object store — was nevertheless returned as `False`, which
+    # reads as "no, not an ancestor". `publication_gate` then printed that
+    # guess as the sentence "CARRIES OBJECTS THE PUBLIC REF DOES NOT", and its
+    # own guard against exactly this could not fire because the conversion had
+    # already happened one layer down. Reproduced with a ref pointing at a
+    # blob (DECISIONS.md D15).
+    if answer.failed:
+        raise GitRefusal(
+            "git was asked whether one object is an ancestor of another and could not answer",
+            git_refusal=answer.cause, returncode=answer.status,
+            candidate=candidate, descendant=descendant,
+        )
     return answer.ok
 
 

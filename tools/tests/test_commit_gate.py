@@ -220,3 +220,79 @@ def test_the_single_message_gate_cannot_see_range_drift(drifting_history):
     assert commit_gate.validate_message(drifted, commit_gate.NO_PRIVATE_TERMS)
     failures = commit_gate.validate_range(str(repo), drifting[0], None, commit_gate.NO_PRIVATE_TERMS)
     assert failures, "the range surface is the only one that re-reads a committed message"
+
+
+# --- EC-B: a Conventional Commit subject is not a trailer --------------------
+#
+# Reproduced against the frozen 2.1.1 baseline before repair: `fix: correct the
+# parser` was refused `TRAILER` while `feat: …` passed, because `fix` is in the
+# trailer token set and the detector never asked *where* on the message the
+# match occurred. The commit contract asks for a Conventional Commit subject, so
+# the gate was refusing the form it requires.
+
+
+def _codes(message):
+    return [str(violation).split(":")[0] for violation in
+            commit_gate.validate_message(message, commit_gate.NO_PRIVATE_TERMS)]
+
+
+BODY = "\n\n- one bullet here\n- two bullet here\n"
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "fix: correct the parser",        # the reproduced defect
+        "feat: add the thing",
+        "fix(pathmatch): correct it",
+        "fix!: breaking change",
+        "refactor(a/b): move it",
+        "revert: undo it",
+        "docs: update the readme",
+        "perf: speed it up",
+        "test: add the missing cases",
+        "build: bump the toolchain",
+        "ci: run the suite on push",
+        "chore: tidy up",
+        "style: reflow the prose",
+    ],
+)
+def test_a_conventional_commit_subject_is_accepted(subject):
+    assert _codes(subject + BODY) == []
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "Signed-off-by: A Person",
+        "Reviewed-by: A Person",
+        "Change-Id: I0123456789",
+        "Closes: #3",
+    ],
+)
+def test_a_real_trailer_as_the_subject_is_still_refused(subject):
+    """The exemption is for the Conventional type set, not for line 1."""
+    assert "TRAILER" in _codes(subject + BODY)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "\n\n- one bullet here\n- Fixes: #12\n",
+        "\n\n- one bullet here\n- Signed-off-by: A Person\n",
+        "\n\n- one bullet here\n- Change-Id: I0123456789\n",
+    ],
+)
+def test_a_trailer_in_the_body_is_refused_under_a_conventional_subject(body):
+    """A trailer does not become legal by sitting under an exempted subject."""
+    assert "TRAILER" in _codes("fix: correct the parser" + body)
+
+
+def test_a_subject_that_merely_starts_with_a_type_word_is_not_exempted():
+    """`fixing:` and `features:` are not Conventional Commit types, and the
+    exemption must not widen to anything that begins with one."""
+    assert "TRAILER" in _codes("fix-it-later: something" + BODY)
+
+
+def test_co_authored_by_is_still_refused_as_a_subject():
+    assert "COAUTHOR" in _codes("Co-authored-by: An Assistant" + BODY)
