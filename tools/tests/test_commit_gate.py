@@ -516,3 +516,123 @@ def test_nothing_the_qualified_baseline_refused_is_accepted_except_the_one_inten
         f"only {strengthened} subjects got stricter; the differential is not exercising the surface"
     )
     assert intended > 0, "the differential no longer covers the one intended weakening"
+
+
+# --- an absolute property, not a differential ---------------------------------
+#
+# Four round-3 repairs — the leading-whitespace class, an empty scope `()`, a
+# doubled `!!`, and two scope groups `(a)(b)` — could each be reverted with the
+# whole suite still green. An audit found it by mutation rather than by reading,
+# and the reason none of the existing tests could see it is instructive:
+#
+#   * the parametrised list contained the decorations somebody had thought of;
+#   * the differential against 2.1.1 is structurally blind to anything 2.1.1 also
+#     let through, which the leading-whitespace class is.
+#
+# So this asserts the property **absolutely**, over generated decorations, with
+# no reference to the previous release. If a subject's tail bears a trailer, the
+# gate refuses the message. Nothing about how the subject is decorated changes
+# that.
+
+_TRAILER_TAILS = [
+    "Signed-off-by: A Person",
+    "Reviewed-by: X",
+    "Change-Id: I0123456789",
+    "Acked-by : Some Body",          # git parses a space before the colon
+    "Relates-to:no-space",
+    "X-Custom-Header: value",
+]
+
+#: Every way a subject can be decorated in front of the trailer. Generated as a
+#: product rather than listed, so a decoration nobody thought of is still
+#: covered by construction.
+_TYPES = ["fix", "feat", "docs", "chore", "refactor", "revert"]
+_SCOPES = ["", "()", "(core)", "(a/b)", "(a)(b)", "(a(b))"]
+_BANGS = ["", "!", "!!"]
+_GAPS = [" ", "  ", "\t", " \t ", " ", " ", "​", ""]
+_LEADS = ["", " ", "  ", "\t", " "]
+
+
+@pytest.mark.parametrize("tail", _TRAILER_TAILS)
+def test_a_subject_whose_tail_bears_a_trailer_is_always_refused(tail):
+    """The absolute property. Every decoration, every gap, every lead."""
+    import itertools
+
+    escaped = []
+    for lead, kind, scope, bang, gap in itertools.product(
+        _LEADS, _TYPES, _SCOPES, _BANGS, _GAPS
+    ):
+        subject = f"{lead}{kind}{scope}{bang}:{gap}{tail}"
+        if not _codes(subject + BODY):
+            escaped.append(subject)
+    assert not escaped, (
+        f"{len(escaped)} decorated subjects carrying {tail!r} passed clean, e.g. "
+        + "; ".join(repr(subject) for subject in escaped[:5])
+    )
+
+
+def test_a_bare_trailer_is_refused_however_the_line_begins():
+    """No prefix at all — only leading whitespace and bullet markers."""
+    escaped = []
+    for lead in _LEADS + ["- ", " - ", "- ", "-\t"]:
+        for tail in _TRAILER_TAILS:
+            if not _codes(lead + tail + BODY):
+                escaped.append(lead + tail)
+    assert not escaped, f"these passed clean: {escaped[:5]}"
+
+
+#: Tails that only ONE of the two trailer patterns can catch. Using a tail both
+#: match — `Signed-off-by` is a token *and* hyphenated — lets a mutation of
+#: either pattern survive, because the other still fires. That is how two
+#: mutations survived the first version of these tests.
+_TOKEN_ONLY_TAIL = "Closes: #3"                     # in the token set, not hyphenated
+_HYPHENATED_ONLY_TAIL = "X-Custom-Header: value"    # hyphenated, not a token
+
+
+@pytest.mark.parametrize("tail", [_TOKEN_ONLY_TAIL, _HYPHENATED_ONLY_TAIL])
+def test_a_trailer_on_a_body_bullet_is_refused_however_the_bullet_is_spaced(tail):
+    """Where round 4's first blocker lived: the bullet-marker group had been
+    narrowed from ``\\s`` to ``[ \\t]``, so a Unicode space after the dash hid the
+    token. The differential never looked at the body at all."""
+    escaped = []
+    for gap in [" ", "  ", "\t", "\u00a0", "\u2003", "\u202f", "\u3000", "\u2009"]:
+        message = f"A title line\n\n- a real outcome\n-{gap}{tail}\n"
+        if "TRAILER" not in _codes(message):
+            escaped.append(repr(gap))
+    assert not escaped, f"a trailer hid behind these bullet gaps: {escaped}"
+
+
+@pytest.mark.parametrize("tail", [_TOKEN_ONLY_TAIL, _HYPHENATED_ONLY_TAIL])
+def test_each_trailer_pattern_is_exercised_on_its_own(tail):
+    """One tail each pattern alone must catch, so a mutation of either fails."""
+    assert "TRAILER" in _codes(f"fix: {tail}" + BODY)
+    assert "TRAILER" in _codes(f"  {tail}" + BODY)
+
+
+@pytest.mark.parametrize("tail", [_TOKEN_ONLY_TAIL, _HYPHENATED_ONLY_TAIL])
+def test_an_invisible_character_does_not_hide_the_trailer_behind_it(tail):
+    """The refusal rule and the surface normalisation are two separate repairs,
+    and only the rule was pinned. Removing the normalisation still refuses the
+    message — but as ``INVISIBLE_CHARACTER`` alone, so the reader is told the
+    wrong thing about what is in their commit."""
+    for character in ["\u200b", "\ufeff", "\u00ad", "\u061c"]:
+        codes = _codes(f"fix: {character}{tail}" + BODY)
+        assert "TRAILER" in codes, f"U+{ord(character):04X} hid the trailer: {codes}"
+
+
+def test_an_invisible_character_is_refused_in_its_own_right():
+    """The `INVISIBLE_CHARACTER` rule had no behavioural test at all — disabling
+    it left the whole suite green, and it is the guard added to close an
+    audit-found regression."""
+    for character in ["​", "⁠", "﻿", "­", "‮", "؜"]:
+        codes = _codes(f"fix: an ordinary{character} subject" + BODY)
+        assert "INVISIBLE_CHARACTER" in codes, (
+            f"U+{ord(character):04X} was not refused: {codes}"
+        )
+
+
+def test_ordinary_text_is_not_refused_as_invisible():
+    """The rule must not fire on accented, non-Latin or punctuated prose."""
+    for subject in ["fix: café menu update", "docs: 日本語のタイトル",
+                    "feat: naïve — em dash and “curly quotes”", "chore: ∑ and ≤"]:
+        assert "INVISIBLE_CHARACTER" not in _codes(subject + BODY), subject

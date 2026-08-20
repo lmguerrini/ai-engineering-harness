@@ -5,9 +5,12 @@ capability boundary — the full log each time, never patched, never a rolling
 summary that overwrites adverse evidence. If this file and `observations.jsonl`
 disagree, the log wins and this file is due for regeneration.
 
-Regenerated 2026-08-20 at the RP2.2 evolution boundary from **26** observations
-(19 prior + 7 from that session). The count is compared against the log by
-`test_the_routing_table_grades_are_the_derived_ones`. Ordinal bands only. A
+Regenerated 2026-08-20 at the RP2.2 evolution boundary from **28** observations.
+The observation count,
+every grade and **every count in the evidence column** are compared against the
+log by `test_the_routing_table_grades_are_the_derived_ones` and
+`test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it`.
+The log records no session identifier, so this table states none. Ordinal bands only. A
 configuration nothing has dispatched stays `unprobed` — never assumed working,
 never assumed broken, no invented telemetry.
 
@@ -22,13 +25,13 @@ second.
 | Role | Purpose | Evidence today |
 |---|---|---|
 | COORDINATOR | judgement, decomposition, all Git writes | n/a — never delegated |
-| AUDIT_PRIMARY | fresh, blind, same-family closure audit | **`confirmed`** — 7 real closure audits across four sessions, every finding reproduced, 0 false positives |
+| AUDIT_PRIMARY | fresh, blind, same-family closure audit | **`confirmed`** — 9 real closure audits, every material finding reproduced, 0 false positives |
 | AUDIT_CROSS | fresh, blind, cross-vendor closure audit | **`confirmed`** — 2 real closure audits, 17 findings, 0 false positives |
-| IMPL_SUBSTANTIVE | multi-file, weaker-oracle implementation | `provisional` — claude-cli, 3 RP2 dispatches, none on the Pilot Run |
-| IMPL_ROUTINE | familiar, bounded, strongly-tested implementation | `provisional` — claude-cli, incl. 1 bounded repair |
+| IMPL_SUBSTANTIVE | multi-file, weaker-oracle implementation | `provisional` — claude-cli, 2 RP2 dispatches, none on the Pilot Run |
+| IMPL_ROUTINE | familiar, bounded, strongly-tested implementation | `provisional` — claude-cli, 1 bounded repair |
 | IMPL_BOUNDED | small-window implementation | `environmental-unknown` — codex-cli, 5 configs; cause was the profile |
 | EXTRACT_LOCAL | local model, mechanical retrieval over supplied source | `provisional` — 2 bounded probes against AST-frozen ground truth |
-| REVIEW_LOCAL | local model, analytical judgement | **`contradicted`** — see below |
+| REVIEW_LOCAL | local model, analytical judgement | **`contradicted`** — 1 dispatch; see below |
 | READER | cheapest eligible, protects coordinator context | `provisional` — 2 dispatches, but at **two different task classes**, one each |
 
 ## Where the reasoning is

@@ -41,7 +41,7 @@ def _build_release(root, version, *, state="QUALIFIED_AND_FROZEN", extra=""):
     digest, count = pack_pin.tree_digest(root)
     (root / "PACK_MANIFEST.json").write_text(json.dumps({
         "pack": "runtime-pack-2", "version": version, "state": state,
-        "tracked_files": count, "tree_digest_sha256": digest,
+        pack_pin.DIGEST_COUNT_KEY: count, "tree_digest_sha256": digest,
         "digest_excludes": "PACK_MANIFEST.json", "digest_algorithm": pack_pin.DIGEST_ALGORITHM,
         "gate_record": "GATE.md", "tests": {"passed": 1},
     }, indent=2) + "\n")

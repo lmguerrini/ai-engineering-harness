@@ -4,20 +4,35 @@
 model permits: `pack_pin` knows two, and `QUALIFIED_AND_FROZEN` is the one a
 project may adopt. Moving it there is a human act and was not performed.
 
-**Read this before deciding.** Three closure-audit rounds ran — six blind
+**Read this before deciding.** Four closure-audit rounds ran — eight blind
 auditors on distinct lenses — and **every round returned NOT READY**. Every
-finding was reproduced by the coordinator and repaired, and the next round then
-found more, including in the repairs themselves. Round 1's repair **regressed
+*material* finding was reproduced by the coordinator before it counted, and
+repaired; a few were artefacts of auditing a moving branch, and the gate record
+says which. Each round then found more, including in the repairs themselves. Round 1's repair **regressed
 the commit gate against the qualified 2.1.1 baseline**, which two independent
 auditors caught. `docs/RP2.2-GATE.md` records each round, what was right, and
 what the coordinator got wrong.
 
 That history is the most decision-relevant thing about this candidate, and it
-cuts both ways: the code was hard to break — one auditor ran 143,820 pattern
-comparisons against `git check-ignore` and another 111,267, both finding zero
-divergences; injected mutations reverting every claimed repair were killed every
-time — while the release's **account of itself** failed repeatedly, and had to
-be repaired by binding numbers to measurements rather than by retyping them.
+cuts both ways.
+
+**The code was hard to break.** Auditors ran large differentials against real
+`git check-ignore` — one on a grid this release does not ship — and found zero
+divergences; the previously qualified suite passes against this implementation
+with no behavioural regression; no public name was removed and no signature
+changed.
+
+**The tests were not always hard to break.** Round 1 left three injected
+mutations alive, each a real unpinned branch, and round 4 found four repairs
+from round 3 that could be reverted with the suite still green. Rounds 2 and 3
+killed every mutation thrown at them. Each gap was closed by pinning the
+guarantee absolutely rather than against the previous release — a differential
+cannot see a hole the previous release also had.
+
+**The release's account of itself failed repeatedly**, and had to be repaired by
+binding numbers to measurements rather than by retyping them. The divergence
+figure alone was restated wrongly three times, in the document that narrates the
+first two.
 
 **No round has yet returned READY.** The final round's findings are closed and
 the suite is green, but no auditor has seen the result of closing them.
@@ -28,11 +43,29 @@ the suite is green, but no auditor has seen the result of closing them.
 # Verify the candidate WITHOUT checking it out in a root a project pins (D18):
 git clone --local --no-hardlinks --branch evolution/rp2.2 <pack_root> <scratch_dir>
 cd <scratch_dir>
-python3 tools/pack_pin.py . --version 2.2.0 --sha "$(git rev-parse HEAD)" \
-    --digest "$(python3 -c 'import json;print(json.load(open("PACK_MANIFEST.json"))["tree_digest_sha256"])')" \
-    --state IN_PROGRESS
+python3 tools/pack_pin.py . --version 2.2.0 --state IN_PROGRESS
 python3 -m pytest tools/tests/ -q
+
+# Then record the identity, from the clone, for every LATER verification:
+git rev-parse HEAD
+python3 -c 'import json;print(json.load(open("PACK_MANIFEST.json"))["tree_digest_sha256"])'
 ```
+
+**`--sha` and `--digest` are deliberately absent from the first command**, and
+this is the correction of a real defect: an earlier version of this block read
+the digest out of `PACK_MANIFEST.json` and passed it back to a verifier that
+checks against `PACK_MANIFEST.json`. That comparison cannot fail, and printing
+it beside the ones that can made the whole block look stronger than it was.
+
+What the first command *does* check is not circular: the digest recorded in the
+manifest is recomputed from the tree, the file count is recounted, untracked
+strays are enumerated, `--version` is compared against the `VERSION` file, and
+`--state` against the manifest. A tampered tree fails every one of those.
+
+`--sha` and `--digest` are the fields a **consumer** supplies from a record
+kept outside the tree. They become real checks the moment the two commands above
+have been run once and their output written down somewhere this repository
+cannot reach — which is what a release announcement is for.
 
 **The clone is the point, not a convenience.** `<pack_root>` is the directory
 Consumer-A pins, and checking this branch out there is exactly what broke its
@@ -55,7 +88,7 @@ before this one, and be wrong from the moment it was committed.
 | Version | `2.2.0` — MINOR under D11 |
 | State | `IN_PROGRESS` |
 | Tree digest | `PACK_MANIFEST.json` `tree_digest_sha256`; verified, not copied |
-| Tracked files | `PACK_MANIFEST.json` `tracked_files` |
+| Files the digest covers | `PACK_MANIFEST.json` `digest_file_count` — every tracked file except the manifest |
 
 No push, no tag, no remote, no publication. The repository has no remote
 configured and none was added.
@@ -67,7 +100,8 @@ The pack now checks four things it previously asserted and could not check: the
 how it moves between releases, the **semantic authority** a project runs
 against, and the **capacity** a routing decision assumes. Plus **ten** reproduced defects in the machinery that was already there — one of
 them a real leak — and one enforcement added where no drift existed. The gate
-record's C3 table has eleven rows and says so of the eleventh.
+record's C3 table has eleven rows, and the row that says so of itself is the
+one for the push form.
 
 ## The finding that most deserves a decision
 
@@ -115,10 +149,13 @@ adapter. None is a blocker for a project adopting this release.
 - **No audit round has returned READY.** Three rounds each returned NOT READY;
   the last round's findings are repaired and unaudited. A fourth round is the
   obvious next step and was not run before handing this over.
-- **Round 1's repair regressed the commit gate** against 2.1.1 (a trailer
-  escaping behind whitespace or a second prefix). Repaired, and now pinned by a
-  differential against the frozen baseline — but it happened, and it happened in
-  a repair.
+- **Repairs regressed the commit gate against 2.1.1 more than once** — a trailer
+  escaping behind extra whitespace, a second prefix, a non-ASCII token, an
+  invisible character, and a Unicode space after a bullet marker. Each was found
+  by an audit, and the last of them in work no auditor had yet seen. All are
+  closed and now pinned by an **absolute** property test over generated
+  decorations, because a differential against 2.1.1 is structurally blind to any
+  hole 2.1.1 also had.
 - **Held prose is over the ~2,000-line target** — the figure is in
   `PACK_MANIFEST.json` `known_limitations` and `docs/RP2.2-GATE.md`, measured
   and bound by test. 2.1.1 was 14.9% over on the same rule.

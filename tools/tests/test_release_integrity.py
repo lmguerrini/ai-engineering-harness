@@ -115,14 +115,14 @@ def test_the_readme_agrees_with_the_manifest_about_state_and_gate(readme, manife
 def test_the_recorded_digest_recomputes_from_this_checkout(manifest):
     digest, count = pack_pin.tree_digest(ROOT)
     assert digest == manifest["tree_digest_sha256"]
-    assert count == manifest["tracked_files"]
+    assert count == manifest[pack_pin.DIGEST_COUNT_KEY]
 
 
 def test_the_release_identity_fields_are_well_formed(manifest):
     assert re.fullmatch(r"[0-9a-f]{64}", manifest["tree_digest_sha256"])
     assert manifest["digest_excludes"] == pack_pin.MANIFEST_NAME
     assert manifest["digest_algorithm"] == pack_pin.DIGEST_ALGORITHM
-    assert isinstance(manifest["tracked_files"], int) and manifest["tracked_files"] > 0
+    assert isinstance(manifest[pack_pin.DIGEST_COUNT_KEY], int) and manifest[pack_pin.DIGEST_COUNT_KEY] > 0
 
 
 def test_this_checkout_verifies_against_its_own_manifest(manifest, version):
@@ -139,7 +139,7 @@ def test_the_manifest_is_the_only_thing_excluded_from_its_own_digest(manifest):
         ["git", "ls-files", "-z"], cwd=str(ROOT), capture_output=True, text=True, check=True
     ).stdout.split("\0")
     tracked = [path for path in tracked if path]
-    assert manifest["tracked_files"] == len(tracked) - 1
+    assert manifest[pack_pin.DIGEST_COUNT_KEY] == len(tracked) - 1
 
 
 # --- the recorded test count, measured rather than asserted -----------------
@@ -369,6 +369,58 @@ def test_the_routing_table_grades_are_the_derived_ones():
         expected = backend_contract.role_grade(role, graded)
         assert stated[0] == expected, (
             f"{role} states {stated[0]!r}; the observation log derives {expected!r}"
+        )
+        checked += 1
+    assert checked >= 5, f"only {checked} role rows compared; the parser is not seeing the table"
+
+
+def test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it():
+    """The grade was bound; the counts beside it were not, and went stale twice
+    — `7 real closure audits` outlived two more audits, and `3 RP2 dispatches`
+    never matched the log at all. A derived view whose numbers are typed is a
+    record wearing a derived view's disclaimer.
+
+    The rule is the LEADING count in each role's evidence cell, because that is
+    the one a reader takes as the weight behind the grade.
+    """
+    import json
+    import re
+
+    import backend_contract
+
+    rows = [
+        json.loads(line)
+        for line in (ROOT / "policy" / "observations.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    def family(row):
+        for token in row["configuration"].split():
+            if token.startswith("family="):
+                return token.split("=", 1)[1]
+        return None
+
+    behind = {role: 0 for role in backend_contract.ROLE_OBSERVATION_CLASSES}
+    for row in rows:
+        key = (family(row), row["task_class"])
+        for role, classes in backend_contract.ROLE_OBSERVATION_CLASSES.items():
+            if key in {tuple(observation) for observation in classes}:
+                behind[role] += 1
+
+    table = (ROOT / "policy" / "routing-table.md").read_text(encoding="utf-8")
+    checked = 0
+    for line in table.splitlines():
+        if not line.startswith("| ") or "|" not in line[2:]:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        role = cells[0]
+        if role not in behind:
+            continue
+        stated = re.search(r"(\d+)", cells[-1])
+        assert stated, f"{role} states no count; the log has {behind[role]} rows behind it"
+        assert int(stated.group(1)) == behind[role], (
+            f"{role} states {stated.group(1)} where the observation log has "
+            f"{behind[role]} rows — regenerate the table from the log"
         )
         checked += 1
     assert checked >= 5, f"only {checked} role rows compared; the parser is not seeing the table"
@@ -670,8 +722,14 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
 
     offenders = []
     for name in touched:
-        if name in ("tools/tests/test_pathmatch.py", "tools/tests/test_release_integrity.py"):
-            continue        # where the figure is computed, and where this rule lives
+        # Exempted by *line*, not by filename. Exempting the whole file let the
+        # refuted `13` survive in that module's own prose — the hand-written
+        # filename list this rule elsewhere says it rejects. Only the assignment
+        # that carries the computed figure, and this rule's own description of
+        # itself, are allowed to contain one.
+        exempt_line = ("BASELINE_DIVERGENCES = (", "number = r", "rf\"")
+        if name == "tools/tests/test_release_integrity.py":
+            continue        # where this rule lives and describes itself
         if not (ROOT / name).exists():
             continue        # deleted in the delta
         try:
@@ -679,7 +737,9 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
         except (OSError, UnicodeDecodeError):  # pragma: no cover - environment
             continue
         for number, line in enumerate(text.splitlines(), 1):
-            if pattern.search(line):
+            if pattern.search(line) and not any(
+                marker in line for marker in exempt_line
+            ):
                 offenders.append(f"{name}:{number}: {line.strip()[:90]}")
     assert not offenders, (
         "these state a divergence count in prose; the figure is computed by "

@@ -83,8 +83,9 @@ because the guard written to prevent exactly that could not see this shape.
 The repair is not the number. The repair is that no document states it: it is
 computed from the frozen baseline against the shipped grid, and the grid and the
 figure now fail together. A stated result a reader cannot re-derive from the
-artifacts is the defect class this pack exists to refuse, and it took two audits
-to stop restating one.
+artifacts is the defect class this pack exists to refuse, and it took **four**
+audit rounds to stop restating one: the fourth found the refuted figure still
+alive in the prose of the very module that computes the real one.
 
 **The oracle has to be isolated.** The first `pathmatch` differential reported
 a great many divergences and every one was the harness: `git check-ignore` was

@@ -27,11 +27,12 @@ by the same person who wrote the implementation, from the same misunderstanding.
 
 ## The oracle has to be isolated, and that is not a detail
 
-The first differential run reported **114** divergences. Every one was the
+The first differential run reported a great many divergences. Every one was the
 harness: `git check-ignore` consults `core.excludesFile`, and this machine's
 global ignore file contained `dist/`, `build/`, `node_modules/` and `*.log`, so
 git answered "ignored" for patterns it had never been given. Isolating the
-oracle left 13 real divergences.
+oracle left a small fraction of them — and the count of *those* is
+`BASELINE_DIVERGENCES` below, computed rather than written.
 
 An oracle that answers from a source the test did not control produces
 confident, specific, entirely fictional findings — and it fails in the
@@ -54,7 +55,7 @@ PACK_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 #: **Asserted here and verified by computation**, never the other way round.
 #: Under-matching means a declared rule silently covered nothing; over-matching
 #: means it silently covered more than it said. Both directions were present.
-BASELINE_DIVERGENCES = (211, 194, 17)
+BASELINE_DIVERGENCES = (224, 207, 17)
 
 
 # --- individually reproduced divergences, as direct assertions ---------------
@@ -194,7 +195,7 @@ PATHS = [
     "foo", "foo/bar", "foo/bar/baz.txt", "a/foo.tar.gz", "b/a", "b/a/c", "a/d.txt",
     "q/r/u.txt", "fixtures/one.md", "fixtures/real-notes.md", "a b/c.txt", "q.txt",
     "a*b.txt", "aXb.txt", "?.txt", "fix!.txt", "a.txt\t", "b.txt",
-    "z.txt", "A.txt", "1.txt", "-.txt", "].txt", "[.txt", "~.txt",
+    "z.txt", "A.txt", "1.txt", "-.txt", "].txt", "[.txt", "~.txt", "!.txt", "c.txt",
 ]
 
 PATTERNS = [
@@ -212,6 +213,12 @@ PATTERNS = [
     # untranslated one matched nothing — a silently dead declaration.
     "[[:alpha:]].txt", "[[:digit:]].txt", "[[:punct:]].txt", "[[:upper:]].txt",
     "[![:digit:]].txt", "[^[:alpha:]].txt", "[a-z].txt", "[]].txt",
+    # An ESCAPED `!` inside a class. Resolving the escape was right; re-emitting
+    # the resolved `!` in first position handed it back to `fnmatch` as a
+    # negation marker, so the class matched everything it should have refused
+    # and refused the one thing it should have matched.
+    "[\\!].txt", "[\\!a].txt", "[a\\!].txt", "[\\!\\-].txt", "[!\\!].txt",
+    "[\\]\\!].txt", "[\\!a-c].txt",
 ]
 
 

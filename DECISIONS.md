@@ -234,6 +234,10 @@ cuts a new version; each project adopts it independently at its own next safe
 capability boundary. No scheduler, no shared mutable runtime.
 **Reverses on:** nothing short of a project genuinely needing to write into a
 pinned pack, which would mean the release is not frozen.
+**Amended by D18 (RP2.2):** "distinct immutable root" was stated here as a
+property of the pin and enforced by nothing. The root a project pins must be a
+checkout nobody works in — a lesson learned by breaking a live project's pin
+with a branch checkout in the directory it pinned.
 
 ---
 

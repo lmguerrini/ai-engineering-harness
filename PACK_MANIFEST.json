@@ -4,14 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tracked_files": 105,
-  "tree_digest_sha256": "a6af5110231a54fcd66cf95d4d0c566122bdc1b9a2c3c0cf5a4a3e3e2d9b3843",
+  "tree_digest_sha256": "23c604a26d39dc6708ce3fea74dc95898d40866c512221c7db5a7a1e14ec552b",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 671
+    "passed": 699
   },
   "gate_record": "docs/RP2.2-GATE.md",
   "delta_audit": "docs/RP2.2-CAPABILITY-MAP.md",
@@ -30,11 +29,16 @@
   },
   "known_limitations": [
     "STATE IS IN_PROGRESS. This candidate has not been released by a human authority and no project may pin it.",
-    "held prose 2483 lines against a ~2000 target (24.2% over, recorded not shaved; 1023 of those lines are the two installed adapters, outside this envelope and covered by no digest, so that half cannot be verified from the release). 2.1.1 was 2298 (14.9% over) on the same rule. Recorded rather than shaved: re-scoping the rule to fit the number would make the disclosure the thing deleted.",
+    "held prose 2486 lines against a ~2000 target (24.3% over, recorded not shaved; 1023 of those lines are the two installed adapters, outside this envelope and covered by no digest, so that half cannot be verified from the release). 2.1.1 was 2298 (24.3% over) on the same rule. Recorded rather than shaved: re-scoping the rule to fit the number would make the disclosure the thing deleted.",
     "installed adapter skills and agents live outside this repository and are not covered by tree_digest_sha256; they are covered instead by a project's declared adapters contract, which is verified rather than frozen",
     "REVIEW_LOCAL contradicted on one observation; EXTRACT_LOCAL provisional on two",
-    "relative yield between AUDIT_PRIMARY and AUDIT_CROSS still unmeasured (3 audits is not a rate)",
-    "no durable routing evidence exists beyond the recorded observations; unprobed configurations stay unprobed and none was invented"
+    "relative yield between AUDIT_PRIMARY and AUDIT_CROSS is still unmeasured. The log now holds more closure audits than it did, but they were not run as a comparison and a count is not a rate; the number lives in policy/observations.jsonl rather than here",
+    "no durable routing evidence exists beyond the recorded observations; unprobed configurations stay unprobed and none was invented",
+    "NO CLOSURE AUDIT ROUND HAS RETURNED READY. Four rounds ran, eight blind auditors on distinct lenses, and every round returned NOT READY. Each round's findings were reproduced and repaired and the next round found more, including in the repairs. The last round's findings are repaired and unaudited. docs/RP2.2-GATE.md records each round.",
+    "A REPAIR REGRESSED THE COMMIT GATE against the qualified 2.1.1 baseline, more than once, before the guarantee was pinned by an absolute property test rather than by a differential. The regressions are closed; that they happened is the more useful fact.",
+    "CROSS-VENDOR AUDIT WAS NOT AVAILABLE in any round. The final-gate tier asks for two blind auditors with one cross-vendor WHERE AVAILABLE; two ran each round, within one family. The measured value of the tier - that the two populations come back almost disjoint - was obtained, but not across vendors.",
+    "SEVERAL CLAIMS ARE UNFALSIFIABLE FROM THIS REPOSITORY and are marked so in the gate record: the four adapter digests and both adapter repairs (outside the envelope, and the pre-repair originals were not retained), the Project Context file count (in another project), and the status-line payload schema (read from the installed client, no artifact shipped). resource_observation.py has been exercised against constructed payloads and never a live one.",
+    "the tree digest is computed over WORKING-TREE BYTES, so a checkout with core.autocrlf=true produces a different digest for the same commit. There is no .gitattributes."
   ],
   "deferred": {
     "RP2.2 DEFER_WITH_TRIGGER": "see docs/RP2.2-GATE.md for each item and the observation that reopens it: baseline maturity/convergence phase as a Core field (trigger: a second project reaches capability closure); audit-cycle accounting as Core code (trigger: a capability exceeds an audit budget unnoticed, or a second evolution session needs cross-session counters); delta-scoped requalification driven mechanically from SHAs (trigger: a candidate whose delta, not the work, is the cost driver); vendoring any adapter into the release (trigger: pinning demonstrably failing to provide a guarantee vendoring would, which would also reverse D12).",
@@ -43,5 +47,6 @@
   },
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
-  }
+  },
+  "digest_file_count": 105
 }

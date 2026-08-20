@@ -95,37 +95,62 @@ def _segment_match(segment: str, pattern: str) -> bool:
     case-sensitive one it would not. A declaration whose meaning depends on the
     filesystem it is read from is not a declaration.
     """
-    return fnmatch.fnmatchcase(segment, _fnmatch_safe(pattern))
+    translated = _fnmatch_safe(pattern)
+    if translated is None:
+        return False        # an unterminated bracket matches nothing, as in git
+    return fnmatch.fnmatchcase(segment, translated)
 
 
 def _match_segments(parts: tuple[str, ...], segments: list[str]) -> bool:
     """Whether ``segments`` matches the whole component sequence ``parts``.
 
     ``**`` matches zero or more components; every other segment matches exactly
-    one. Written recursively because that is the shape of the rule — a loop
-    over start offsets cannot express "zero or more" without becoming this
-    anyway.
+    one.
+
+    **Memoised, and that is not an optimisation.** The obvious recursion is
+    exponential in the number of `**` segments: a pattern with seven of them
+    against a 25-component path took nearly seven seconds, and each additional
+    `**` multiplied that by about four. Path patterns come out of a project's
+    `workspace_classification` block, so that is a gate a declaration can hang.
+    2.1.1 did not have this cliff because it did not implement `**` at all —
+    this release introduced it, and a fourth audit round measured it.
+
+    The state is `(index into parts, index into segments)`, so the work is
+    bounded by their product.
     """
-    if not segments:
-        return not parts
-    head, rest = segments[0], segments[1:]
-    if head == "**":
-        # Zero components, then one, then two … except at the end of a pattern:
-        # git's rule is that a trailing `/**` matches everything **inside** the
-        # thing it is anchored to, not the anchor itself. The first
-        # implementation let it match zero components everywhere, so
-        # `annotations/**` matched `annotations` — an over-match, which widens
-        # an exemption. Found by an independent differential against git, not
-        # by the one shipped here, whose pattern list had no trailing `**`
-        # whose anchor was also in its path list.
-        start = 1 if not rest else 0
-        for taken in range(start, len(parts) + 1):
-            if _match_segments(parts[taken:], rest):
-                return True
-        return False
-    if not parts or not _segment_match(parts[0], head):
-        return False
-    return _match_segments(parts[1:], rest)
+    memo: dict[tuple[int, int], bool] = {}
+
+    def match(start: int, segment_index: int) -> bool:
+        key = (start, segment_index)
+        cached = memo.get(key)
+        if cached is not None:
+            return cached
+
+        if segment_index == len(segments):
+            result = start == len(parts)
+        else:
+            head = segments[segment_index]
+            if head == "**":
+                # Zero components, then one, then two … The empty case first so
+                # that a trailing `**` matches the directory it is anchored to as
+                # well as everything under it — except at the end of a pattern,
+                # where git's rule is that `/**` matches everything *inside*.
+                # The first implementation let it match zero components
+                # everywhere, so `annotations/**` matched `annotations` — an
+                # over-match, which widens an exemption.
+                first = start + 1 if segment_index == len(segments) - 1 else start
+                result = any(
+                    match(taken, segment_index + 1) for taken in range(first, len(parts) + 1)
+                )
+            elif start < len(parts) and _segment_match(parts[start], head):
+                result = match(start + 1, segment_index + 1)
+            else:
+                result = False
+
+        memo[key] = result
+        return result
+
+    return match(0, 0)
 
 
 def _matches_entity(parts: tuple[str, ...], segments: list[str], anchored: bool) -> bool:
@@ -250,6 +275,9 @@ def _class_end(segment: str, start: int) -> int:
     if index < len(segment) and segment[index] == "]":
         index += 1                          # a leading `]` is a member
     while index < len(segment):
+        if segment[index] == "\\" and index + 1 < len(segment):
+            index += 2                      # an escaped `]` is a member, not the close
+            continue
         if segment.startswith("[:", index):
             closing = segment.find(":]", index + 2)
             if closing == -1:
@@ -262,7 +290,94 @@ def _class_end(segment: str, start: int) -> int:
     return -1
 
 
-def _fnmatch_safe(segment: str) -> str:
+def _class_body(body: str) -> str:
+    """One character class, rewritten so `fnmatch` reads it as git does.
+
+    Escapes are **resolved here** rather than passed through. `fnmatch` doubles
+    every backslash in a class body, so `[a\\-c]` — three literals in git —
+    became a range from backslash to `c` and matched `]`, `^` and `_`; and
+    `[\\]]` stopped meaning "a literal right bracket". Both diverged from git
+    in the over-matching direction, which silently widens an exemption. Both
+    pre-existing at 2.1.1 and found by an independent differential.
+
+    The rewritten body puts `]` first and `-` last, which is how a character
+    class says it means them literally.
+    """
+    negated = body[:1] in ("!", "^")
+    if negated:
+        body = body[1:]
+
+    for name, members in _POSIX_CLASSES.items():
+        body = body.replace(f"[:{name}:]", members)
+
+    def take(position: int) -> tuple[str, int]:
+        """One class member — an escape counts as the character it names."""
+        if body[position] == "\\" and position + 1 < len(body):
+            return body[position + 1], position + 2
+        return body[position], position + 1
+
+    literals: list[str] = []
+    ranges: list[str] = []
+    index = 0
+    while index < len(body):
+        low, after = take(index)
+        # A range is `lo-hi`, and the `-` must be an unescaped one with a member
+        # after it. A `-` at either end of the body is a literal, which is the
+        # reason the emitted body puts it last.
+        if after < len(body) and body[after] == "-" and after + 1 < len(body):
+            high, index = take(after + 1)
+            ranges.append(f"{low}-{high}")
+            continue
+        literals.append(low)
+        index = after
+
+    has_bracket = "]" in literals
+    has_dash = "-" in literals
+    has_bang = "!" in literals
+    middle = "".join(character for character in literals if character not in "]-!")
+    joined_ranges = "".join(ranges)
+
+    if negated:
+        # `!` is the negation marker only in FIRST position, and that position
+        # is taken. A `!` among the members is an ordinary member here.
+        return (
+            "[!"
+            + ("]" if has_bracket else "")
+            + middle
+            + ("!" if has_bang else "")
+            + joined_ranges
+            + ("-" if has_dash else "")
+            + "]"
+        )
+
+    # A literal `!` must not land first, or `fnmatch` reads the class it is a
+    # member of as a NEGATED one. `[\!a]` — git matches `!` and `a` — resolved
+    # to `[!a]` and matched everything except `a`: wrong in both directions at
+    # once, and the permissive direction silently widens an exemption. Found by
+    # differential against git after the escape resolution above was written;
+    # the escape was resolved correctly and then re-emitted into the one
+    # position where the character means something else.
+    lead = "]" if has_bracket else ""
+    if not lead and not middle and not joined_ranges and has_bang:
+        # Nothing can precede it. `fnmatch` cannot express a class of exactly
+        # `!` — `[!]` reads as an unterminated negated class and matches
+        # nothing, `[!!]` as the negation of `!`. A bare `!` is already literal
+        # to `fnmatch`, so the class is dropped rather than mis-spelled.
+        # `-` first is literal too, and it gives the `!` something to sit
+        # behind, so a class of exactly `{!, -}` stays a class.
+        return "[-!]" if has_dash else "!"
+    return (
+        "["
+        + lead
+        + middle
+        + joined_ranges
+        + ("!" if has_bang else "")
+        + ("-" if has_dash else "")
+        + "]"
+    )
+
+
+def _fnmatch_safe(segment: str) -> str | None:
     """One pattern segment, with git's escapes and `[^…]` translated for fnmatch.
 
     `fnmatch` has neither. Two consequences, both found by an independent
@@ -294,15 +409,13 @@ def _fnmatch_safe(segment: str) -> str:
         if character == "[":
             close = _class_end(segment, index)
             if close == -1:
-                out.append("[[]")          # an unclosed bracket is a literal
-                index += 1
-                continue
-            body = segment[index + 1:close]
-            if body.startswith("^"):
-                body = "!" + body[1:]
-            for name, members in _POSIX_CLASSES.items():
-                body = body.replace(f"[:{name}:]", members)
-            out.append("[" + body + "]")
+                # Git's wildmatch **aborts** on an unterminated bracket, so the
+                # pattern matches nothing at all. Treating it as a literal `[`
+                # over-matched — silently widening an exemption, which is the
+                # direction that costs something. Pre-existing at 2.1.1, found
+                # by an independent differential.
+                return None
+            out.append(_class_body(segment[index + 1:close]))
             index = close + 1
             continue
         out.append(character)

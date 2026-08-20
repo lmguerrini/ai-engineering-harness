@@ -92,14 +92,27 @@ _UUID = re.compile(
 # and even ``  Reviewed-by: X`` read clean. Pre-existing at 2.1.1 rather than a
 # regression, and found by an audit reading a test whose *name* claimed the
 # universal the code did not hold.
+#
+# The whitespace classes are ``[^\S\n]``, not ``[ \t]``. Writing them as space
+# and tab was a **regression**: 2.1.1 used ``\s``, which matches Unicode
+# whitespace, so a U+00A0 after a bullet marker hid a trailer this pack's
+# previous release refused. Sixteen Zs characters × fifteen tokens, every one
+# lost, found by a fourth audit round.
+#
+# The colon does not have to be adjacent to the token either. ``git
+# interpret-trailers`` parses ``Signed-off-by : A Person`` as a trailer, so this
+# does too — the hyphenated pattern required adjacency and the token pattern
+# never did, which is two rules for one thing.
 #: Unicode-aware. `[A-Za-z]` let `Ünicode-Trailer:` through once the
 #: Conventional prefix in front of it was removed — a message 2.1.1 refused
 #: and this release accepted, which is the regression class two audits had
 #: already found twice. Hyphenated tokens are trailer syntax by construction,
 #: and that construction does not stop at ASCII.
-_TRAILER_HYPHENATED = re.compile(r"(?m)^[ \t]*(?:-[ \t]+)?[^\W\d_][^\W_]*(?:-[^\W_]+)+:")
+_TRAILER_HYPHENATED = re.compile(
+    r"(?m)^[^\S\n]*(?:-[^\S\n]+)?[^\W\d_][^\W_]*(?:-[^\W_]+)+[^\S\n]*:"
+)
 _TRAILER_TOKENS = re.compile(
-    r"(?mi)^[ \t]*(?:-[ \t]+)?(?:signed|reviewed|acked|tested|reported|suggested|helped"
+    r"(?mi)^[^\S\n]*(?:-[^\S\n]+)?(?:signed|reviewed|acked|tested|reported|suggested|helped"
     r"|cc|refs|ref|closes|close|fixes|fix|resolves|resolve|change-id|bug|ticket"
     r"|issue|see-also|link)\s*:",
 )

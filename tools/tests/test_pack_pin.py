@@ -32,7 +32,7 @@ def _write_manifest(root, **overrides):
         "pack": "test-pack",
         "version": (root / "VERSION").read_text().strip(),
         "state": "QUALIFIED_AND_FROZEN",
-        "tracked_files": count,
+        pack_pin.DIGEST_COUNT_KEY: count,
         "tree_digest_sha256": digest,
         "digest_excludes": pack_pin.MANIFEST_NAME,
         "digest_algorithm": pack_pin.DIGEST_ALGORITHM,
@@ -208,7 +208,7 @@ def test_a_tracked_path_containing_a_space_is_enumerated_as_one_path(pack):
         ({"digest_excludes": "nothing"}, "digest_excludes"),
         ({"digest_algorithm": "sha256"}, "digest_algorithm"),
         ({"tree_digest_sha256": "short"}, "64-character"),
-        ({"tracked_files": "many"}, "not a count"),
+        ({pack_pin.DIGEST_COUNT_KEY: "many"}, "not a count"),
         ({"pack": ""}, "does not name the pack"),
     ],
 )
@@ -320,3 +320,64 @@ def test_a_checkout_with_no_VERSION_authority_at_all_is_a_failure(tmp_path):
 
     problems = pack_pin.verify_pin(root)
     assert any("VERSION could not be read" in p for p in problems)
+
+
+# --- the digest-covered file count, under either spelling --------------------
+
+def test_a_manifest_written_by_2_1_1_still_verifies(pack):
+    """The rename must not break the case it exists to serve: a 2.2.0 verifier
+    reading an OLDER pinned root during migration."""
+    manifest = _write_manifest(pack)
+    count = manifest.pop(pack_pin.DIGEST_COUNT_KEY)
+    manifest[pack_pin.LEGACY_COUNT_KEY] = count
+    (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+
+    assert pack_pin.verify_pin(pack) == []
+    assert pack_pin.manifest_file_count(manifest) == (count, [])
+
+
+def test_a_manifest_that_records_two_different_counts_is_refused(pack):
+    """Not resolved by preference. A manifest that answers the same question
+    twice, in two ways, has no answer — and silently preferring one spelling
+    would let a stale legacy count sit unread beside a fresh one."""
+    manifest = _write_manifest(pack)
+    manifest[pack_pin.LEGACY_COUNT_KEY] = manifest[pack_pin.DIGEST_COUNT_KEY] + 1
+    (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+
+    problems = pack_pin.verify_pin(pack)
+    assert any("cannot record two file counts" in problem for problem in problems), problems
+
+
+def test_a_manifest_that_records_no_count_at_all_is_refused(pack):
+    manifest = _write_manifest(pack)
+    manifest.pop(pack_pin.DIGEST_COUNT_KEY)
+    (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+
+    problems = pack_pin.verify_pin(pack)
+    assert any("neither" in problem for problem in problems), problems
+
+
+def test_the_agreeing_counts_are_accepted_and_a_wrong_one_is_not(pack):
+    """Both spellings, agreeing, is the shape a mid-migration manifest has."""
+    manifest = _write_manifest(pack)
+    manifest[pack_pin.LEGACY_COUNT_KEY] = manifest[pack_pin.DIGEST_COUNT_KEY]
+    (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    assert pack_pin.verify_pin(pack) == []
+
+    manifest[pack_pin.DIGEST_COUNT_KEY] = manifest[pack_pin.LEGACY_COUNT_KEY] = 999
+    (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    problems = pack_pin.verify_pin(pack)
+    assert any("the digest covers" in problem for problem in problems), problems
+
+
+def test_writing_the_digest_leaves_exactly_one_spelling_behind(pack):
+    """A rewrite that left the legacy key in place would produce the disagreeing
+    manifest the reader above refuses, the moment the file count changed."""
+    manifest = _write_manifest(pack)
+    manifest[pack_pin.LEGACY_COUNT_KEY] = 1
+    (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+
+    assert pack_pin._cli([str(pack), "--write"]) == 0
+    rewritten = json.loads((pack / pack_pin.MANIFEST_NAME).read_text())
+    assert pack_pin.LEGACY_COUNT_KEY not in rewritten
+    assert rewritten[pack_pin.DIGEST_COUNT_KEY] == pack_pin.tree_digest(pack)[1]

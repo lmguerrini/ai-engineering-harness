@@ -60,8 +60,11 @@ __all__ = [
 #: exists rather than `None`.
 UNKNOWN = "UNKNOWN"
 
-#: Ordinal only, and deliberately not numeric — the evidence base is 19
-#: observations, and a number would invite arithmetic it cannot support.
+#: Ordinal only, and deliberately not numeric — the evidence base is small
+#: enough that a number would invite arithmetic it cannot support. How small is
+#: `policy/observations.jsonl`, counted there rather than restated here: this
+#: module's whole purpose is deriving from that log instead of repeating it, and
+#: it carried a stale count of its own for a release.
 #:
 #: `unprobed` nothing has been dispatched. `provisional` some evidence, not
 #: enough to rely on. `confirmed` repeated real dispatches with reproduced
@@ -221,8 +224,8 @@ class BackendRecord:
 def parse_configuration(text: str) -> BackendIdentity:
     """Read the free-form `configuration` string an observation already carries.
 
-    The existing 19 observations are primary evidence and are not rewritten to
-    fit a new shape. They are *read* into it, and every key the string does not
+    The observations already in the log are primary evidence and are not
+    rewritten to fit a new shape. They are *read* into it, and every key the string does not
     carry stays `UNKNOWN` — including the several that are literally recorded as
     the word `unknown`, which meant the same thing and could not be told apart
     from a key nobody wrote.

@@ -54,6 +54,9 @@ __all__ = [
     "VERSION_NAME",
     "DIGEST_ALGORITHM",
     "KNOWN_STATES",
+    "DIGEST_COUNT_KEY",
+    "LEGACY_COUNT_KEY",
+    "manifest_file_count",
     "tracked_files",
     "untracked_files",
     "tree_digest",
@@ -62,6 +65,18 @@ __all__ = [
 
 #: Excluded from the digest it records. A manifest cannot contain its own hash.
 MANIFEST_NAME = "PACK_MANIFEST.json"
+
+#: How many files the digest covers — which is every git-tracked file EXCEPT the
+#: manifest. Named `tracked_files` through 2.1.1, where it read as the number of
+#: files git tracks and was always one fewer than that. Renamed rather than
+#: re-explained: a label a reader has to be corrected about is the defect this
+#: pack exists to refuse.
+DIGEST_COUNT_KEY = "digest_file_count"
+
+#: The 2.1.1 spelling. Still accepted, because a 2.2.0 verifier is used to check
+#: an OLDER pinned root during migration, and refusing that manifest would make
+#: the rename break the thing it was supposed to clarify.
+LEGACY_COUNT_KEY = "tracked_files"
 
 #: The single machine-readable version authority. The manifest restates it and
 #: must agree with it; nothing else may.
@@ -144,6 +159,36 @@ def tree_digest(root: str | Path) -> tuple[str, int]:
     return digest.hexdigest(), len(files)
 
 
+def manifest_file_count(manifest: dict) -> tuple[int | None, list[str]]:
+    """How many files the manifest says its digest covers, and what is wrong.
+
+    Accepts either spelling. Both present and disagreeing is a refusal rather
+    than a preference: a manifest that answers the same question twice, in two
+    ways, has no answer.
+    """
+    problems: list[str] = []
+    present = {key: manifest[key] for key in (DIGEST_COUNT_KEY, LEGACY_COUNT_KEY) if key in manifest}
+    if not present:
+        problems.append(f"neither {DIGEST_COUNT_KEY} nor {LEGACY_COUNT_KEY} is recorded")
+        return None, problems
+
+    counts = {}
+    for key, value in present.items():
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            problems.append(f"{key} is {value!r}, not a count")
+        else:
+            counts[key] = value
+    if len(counts) == 2 and counts[DIGEST_COUNT_KEY] != counts[LEGACY_COUNT_KEY]:
+        problems.append(
+            f"{DIGEST_COUNT_KEY} is {counts[DIGEST_COUNT_KEY]} and {LEGACY_COUNT_KEY} is "
+            f"{counts[LEGACY_COUNT_KEY]} — a manifest cannot record two file counts"
+        )
+        return None, problems
+    if DIGEST_COUNT_KEY in counts:
+        return counts[DIGEST_COUNT_KEY], problems
+    return counts.get(LEGACY_COUNT_KEY), problems
+
+
 def _manifest_problems(root: Path, manifest: dict) -> list[str]:
     """Every way the manifest's own authoritative metadata is not well-formed.
 
@@ -182,9 +227,8 @@ def _manifest_problems(root: Path, manifest: dict) -> list[str]:
     ):
         problems.append("tree_digest_sha256 is not a 64-character lowercase hex digest")
 
-    count = manifest.get("tracked_files")
-    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
-        problems.append(f"tracked_files is {count!r}, not a count")
+    count, count_problems = manifest_file_count(manifest)
+    problems.extend(count_problems)
 
     gate_record = manifest.get("gate_record")
     if gate_record is not None:
@@ -237,9 +281,11 @@ def verify_pin(
             f"tree digest {actual_digest[:16]}… does not match the manifest's "
             f"{str(manifest.get('tree_digest_sha256'))[:16]}… — this checkout is not the pinned pack"
         )
-    if actual_count != manifest.get("tracked_files"):
+    recorded_count, count_problems = manifest_file_count(manifest)
+    problems.extend(problem for problem in count_problems if problem not in problems)
+    if recorded_count is not None and actual_count != recorded_count:
         problems.append(
-            f"{actual_count} tracked files, manifest records {manifest.get('tracked_files')}"
+            f"the digest covers {actual_count} files, the manifest records {recorded_count}"
         )
 
     try:
@@ -333,7 +379,8 @@ def _cli(argv: list[str]) -> int:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         digest, count = tree_digest(args.root)
         manifest["tree_digest_sha256"] = digest
-        manifest["tracked_files"] = count
+        manifest[DIGEST_COUNT_KEY] = count
+        manifest.pop(LEGACY_COUNT_KEY, None)
         manifest["digest_excludes"] = MANIFEST_NAME
         manifest["digest_algorithm"] = DIGEST_ALGORITHM
         manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")

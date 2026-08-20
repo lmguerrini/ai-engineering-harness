@@ -228,15 +228,27 @@ finding: the pack is not a project, has no contract declaring its
 classifications, and the artifacts it names are gitignored OS and cache files.
 None is tracked, so none is inside the digest.
 
+`outgoing_scan` also refuses this repository, and that is correct and not a
+finding either. It reports local filesystem paths — the adapter locators under a
+home directory, which are the whole point of that list — and credential-shaped
+tokens, which are the negative fixtures the commit gate is tested against. Both
+were already true of the frozen baseline: 15 tracked files there carry a local
+path, 21 here, and the growth is adapter and observation records added
+deliberately. The scan is the gate a **project** runs before publishing
+something; this pack is private, has no remote, and is never published (D5).
+Recorded because a reader who runs every tool in `tools/` against the pack
+should be told in advance which two refuse it and why, rather than discovering
+it and having to decide alone whether it matters.
+
 ## Measured overhead
 
 Held prose, by the `BUDGETS.md` rule:
 
-    in-release (skills/core/*.md + policy/*.md)   1460
+    in-release (skills/core/*.md + policy/*.md)   1463
     installed adapters (outside the envelope)     1023
-    total                                         2483     target ~2,000
+    total                                         2486     target ~2,000
 
-**24.2% over, recorded rather than shaved** — 2.1.1 was 14.9% over on the same
+**24.3% over, recorded rather than shaved** — 2.1.1 was 14.9% over on the same
 rule. One principled reduction was made rather than a cosmetic one: the routing
 table's narrative moved to `docs/`, where read-once evidence belongs, and its
 grade rows became computable from the observation log. Trimming further would
@@ -491,6 +503,19 @@ clean-room implementations.
 | **D14 clause 7 was contradicted by two shipped drills** telling a project to append to `policy/observations.jsonl` — inside the pinned release, inside its digest | read | both corrected; D14 clause 7 states that the pack's log is pack evidence written only in an evolution session |
 | The manifest's `deferred` block was a release out of date; a test hardcoded an adapter line count; the machine-path guard exempted two plausible usernames; `resource_observation` exited 0 on an unreadable payload | each read or run | each repaired |
 
+### A fifth regression class, found after this round's snapshot
+
+Recorded here because a reader counting how often the commit gate regressed
+would otherwise get the wrong number, and would not learn that the last instance
+was found in work no auditor had seen.
+
+A hyphenated trailer token spelled outside ASCII — `Ünicode-Trailer:` — escaped
+once the Conventional prefix in front of it was removed, because
+`_TRAILER_HYPHENATED` was `[A-Za-z]`-only. 2.1.1 refused that message. Found by
+the coordinator's own adversarial probe after the round-3 snapshot was taken,
+repaired in `18357f5`, and the differential's own tail judge had to be made
+Unicode-aware first — it had excused the loss for the same reason.
+
 ### What this round says about the process
 
 Three rounds, six auditors, and the same shape every time: **the code was hard
@@ -513,3 +538,55 @@ qualification figures, its prose budget, its pin field set, its push form, its
 routing grades and its divergence figure are each bound to a measurement rather
 than restated. What remains unverifiable from the repository is listed in the
 release packet's known limitations rather than left to be discovered.
+
+## Closure audit — round 4
+
+Two blind auditors, snapshots at `50f711ad6132f65d411b8279241679d1cfc10882`,
+lenses *break it* and *is this fit for a release authority*. **Both returned NOT
+READY.** Five blockers between them.
+
+### The finding that changed how this release is tested
+
+**Four repairs from round 3 had no oracle.** An auditor reverted the parser to
+reject an empty scope, a doubled `!!` and a second scope group, and removed the
+leading-whitespace tolerance — four messages the qualified baseline refuses
+passed the gate completely clean, **and the whole suite stayed green**. It then
+committed the mutation and refreshed the digest, so the release's own
+verification command passed too.
+
+The reason none of the existing tests could see it is the useful part:
+
+*   the parametrised list contained the decorations somebody had thought of;
+*   the differential against 2.1.1 is **structurally blind to any hole 2.1.1
+    also had** — and the leading-whitespace class is one.
+
+So the guarantee is now asserted **absolutely**: over a generated product of
+leading whitespace, type words, scopes, breaking markers and gaps, a subject
+whose tail bears a trailer is refused, with no reference to the previous
+release. Seven independent mutations of the repairs were then run against it and
+every one is killed — including two that had survived a first attempt at these
+tests, because the tails they used were matched by *both* trailer patterns and
+each mutation left the other firing.
+
+### The other blockers
+
+| Finding | Reproduced | Repair |
+|---|---|---|
+| **Two more lost refusals** — a Unicode space after a bullet marker (the pattern had been narrowed from `\s` to `[ \t]`, a regression this release introduced), and a space before a trailer's colon, which `git interpret-trailers` accepts as a trailer | 240 combinations for the first; both through the shipped CLI | Unicode whitespace restored, and the colon no longer has to be adjacent. The bare form is now caught too, which 2.1.1 missed |
+| **The refuted `13` still shipped**, in the prose of the test module that computes the real figure — surviving because the guard exempted that file *by name*, the hand-written-list shape the same commit says it rejects | the guard's own regex, run without the exemption | de-numbered, and the exemption narrowed from the file to the line that carries the computed figure |
+| **The packet claimed every injected mutation was killed every time** | contradicted by this release's own round-1 record, and by the blocker above in the present tense | corrected to what happened, round by round |
+| **`pathmatch` had no POSIX character classes**, mis-read escapes inside a class, and treated an unterminated bracket as a literal where git matches nothing | differential | all three repaired; the class body is now parsed and re-emitted rather than passed through |
+| **`**` matching was exponential** — seven of them against a 25-component path took nearly seven seconds, and patterns come from a project's own contract. A cliff *this release introduced*, since 2.1.1 had no `**` at all | measured | memoised on `(component, segment)`; the same case is now under four milliseconds |
+| A stale audit-count limitation in the manifest, a stale observation count in the module that exists to avoid restating one, and a disclosure list narrower than the packet's | each read | each corrected; the manifest now carries the audit history, the regressions, the missing cross-vendor coverage and the unfalsifiable claims |
+
+### What held
+
+Zero regressions at the audited revision, established four ways by one auditor
+and independently by the other: the previously qualified suite over this
+implementation, `surface_diff`, a 34,751-message commit-gate differential whose
+only lost refusals were the one documented weakening, and a 120,000-pair
+`pathmatch` differential against real `git check-ignore` with no divergence.
+Both auditors independently reproduced the contaminated-oracle failure this
+release documents, one of them generating thousands of fictional divergences
+before isolating it — which is the clearest confirmation that the warning is
+worth carrying.
