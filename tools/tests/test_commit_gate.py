@@ -317,3 +317,41 @@ def test_a_trailer_behind_a_conventional_prefix_is_still_refused(subject):
 
 def test_co_authored_by_behind_a_conventional_prefix_is_still_refused():
     assert "COAUTHOR" in _codes("fix: Co-authored-by: An Assistant" + BODY)
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        # Extra whitespace after the prefix. 2.1.1 REFUSED these; the first
+        # repair accepted them, which made it a regression rather than a gap.
+        "fix:  Signed-off-by: A Person",
+        "fix:   Signed-off-by: A Person",
+        "fix:\tSigned-off-by: A Person",
+        "feat!:  Reviewed-by: X",
+        "fix(parser):  Change-Id: I0123456789",
+        # A second prefix in front of the trailer.
+        "fix: docs: Signed-off-by: A Person",
+        "feat: chore: Reviewed-by: Someone",
+        "fix(a)!: test: Change-Id: Iabc123",
+        # Not a regression — 2.1.1 let this through too — but the same hole.
+        "docs:  Reviewed-by: Someone Else",
+    ],
+)
+def test_no_amount_of_prefix_or_whitespace_hides_a_trailer(subject):
+    """Two independent audits reproduced this. The trailer patterns anchor with
+    `^`, so anything left in front of the token hides it — which is what the
+    first repair's own docstring said it had avoided."""
+    assert "TRAILER" in _codes(subject + BODY)
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "fix:  extra spaces before an ordinary subject",
+        "fix: docs: an odd but legitimate subject",
+        "refactor(core):   spaced out",
+    ],
+)
+def test_extra_whitespace_and_repeated_prefixes_are_still_accepted_when_clean(subject):
+    """The strengthening must not start refusing ordinary messages."""
+    assert _codes(subject + BODY) == []

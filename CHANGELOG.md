@@ -30,10 +30,13 @@ fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
 ### Tooling integrity — every defect reproduced before repair
 
 - **Declared path patterns did not mean what the documentation said.**
-  Differentially tested against real `git check-ignore`, thirteen pattern/path
-  pairs disagreed and **every one under-matched**: a wildcard directory name was
-  compared with string equality, a bare name did not cover the directory it
-  named, and `dist/*` stopped one level down. Matching is now defined once in
+  Differentially tested against real `git check-ignore` it diverged in both
+  directions — mostly under-matching, and over-matching on a handful: a wildcard
+  directory name was compared with string equality, a bare name did not cover
+  the directory it named, `dist/*` stopped one level down, and a directory-only
+  pattern matched files. The count is computed by
+  `test_the_recorded_baseline_divergence_figure_is_the_measured_one` rather than
+  asserted here, because it was asserted from memory twice and was wrong twice. Matching is now defined once in
   git's terms — a pattern matches an entity, and a file is covered when the
   pattern matches it or any ancestor. `**` is implemented, matching is
   case-sensitive, and `pathmatch` has its first direct test module, oracled

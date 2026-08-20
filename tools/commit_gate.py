@@ -91,7 +91,7 @@ _TRAILER_TOKENS = re.compile(
 #: moving up one line, or by having a type word put in front of it.
 _CONVENTIONAL_SUBJECT = re.compile(
     r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
-    r"(?:\([^()\n]+\))?!?:\s",
+    r"(?:\([^()\n]+\))?!?:\s+",
 )
 
 
@@ -105,14 +105,31 @@ def _trailer_surface(message: str) -> str:
     trailer token — it was never meant to make the rest of the subject
     unreadable.
 
-    The prefix is *removed* rather than blanked. Padding it with spaces was the
-    first attempt and did not work: the trailer patterns anchor with `^`, so
-    leading whitespace hid the very token the removal exists to expose.
+    The prefix is *removed* rather than blanked, **exhaustively**, and the
+    remainder is left-stripped.
+
+    Both of those cost a regression before they were right. Padding with spaces
+    was the first attempt: the trailer patterns anchor with `^`, so leading
+    whitespace hid the token the removal exists to expose. Removing exactly one
+    prefix was the second, and it left the same hole one space wider — `fix:` +
+    **two** spaces put whitespace back in front of the token, and
+    `fix: docs: Signed-off-by:` put a second prefix there. Two blind audits
+    reproduced both, and both had been **refused by 2.1.1**, which makes them
+    regressions rather than gaps.
+
+    So: strip prefixes until none remains, and strip the whitespace each one
+    leaves behind. A subject cannot become a trailer-free surface by having more
+    of itself put in front of the trailer.
     """
     subject, separator, rest = message.partition("\n")
-    match = _CONVENTIONAL_SUBJECT.match(subject) if separator else None
-    if match:
-        subject = subject[match.end():]
+    if separator:
+        while True:
+            match = _CONVENTIONAL_SUBJECT.match(subject)
+            if not match:
+                break
+            # Every match consumes at least `x:` plus one space, so this
+            # terminates.
+            subject = subject[match.end():].lstrip()
     return subject + separator + rest
 
 # Path detection, in three shapes. A repository-relative path such as
@@ -260,6 +277,17 @@ class TermSet:
             raise ValueError(
                 "an empty term set must be declared explicitly with NO_PRIVATE_TERMS"
             )
+        # An empty *term* matches every surface and discriminates nothing, so a
+        # scan carrying one reports a leak in everything it reads. Refused for
+        # the reason `pack_pin` refuses a one-character `--sha`: a rule that
+        # cannot tell two things apart has failed at its only job.
+        for group, values in (("terms", term_tuple), ("identity_terms", identity_term_tuple)):
+            for value in values:
+                if not value.strip():
+                    raise ValueError(
+                        f"{group} carries an empty term, which matches everywhere and "
+                        "discriminates nothing"
+                    )
         return cls(
             terms=term_tuple,
             patterns=pattern_tuple,

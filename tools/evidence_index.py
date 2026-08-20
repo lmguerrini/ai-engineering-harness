@@ -306,8 +306,17 @@ class Certification:
         waived = {waiver.finding_id for waiver in self.applicable_waivers()}
         return tuple(finding for finding in self.open_findings if finding not in waived)
 
-    def state(self) -> str:
-        """`OPEN`, `CERTIFIED` or `REOPENED`, derived from the records."""
+    def state(self, evidence_dir: str | Path | None = None) -> str:
+        """`OPEN`, `CERTIFIED` or `REOPENED`, derived from the records.
+
+        Given an evidence directory it also accounts for the cited reports and
+        the bijection, so the reassuring value is not reachable from *either*
+        accessor while something is outstanding. Without one it answers about
+        the records alone — which is a narrower question, and callers that mean
+        the whole one pass the directory.
+        """
+        if evidence_dir is not None and self.problems(evidence_dir):
+            return OPEN
         if self.reopened_by:
             return REOPENED
         if self.kind != CERTIFICATION_VERIFICATION:
@@ -378,7 +387,7 @@ class Certification:
         evidence was missing from disk. Found by an independent audit. This is
         the accessor to gate on.
         """
-        return self.state() == CERTIFIED and not self.problems(evidence_dir)
+        return self.state(evidence_dir) == CERTIFIED and not self.problems(evidence_dir)
 
     def render(self, evidence_dir: str | Path | None = None) -> str:
         problems = self.problems(evidence_dir)
@@ -477,7 +486,16 @@ def _cli(argv: list[str]) -> int:
         description="Report what a project's recorded evidence supports for one exact candidate.",
     )
     parser.add_argument("record", help="path to the project-local certification record (JSON)")
-    parser.add_argument("--evidence-dir", help="verify cited references and the index bijection")
+    parser.add_argument(
+        "--evidence-dir",
+        required=True,
+        help=(
+            "the project's evidence directory. REQUIRED: without it the cited reports and "
+            "the index bijection go unchecked, and the report headlined CERTIFIED for a "
+            "record whose entire cited evidence was absent. Pass an empty directory if "
+            "there genuinely is none — that is a different claim from not looking"
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:

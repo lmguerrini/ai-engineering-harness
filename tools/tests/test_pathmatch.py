@@ -2,18 +2,22 @@
 
 This module had no tests of its own. It was covered only through the callers
 that use it, which is how it shipped agreeing with git on the cases somebody
-had thought of and disagreeing on the ones they had not: **29 of the 1,978
-pattern/path pairs in the grid below — 27 under-matching and 2 over-matching**,
-so a declared exemption silently covered nothing (or silently covered more than
-it said) and the report looked normal either way.
+had thought of and disagreeing on the ones they had not — a declared exemption
+silently covering nothing, or silently covering more than it said, with the
+report looking normal either way.
 
-That figure is stated against *this* grid, and the distinction cost a blocker.
-The first measurement was 13, taken on a smaller grid that was then replaced
-and not re-measured, so the release asserted a number a reader could not
-re-derive from anything it shipped — in the module whose own thesis is that a
-hand-written table is how the first implementation passed. The "13 pairs" are
-still real and are still pinned individually below; they are simply not the
-count of what was wrong.
+**How many is not written down here. It is computed** —
+`test_the_recorded_baseline_divergence_figure_is_the_measured_one` runs the
+frozen 2.1.1 module against this grid and this oracle, and
+`BASELINE_DIVERGENCES` has to equal what it finds.
+
+That is not fastidiousness. The figure was asserted from memory twice and was
+wrong both times: first 13, measured on a grid that was then replaced; then 29,
+re-measured on the *replaced* grid in the same commit that widened it. Two
+independent audits caught it, the second one noting that the release narrated
+the mistake and committed it again a generation later. A number in prose is not
+a measurement, and this module's own thesis is that a hand-written table is how
+the first implementation passed.
 
 So the oracle here is **real `git check-ignore`**, asked about the same
 pattern/path pairs. That matters more than the number of cases: the claim this
@@ -36,12 +40,22 @@ below therefore pins `core.excludesFile` to `/dev/null`, empties
 `.git/info/exclude`, and sets `core.ignorecase=false`.
 """
 
+import pathlib
 import shutil
 import subprocess
 
 import pytest
 
 from pathmatch import matches_any, matching_patterns
+
+PACK_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
+
+#: `(total, under, over)` — the frozen 2.1.1 module against the grid below.
+#: **Asserted here and verified by computation**, never the other way round.
+#: Under-matching means a declared rule silently covered nothing; over-matching
+#: means it silently covered more than it said. Both directions were present.
+BASELINE_DIVERGENCES = (95, 88, 7)
+
 
 # --- individually reproduced divergences, as direct assertions ---------------
 #
@@ -331,3 +345,60 @@ def test_negation_sets_match_git_check_ignore(oracle, rules):
     mine = {path for path in PATHS if matches_any(path, rules)}
     assert not (truth - mine), f"{rules} under-matches: {sorted(truth - mine)}"
     assert not (mine - truth), f"{rules} over-matches: {sorted(mine - truth)}"
+
+
+# --- the figure, computed rather than remembered -------------------------------
+
+
+def test_the_recorded_baseline_divergence_figure_is_the_measured_one(oracle):
+    """`BASELINE_DIVERGENCES` against the frozen 2.1.1 module and this grid.
+
+    The one test that would have prevented two blockers. It fails if the grid
+    changes and the number does not, which is exactly how both wrong figures
+    were produced.
+    """
+    import importlib.util
+    import subprocess
+    import tempfile
+
+    baseline = subprocess.run(
+        ["git", "show", "4495e61850c08027e47eac6d0db84b4b3380e300:tools/pathmatch.py"],
+        cwd=str(PACK_ROOT), capture_output=True, check=True,
+    ).stdout.decode("utf-8")
+
+    with tempfile.TemporaryDirectory() as scratch:
+        module_path = pathlib.Path(scratch) / "baseline_pathmatch.py"
+        module_path.write_text(baseline, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("baseline_pathmatch", module_path)
+        frozen = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(frozen)
+
+        under = over = 0
+        for pattern in PATTERNS:
+            truth = oracle(pattern, PATHS)
+            for path in PATHS:
+                expected, actual = path in truth, frozen.matches_any(path, [pattern])
+                under += expected and not actual
+                over += actual and not expected
+
+    assert (under + over, under, over) == BASELINE_DIVERGENCES, (
+        f"the grid measures {under + over} divergences ({under} under, {over} over); "
+        f"BASELINE_DIVERGENCES records {BASELINE_DIVERGENCES}. The grid and the figure "
+        "must be changed together"
+    )
+
+
+def test_the_repaired_module_has_no_divergences_on_the_same_grid(oracle):
+    """The other half: whatever the baseline figure is, the repair drives it to
+    zero on the identical grid and oracle."""
+    divergent = []
+    for pattern in PATTERNS:
+        truth = oracle(pattern, PATHS)
+        for path in PATHS:
+            if (path in truth) != matches_any(path, [pattern]):
+                divergent.append((pattern, path))
+    assert not divergent, divergent
+
+
+def test_the_grid_is_the_size_the_documents_quote():
+    assert len(PATTERNS) * len(PATHS) == 1978

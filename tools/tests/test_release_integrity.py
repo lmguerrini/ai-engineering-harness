@@ -517,19 +517,69 @@ def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
     enumerating = {"ls-files", "ls-tree", "diff-tree", "diff", "rev-list", "for-each-ref",
                    "check-ignore", "status"}
 
+    def string_literals(node):
+        """Every string constant this call *passes to git*, however it is spelled.
+
+        Three shapes reach git in this toolbelt, and the first version of this
+        check saw only one — which made it structurally blind to
+        `objects_in_outgoing_range`, the very function it was written for. An
+        independent audit removed the `-z` the repair had added and this test
+        still passed. A universal claim needs a check that is universal about
+        *syntax* too:
+
+        *   `_run(repo, "ls-files", "-z")`      — positional constants;
+        *   `arguments = [...]` then `_run(repo, *arguments)` — a list built
+            above the call and splatted into it;
+        *   `subprocess.run(["git", "ls-files", "-z"])` — a list literal
+            argument, which is how `pack_pin` spells it.
+        """
+        found = []
+        for argument in list(node.args) + [
+            keyword.value for keyword in node.keywords if keyword.arg is None
+        ]:
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                found.append(argument.value)
+            elif isinstance(argument, (ast.List, ast.Tuple)):
+                found.extend(
+                    element.value for element in argument.elts
+                    if isinstance(element, ast.Constant) and isinstance(element.value, str)
+                )
+            elif isinstance(argument, ast.Starred) and isinstance(argument.value, ast.Name):
+                found.extend(splatted.get(argument.value.id, []))
+        return found
+
     offenders = []
     for path in sorted((ROOT / "tools").glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        # Every list assigned to a plain name, so a splat can be resolved back to
+        # the literals it carries.
+        splatted: dict[str, list[str]] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, (ast.List, ast.Tuple)):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        splatted.setdefault(target.id, []).extend(
+                            element.value for element in node.value.elts
+                            if isinstance(element, ast.Constant) and isinstance(element.value, str)
+                        )
+            if isinstance(node, ast.AugAssign) and isinstance(node.value, (ast.List, ast.Tuple)):
+                if isinstance(node.target, ast.Name):
+                    splatted.setdefault(node.target.id, []).extend(
+                        element.value for element in node.value.elts
+                        if isinstance(element, ast.Constant) and isinstance(element.value, str)
+                    )
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            literals = [
-                argument.value for argument in node.args
-                if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
-            ]
+            literals = string_literals(node)
             if not literals:
                 continue
-            command = literals[0]
+            if literals[0] == "git":
+                if len(literals) < 2:
+                    continue
+                command = literals[1]
+            else:
+                command = literals[0]
             if command not in enumerating:
                 continue
             if "--no-object-names" in literals:
@@ -548,3 +598,146 @@ def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
         "these enumerate paths without NUL separation, so a path git C-quotes reaches a "
         "checker as an escaped literal: " + "; ".join(offenders)
     )
+
+
+def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
+    """The figure is computed in `test_pathmatch.py` and stated nowhere else.
+
+    It was written from memory twice and was wrong twice — 13 on a grid that had
+    been replaced, then 29 on the replaced grid in the commit that widened it
+    again. Two independent audits caught it. The durable repair is not a better
+    number: it is that no prose carries one, so there is nothing left to drift.
+    """
+    import re
+
+    #: Phrases that would be a hand-written divergence count.
+    pattern = re.compile(
+        r"(?<![\d.])(\d+|thirteen|twenty-nine|ninety-five)\s+(?:pattern/path\s+)?"
+        r"(?:pairs?\s+)?(?:divergen|disagree|under-match|over-match)",
+        re.IGNORECASE,
+    )
+    #: A line that is explicitly recounting a *past* wrong figure, or the
+    #: contaminated-oracle episode, is a record of what happened rather than a
+    #: claim about the module. Those must stay — deleting them would remove the
+    #: disclosure, which is the same move this whole rule exists to prevent.
+    historical = (
+        "was first recorded", "was the harness", "does not reproduce",
+        "was measured on", "wrong twice", "measured on a grid", "re-measured",
+        "reported 114", "114 divergences",
+    )
+
+    offenders = []
+    for name in ("tools/pathmatch.py", "CHANGELOG.md", "docs/RP2.2-GATE.md",
+                 "docs/RP2.2-CAPABILITY-MAP.md", "docs/RP2.2-RELEASE-PACKET.md", "README.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line) and not any(marker in line for marker in historical):
+                offenders.append(f"{name}:{number}: {line.strip()[:90]}")
+    assert not offenders, (
+        "these state a divergence count in prose; the figure is computed by "
+        "test_pathmatch.BASELINE_DIVERGENCES and must not be restated: " + "; ".join(offenders)
+    )
+
+
+def test_the_gate_record_qualification_figures_are_measured(manifest):
+    """Every number in the gate record's qualification section, against reality.
+
+    Round 2 of the closure audits found *four* stale figures in this one section
+    — the suite count twice, the falsification count and the delta — all written
+    fresh in the repair commit and all carried from the revision before it. Both
+    auditors reached the same conclusion independently: **every number this
+    release binds to a test is correct, and every number it does not is stale.**
+    So these are bound.
+    """
+    import re
+    import subprocess
+
+    gate = (ROOT / "docs" / "RP2.2-GATE.md").read_text(encoding="utf-8")
+
+    # The suite count must NOT be restated here. Adding a test changes it, and a
+    # figure this document's own edit invalidates is one it must not carry — the
+    # same rule the delta below follows, and the same reason the manifest does
+    # not name its own revision. Four stale figures in this one section is what
+    # taught it.
+    counts = re.findall(r"\*\*(\d+) passed\*\*", gate)
+    assert not counts, (
+        f"the gate record restates a suite count ({counts}); it must point at "
+        "PACK_MANIFEST.json tests.passed instead"
+    )
+    assert "PACK_MANIFEST.json` `tests.passed" in gate, (
+        "the gate record does not say where the suite count lives"
+    )
+    assert manifest["tests"]["passed"] > 0
+
+    # The delta must NOT be stated as a literal. Editing this file changes it,
+    # so any number written there is wrong from the moment it is committed —
+    # the manifest's own-revision problem, in prose. The document gives the
+    # command instead, and this asserts that it still does.
+    assert re.search(r"Delta against the frozen baseline: \*\*not stated here\.\*\*", gate), (
+        "the gate record states a literal delta; it must give the command instead"
+    )
+    assert "git diff --shortstat" in gate, "the gate record gives no way to measure the delta"
+    assert not re.search(r"\d+ files changed, [\d,]+ insertions", gate), (
+        "a literal delta reappeared in the gate record"
+    )
+    subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ROOT), capture_output=True, check=True)
+
+
+def test_the_release_packet_and_the_manifest_agree_on_the_prose_breach():
+    """The packet is what a returning release authority reads first, and it
+    under-stated the release's only recorded budget breach because it was
+    computed with the *previous* release's adapter line count. Found by an
+    independent audit."""
+    import json
+    import re
+
+    manifest = json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    limitations = " ".join(manifest.get("known_limitations") or [])
+    manifest_percentage = re.search(r"\(([\d.]+)% over", limitations)
+    assert manifest_percentage, "the manifest states no held-prose percentage"
+
+    for name in ("docs/RP2.2-GATE.md", "docs/RP2.2-RELEASE-PACKET.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        stated = set(re.findall(r"([\d.]+)% over the ~2,000|([\d.]+)% over, recorded", text))
+        for pair in stated:
+            value = pair[0] or pair[1]
+            assert value == manifest_percentage.group(1), (
+                f"{name} states {value}% over; the manifest states "
+                f"{manifest_percentage.group(1)}%"
+            )
+
+
+def test_no_tracked_file_carries_a_real_machine_path():
+    """The pack's own rule, applied to the pack.
+
+    An independent audit found `/Users/<name>/.gitignore_global` shipped in a
+    findings document — pre-existing, and refused by this release's own
+    `contains_local_path`. Redacted to `<home>`, and pinned here so the next one
+    fails rather than ships.
+
+    Synthetic fixtures are exempt by name. They exist *because* the scanner must
+    find this shape, and a check that refused them would refuse the tests that
+    prove the scanner works.
+    """
+    import re
+    import subprocess
+
+    fixture_names = ("someone", "alice", "exampleuser", "secret", "throwaway")
+    real = re.compile(r"/(?:Users|home)/(?!(?:%s)\b)[\w.\-]+" % "|".join(fixture_names))
+
+    listing = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=str(ROOT), capture_output=True, check=True
+    ).stdout
+    offenders = []
+    for entry in listing.split(b"\0"):
+        if not entry:
+            continue
+        path = ROOT / entry.decode("utf-8", "surrogateescape")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):  # pragma: no cover - environment
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if real.search(line):
+                offenders.append(f"{entry.decode()}:{number}: {line.strip()[:80]}")
+    assert not offenders, "these ship a real machine path: " + "; ".join(offenders)

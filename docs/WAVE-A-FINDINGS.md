@@ -317,7 +317,13 @@ contains `*.jsonl`. It silently excluded `policy/observations.jsonl` from the
 pack repository. Six commits were made without it.
 
     $ git check-ignore -v policy/observations.jsonl
-    ~/.gitignore_global:60:*.jsonl    policy/observations.jsonl
+    <home>/.gitignore_global:60:*.jsonl    policy/observations.jsonl
+
+The home directory in that line is redacted to `<home>`. The finding is
+unchanged — a global ignore file silently excluded an append-only authority —
+and the machine it happened on is not part of it. Redacted in RP2.2 after the
+pack's own `contains_local_path` was run over every tracked file and returned
+this as the only real machine path in the release.
 
 **Why it is material.** `observations.jsonl` is one of the five things the
 architecture designates **append-only authority**, and `routing-table.md` is

@@ -28,13 +28,22 @@ Two rules follow, and both are implemented here:
 The rules above were right and the implementation delivered them only for the
 cases somebody had thought of. Differentially tested against **real
 `git check-ignore`** — the semantics this module claims, asked of the program
-that defines them — 13 pattern/path pairs disagreed, and **every one
-under-matched**: the same direction as the original defect, a declared
-exemption silently covering nothing.
+that defines them — it diverged in **both** directions: mostly under-matching, a
+declared exemption silently covering nothing, and in a handful of cases
+over-matching, one silently covering more than it said.
 
-Three root causes, one class. In gitignore, **a pattern that matches a directory
-covers everything beneath it**, and the old implementation only ever compared a
-pattern against the whole path:
+**The count is not written here.** It is `BASELINE_DIVERGENCES` in
+`tools/tests/test_pathmatch.py`, and a test computes it from the frozen 2.1.1
+module against the shipped grid rather than trusting anyone's memory of it. That
+indirection exists because the number was written down from memory twice and was
+wrong twice — 13 measured on a grid that was then replaced, then 29 re-measured
+on the replaced grid in the same commit that widened it. Both were caught by
+independent audits, the second observing that this module had narrated the
+mistake and then repeated it.
+
+Several root causes, one class. In gitignore, **a pattern that matches a
+directory covers everything beneath it**, and the old implementation only ever
+compared a pattern against the whole path:
 
 *   `dist*/`, `build*/`, `*.egg-info/` — a *wildcard* directory name was
     compared with string equality, so only literal directory names ever matched;
@@ -144,6 +153,11 @@ def _names_entity(parts: tuple[str, ...], pattern: str, *, is_directory: bool) -
     pattern = _strip_trailing_space(pattern)
     anchored = pattern.startswith("/")
     directory_only = pattern.endswith("/")
+    # `strip("/")` alone made `dist//` behave as `dist/`; git treats a doubled
+    # separator as matching nothing. Degenerate, and found by a differential
+    # rather than by reasoning, which is the point of running one.
+    if "//" in pattern:
+        return False
     core = pattern.strip("/")
     if not core or (directory_only and not is_directory):
         return False

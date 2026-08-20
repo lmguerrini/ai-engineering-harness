@@ -55,7 +55,7 @@ is evidence about the oracle.
 |---|---|---|
 | B2 | reviewer isolation contradicts the reviewer contract | a reviewer worktree lands `refs/heads/worktree-agent-*` in the audited repository; `publication_gate.py` exits 1 on it |
 | EC-A(i) | path enumeration is not NUL-safe | a tracked `café.txt` reaches classification as `"annotations/caf\303\251.txt"`, and the declared `annotations/` exemption then does not cover it |
-| EC-A(ii) | wildcard and directory semantics | **29** divergences against `git check-ignore` on the grid the release ships — 27 under-matching, 2 over-matching. An earlier, smaller grid gave 13, and that figure was recorded beside a grid it was not measured on |
+| EC-A(ii) | wildcard and directory semantics | divergences against `git check-ignore` in **both** directions on the shipped grid. The count is `BASELINE_DIVERGENCES` in `tools/tests/test_pathmatch.py`, computed against the frozen baseline rather than written down here |
 | EC-B | Conventional Commit subject read as a trailer | `fix: …` is refused `TRAILER`; `feat: …` passes |
 | EC-C | publication reasoning ignores ref object type | an annotated tag reports "carries no extra object"; a blob ref reports "CARRIES OBJECTS THE PUBLIC REF DOES NOT" as fact when the question was never answered |
 | EC-E | evidence is created world-readable | directory `0o755`, file `0o644`, mode verified by nothing |
@@ -68,14 +68,19 @@ its symptom.
 
 ## Oracle notes
 
-**The grid a number is measured on is part of the number.** EC-A(ii) was first
-measured at 13 divergences on a 273-pair grid. The grid was then widened for the
-shipped test module and the figure was not re-measured, so the release asserted
-"13, all under-matching" beside a grid that yields 29, two of them
-over-matching. An independent audit reproduced it and called it a blocker,
-correctly: a stated result a reader cannot re-derive from the artifacts is the
-defect class this pack exists to refuse, and it appeared in the module whose own
-thesis is that a hand-written table is how the first implementation passed.
+**The grid a number is measured on is part of the number — and this was got
+wrong twice.** EC-A(ii) was first recorded as 13 divergences, measured on a grid
+that was then replaced without re-measuring. An audit caught it. The correction
+was recorded as 29 — measured on the *replaced* grid, in the same commit that
+widened the grid again to 1,978 pairs. A second audit caught that, observing
+that this file had narrated the mistake and then committed it a generation
+later. The measured figure on the shipped grid is **95 (88 under, 7 over)**.
+
+The repair is not the number. The repair is that no document states it: it is
+computed from the frozen baseline against the shipped grid, and the grid and the
+figure now fail together. A stated result a reader cannot re-derive from the
+artifacts is the defect class this pack exists to refuse, and it took two audits
+to stop restating one.
 
 **The oracle has to be isolated.** The first `pathmatch` differential reported
 114 divergences. Every one was the harness: `git check-ignore` was consulting a global `core.excludesFile`

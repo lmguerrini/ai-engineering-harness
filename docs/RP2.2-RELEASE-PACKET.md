@@ -8,12 +8,20 @@ Moving it there is a human act and was not performed.
 ## What to check first
 
 ```bash
-git -C <pack_root> checkout evolution/rp2.2
+# Verify the candidate WITHOUT checking it out in a root a project pins (D18):
+git clone --local --no-hardlinks --branch evolution/rp2.2 <pack_root> <scratch_dir>
+cd <scratch_dir>
 python3 tools/pack_pin.py . --version 2.2.0 --sha "$(git rev-parse HEAD)" \
     --digest "$(python3 -c 'import json;print(json.load(open("PACK_MANIFEST.json"))["tree_digest_sha256"])')" \
     --state IN_PROGRESS
 python3 -m pytest tools/tests/ -q
 ```
+
+**The clone is the point, not a convenience.** `<pack_root>` is the directory
+Consumer-A pins, and checking this branch out there is exactly what broke its
+pin — the finding below, and D18. A release is verified at a root nobody works
+in; a clone is how you get one without disturbing the pinned tree. Everything in
+the block resolves against `<scratch_dir>`, which is why the `cd` is there.
 
 The revision is read from the branch rather than printed here, for the reason
 `PACK_MANIFEST.json` gives about its own: **a document cannot name the commit
@@ -86,7 +94,7 @@ adapter. None is a blocker for a project adopting this release.
 
 ## Known limitations
 
-- **Held prose is 22.7% over the ~2,000-line target** (2.1.1 was 14.9% over).
+- **Held prose is 24.0% over the ~2,000-line target** (2.1.1 was 14.9% over).
   Recorded rather than shaved; one principled reduction was made.
 - **Both closure auditors were same-family.** The final-gate tier requires two
   blind auditors, "one cross-vendor **where available**"

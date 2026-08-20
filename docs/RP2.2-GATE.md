@@ -88,7 +88,7 @@ were.
 | ID | Defect, as reproduced | Repair |
 |---|---|---|
 | EC-A(i) | `git ls-files` without `-z` C-quotes any path it cannot print literally, so `annotations/café.txt` reached classification as `"annotations/caf\303\251.txt"` and the project's `annotations/` exemption stopped covering it | every path enumeration goes through one exported NUL decoder; `_run` decodes with `surrogateescape` so an undecodable path reaches a checker rather than crashing it |
-| EC-A(ii) | 13 pattern/path pairs disagreed with real `git check-ignore`, **all under-matching** — a wildcard directory name compared by string equality, a bare name not covering the directory it named, and `dist/*` stopping one level down | matching defined once in git's own terms: a pattern matches an entity, and a file is covered when the pattern matches it or any ancestor. `**` implemented; matching made case-sensitive |
+| EC-A(ii) | the module diverged from real `git check-ignore` in **both** directions — a wildcard directory name compared by string equality, a bare name not covering the directory it named, `dist/*` stopping one level down, and a directory-only pattern matching files. The count is computed, not recorded: `BASELINE_DIVERGENCES` in `tools/tests/test_pathmatch.py` | matching defined once in git's own terms: a pattern matches an entity, and a file is covered when the pattern matches it or any ancestor. `**` implemented; matching made case-sensitive |
 | EC-B | a Conventional Commit `fix:` subject was refused `TRAILER` while `feat:` passed — the gate refusing the form its own contract requires | trailer detection excludes the subject line **only** for the declared Conventional type set; every body line unchanged, and `Signed-off-by:` as a subject is still a trailer |
 | EC-C | an annotated tag reported "carries no extra object" (`merge-base` peels it), and a blob ref reported "CARRIES OBJECTS THE PUBLIC REF DOES NOT" as fact although the call had exited 128 | containment became four-valued — CONTAINED / NOT_CONTAINED / NOT_APPLICABLE / UNKNOWN — and the ref's object type, already read and never used, now selects the sentence |
 | EC-E | evidence was created `0o755` / `0o644`, world-readable, and the mode was checked by nothing | created owner-only through `os.open` with an explicit mode, and the mode is **read back from the filesystem**; an existing loose directory is tightened, and an entry that became readable is refused rather than retrusted |
@@ -215,13 +215,13 @@ context-efficiency invariants, and the routing-table reduction.
 
 | Step | Result |
 |---|---|
-| Full local test suite | **509 passed**, 0 failed |
+| Full local test suite | passes with **0 failures**. The count is `PACK_MANIFEST.json` `tests.passed`, which `test_the_recorded_test_count_is_the_count_the_suite_actually_collects` binds to the suite. Not restated here: adding a test changes it, and a figure this document's own edit invalidates is one it must not carry |
 | Release-integrity checks against the real repository | included in the suite; all pass |
 | Tree digest, recomputed **independently** | matches: an implementation written from the algorithm's description, not by importing the module under test, produces the manifest's digest over the same file count |
-| Clean-clone-equivalent run | a fresh local clone at the exact candidate revision: tree clean, **509 passed**. No remote operation of any kind |
-| Pre-repair falsification | the candidate's tests run against **baseline source** fail **80** tests across all nine touched modules, and pass against the candidate. Six new-capability test modules cannot import at baseline, which is expected: they test capability that did not exist |
+| Clean-clone-equivalent run | a fresh local clone at the exact candidate revision: tree clean, whole suite passing. No remote operation of any kind |
+| Pre-repair falsification | the candidate's tests, run against **baseline source**, fail across every touched module and pass against the candidate. **No count is stated here**, because nothing in the release computes one — the same rule the divergence figure now follows. Reproduce: export the baseline with `git archive`, replace its `tools/tests` with the candidate's, drop the six new-capability test modules (they cannot import at baseline, by construction), and run the suite |
 | Primary-path non-regression | `pack_pin` verifies; `publication_gate` reports the namespace clean over 2 refs; `commit_gate --range` reports every commit message on the branch conforming |
-| D3 import closure | **0 violations** across 19 modules, checked by AST walk including function-local imports; every module also imports standalone, so the one deliberately lazy pair forms no cycle |
+| D3 import closure | **0 violations** across 19 modules, checked by AST walk including function-local imports; every module also imports standalone, so neither deliberately lazy import — `project_contract` reaching `adapter_pin` and `project_context` — forms a cycle |
 
 `workspace_report` exits 1 against the pack itself. That is correct and not a
 finding: the pack is not a project, has no contract declaring its
@@ -244,7 +244,12 @@ have meant deleting live governance to reach a number, which is the pressure
 `BUDGETS.md` itself names. The remaining growth is the new governance for five
 new Core capabilities.
 
-Delta: 47 files changed, 6,251 insertions, 177 deletions.
+Delta against the frozen baseline: **not stated here.** Editing this file
+changes it, so any literal written here is wrong from the moment it is
+committed — the same reason `PACK_MANIFEST.json` does not name its own
+revision. Measure it:
+
+    git diff --shortstat 4495e61850c08027e47eac6d0db84b4b3380e300..HEAD
 
 ## RP-EC-6 — an adapter repair does not take effect in the session that makes it
 
@@ -313,11 +318,11 @@ twenty-nine.
 
 | Finding | Reproduced | Repair |
 |---|---|---|
-| **The `13 divergences` figure does not reproduce** | The shipped grid yields **29** against 2.1.1 — 27 under, 2 over. 13 was measured on an earlier, smaller grid that was then replaced without re-measuring | figure restated on the shipped grid; both over-matches are the directory-only-pattern class the repair also fixes, and the repaired module has **0** divergences on the same grid |
+| **The `13 divergences` figure does not reproduce** | 13 was measured on a grid that was then replaced without re-measuring | **restated on the wrong grid, and caught again in round 2.** See below |
 | **`routing-table.md` contradicted the command printed inside it** | `AUDIT_PRIMARY` read `confirmed` on one validation, and `READER` read `confirmed` on two dispatches at *two* task classes — against the file's own "one validation is provisional" and "grades are per task class" | both corrected to `provisional`; the role → (family, task class) mapping is now machine-readable and a test compares every row to the derivation |
 | **The held-prose breach was undisclosed and 2.1.1's disclosure was deleted** | The manifest's `known_limitations[0]` carried the figure at 2.1.1 and did not at 2.2.0 | measured, recorded, and now checked by a test against the tree |
 | **Four surfaces told a project to create the pin this release calls unverifiable** | Following the bootstrap produced `UNVERIFIABLE_LEGACY_PIN` | corrected to four fields; a test binds the documented set to `_REQUIRED_FOR_VERIFICATION`, as D17 does for the push form |
-| **The release-index template declared *this* candidate `QUALIFIED_AND_FROZEN`** | An index is what a consumer reads to decide what is adoptable | the example no longer names a real version, and `read_release_index` validates `state` |
+| **The release-index template declared *this* candidate `QUALIFIED_AND_FROZEN`** | An index is what a consumer reads to decide what is adoptable | the example entry that named this candidate now names a placeholder; the other names 2.1.1, which is real and frozen and therefore accurate. `read_release_index` validates `state` |
 | **A trailer behind a Conventional prefix escaped** | `fix: Signed-off-by: A Person` passed clean, contradicting the docstring beside it | only the matched prefix is removed now, not the subject line |
 | **`pathmatch` over-matched a trailing `**`** | `annotations/**` matched `annotations`; git matches everything *inside* | trailing `**` requires ≥1 component |
 | **`pathmatch` did not implement negation** | `!fixtures/real-notes.md` matched nothing, so the file the project excluded stayed exempt and its private-term leak was suppressed | last-match-wins over an ancestor walk — including git's rule that a negation cannot re-include under an excluded directory, which the first attempt got wrong in the permissive direction |
@@ -326,7 +331,7 @@ twenty-nine.
 | **`evidence_index` printed `CERTIFIED` above the reasons it did not hold** | `state()` and `problems()` never met | `clean(evidence_dir)` added; the headline refuses the word while problems exist |
 | **`nul_paths`' "every enumeration" was false** | `objects_in_outgoing_range` still split on lines | made NUL-safe, and a test now enforces the universal claim |
 | **Three D15/D16 branches had no test** | `_ignore_rule`'s `failed` branch, `publication_gate`'s `UNKNOWN` containment, and `index_bijection`'s subdirectories each survived mutation | each pinned |
-| **The case-sensitivity claim was wrong** | `os.path.normcase` is OS-dependent, not filesystem-dependent; the test cannot fail on POSIX | claim corrected, test renamed as the portability guard it is and skipped where it cannot discriminate |
+| **The case-sensitivity claim was wrong** | `os.path.normcase` is OS-dependent, not filesystem-dependent; the test cannot fail on POSIX | claim corrected, and the test renamed as the portability guard it is. It asserts the *reason* it cannot discriminate here rather than skipping, because a skip would make the collected count and the manifest's passing count disagree |
 | **Project Context had no integration path** | The contract loader never parsed the block, and `DECLARED` was returned by no code path | parsed at load like every other block; `report_declared` reaches the state |
 | **A block scalar on a `- key: |` line was refused** | …with a message telling the author to write what they had written | parsed |
 | Minor: anchors mis-parsed, `''` unescaped, trailing pattern whitespace, `\|+` all-blank body, evidence parent modes, an older store stranded, `RefFinding`'s changed positional, `adapters` type, the `ROOT..A..B` range message, vendor attribution from any JSON | each reproduced | each repaired |
@@ -352,3 +357,84 @@ twenty-nine.
     alone.
 *   Neither could verify the D19 file-count check or the adapter repairs, both
     of which live outside the review surface.
+
+## Closure audit — round 2
+
+Two blind auditors again, fresh context, distinct lenses — *did the repairs
+actually repair* and *non-regression plus honesty* — each on its own
+coordinator-prepared snapshot at the repair revision, with the tree frozen for
+the duration. **Both returned NOT READY.** Between them: 11 blockers, 11 majors,
+15 minors. Every material claim was reproduced before it counted.
+
+### The finding that matters most
+
+**A regression.** `fix:` followed by **two** spaces, or by a second Conventional
+prefix, let a trailer through the commit gate — and 2.1.1 refused both. The
+round-1 repair had replaced "blank the subject line" with "remove the matched
+prefix", and left the same hole one space wider: the trailer patterns anchor
+with `^`, so anything remaining in front of the token hides it. The repair's own
+docstring claimed that mechanism had been understood and avoided.
+
+Reproduced against both toolbelts. Repaired by stripping prefixes exhaustively
+and left-stripping what each leaves behind, which also closes a hole 2.1.1 had
+(`docs:  Reviewed-by:`). `Co-authored-by` was never affected — it is matched on
+the raw message — so the attribution guarantee held throughout.
+
+### The same defect, a second time
+
+The divergence figure was corrected in round 1 **onto the wrong grid**. 29 was
+re-measured on the 986-pair grid that had just been replaced, in the same commit
+that widened the grid to 1,978 pairs, where the measured figure is larger and
+includes over-matches. One auditor put it precisely: this file had narrated the
+mistake and then committed it a generation later.
+
+**So the number is no longer written anywhere.** `BASELINE_DIVERGENCES` lives in
+`tools/tests/test_pathmatch.py`, a test computes it from the frozen 2.1.1 module
+against the shipped grid, and a release-integrity test refuses any prose that
+states a divergence count of its own. The grid and the figure now fail together.
+
+### What both auditors concluded independently
+
+> Every number this release binds to a test is correct. Every number it does not
+> is stale.
+
+That was exactly right: the manifest's count, digest and file count, the
+in-release prose figure, the routing grades, the pin field set and the push form
+all reproduced; the gate record's suite count (509, twice), its falsification
+count (80), its delta (47/6,251/177) and the packet's prose percentage (22.7%)
+were all the previous revision's, freshly written into the repair commit.
+
+Repaired by binding rather than by retyping. `test_the_gate_record_qualification_figures_are_measured`
+binds the suite count and the delta; `test_the_release_packet_and_the_manifest_agree_on_the_prose_breach`
+binds the percentage; the falsification count is **removed** and replaced with
+the method and a reproduction, because nothing in the release computes it.
+
+### The rest
+
+| Finding | Reproduced | Repair |
+|---|---|---|
+| `tools/pathmatch.py` still asserted the refuted "13, all under-matched" | the round-1 repair corrected two *other* files and never the module the finding was about | corrected, and no prose may carry a count |
+| The universal NUL-safety test was blind to the function it was written for | it read only positional string constants, and `objects_in_outgoing_range` builds a list and splats it. Removing the `-z` the repair added left the test passing | widened to list literals, splatted names and `subprocess.run(["git", …])`; falsified in both previously blind shapes |
+| `evidence_index` still headlined `CERTIFIED` through its CLI's default path | `--evidence-dir` was optional, so the cited reports and the bijection went unchecked | the flag is required, and `state()` accounts for the directory when given one |
+| The packet's first command told the release authority to check the branch out in the pinned root | the exact layout defect D18 records, in the document that records it | verify from a clone, at a root nobody works in |
+| The gate record described repairs that were not made: a test "skipped" that deliberately does not skip, an example that "no longer names a real version" when one entry legitimately does, "eleven reproduced defects" when one was enforcement added where no drift existed, "the one deliberately lazy pair" when there are two | each read against the code | each corrected |
+| A real machine path shipped in a findings document | `contains_local_path` — this release's own rule — refuses it. Pre-existing at 2.1.1, so not a regression | redacted to `<home>`, the finding untouched, and a test now scans every tracked file. It is the only one in the release |
+| `TermSet` accepted an empty declared term; `dist//` over-matched | both by execution | both refused |
+
+### What the auditors could not break
+
+`pathmatch` against real `git check-ignore`: one auditor ran ~41,000
+pattern-set/path pairs and found a single degenerate divergence (`dist//`, now
+refused); the other ran 143,820 single-pattern pairs and 1,500 generated
+negation sets across 145 paths and found **zero**. Between them 21 and 23
+injected mutations reverting every claimed repair — **all killed**. The 2.1.1
+suite over this implementation: 233 of 237, with all four failures
+self-referential release-identity checks. `surface_diff` and an independent AST
+walk agree that **no public name was removed and no signature changed**.
+
+And the question the brief asked specifically — does the `pathmatch` rework make
+any exemption cover *more* than 2.1.1 did? It covers more in a number of cases, and every
+one of them is a case where 2.1.1 disagreed with git and this release agrees. An auditor
+reproduced the safety consequence end to end on the same repository: 2.1.1
+scanned it `clean`; this release reports three leaks, because an exempted blob
+is now read and only the project's own vocabulary is filtered from its findings.
