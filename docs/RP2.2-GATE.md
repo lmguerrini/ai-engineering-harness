@@ -376,9 +376,24 @@ with `^`, so anything remaining in front of the token hides it. The repair's own
 docstring claimed that mechanism had been understood and avoided.
 
 Reproduced against both toolbelts. Repaired by stripping prefixes exhaustively
-and left-stripping what each leaves behind, which also closes a hole 2.1.1 had
+and consuming the whitespace each one leaves, which also closes a hole 2.1.1 had
 (`docs:  Reviewed-by:`). `Co-authored-by` was never affected — it is matched on
 the raw message — so the attribution guarantee held throughout.
+
+**What kind of regression, precisely.** 2.1.1 refused these messages *because
+`fix` is in the trailer token set*, not because it detected the trailer after
+the prefix — its patterns are `^`-anchored, so it could not see one there and
+`feat:  Signed-off-by:` was clean at 2.1.1 too. The **observable guarantee**
+regressed: a message the previous release refused, this one accepted. The
+**detection capability** did not, because it never existed. Both halves are
+worth saying, and the first is the one that matters: a consumer's contract is
+what the gate does, not why.
+
+That distinction also cost two attempts at the oracle. A differential against
+2.1.1 excused the loss, because 2.1.1 had not detected it either; substituting a
+neutral type word and re-asking 2.1.1 excused it for the same reason. The
+working oracle asks neither module — it judges independently whether the subject
+tail bears a trailer, and calls a lost refusal a regression whenever it does.
 
 ### The same defect, a second time
 
