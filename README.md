@@ -13,7 +13,7 @@ every audit round while its stateless checkers survived every one
 | Version | **2.2.0** — `VERSION` is the single machine-readable authority |
 | State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — an evolution candidate, not adoptable |
 | Gate record | `docs/RP2.2-GATE.md` |
-| Identity | version **+** full 40-character revision **+** manifest tree digest. All three, or the pin does not discriminate |
+| Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
 Verify a checkout — run it, do not read it:
 
@@ -31,7 +31,8 @@ Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a
 cross-release mismatch fails as a version mismatch rather than as tampering.
 
-A project records all three fields in `PROJECT.yaml` `pack:`
+A project records all four pin fields — **root, version, revision and digest** — in
+`PROJECT.yaml` `pack:`
 (`templates/PROJECT.yaml.template`). **A frozen release never mutates during a
 project run** — verification failing mid-project means the checkout changed, and
 that is a stop, not a pin to refresh. Several projects may pin the same release
@@ -62,8 +63,13 @@ project-local; no project run evolves the pack it is pinned to.
 ## Where each authority lives
 
 - **This pack** (`~/.../runtime-pack-2/`): `skills/core/` — public-safe
-  procedure. `policy/` — private operational policy, vendor names allowed only
-  here. `templates/` — pull-on-demand, project-instantiated. `tools/` —
+  procedure, and **no vendor name appears there**. `policy/` — private
+  operational policy, where vendor names are expected. `tools/` may name a
+  vendor **only** in a module that adapts to one specific documented surface
+  (`resource_observation.py` reads one client's status-line contract, and
+  `backend_contract.py` quotes a real observation); the rules themselves stay
+  vendor-neutral, and a backend is added by writing an observation source, not
+  by editing them. `templates/` — pull-on-demand, project-instantiated. `tools/` —
   stateless checkers, import-closed. None of these hold project state.
 - **Per-project private root**: `PROJECT.yaml`, `HANDOFF.md`, `ROADMAP.md`,
   `DECISIONS.md`, and each capability's `SCOPE.md`/`PROGRESS.md`/`FINDINGS.md`
@@ -124,9 +130,12 @@ Derived from the tracked tree, not maintained by hand
     │   ├── errors.py               the refusal hierarchy; every refusal names its cause
     │   └── tests/                  the suite; `python3 -m pytest tools/tests/ -q`
     └── docs/                       what happened: gate records, findings, probes
-        ├── RP2.1.1-GATE.md         the previous release's gate
         ├── RP2.2-GATE.md           this release's gate
-        ├── RP2.1-GATE.md           prior releases, left as written
+        ├── RP2.2-ARCHITECTURE.md   the authority layers, and what is not one
+        ├── RP2.2-CAPABILITY-MAP.md the plan, and every reproduction behind it
+        ├── RP2.2-RELEASE-PACKET.md what a returning release authority reads first
+        ├── RP2.1.1-GATE.md         the previous release's gate
+        ├── …                       prior gate records, left as written
         └── acceptance/             drills and injection results
 
 ## The stop rule

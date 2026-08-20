@@ -249,3 +249,15 @@ def test_the_appended_record_carries_nothing_private(tmp_path):
     written = target.read_text()
     assert "5e551011" not in written
     assert "/Users/" not in written
+
+
+def test_a_json_object_that_is_not_this_client_is_not_attributed_to_it():
+    """`if document` attributed *any* non-empty JSON object on stdin to this
+    vendor — a claim about provenance made from nothing. Found by an
+    independent audit."""
+    from resource_observation import from_status_line as read
+
+    assert read({"something": "else"}, observed_at=NOW).backend_family == UNKNOWN
+    assert read({"version": "2.1.236"}, observed_at=NOW).backend_family == UNKNOWN
+    assert read({"model": {"id": "x"}}, observed_at=NOW).backend_family == UNKNOWN
+    assert read(FULL, observed_at=NOW).backend_family == "claude-cli"

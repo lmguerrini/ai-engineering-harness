@@ -232,11 +232,11 @@ None is tracked, so none is inside the digest.
 
 Held prose, by the `BUDGETS.md` rule:
 
-    in-release (skills/core/*.md + policy/*.md)   1,413
-    installed adapters (outside the envelope)       997
-    total                                         2,410     target ~2,000
+    in-release (skills/core/*.md + policy/*.md)   1456
+    installed adapters (outside the envelope)     1023
+    total                                         2479     target ~2,000
 
-**20.5% over, recorded rather than shaved** — 2.1.1 was 14.9% over on the same
+**24.0% over, recorded rather than shaved** — 2.1.1 was 14.9% over on the same
 rule. One principled reduction was made rather than a cosmetic one: the routing
 table's narrative moved to `docs/`, where read-once evidence belongs, and its
 grade rows became computable from the observation log. Trimming further would
@@ -276,3 +276,79 @@ sharper rather than weaker.
 Both worktrees and both refs are removed before the candidate is finalised, and
 the namespace is re-verified. Recorded in `tools/adapter_pin.py` and
 `policy/execution-boundaries.md` so the next coordinator does not rediscover it.
+
+## Installed adapters, as they stand at this candidate
+
+Recorded so the founder can pin them, and so a later reader can tell whether the
+adapters changed under a running project. **They are outside the release
+envelope and covered by no tree digest** — that is exactly why they are declared
+and verified rather than frozen (D12, D14 clause 10).
+
+| Adapter | sha256 | Change in this session |
+|---|---|---|
+| `~/.claude/agents/capability-auditor.md` | `62d1a9c1d24eb187…` | **repaired** — isolation mode removed, detached checkout replaced by verification, ref-namespace writes named and refused |
+| `~/.claude/agents/capability-implementer.md` | `c5a0a07daa65c3e7…` | unchanged; it declares no isolation, which is correct for a mutating worker and was the inverted half of the B2 finding |
+| `~/.claude/skills/capability-closure/SKILL.md` | `c2055158b8ff28a9…` | unchanged |
+| `~/.claude/skills/codex-worker/SKILL.md` | `ac750a8b516cfc7e…` | **repaired** — its reads of undocumented Codex internals now carry the four rules in full: explicitly optional, version-fragile, never normative, fallback `requested_only`/`UNKNOWN`. `§8.1` previously *required* the session rollout for identity evidence, which contradicted "optional"; an unreadable rollout now yields `UNKNOWN` rather than a failed dispatch |
+
+Both repairs take effect **at the next session** (`RP-EC-6`), so neither changed
+the behaviour of this one.
+
+## Closure audit — round 1
+
+Two blind auditors, fresh context, distinct lenses, each reading a
+coordinator-prepared snapshot outside this repository at
+`0b34f35c7bd1df4346addc6f76ff2dd7ec65087c`. **Both returned NOT READY.**
+
+Cross-vendor was not available and that is a real reduction in coverage, not a
+met requirement: `policy/auditor-strategy.md` asks for two blind auditors with
+one cross-vendor *where available*, and the measured value of the tier is that
+the two populations come back **almost disjoint**. They did here too — the
+correctness lens and the honesty lens overlapped on three findings out of
+twenty-nine.
+
+**Every material claim was reproduced by the coordinator before it counted.**
+
+### What the audits were right about
+
+| Finding | Reproduced | Repair |
+|---|---|---|
+| **The `13 divergences` figure does not reproduce** | The shipped grid yields **29** against 2.1.1 — 27 under, 2 over. 13 was measured on an earlier, smaller grid that was then replaced without re-measuring | figure restated on the shipped grid; both over-matches are the directory-only-pattern class the repair also fixes, and the repaired module has **0** divergences on the same grid |
+| **`routing-table.md` contradicted the command printed inside it** | `AUDIT_PRIMARY` read `confirmed` on one validation, and `READER` read `confirmed` on two dispatches at *two* task classes — against the file's own "one validation is provisional" and "grades are per task class" | both corrected to `provisional`; the role → (family, task class) mapping is now machine-readable and a test compares every row to the derivation |
+| **The held-prose breach was undisclosed and 2.1.1's disclosure was deleted** | The manifest's `known_limitations[0]` carried the figure at 2.1.1 and did not at 2.2.0 | measured, recorded, and now checked by a test against the tree |
+| **Four surfaces told a project to create the pin this release calls unverifiable** | Following the bootstrap produced `UNVERIFIABLE_LEGACY_PIN` | corrected to four fields; a test binds the documented set to `_REQUIRED_FOR_VERIFICATION`, as D17 does for the push form |
+| **The release-index template declared *this* candidate `QUALIFIED_AND_FROZEN`** | An index is what a consumer reads to decide what is adoptable | the example no longer names a real version, and `read_release_index` validates `state` |
+| **A trailer behind a Conventional prefix escaped** | `fix: Signed-off-by: A Person` passed clean, contradicting the docstring beside it | only the matched prefix is removed now, not the subject line |
+| **`pathmatch` over-matched a trailing `**`** | `annotations/**` matched `annotations`; git matches everything *inside* | trailing `**` requires ≥1 component |
+| **`pathmatch` did not implement negation** | `!fixtures/real-notes.md` matched nothing, so the file the project excluded stayed exempt and its private-term leak was suppressed | last-match-wins over an ancestor walk — including git's rule that a negation cannot re-include under an excluded directory, which the first attempt got wrong in the permissive direction |
+| **`backend_contract` graded every unrecognised outcome `environmental-unknown`** | A case variant of `contradicted` became "nothing was learned" | unrecognised outcomes raise |
+| **The grading rule had no test** | `validated >= 2 → >= 1` survived the whole suite | grades asserted per family and task class against the shipped log |
+| **`evidence_index` printed `CERTIFIED` above the reasons it did not hold** | `state()` and `problems()` never met | `clean(evidence_dir)` added; the headline refuses the word while problems exist |
+| **`nul_paths`' "every enumeration" was false** | `objects_in_outgoing_range` still split on lines | made NUL-safe, and a test now enforces the universal claim |
+| **Three D15/D16 branches had no test** | `_ignore_rule`'s `failed` branch, `publication_gate`'s `UNKNOWN` containment, and `index_bijection`'s subdirectories each survived mutation | each pinned |
+| **The case-sensitivity claim was wrong** | `os.path.normcase` is OS-dependent, not filesystem-dependent; the test cannot fail on POSIX | claim corrected, test renamed as the portability guard it is and skipped where it cannot discriminate |
+| **Project Context had no integration path** | The contract loader never parsed the block, and `DECLARED` was returned by no code path | parsed at load like every other block; `report_declared` reaches the state |
+| **A block scalar on a `- key: |` line was refused** | …with a message telling the author to write what they had written | parsed |
+| Minor: anchors mis-parsed, `''` unescaped, trailing pattern whitespace, `\|+` all-blank body, evidence parent modes, an older store stranded, `RefFinding`'s changed positional, `adapters` type, the `ROOT..A..B` range message, vendor attribution from any JSON | each reproduced | each repaired |
+
+### What the audits were wrong about, and why
+
+*   **"The gate record covers 2 of 12 capabilities" and "the CHANGELOG entry has
+    no content."** Both true at the audited revision and both already false: the
+    C3–C11 sections and the CHANGELOG body landed in the commit after it. An
+    artifact of auditing a moving branch, and the coordinator's fault rather
+    than the auditors' — they audited exactly the revision they were given.
+*   One auditor reported the `13` figure as **honest**, having checked the 13
+    recorded pairs (all of which do under-match); the other ran the whole
+    shipped grid and found 29. Both measurements are correct. The second is the
+    one that matters, because it is the grid the release ships.
+
+### Reductions in coverage this round did not have
+
+*   Neither auditor could verify the status-line payload schema (one was denied
+    `strings` on the client binary). The coordinator extracted it from the
+    installed client's own documentation block; the artifact is not in the
+    release, so the provenance claim remains unfalsifiable from the repository
+    alone.
+*   Neither could verify the D19 file-count check or the adapter repairs, both
+    of which live outside the review surface.

@@ -241,6 +241,15 @@ def read_release_index(path: str | Path) -> tuple[ReleaseEntry, ...]:
         ]
         if missing:
             raise ValueError(f"releases[{position}] is missing {', '.join(missing)}")
+        if raw["state"] not in pack_pin.KNOWN_STATES:
+            # The docstring promises every entry is refused unless complete, and
+            # an entry naming a state no release can declare is not complete.
+            # Caught downstream by `migration_gate`, but an index a consumer
+            # reads to decide what is adoptable must not carry it at all.
+            raise ValueError(
+                f"releases[{position}] declares state {raw['state']!r}; a release states one of "
+                f"{', '.join(pack_pin.KNOWN_STATES)}"
+            )
         if raw["version"] in seen_versions:
             raise ValueError(f"releases[{position}] repeats version {raw['version']!r}")
         seen_versions.add(raw["version"])

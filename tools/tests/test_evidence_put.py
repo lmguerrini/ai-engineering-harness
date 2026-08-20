@@ -184,3 +184,46 @@ def test_the_content_guarantee_is_unchanged(tmp_path):
     (evidence / reference).write_text("tampered")
     with pytest.raises(IntegrityError):
         evidence_put.put(evidence, source)
+
+
+def test_every_directory_created_for_the_store_is_owner_only(tmp_path):
+    """`mkdir(parents=True, mode=…)` applies the mode to the leaf only, so a
+    store two levels down left its new parents at `0o755` — contents protected,
+    directory names traversable. Found by an independent audit."""
+    source = tmp_path / "finding.txt"
+    source.write_text("private")
+    evidence_put.put(tmp_path / "deep" / "nested" / "evidence", source)
+
+    assert _mode(tmp_path / "deep") == 0o700
+    assert _mode(tmp_path / "deep" / "nested") == 0o700
+    assert _mode(tmp_path / "deep" / "nested" / "evidence") == 0o700
+
+
+def test_an_existing_directory_is_not_re_moded_by_this_module(tmp_path):
+    """Only what it creates. An evidence directory inside a project must not
+    make the project directory owner-only."""
+    project = tmp_path / "project"
+    project.mkdir(mode=0o755)
+    os.chmod(project, 0o755)
+    source = tmp_path / "finding.txt"
+    source.write_text("private")
+
+    evidence_put.put(project / "evidence", source)
+    assert _mode(project) == 0o755
+    assert _mode(project / "evidence") == 0o700
+
+
+def test_an_older_store_is_tightened_even_when_its_entry_is_refused(tmp_path):
+    """The entry check ran first, so a store made by an earlier version was
+    refused on its first put and left with its loose directory mode intact —
+    the exact stranding the tightening exists to avoid."""
+    source = tmp_path / "finding.txt"
+    source.write_text("private")
+    evidence = tmp_path / "evidence"
+    reference = evidence_put.put(evidence, source)
+
+    os.chmod(evidence, 0o755)
+    os.chmod(evidence / reference, 0o644)
+    with pytest.raises(IntegrityError):
+        evidence_put.put(evidence, source)
+    assert _mode(evidence) == 0o700, "the directory was left loose by an early refusal"

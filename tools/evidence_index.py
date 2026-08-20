@@ -261,8 +261,12 @@ def index_bijection(
     usually gets checked is the one that catches the less interesting problem.
     """
     directory = Path(evidence_dir)
+    # `rglob`, not `iterdir`: a file in a subdirectory of the evidence directory
+    # was neither indexed nor reported unaccounted, which is exactly the "nobody
+    # is accounting for it" case this exists to surface. Found by an independent
+    # audit. Names are kept relative so a nested entry is reportable.
     on_disk = {
-        path.name for path in directory.iterdir()
+        str(path.relative_to(directory)) for path in directory.rglob("*")
         if path.is_file() and not path.name.startswith(".")
     } if directory.is_dir() else set()
     indexed = {entry.reference for entry in entries}
@@ -364,9 +368,25 @@ class Certification:
 
         return problems
 
+    def clean(self, evidence_dir: str | Path | None = None) -> bool:
+        """Certified **and** nothing outstanding.
+
+        `state()` reads results, findings and waivers; `problems()` additionally
+        verifies cited reports and the index/directory bijection. They were two
+        separate answers with no accessor joining them, so a caller gating on
+        `state() == CERTIFIED` could certify a candidate whose entire cited
+        evidence was missing from disk. Found by an independent audit. This is
+        the accessor to gate on.
+        """
+        return self.state() == CERTIFIED and not self.problems(evidence_dir)
+
     def render(self, evidence_dir: str | Path | None = None) -> str:
         problems = self.problems(evidence_dir)
         state = self.state()
+        if state == CERTIFIED and problems:
+            # The headline must never be the reassuring word while the reasons
+            # it does not hold are printed underneath it.
+            state = f"{OPEN} — checkers pass, and the evidence does not"
         lines = [
             f"candidate {self.candidate.head_sha[:12]}… "
             f"(base {self.candidate.base_sha[:12]}…, tree {self.candidate.tree_digest[:12]}…): "
@@ -469,9 +489,7 @@ def _cli(argv: list[str]) -> int:
     print(certification.render(args.evidence_dir))
     # A non-zero exit is the raw fact. There is deliberately no flag that turns
     # it into a zero.
-    return 0 if certification.state() == CERTIFIED and not certification.problems(
-        args.evidence_dir
-    ) else 1
+    return 0 if certification.clean(args.evidence_dir) else 1
 
 
 if __name__ == "__main__":

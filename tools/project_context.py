@@ -64,6 +64,7 @@ __all__ = [
     "ContextReport",
     "tree_digest",
     "declaration_from",
+    "report_declared",
     "verify",
     "assert_unchanged",
 ]
@@ -250,6 +251,27 @@ def declaration_from(value: object) -> ContextDeclaration | None:
     )
 
 
+def report_declared(declaration: ContextDeclaration | None) -> ContextReport:
+    """The state a contract is in once read and before anything is verified.
+
+    `DECLARED` existed as a constant and as a line in the template and was
+    returned by no code path — found by an independent audit, and a state
+    nothing can reach is a state nobody can act on. This is what reaches it:
+    the contract loader produces a declaration, and until the verifier has run
+    against the filesystem the honest answer is "declared, not established".
+
+    It is deliberately **not clean**. A capability that read the contract and
+    never verified has not verified, and must not read as though it had.
+    """
+    if declaration is None:
+        return ContextReport(state=NOT_PRESENT)
+    return ContextReport(
+        state=DECLARED,
+        declaration=declaration,
+        notes=["declared and not yet verified in this session; run the verifier at capability open"],
+    )
+
+
 def verify(declaration: ContextDeclaration | None) -> ContextReport:
     """Locate the declared context and check its identity. Only its identity."""
     if declaration is None:
@@ -355,7 +377,7 @@ def _cli(argv: list[str]) -> int:
 
     try:
         contract = project_contract.ProjectContract.load(args.project)
-        declaration = declaration_from((contract.raw or {}).get("project_context"))
+        declaration = contract.project_context
     except (ContextError, project_contract.ContractError) as exc:
         print(f"the Project Context declaration could not be read: {exc}", file=sys.stderr)
         return 2

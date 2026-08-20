@@ -82,11 +82,13 @@ _TRAILER_TOKENS = re.compile(
 #: contract asks for a Conventional Commit subject in the first place. A gate
 #: that refuses the form its own contract requires is not strict, it is wrong.
 #:
-#: The exemption is deliberately narrow. It applies to **the subject line only**
-#: — line 1 is not a trailer position in git, which parses trailers out of the
-#: final paragraph — and only to the declared type set. `Signed-off-by:` as a
-#: subject is still a trailer, and every body line is unchanged: a real trailer
-#: does not become legal by moving up one line.
+#: The exemption is deliberately narrow, and narrower than it first was. Only
+#: the matched **prefix** is removed from the subject before trailer detection
+#: runs — not the subject line. Blanking the line let
+#: `fix: Signed-off-by: A Person` pass clean, which an independent audit caught:
+#: the exemption exists so `fix:` stops looking like a trailer token, not so the
+#: rest of the subject stops being read. A real trailer does not become legal by
+#: moving up one line, or by having a type word put in front of it.
 _CONVENTIONAL_SUBJECT = re.compile(
     r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
     r"(?:\([^()\n]+\))?!?:\s",
@@ -96,14 +98,22 @@ _CONVENTIONAL_SUBJECT = re.compile(
 def _trailer_surface(message: str) -> str:
     """The part of a message trailer detection applies to.
 
-    The subject is excluded **only** when it is a Conventional Commit subject,
-    and it is replaced rather than removed so that every other rule still sees
-    a well-formed message and reported line positions do not shift.
+    Only the Conventional Commit **prefix** is removed, not the subject line.
+    Blanking the whole line was wrong and was caught by an independent audit:
+    `fix: Signed-off-by: A Person` passed clean, because nothing was left of
+    the subject to detect. The exemption exists so `fix:` stops looking like a
+    trailer token — it was never meant to make the rest of the subject
+    unreadable.
+
+    The prefix is *removed* rather than blanked. Padding it with spaces was the
+    first attempt and did not work: the trailer patterns anchor with `^`, so
+    leading whitespace hid the very token the removal exists to expose.
     """
     subject, separator, rest = message.partition("\n")
-    if separator and _CONVENTIONAL_SUBJECT.match(subject):
-        return "\n" + rest
-    return message
+    match = _CONVENTIONAL_SUBJECT.match(subject) if separator else None
+    if match:
+        subject = subject[match.end():]
+    return subject + separator + rest
 
 # Path detection, in three shapes. A repository-relative path such as
 # ``src/loader.py`` is deliberately *not* matched: naming a file you changed is
@@ -579,7 +589,11 @@ def _cli(argv: list[str]) -> int:
             return 2
         failures = validate_range(repository, args.range, args.baseline, term_set)
         if not failures:
-            print(f"VALID every commit message in {args.baseline or 'ROOT'}..{args.range} conforms")
+            # `--range` already accepts an `A..B` form, so prefixing a baseline
+            # unconditionally printed `ROOT..A..B` — a range that does not
+            # exist. Report the range that was actually walked.
+            walked = args.range if ".." in args.range else f"{args.baseline or 'ROOT'}..{args.range}"
+            print(f"VALID every commit message in {walked} conforms")
             return 0
         for sha, violations in failures:
             for violation in violations:

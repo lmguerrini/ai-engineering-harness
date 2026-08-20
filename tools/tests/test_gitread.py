@@ -234,3 +234,25 @@ def test_no_tool_constructs_a_refusal_with_a_colliding_cause_keyword():
         if pattern.search(line)
     ]
     assert not offenders, f"these constructions raise TypeError instead of a refusal: {offenders}"
+
+
+def test_object_listing_paths_are_nul_safe(tmp_path):
+    """The last enumeration in the toolbelt still splitting on lines, which made
+    `nul_paths`' claim to cover *every* path enumeration untrue. Found by an
+    independent audit. A path with a newline split one object into three."""
+    root = _repo(tmp_path, "objects")
+    awkward = root / "weird\nname"
+    awkward.mkdir()
+    (awkward / "notes.md").write_text("x")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "awkward"], cwd=root, check=True)
+
+    paths = {path for _sha, path in gitread.objects_in_outgoing_range(str(root), "HEAD", None)}
+    assert "weird\nname/notes.md" in paths
+    assert all("\n" not in path or path.startswith("weird\nname") for path in paths)
+
+
+def test_every_object_listing_entry_carries_a_full_sha(tmp_path):
+    root = _repo(tmp_path, "shas")
+    for sha, _path in gitread.objects_in_outgoing_range(str(root), "HEAD", None):
+        assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha), sha

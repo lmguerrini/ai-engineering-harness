@@ -296,3 +296,24 @@ def test_a_subject_that_merely_starts_with_a_type_word_is_not_exempted():
 
 def test_co_authored_by_is_still_refused_as_a_subject():
     assert "COAUTHOR" in _codes("Co-authored-by: An Assistant" + BODY)
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "fix: Signed-off-by: A Person",
+        "feat: Change-Id: I0123456789",
+        "test: Fixes: #12",
+        "chore: Reviewed-by: A Person",
+        "refactor(core): Closes: #3",
+    ],
+)
+def test_a_trailer_behind_a_conventional_prefix_is_still_refused(subject):
+    """The first repair blanked the whole subject line, so `fix: Signed-off-by:
+    A Person` passed clean — the docstring claimed otherwise and an independent
+    audit caught it. Only the matched prefix is removed now."""
+    assert "TRAILER" in _codes(subject + BODY)
+
+
+def test_co_authored_by_behind_a_conventional_prefix_is_still_refused():
+    assert "COAUTHOR" in _codes("fix: Co-authored-by: An Assistant" + BODY)

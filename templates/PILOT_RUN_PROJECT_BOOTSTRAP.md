@@ -16,7 +16,7 @@ Confirm on disk, do not assume:
 
 - [ ] `runtime-pack-2/VERSION` is the pack version this project will pin, and
       `PACK_MANIFEST.json` declares `state: QUALIFIED_AND_FROZEN`.
-- [ ] The pin **verifies**, all three fields at once — not read, run:
+- [ ] The pin **verifies**, all four fields at once — not read, run:
 
       ```bash
       python3 <pack_root>/tools/pack_pin.py <pack_root> \
@@ -40,7 +40,10 @@ Confirm on disk, do not assume:
       already run by the time anyone reads the report. A required adapter that
       does not match is a stop.
 
-Record all three pin fields in `PROJECT.yaml` `pack:`. Another project may be
+Record all four pin fields in `PROJECT.yaml` `pack:` — `root_path` included.
+A pin without it is `UNVERIFIABLE_LEGACY_PIN` (`tools/pack_migration.py`): the
+release it names cannot be identified, and it is not repaired by writing today's
+values into it. Another project may be
 pinned to this same release right now — that is supported and requires nothing
 from either of them, because the release is read-only and no project state
 lives inside it.

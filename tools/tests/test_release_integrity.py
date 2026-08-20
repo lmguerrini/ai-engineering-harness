@@ -338,3 +338,213 @@ def test_the_readme_tree_names_every_tool_module(readme):
     assert modules, "no tool modules found to compare"
     missing = [path for path in modules if path not in claimed]
     assert not missing, f"the README tree does not name these tool modules: {missing}"
+
+
+# --- the derived view must agree with the file that presents it ---------------
+
+
+def test_the_routing_table_grades_are_the_derived_ones():
+    """`policy/routing-table.md` calls itself a derived view and restated grades
+    that nothing compared. Two of them were contradicted by the command printed
+    twelve lines below them — found by an independent audit. This is the
+    comparison, so "checkable rather than promised" is true.
+    """
+    import re
+
+    import backend_contract
+
+    graded = backend_contract.grades_from_observations(ROOT / "policy" / "observations.jsonl")
+    table = (ROOT / "policy" / "routing-table.md").read_text(encoding="utf-8")
+
+    checked = 0
+    for line in table.splitlines():
+        if not line.startswith("| ") or "|" not in line[2:]:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        role = cells[0]
+        if role not in backend_contract.ROLE_OBSERVATION_CLASSES:
+            continue
+        stated = re.findall(r"`([a-z-]+)`", cells[-1])
+        assert stated, f"{role} states no grade"
+        expected = backend_contract.role_grade(role, graded)
+        assert stated[0] == expected, (
+            f"{role} states {stated[0]!r}; the observation log derives {expected!r}"
+        )
+        checked += 1
+    assert checked >= 5, f"only {checked} role rows compared; the parser is not seeing the table"
+
+
+# --- the pin field set, bound the way D17 bound the push form ------------------
+
+
+def test_the_documented_pin_field_set_is_the_one_the_verifier_requires():
+    """D18 made `root_path` required, and three instructional surfaces still said
+    "all three fields" — so following the bootstrap produced the exact state the
+    release calls `UNVERIFIABLE_LEGACY_PIN`. Found by an independent audit. D17
+    built this comparison for the push form and not for the field set, which is
+    the very thing D18 changed.
+    """
+    import pack_migration
+
+    required = pack_migration._REQUIRED_FOR_VERIFICATION
+    spelled = {3: "three", 4: "four", 5: "five", 6: "six"}[len(required)]
+
+    offenders = []
+    for name in ("README.md", "templates/PILOT_RUN_PROJECT_BOOTSTRAP.md",
+                 "templates/PROJECT.yaml.template"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), 1):
+            lowered = line.lower()
+            if "pin" not in lowered and "identified by" not in lowered:
+                continue
+            for word, count in (("three", 3), ("four", 4), ("five", 5)):
+                if f"all {word}" in lowered and count != len(required):
+                    offenders.append(f"{name}:{number}: says 'all {word}'")
+    assert not offenders, (
+        f"the pin requires {len(required)} fields ({', '.join(required)}), so these are wrong: "
+        + "; ".join(offenders)
+    )
+    assert spelled  # the expected word, so a future change to the set is visible here
+
+
+def test_root_path_is_among_the_fields_the_verifier_requires():
+    import pack_migration
+
+    assert "root_path" in pack_migration._REQUIRED_FOR_VERIFICATION
+
+
+# --- the held-prose budget, measured rather than asserted ----------------------
+
+
+def _held_prose_lines():
+    """The in-release half of the `BUDGETS.md` count, measured."""
+    total = 0
+    for pattern in ("skills/core/*.md", "policy/*.md"):
+        for path in sorted(ROOT.glob(pattern)):
+            total += len(path.read_text(encoding="utf-8").splitlines())
+    return total
+
+
+def test_the_held_prose_figure_the_gate_record_states_is_the_measured_one():
+    """`BUDGETS.md` requires this measured at every pack-evolution session, and
+    the disclosure is the number. An independent audit found the release over
+    budget with no measurement recorded and the previous release's disclosure
+    deleted from the manifest — which is the one move the prior gate record says
+    must not happen, because re-scoping the rule to fit the number is worse than
+    the number.
+    """
+    import re
+
+    measured = _held_prose_lines()
+    gate = (ROOT / "docs" / "RP2.2-GATE.md").read_text(encoding="utf-8")
+    stated = re.search(r"in-release \(skills/core/\*\.md \+ policy/\*\.md\)\s+([\d,]+)", gate)
+    assert stated, "the gate record states no in-release held-prose figure"
+    assert int(stated.group(1).replace(",", "")) == measured, (
+        f"the gate record states {stated.group(1)}; the tree measures {measured}"
+    )
+
+
+def test_the_manifest_discloses_the_held_prose_breach_while_there_is_one(manifest):
+    measured = _held_prose_lines()
+    limitations = " ".join(manifest.get("known_limitations") or [])
+    if measured + 900 > 2000:  # the adapters alone are ~1,000 lines
+        assert "held prose" in limitations, (
+            "the release is over the held-prose target and the manifest does not say so"
+        )
+
+
+# --- D3 import closure, enforced rather than performed once by hand ------------
+
+
+def test_every_tool_imports_only_the_standard_library_and_its_siblings():
+    """D3, checked mechanically for the first time.
+
+    `docs/RP2.1-GATE.md` records a one-off AST check performed by a person at
+    2.1. Nine modules and three deliberately lazy imports landed after that with
+    no permanent oracle — named as negative space by an independent audit. The
+    walk covers function-local imports, which is where the lazy ones are.
+    """
+    import ast
+    import sys
+
+    tools = ROOT / "tools"
+    siblings = {path.stem for path in tools.glob("*.py")}
+    standard = set(sys.stdlib_module_names)
+
+    violations = []
+    for path in sorted(tools.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    violations.append(f"{path.name}:{node.lineno}: relative import")
+                    continue
+                names = [(node.module or "").split(".")[0]]
+            else:
+                continue
+            for name in names:
+                if name and name not in standard and name not in siblings:
+                    violations.append(f"{path.name}:{node.lineno}: imports {name!r}")
+    assert not violations, "D3 (import-closed toolbelt) is violated: " + "; ".join(violations)
+
+
+def test_no_tool_reaches_a_module_by_name_at_runtime():
+    """`__import__` and `importlib` would route around the check above."""
+    import ast
+
+    offenders = []
+    for path in sorted((ROOT / "tools").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id == "__import__":
+                    offenders.append(f"{path.name}:{node.lineno}")
+            if isinstance(node, ast.Attribute) and node.attr == "import_module":
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert not offenders, "dynamic imports route around D3: " + "; ".join(offenders)
+
+
+def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
+    """`nul_paths` claims to cover **every** path enumeration in the toolbelt.
+    It did not — `objects_in_outgoing_range` still split on lines, found by an
+    independent audit. A universal claim needs a universal check.
+    """
+    import ast
+
+    #: Git commands that emit paths and support `-z`.
+    enumerating = {"ls-files", "ls-tree", "diff-tree", "diff", "rev-list", "for-each-ref",
+                   "check-ignore", "status"}
+
+    offenders = []
+    for path in sorted((ROOT / "tools").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            literals = [
+                argument.value for argument in node.args
+                if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+            ]
+            if not literals:
+                continue
+            command = literals[0]
+            if command not in enumerating:
+                continue
+            if "--no-object-names" in literals:
+                # `rev-list --objects --no-object-names` emits SHAs and no paths,
+                # so there is nothing for `-z` to separate. A true negative, and
+                # excluding it is more honest than adding a flag the command
+                # does not need.
+                continue
+            emits_paths = command != "for-each-ref" and any(
+                token in literals for token in ("--name-only", "--objects", "--cached",
+                                                "--others", "--stage")
+            ) or command in ("ls-files", "ls-tree")
+            if emits_paths and "-z" not in literals:
+                offenders.append(f"{path.name}:{node.lineno}: `git {command}` without -z")
+    assert not offenders, (
+        "these enumerate paths without NUL separation, so a path git C-quotes reaches a "
+        "checker as an escaped literal: " + "; ".join(offenders)
+    )

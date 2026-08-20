@@ -193,3 +193,92 @@ def test_the_derived_view_is_a_pure_function_of_the_log():
     """It is regenerated wholesale, never patched — so two derivations of an
     unchanged log must be identical."""
     assert grades_from_observations(OBSERVATIONS) == grades_from_observations(OBSERVATIONS)
+
+
+# --- the derivation itself, asserted rather than shape-checked -----------------
+#
+# An independent audit mutated `validated >= 2` to `>= 1` and `qualified_for` to
+# accept `provisional`, and the whole suite passed: nineteen tests asserted the
+# grades were *in the enum* and none asserted what any grade actually was. The
+# rule `routing-table.md` calls "checkable rather than promised" was neither.
+
+
+def test_the_derived_grade_for_each_family_and_class_is_what_the_rule_says():
+    graded = grades_from_observations(OBSERVATIONS)
+
+    def grade(family, task_class):
+        return graded[(family, task_class)]
+
+    # One validation is provisional. Two or more is confirmed.
+    assert grade("claude-cli", "blind_closure_audit_primary").grade == "provisional"
+    assert grade("claude-cli", "blind_closure_audit_primary").validated == 1
+    assert grade("codex-cli", "blind_closure_audit_cross_vendor").grade == "confirmed"
+    assert grade("codex-cli", "blind_closure_audit_cross_vendor").validated == 2
+    # Adverse evidence, not averaged away.
+    assert grade("local-mlx", "analytical_code_review").grade == "contradicted"
+    # A runtime that never started teaches nothing about capability.
+    assert grade("codex-cli", "confinement dispatch qualification (worker configuration ladder, 8 configs)").grade == "environmental-unknown"
+
+
+def test_a_provisional_grade_does_not_qualify_a_dispatch():
+    """`qualified_for` is the routing gate. Nothing asserted it was false for
+    the grade that means "some evidence, not enough to rely on"."""
+    graded = {("f", "t"): TaskClassGrade("t", "provisional", observations=1, validated=1)}
+    record = record_for("f", graded)
+    assert record.grade_for("t").grade == "provisional"
+    assert record.qualified_for("t") is False
+
+
+@pytest.mark.parametrize("grade", ["unprobed", "provisional", "contradicted", "environmental-unknown"])
+def test_only_confirmed_qualifies(grade):
+    observations = 0 if grade == "unprobed" else 1
+    graded = {("f", "t"): TaskClassGrade("t", grade, observations=observations,
+                                         validated=1 if grade == "provisional" else 0)}
+    assert record_for("f", graded).qualified_for("t") is False
+
+
+def test_a_confirmed_grade_qualifies():
+    graded = {("f", "t"): TaskClassGrade("t", "confirmed", observations=2, validated=2)}
+    assert record_for("f", graded).qualified_for("t") is True
+
+
+# --- an unrecognised outcome is not silently reclassified ----------------------
+
+
+def test_an_unrecognised_outcome_is_a_parse_finding_not_environmental(tmp_path):
+    """The `else` branch counted every unrecognised string as "the runtime never
+    started, nothing was learned" — so a case variant of `contradicted` became
+    adverse evidence quietly overwritten, in the module whose thesis is that
+    such inferences are impossible to write. Found by an independent audit."""
+    import json
+
+    log = tmp_path / "observations.jsonl"
+    log.write_text(json.dumps({
+        "configuration": "family=x", "task_class": "t", "outcome": "CONTRADICTED",
+    }) + "\n")
+    with pytest.raises(BackendContractError) as caught:
+        grades_from_observations(log)
+    assert "does not recognise" in str(caught.value)
+
+
+@pytest.mark.parametrize("outcome", ["capability_failure", "validatd", "", None, "unknown"])
+def test_every_unrecognised_outcome_raises(tmp_path, outcome):
+    import json
+
+    log = tmp_path / "observations.jsonl"
+    log.write_text(json.dumps({"configuration": "family=x", "task_class": "t", "outcome": outcome}) + "\n")
+    with pytest.raises(BackendContractError):
+        grades_from_observations(log)
+
+
+@pytest.mark.parametrize("outcome, bucket", [
+    ("validated", "validated"), ("contradicted", "contradicted"),
+    ("environmental_failure", "environmental"),
+])
+def test_every_recognised_outcome_is_counted(tmp_path, outcome, bucket):
+    import json
+
+    log = tmp_path / "observations.jsonl"
+    log.write_text(json.dumps({"configuration": "family=x", "task_class": "t", "outcome": outcome}) + "\n")
+    grade = grades_from_observations(log)[("x", "t")]
+    assert getattr(grade, bucket) == 1

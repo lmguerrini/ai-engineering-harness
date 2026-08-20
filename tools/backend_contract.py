@@ -50,6 +50,8 @@ __all__ = [
     "BackendRecord",
     "parse_configuration",
     "grades_from_observations",
+    "ROLE_OBSERVATION_CLASSES",
+    "role_grade",
 ]
 
 #: Not a sentinel to be replaced later. A field that is `UNKNOWN` has been
@@ -281,8 +283,20 @@ def grades_from_observations(source: str | Path) -> dict[tuple[str, str], TaskCl
             bucket["validated"] += 1
         elif outcome == "contradicted":
             bucket["contradicted"] += 1
-        else:
+        elif outcome == "environmental_failure":
             bucket["environmental"] += 1
+        else:
+            # An `else` here counted every unrecognised string as
+            # `environmental-unknown` — "the runtime never started, nothing was
+            # learned" — so a case variant of `contradicted` silently became
+            # adverse evidence that had been overwritten. In the module whose
+            # thesis is that these inferences are impossible to write. Found by
+            # an independent audit.
+            raise BackendContractError(
+                f"observation records outcome {outcome!r}, which this derivation does not "
+                f"recognise. Known: validated, contradicted, environmental_failure. An "
+                "unrecognised outcome must not be counted as any of them"
+            )
 
     graded: dict[tuple[str, str], TaskClassGrade] = {}
     for (family, task_class), bucket in counts.items():
@@ -304,6 +318,60 @@ def grades_from_observations(source: str | Path) -> dict[tuple[str, str], TaskCl
             environmental=bucket["environmental"],
         )
     return graded
+
+
+#: Which observed (family, task class) pairs stand behind each **role** in
+#: `policy/routing-table.md`. Written here, machine-readable, because the table
+#: restated grades that nothing compared — and an independent audit found two of
+#: them contradicted by the very command the file printed beside them.
+#:
+#: A role that spans several task classes takes the **weakest** of them. "Grades
+#: are per task class, never per worker" is the rule the table itself states, and
+#: a role cannot be stronger than its weakest evidenced class without averaging
+#: adverse or absent evidence away.
+ROLE_OBSERVATION_CLASSES: dict[str, tuple[tuple[str, str], ...]] = {
+    "AUDIT_PRIMARY": (("claude-cli", "blind_closure_audit_primary"),),
+    "AUDIT_CROSS": (("codex-cli", "blind_closure_audit_cross_vendor"),),
+    "IMPL_SUBSTANTIVE": (
+        ("claude-cli", "tool_extraction"),
+        ("claude-cli", "documentation_and_policy_authoring"),
+    ),
+    "IMPL_ROUTINE": (("claude-cli", "bounded_repair"),),
+    "IMPL_BOUNDED": (
+        ("codex-cli", "confinement dispatch qualification (worker configuration ladder, 8 configs)"),
+    ),
+    "EXTRACT_LOCAL": (
+        ("local-mlx", "read_only_extraction_and_classification"),
+        ("local-mlx", "absence_reporting_under_leading_prompt"),
+    ),
+    "REVIEW_LOCAL": (("local-mlx", "analytical_code_review"),),
+    "READER": (
+        ("codex-cli", "reader_evidence_sweep"),
+        ("codex-cli", "reader_consistency_sweep_against_supplied_ground_truth"),
+    ),
+}
+
+#: Weakest first. Adverse evidence outranks absence, and absence outranks any
+#: positive grade — so a role spanning several classes can never read stronger
+#: than its worst one.
+_GRADE_PRECEDENCE = (
+    "contradicted",
+    "unprobed",
+    "environmental-unknown",
+    "provisional",
+    "confirmed",
+)
+
+
+def role_grade(role: str, graded: dict[tuple[str, str], TaskClassGrade]) -> str:
+    """The grade a role carries, derived from its task classes. Weakest wins."""
+    classes = ROLE_OBSERVATION_CLASSES.get(role)
+    if not classes:
+        raise BackendContractError(f"no observed task classes are recorded for role {role!r}")
+    grades = [
+        graded.get(key, TaskClassGrade(key[1])).grade for key in classes
+    ]
+    return min(grades, key=_GRADE_PRECEDENCE.index)
 
 
 def record_for(

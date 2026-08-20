@@ -353,3 +353,54 @@ def test_a_waiver_in_a_record_must_carry_the_candidate_it_binds_to():
 
     with pytest.raises(EvidenceError):
         certification_from(_record(waivers=[{"finding_id": "F1", "reason": "r", "authority": "a"}]))
+
+
+# --- CERTIFIED must not be printed over the reasons it does not hold ----------
+
+
+def test_clean_is_false_when_the_cited_evidence_is_missing(evidence):
+    """`state()` reads results and findings; `problems()` additionally checks
+    the cited reports and the bijection. Nothing joined them, so a caller
+    gating on `state() == CERTIFIED` could certify a candidate whose entire
+    cited evidence was absent. Found by an independent audit."""
+    directory, reference = evidence
+    certification = Certification(
+        candidate=CANDIDATE,
+        results=(CheckerResult("suite", "c", 0, COMPLETE, reference),),
+        entries=(EvidenceEntry(reference, "the report"),),
+    )
+    assert certification.clean(directory)
+
+    (directory / reference).unlink()
+    assert certification.state() == CERTIFIED       # results alone still pass
+    assert not certification.clean(directory)       # and the evidence does not
+
+
+def test_the_headline_is_not_certified_while_problems_are_printed_beneath_it(evidence):
+    directory, reference = evidence
+    (directory / reference).unlink()
+    rendered = Certification(
+        candidate=CANDIDATE,
+        results=(CheckerResult("suite", "c", 0, COMPLETE, reference),),
+    ).render(directory)
+    assert not rendered.splitlines()[0].endswith(CERTIFIED)
+    assert "the evidence does not" in rendered
+
+
+def test_clean_agrees_with_state_when_there_is_no_evidence_directory():
+    certification = Certification(candidate=CANDIDATE, results=(_passing(),))
+    assert certification.clean()
+    assert certification.state() == CERTIFIED
+
+
+def test_a_file_in_a_subdirectory_is_still_accounted_for(evidence):
+    """`iterdir` did not reach it, so it was neither indexed nor reported —
+    exactly the "nobody is accounting for it" case this exists to surface."""
+    directory, reference = evidence
+    nested = directory / "nested"
+    nested.mkdir()
+    (nested / "stray.txt").write_text("unaccounted\n")
+
+    dangling, unaccounted = index_bijection(directory, [EvidenceEntry(reference, "the report")])
+    assert dangling == []
+    assert unaccounted == ["nested/stray.txt"]

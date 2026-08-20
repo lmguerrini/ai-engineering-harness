@@ -274,3 +274,62 @@ def test_a_well_formed_block_parses(context):
         "proposals_pending": 0,
     })
     assert verify(declaration).state == CURRENTLY_VERIFIED
+
+
+def test_the_contract_loader_parses_the_declaration(tmp_path):
+    """`ProjectContract.load` parsed `adapters:` and not `project_context:`, so
+    a declaration had to be handed to the verifier by hand and nothing failed
+    at load. Found by an independent audit."""
+    import project_contract
+
+    root = tmp_path / ".project_context"
+    root.mkdir()
+    (root / "D1.md").write_text("the product means this\n")
+    digest, _count = tree_digest(root)
+
+    contract_path = tmp_path / "PROJECT.yaml"
+    contract_path.write_text(
+        "project:\n  name: x\n"
+        "project_context:\n"
+        f"  context_id: C1\n  reference_path: {root}\n  revision: 1\n  digest: {digest}\n"
+    )
+    contract = project_contract.ProjectContract.load(contract_path)
+    assert contract.project_context is not None
+    assert contract.project_context.context_id == "C1"
+    assert verify(contract.project_context).state == CURRENTLY_VERIFIED
+
+
+def test_a_malformed_declaration_fails_at_contract_load(tmp_path):
+    import project_contract
+
+    contract_path = tmp_path / "PROJECT.yaml"
+    contract_path.write_text(
+        "project:\n  name: x\nproject_context:\n  context_id: C1\n  revision: 1\n"
+    )
+    with pytest.raises(project_contract.ContractError):
+        project_contract.ProjectContract.load(contract_path)
+
+
+def test_a_contract_with_no_context_block_reports_none(tmp_path):
+    import project_contract
+
+    contract_path = tmp_path / "PROJECT.yaml"
+    contract_path.write_text("project:\n  name: x\n")
+    assert project_contract.ProjectContract.load(contract_path).project_context is None
+
+
+def test_declared_is_reachable_and_is_not_clean(context):
+    """It existed as a constant, as a line in the template, and in no code path.
+    A state nothing can reach is a state nobody can act on."""
+    from project_context import DECLARED, report_declared
+
+    report = report_declared(_declare(context))
+    assert report.state == DECLARED
+    assert not report.clean
+    assert "not yet verified" in report.render()
+
+
+def test_report_declared_on_no_declaration_is_not_present():
+    from project_context import report_declared
+
+    assert report_declared(None).state == NOT_PRESENT

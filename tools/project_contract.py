@@ -97,10 +97,19 @@ def _scalar(raw: str) -> object:
     text = raw.strip()
     if not text:
         return None
+    if text[0] in "&*":
+        # An anchor or an alias. The module promises to raise rather than guess,
+        # and it was guessing: `a: &x 1` parsed to the string `'&x 1'`, which is
+        # a value nobody wrote. Found by an independent audit.
+        raise ContractError(
+            f"YAML anchors and aliases are not in the supported subset: {raw!r}"
+        )
     if text[0] in "\"'":
         if len(text) < 2 or text[-1] != text[0]:
             raise ContractError(f"unterminated quoted scalar {raw!r}")
-        return text[1:-1]
+        inner = text[1:-1]
+        # In a single-quoted YAML scalar, `''` is one literal quote.
+        return inner.replace("''", "'") if text[0] == "'" else inner
     lowered = text.lower()
     if lowered in ("true", "false"):
         return lowered == "true"
@@ -248,7 +257,13 @@ def _significant_lines(document: str) -> list[_Line]:
         text = stripped.strip()
         index += 1
 
-        match = _KEY.match(text)
+        # A sequence item may open a block scalar on its own line: `- goal: |`.
+        # `_KEY` never matches a `- ` line, so the header was invisible and the
+        # refusal told the author to write the very form they had written.
+        # Found by an independent audit.
+        item = _ITEM.match(text)
+        key_text, item_offset = (item.group("value") or "", indent + 2) if item else (text, indent)
+        match = _KEY.match(key_text) if key_text else None
         value = match.group("value").strip() if match and match.group("value") else ""
 
         if value and _BLOCK_HEADER_WITH_INDENT.match(value):
@@ -259,11 +274,19 @@ def _significant_lines(document: str) -> list[_Line]:
 
         header = _BLOCK_HEADER.match(value) if value else None
         if header:
-            body, index = _block_body(raw_lines, index, indent, number)
-            lines.append(
-                _Line(indent, f"{match.group('key')}:", number,
-                      block=_resolve_block(header.group("style"), header.group("chomp"), body))
-            )
+            # The block belongs to the key, so it ends at the key's own indent —
+            # which inside a sequence item is the column after the dash, not the
+            # dash's own. Passing the dash's indent swallowed the item's next key.
+            body, index = _block_body(raw_lines, index, item_offset if item else indent, number)
+            resolved = _resolve_block(header.group("style"), header.group("chomp"), body)
+            if item:
+                # Re-emit as the sequence item it is: the dash line, then the
+                # key at the item's own indent, so the sequence parser sees the
+                # shape it already understands.
+                lines.append(_Line(indent, "-", number))
+                lines.append(_Line(item_offset, f"{match.group('key')}:", number, block=resolved))
+            else:
+                lines.append(_Line(indent, f"{match.group('key')}:", number, block=resolved))
             continue
 
         if value.startswith("[") and not value.endswith("]"):
@@ -303,9 +326,12 @@ def _block_body(
         body.append(raw[block_indent:])
         index += 1
     if block_indent is None:
-        # `key: |` with nothing under it. An empty block is an empty string,
-        # which is a value — not the absence of one.
-        return [], index
+        # `key: |` with nothing under it but blank lines. An empty block is an
+        # empty string, which is a value — not the absence of one. The blanks
+        # are still returned, because `+` chomping counts them and discarding
+        # them made `|+` with an all-blank body yield `''` where it should
+        # yield the newlines. Found by an independent audit.
+        return body, index
     return body, index
 
 
@@ -491,7 +517,12 @@ class ProjectContract:
     #: `adapters:` block at all, which is a different statement from an empty
     #: one: "nobody said" against "someone said none". A caller that needs the
     #: declaration can refuse the first and accept the second.
-    adapters: tuple = ()
+    adapters: tuple | None = ()
+    #: The declared Project Context, parsed. ``None`` means the contract has no
+    #: `project_context:` block, which is a clean state — the project simply has
+    #: no semantic authority to consult. Parsed here so a malformed declaration
+    #: fails when every other block does, rather than at first use.
+    project_context: object | None = None
 
     @classmethod
     def load(cls, path: str | Path, *, pack_root: str | Path | None = None) -> "ProjectContract":
@@ -570,6 +601,7 @@ class ProjectContract:
                 publication.get("publishable_refs"), field="publication.publishable_refs"
             ),
             adapters=_load_adapters(raw),
+            project_context=_load_project_context(raw),
         )
 
     def repository(self, override: str | None = None) -> str:
@@ -601,6 +633,23 @@ def _load_adapters(raw: dict) -> tuple | None:
         raise ContractError(f"{exc.cause}" + "".join(
             f"; {key}: {value}" for key, value in sorted(exc.detail.items())
         )) from exc
+
+
+def _load_project_context(raw: dict) -> object | None:
+    """The declared Project Context, parsed at load like every other block.
+
+    Lazily imported for the same reason `adapter_pin` is: `project_context`
+    reads a contract from its own CLI, and a module-level import in both
+    directions is a cycle.
+    """
+    if "project_context" not in raw:
+        return None
+    import project_context
+
+    try:
+        return project_context.declaration_from(raw.get("project_context"))
+    except project_context.ContextError as exc:
+        raise ContractError(str(exc)) from exc
 
 
 def _optional_str(value: object) -> str | None:

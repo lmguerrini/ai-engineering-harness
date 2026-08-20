@@ -363,9 +363,11 @@ def scan_outgoing(
             if size > MAX_SCANNED_BLOB_BYTES:
                 report.skipped.append(SkippedObject(sha, path, f"{size} bytes exceeds the scan limit"))
                 continue
-            exempted = _matching_exemptions(path, exempt_patterns) if path else []
+            engaged = _engaged_exemptions(path, exempt_patterns) if path else []
+            exempted = bool(engaged) and _is_exempt(path, exempt_patterns)
+            if engaged:
+                exemptions_used.update(engaged)
             if exempted:
-                exemptions_used.update(exempted)
                 report.exempted.append(path)
             data = gitread.object_bytes(repository, sha)
             text = _decoded(data)
@@ -418,9 +420,11 @@ def scan_staged(
 
     for path, sha in gitread.staged_entries(repository):
         report.leaks.extend(scanner.scan_name(path, location="path", subject=path))
-        exempted = _matching_exemptions(path, exempt_patterns)
+        engaged = _engaged_exemptions(path, exempt_patterns)
+        exempted = bool(engaged) and _is_exempt(path, exempt_patterns)
+        if engaged:
+            exemptions_used.update(engaged)
         if exempted:
-            exemptions_used.update(exempted)
             report.exempted.append(path)
         if gitread.object_size(repository, sha) > MAX_SCANNED_BLOB_BYTES:
             report.skipped.append(SkippedObject(sha, path, "exceeds the scan limit"))
@@ -436,7 +440,7 @@ def scan_staged(
     return report
 
 
-def _scoped(leaks: list[Leak], exempted: Sequence[str]) -> list[Leak]:
+def _scoped(leaks: list[Leak], exempted: bool) -> list[Leak]:
     """Apply a declared content exemption to one blob's findings.
 
     An exemption removes the project's **own vocabulary** and leaves every
@@ -449,16 +453,26 @@ def _scoped(leaks: list[Leak], exempted: Sequence[str]) -> list[Leak]:
     return [leak for leak in leaks if leak.kind not in EXEMPTIBLE_LEAK_KINDS]
 
 
-def _matching_exemptions(path: str, patterns: Sequence[str]) -> list[str]:
-    """Which declared exemptions cover this path, under gitignore semantics.
+def _engaged_exemptions(path: str, patterns: Sequence[str]) -> list[str]:
+    """Which declared exemptions **engage** this path, under gitignore semantics.
 
     One semantics for every path declaration in the pack (`pathmatch`). This
     used to be `fnmatch`, which meant a directory exemption written the way the
     contract template documents — `annotations/` — matched nothing at all, and
     said so nowhere.
+
+    Engagement, not coverage. A negation (`!fixtures/real-notes.md`) engages the
+    path it names and *removes* it from the exemption, so it belongs in the
+    used-declarations bookkeeping while contributing nothing to coverage. Ask
+    :func:`_is_exempt` for the verdict.
     """
     exact = [pattern for pattern in patterns if path == pattern]
     return exact + [p for p in pathmatch.matching_patterns(path, patterns) if p not in exact]
+
+
+def _is_exempt(path: str, patterns: Sequence[str]) -> bool:
+    """Whether the declared exemptions, read in order, cover this path."""
+    return pathmatch.matches_any(path, patterns)
 
 
 def _looks_like_sha(ref: str) -> bool:

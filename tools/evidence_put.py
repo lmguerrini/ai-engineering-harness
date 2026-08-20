@@ -69,6 +69,31 @@ def _verify_mode(path: Path, expected: int, *, what: str) -> None:
         )
 
 
+def _make_owner_only(directory: Path) -> None:
+    """Create ``directory`` and every ancestor it needs, all owner-only.
+
+    `mkdir(parents=True, mode=…)` applies the mode to the **leaf only**, so an
+    evidence directory two levels down left its new parent at `0o755` — the
+    contents were protected and the directory names were not. Each missing
+    ancestor is therefore created explicitly. Ancestors that already exist are
+    left exactly as they are: this module owns what it creates and nothing else.
+    """
+    missing = []
+    probe = directory
+    while not probe.exists():
+        missing.append(probe)
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    for path in reversed(missing):
+        path.mkdir(mode=DIRECTORY_MODE)
+        # `mkdir` applies the umask to the mode it is given, so this is not
+        # redundant with the line above it.
+        os.chmod(path, DIRECTORY_MODE)
+    if not missing:
+        os.chmod(directory, DIRECTORY_MODE)
+
+
 def put(evidence_dir: str | Path, source: str | Path) -> str:
     """Copy ``source`` into ``evidence_dir`` and return its content-addressed reference."""
     source_path = Path(source)
@@ -82,6 +107,17 @@ def put(evidence_dir: str | Path, source: str | Path) -> str:
     directory = Path(evidence_dir)
     destination = directory / reference
 
+    # The directory is created and tightened FIRST, before anything about an
+    # existing entry is checked. Doing it the other way round meant a store made
+    # by an older version was refused on its first entry and left with its loose
+    # directory mode intact — the exact stranding the tightening exists to
+    # avoid. Found by an independent audit.
+    try:
+        _make_owner_only(directory)
+    except OSError as exc:
+        raise IntegrityError("evidence directory cannot be created", path=str(directory), error=str(exc)) from exc
+    _verify_mode(directory, DIRECTORY_MODE, what="the evidence directory")
+
     if destination.exists():
         if destination.is_symlink() or not destination.is_file():
             raise IntegrityError("evidence path is not an immutable regular file", path=str(destination))
@@ -93,16 +129,6 @@ def put(evidence_dir: str | Path, source: str | Path) -> str:
                 reference=reference, path=str(destination),
             )
         return reference
-
-    try:
-        directory.mkdir(parents=True, exist_ok=True, mode=DIRECTORY_MODE)
-        # `mkdir` applies the mode only when it creates, and applies the umask
-        # to it even then. Both are why this second call exists rather than
-        # being redundant with the first.
-        os.chmod(directory, DIRECTORY_MODE)
-    except OSError as exc:
-        raise IntegrityError("evidence directory cannot be created", path=str(directory), error=str(exc)) from exc
-    _verify_mode(directory, DIRECTORY_MODE, what="the evidence directory")
 
     temporary = directory / f".{reference}.tmp-{os.getpid()}"
     try:

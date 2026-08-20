@@ -278,7 +278,14 @@ def from_status_line(payload: str | bytes | dict, *, observed_at: float) -> Reso
     observation = ResourceObservation(
         source=SOURCE_STATUS_LINE,
         observed_at=observed_at,
-        backend_family="claude-cli" if document else UNKNOWN,
+        # Attributed only when the payload carries something only this client
+        # emits. `if document` attributed *any* non-empty JSON object on stdin
+        # to this vendor, which is a claim about provenance made from nothing.
+        backend_family=(
+            "claude-cli"
+            if isinstance(document.get("version"), str) and isinstance(model, dict) and model
+            else UNKNOWN
+        ),
         client_version=_text(document.get("version")),
         # The status line reports the model the session is *running*, which is
         # the observation the routing table needs and the one a dispatch

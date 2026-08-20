@@ -326,3 +326,31 @@ def test_unaccounted_candidates_block_a_migration(releases):
                             candidates_accounted=False)
     assert not report.clean
     assert any("must be answered, not skipped" in finding for finding in report.findings)
+
+
+def test_an_index_entry_declaring_an_unknown_state_is_refused(tmp_path, releases):
+    """An index is what a consumer reads to decide what is adoptable; an entry
+    naming a state no release can declare is not a complete entry."""
+    current, _ = releases
+    index = tmp_path / "RELEASE_INDEX.json"
+    index.write_text(json.dumps({"releases": [
+        {"version": "2.1.1", "root_path": current.root_path, "sha": current.sha,
+         "digest": current.digest, "state": "PROBABLY_FINE"},
+    ]}))
+    with pytest.raises(ValueError) as caught:
+        read_release_index(index)
+    assert "a release states one of" in str(caught.value)
+
+
+def test_an_in_progress_entry_is_readable_and_still_not_adoptable(tmp_path, releases):
+    """`IN_PROGRESS` is a real state, so the index may carry it — and the gate
+    must still refuse to adopt it."""
+    current, _ = releases
+    candidate = _build_release(tmp_path / "rp-2.3.0", "2.3.0", state="IN_PROGRESS")
+    index = tmp_path / "RELEASE_INDEX.json"
+    index.write_text(json.dumps({"releases": [
+        {"version": candidate.version, "root_path": candidate.root_path, "sha": candidate.sha,
+         "digest": candidate.digest, "state": candidate.state},
+    ]}))
+    entry = read_release_index(index)[0]
+    assert not migration_gate(_pin(current), entry, at_capability_boundary=True).clean

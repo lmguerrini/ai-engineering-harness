@@ -389,16 +389,29 @@ def objects_in_outgoing_range(
     everything, and there is no earlier state to diff against. Git prints a
     path only for blobs and trees, so the second element is empty for commits.
     """
-    arguments = ["rev-list", "--objects", ref]
+    arguments = ["rev-list", "--objects", "-z", ref]
     if baseline is not None:
         arguments += ["--not", baseline]
-    output = _run(repository, *arguments, timeout=timeout)
+    output = _run(repository, *arguments, timeout=timeout, text=False)
+    assert isinstance(output, bytes)
+    # Under `-z`, git emits `<sha>\0` for an object with no path and
+    # `<sha>\0path=<path>\0` for one with a path. Line-splitting this was the
+    # last enumeration in the toolbelt still doing so, which made `nul_paths`'
+    # claim to cover *every* path enumeration untrue — found by an independent
+    # audit. A path containing a newline split one object into three records.
     found: list[tuple[str, str]] = []
-    for line in str(output).splitlines():
-        if not line:
+    pending: str | None = None
+    for record in nul_paths(output):
+        if record.startswith("path="):
+            if pending is not None:
+                found.append((pending, record[len("path="):]))
+                pending = None
             continue
-        sha, _, path = line.partition(" ")
-        found.append((sha, path))
+        if pending is not None:
+            found.append((pending, ""))
+        pending = record
+    if pending is not None:
+        found.append((pending, ""))
     return found
 
 

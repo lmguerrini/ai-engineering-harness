@@ -14,7 +14,8 @@ project:
   autonomous_integration_merges:  # true | false — PROJECT.yaml is the sole authority for this
 
 pack:
-  # The pinned release, identified by all three of version + revision + digest.
+  # The pinned release, identified by all four of root + version + revision +
+  # digest. The root says WHICH DIRECTORY; the other three say WHAT is in it.
   # The version alone is a label; two checkouts can carry it and differ. Record
   # every field from the pack's own PACK_MANIFEST.json and VERSION, then verify
   # them — a pin nobody checks is a sentence, not a pin:

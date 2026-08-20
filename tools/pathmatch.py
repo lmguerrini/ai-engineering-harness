@@ -100,10 +100,16 @@ def _match_segments(parts: tuple[str, ...], segments: list[str]) -> bool:
         return not parts
     head, rest = segments[0], segments[1:]
     if head == "**":
-        # Zero components, then one, then two … The empty case first so that a
-        # trailing `**` matches the directory it is anchored to as well as
-        # everything under it.
-        for taken in range(len(parts) + 1):
+        # Zero components, then one, then two … except at the end of a pattern:
+        # git's rule is that a trailing `/**` matches everything **inside** the
+        # thing it is anchored to, not the anchor itself. The first
+        # implementation let it match zero components everywhere, so
+        # `annotations/**` matched `annotations` — an over-match, which widens
+        # an exemption. Found by an independent differential against git, not
+        # by the one shipped here, whose pattern list had no trailing `**`
+        # whose anchor was also in its path list.
+        start = 1 if not rest else 0
+        for taken in range(start, len(parts) + 1):
             if _match_segments(parts[taken:], rest):
                 return True
         return False
@@ -125,45 +131,110 @@ def _matches_entity(parts: tuple[str, ...], segments: list[str], anchored: bool)
     return _match_segments(parts, ["**", *segments])
 
 
-def _matches_one(path: str, pattern: str) -> bool:
-    parts = PurePosixPath(path).parts
-    if not parts:
-        return False
+def _names_entity(parts: tuple[str, ...], pattern: str, *, is_directory: bool) -> bool:
+    """Whether ``pattern`` names this exact entity — no ancestor walking.
 
+    ``is_directory`` decides whether a directory-only pattern (trailing `/`)
+    applies. The caller knows which entity it is asking about, and a matcher
+    that guesses is a matcher that lets `dist/` match a *file* called `dist`.
+    """
+    # Git strips trailing whitespace from a pattern unless it is backslash-
+    # escaped, so `"*.txt "` is `*.txt`. Without this it matched nothing, which
+    # is the silent-dead-declaration failure this module exists to prevent.
+    pattern = _strip_trailing_space(pattern)
     anchored = pattern.startswith("/")
-    directory = pattern.endswith("/")
+    directory_only = pattern.endswith("/")
     core = pattern.strip("/")
-    if not core:
+    if not core or (directory_only and not is_directory):
         return False
     segments = core.split("/")
     # A separator inside the pattern anchors it to the root. This is git's rule,
     # not a simplification of it: `a/b/` is a path from the root, while `b/` is
     # a name at any depth.
-    anchored = anchored or len(segments) > 1
+    return _matches_entity(parts, segments, anchored or len(segments) > 1)
 
-    # The entity itself, unless the pattern can only name a directory. Callers
-    # ask about files, so a directory-only pattern never matches the path whole.
-    if not directory and _matches_entity(parts, segments, anchored):
+
+def _verdict(parts: tuple[str, ...], patterns: Sequence[str], *, is_directory: bool) -> bool:
+    """Last match wins, over one entity."""
+    covered = False
+    for pattern in patterns:
+        negated, core = _split_negation(pattern)
+        if _names_entity(parts, core, is_directory=is_directory):
+            covered = not negated
+    return covered
+
+
+def _matches_one(path: str, pattern: str) -> bool:
+    """Whether one pattern engages this path, at it or at any ancestor.
+
+    Used for *engagement* reporting. Coverage is :func:`matches_any`, which has
+    to walk the ancestors in order because negation depends on that order.
+    """
+    parts = PurePosixPath(path).parts
+    if not parts:
+        return False
+    _negated, core = _split_negation(pattern)
+    if _names_entity(parts, core, is_directory=False):
         return True
+    return any(
+        _names_entity(parts[:end], core, is_directory=True) for end in range(1, len(parts))
+    )
 
-    # Every ancestor directory. This is the half that was missing: in gitignore
-    # a pattern matching a directory covers everything beneath it, so a file is
-    # covered when any of its parents is.
-    for end in range(1, len(parts)):
-        if _matches_entity(parts[:end], segments, anchored):
-            return True
-    return False
+
+def _strip_trailing_space(pattern: str) -> str:
+    """Trailing whitespace removed, unless the last space is escaped."""
+    stripped = pattern.rstrip()
+    if len(stripped) < len(pattern) and stripped.endswith("\\"):
+        return stripped[:-1] + " "
+    return stripped
+
+
+def _split_negation(pattern: str) -> tuple[bool, str]:
+    """``(negated, core)``. A leading `\\!` is an escaped literal `!`."""
+    if pattern.startswith("!"):
+        return True, pattern[1:]
+    if pattern.startswith("\\!"):
+        return False, pattern[1:]
+    return False, pattern
 
 
 def matches_any(path: str, patterns: Sequence[str]) -> bool:
-    """Whether a repository-relative path matches any declared pattern."""
-    return any(_matches_one(path, pattern) for pattern in patterns)
+    """Whether the declared patterns, read in order, cover this path.
+
+    **Last match wins**, which is git's rule and the reason this is a loop
+    rather than an `any()`. A leading `!` negates, so a project can write
+
+        content_exempt: ["fixtures/*", "!fixtures/real-notes.md"]
+
+    and mean it. Before RP2.2 the `!` was read as part of a filename, so the
+    negation matched nothing and the file it named stayed exempt — the project
+    had written down the one exclusion it cared about and been silently
+    overruled. Found by an independent audit, reproduced end to end: a declared
+    private term in that file was suppressed and the scan reported `clean`.
+    """
+    parts = PurePosixPath(path).parts
+    if not parts:
+        return False
+
+    # Ancestors first, outermost in. Git's rule: **a negation cannot re-include
+    # a path whose parent directory is excluded.** Evaluating the leaf alone got
+    # `dist/` + `!dist/sub/a.txt` wrong in the permissive direction — the file
+    # read as re-included when git keeps it excluded — which was found by a
+    # differential over negation sets and is why this is a walk rather than one
+    # last-match-wins pass.
+    for depth in range(1, len(parts)):
+        if _verdict(parts[:depth], patterns, is_directory=True):
+            return True
+    return _verdict(parts, patterns, is_directory=False)
 
 
 def matching_patterns(path: str, patterns: Sequence[str]) -> list[str]:
-    """Which declared patterns this path matches.
+    """Which declared patterns **engage** this path, in declaration order.
 
-    Callers use this to report *which* declaration covered a path, and — by
-    difference over every path — which declarations covered nothing at all.
+    Engagement, not coverage: a negation that fires is listed, because it did
+    something — it is not a dead declaration, and reporting it as one would
+    send somebody to look for a rule that is working. Ask :func:`matches_any`
+    whether the path is actually covered; the two answer different questions
+    and a caller needs both.
     """
     return [pattern for pattern in patterns if _matches_one(path, pattern)]

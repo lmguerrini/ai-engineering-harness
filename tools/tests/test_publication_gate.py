@@ -501,3 +501,36 @@ def test_the_backward_compatible_field_is_true_only_for_contained(repo):
     report = inspect_namespace(repo, public_ref="refs/heads/main", publishable=("refs/heads/main",))
     assert _finding(report, "refs/heads/contained-elsewhere").contained_in_public is True
     assert _finding(report, "refs/private/blob").contained_in_public is False
+
+
+def test_an_unanswerable_containment_question_renders_as_unknown(repo, monkeypatch):
+    """`NOT_APPLICABLE` was pinned and `UNKNOWN` was not — an independent audit
+    mutated the branch to `CONTAINED` and the suite passed, which means the
+    report would have printed "carries no extra object" for a question git could
+    not answer."""
+    import gitread
+
+    _git(repo, "branch", "some-branch")
+
+    def refuse(*args, **kwargs):
+        raise gitread.GitRefusal("git could not answer")
+
+    monkeypatch.setattr(gitread, "is_ancestor", refuse)
+    report = inspect_namespace(repo, public_ref="refs/heads/main", publishable=("refs/heads/main",))
+
+    finding = _finding(report, "refs/heads/some-branch")
+    assert finding.containment == publication_gate.UNKNOWN
+    assert "CONTAINMENT UNKNOWN" in finding.sentence()
+    assert "carries no extra object" not in finding.sentence()
+    assert report.could_not_check
+    assert not report.clean
+
+
+def test_a_boolean_in_the_containment_field_is_refused():
+    """RP2.2 changed the 4th positional from `bool` to one of four strings. A
+    caller written against the older signature would have stored `True` and
+    silently reported the UNKNOWN sentence."""
+    with pytest.raises(ValueError):
+        publication_gate.RefFinding("refs/heads/x", "reason", "identity", True)
+    with pytest.raises(ValueError):
+        publication_gate.RefFinding("refs/heads/x", "reason", "identity", "probably")

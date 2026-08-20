@@ -55,7 +55,7 @@ is evidence about the oracle.
 |---|---|---|
 | B2 | reviewer isolation contradicts the reviewer contract | a reviewer worktree lands `refs/heads/worktree-agent-*` in the audited repository; `publication_gate.py` exits 1 on it |
 | EC-A(i) | path enumeration is not NUL-safe | a tracked `café.txt` reaches classification as `"annotations/caf\303\251.txt"`, and the declared `annotations/` exemption then does not cover it |
-| EC-A(ii) | wildcard and directory semantics | 13 divergences against `git check-ignore`, all under-matching |
+| EC-A(ii) | wildcard and directory semantics | **29** divergences against `git check-ignore` on the grid the release ships — 27 under-matching, 2 over-matching. An earlier, smaller grid gave 13, and that figure was recorded beside a grid it was not measured on |
 | EC-B | Conventional Commit subject read as a trailer | `fix: …` is refused `TRAILER`; `feat: …` passes |
 | EC-C | publication reasoning ignores ref object type | an annotated tag reports "carries no extra object"; a blob ref reports "CARRIES OBJECTS THE PUBLIC REF DOES NOT" as fact when the question was never answered |
 | EC-E | evidence is created world-readable | directory `0o755`, file `0o644`, mode verified by nothing |
@@ -66,10 +66,19 @@ is evidence about the oracle.
 is the root cause beneath it, so `EC-C` is repaired at that layer rather than at
 its symptom.
 
-## Oracle note
+## Oracle notes
 
-The first `pathmatch` differential reported 114 divergences. Every one was the
-harness: `git check-ignore` was consulting a global `core.excludesFile`
+**The grid a number is measured on is part of the number.** EC-A(ii) was first
+measured at 13 divergences on a 273-pair grid. The grid was then widened for the
+shipped test module and the figure was not re-measured, so the release asserted
+"13, all under-matching" beside a grid that yields 29, two of them
+over-matching. An independent audit reproduced it and called it a blocker,
+correctly: a stated result a reader cannot re-derive from the artifacts is the
+defect class this pack exists to refuse, and it appeared in the module whose own
+thesis is that a hand-written table is how the first implementation passed.
+
+**The oracle has to be isolated.** The first `pathmatch` differential reported
+114 divergences. Every one was the harness: `git check-ignore` was consulting a global `core.excludesFile`
 containing `dist/`, `build/`, `node_modules/` and `*.log`, so the oracle
 answered for patterns it had never been given. Isolating the oracle left 13.
 Recorded because the discarded 114 are the reason the remaining 13 are worth

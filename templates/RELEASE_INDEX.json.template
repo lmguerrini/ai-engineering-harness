@@ -21,6 +21,12 @@
     "else, and a new version becomes a release by being placed at a new root and",
     "added here.",
     "",
+    "NEVER NAME A VERSION THAT IS NOT RELEASED. An example entry once carried the",
+    "then-current candidate's own version beside state QUALIFIED_AND_FROZEN, while",
+    "its manifest said IN_PROGRESS and no project may adopt it. An index is what a",
+    "consumer reads to decide what is adoptable, so an example in it is an example",
+    "of something adoptable.",
+    "",
     "`security_advisory` is disclosed loudly and AUTHORISES NOTHING. Urgency is a",
     "reason for a person to decide sooner, never a reason to skip the capability",
     "boundary or the human (policy/hitl-matrix.md)."
@@ -34,8 +40,8 @@
       "state": "QUALIFIED_AND_FROZEN"
     },
     {
-      "version": "2.2.0",
-      "root_path": "/absolute/path/to/releases/runtime-pack-2-2.2.0",
+      "version": "<a released version>",
+      "root_path": "/absolute/path/to/releases/runtime-pack-2-<version>",
       "sha": "the full 40-character revision",
       "digest": "the PACK_MANIFEST.json tree_digest_sha256",
       "state": "QUALIFIED_AND_FROZEN",

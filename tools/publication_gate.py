@@ -166,6 +166,19 @@ class RefFinding:
         """
         return self.containment == CONTAINED
 
+    def __post_init__(self) -> None:
+        # The 4th positional changed type in RP2.2 (`bool` -> one of four
+        # strings). A caller written against the 2.1.1 signature would have
+        # stored `True` here and silently reported the UNKNOWN sentence, since
+        # `contained_in_public` compares against a constant. Refuse instead.
+        if self.containment not in _CONTAINMENT_SENTENCE:
+            raise ValueError(
+                f"containment {self.containment!r} is not one of "
+                f"{', '.join(sorted(_CONTAINMENT_SENTENCE))}; RP2.2 replaced the boolean "
+                "with a four-state value, and a bool passed here is a caller written "
+                "against the older signature"
+            )
+
     def sentence(self) -> str:
         if self.objecttype == "tag" and self.containment in (CONTAINED, NOT_CONTAINED):
             return _TAG_SENTENCE

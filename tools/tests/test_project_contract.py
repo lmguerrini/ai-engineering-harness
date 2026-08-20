@@ -240,3 +240,41 @@ def test_a_plain_scalar_continued_across_lines_is_refused_with_the_remedy():
 def test_a_genuine_indentation_typo_is_still_refused():
     with pytest.raises(ContractError):
         parse_yaml_subset("a:\n  n: 1\n     oops: 2\n")
+
+
+def test_a_block_scalar_opened_on_a_sequence_item_line_parses():
+    """`- goal: |` — the block header on the dash line. `_KEY` never matches a
+    `- ` line, so the header was invisible and the refusal told the author to
+    write the very form they had written. Found by an independent audit."""
+    parsed = parse_yaml_subset(
+        "capabilities:\n  - goal: |\n      do the thing\n      carefully\n    id: C1\n"
+    )
+    assert parsed == {"capabilities": [{"goal": "do the thing\ncarefully\n", "id": "C1"}]}
+
+
+def test_a_block_on_a_sequence_item_line_does_not_swallow_the_item_s_other_keys():
+    parsed = parse_yaml_subset("c:\n  - note: |\n      a\n    id: 1\n    k: v\n")
+    assert parsed == {"c": [{"note": "a\n", "id": 1, "k": "v"}]}
+
+
+def test_consecutive_sequence_items_may_each_open_a_block():
+    parsed = parse_yaml_subset("c:\n  - goal: |\n      one\n  - goal: |\n      two\n")
+    assert parsed == {"c": [{"goal": "one\n"}, {"goal": "two\n"}]}
+
+
+def test_a_keep_chomped_block_with_an_all_blank_body_keeps_its_newlines():
+    assert parse_yaml_subset("a:\n  n: |+\n\n  m: 1\n") == {"a": {"n": "\n", "m": 1}}
+
+
+@pytest.mark.parametrize("document", ["a: &anchor 1\n", "a: 1\nb: *anchor\n"])
+def test_anchors_and_aliases_are_refused_rather_than_guessed(document):
+    """`a: &x 1` parsed to the string `'&x 1'` — a value nobody wrote, in a
+    module that promises to raise rather than guess."""
+    with pytest.raises(ContractError) as caught:
+        parse_yaml_subset(document)
+    assert "anchors and aliases" in str(caught.value)
+
+
+def test_a_doubled_quote_inside_a_single_quoted_scalar_is_one_quote():
+    assert parse_yaml_subset("t: 'it''s'\n") == {"t": "it's"}
+    assert parse_yaml_subset('t: "it""s"\n') == {"t": 'it""s'}

@@ -80,3 +80,37 @@ def test_report_never_deletes_or_mutates_the_workspace(repo):
     workspace_report.classify_workspace(repo)
     assert (repo / "mystery.tmp").exists()
     assert (repo / "mystery.tmp").read_text() == "still here after reporting\n"
+
+
+# --- D15: an undeclared exit status is not the documented negative -------------
+#
+# `_ignore_rule` was the third call site D15 names, and the only one no test
+# pinned — an independent audit mutated the `failed` branch away and the whole
+# suite still passed. Exit 1 means "not ignored"; anything else means git ran
+# and could not answer, and returning the negative's sentence for it states, as
+# a fact, that no ignore rule covers the path.
+
+
+def test_an_unanswerable_ignore_question_is_unknown_not_no_rule(tmp_path):
+    import subprocess
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
+
+    # A path that escapes the repository: git exits 128, not 1.
+    answer = workspace_report._ignore_rule(str(root), "../escapes")
+    assert answer.startswith("unknown")
+    assert "no ignore rule" not in answer
+
+
+def test_an_ordinary_not_ignored_path_still_says_so(tmp_path):
+    import subprocess
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
+    subprocess.run(["git", "config", "core.excludesFile", "/dev/null"], cwd=root, check=True)
+    (root / ".git" / "info" / "exclude").write_text("")
+
+    assert "no ignore rule" in workspace_report._ignore_rule(str(root), "ordinary.txt")
