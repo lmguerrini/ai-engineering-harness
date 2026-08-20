@@ -69,7 +69,12 @@ _UUID = re.compile(
 # positive.
 # The colon does not have to be followed by a space: Git parses
 # ``Signed-off-by:someone`` as a trailer just as readily as the spaced form.
-_TRAILER_HYPHENATED = re.compile(r"(?m)^(?:-\s+)?[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+:")
+#: Unicode-aware. `[A-Za-z]` let `Ünicode-Trailer:` through once the
+#: Conventional prefix in front of it was removed — a message 2.1.1 refused
+#: and this release accepted, which is the regression class two audits had
+#: already found twice. Hyphenated tokens are trailer syntax by construction,
+#: and that construction does not stop at ASCII.
+_TRAILER_HYPHENATED = re.compile(r"(?m)^(?:-\s+)?[^\W\d_][^\W_]*(?:-[^\W_]+)+:")
 _TRAILER_TOKENS = re.compile(
     r"(?mi)^(?:-\s+)?(?:signed|reviewed|acked|tested|reported|suggested|helped"
     r"|cc|refs|ref|closes|close|fixes|fix|resolves|resolve|change-id|bug|ticket"

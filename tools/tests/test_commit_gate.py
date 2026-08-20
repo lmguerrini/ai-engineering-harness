@@ -426,15 +426,27 @@ def _tail_bears_a_trailer(tail: str) -> bool:
         if stripped == remainder:
             break
         remainder = stripped
-        if re.match(r"^(?:[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+|signed|reviewed|acked|tested"
-                    r"|reported|suggested|helped|cc|refs?|closes?|fixe?s?|resolves?|change-id"
-                    r"|bug|ticket|issue|see-also|link)\s*:", remainder, re.IGNORECASE):
+        if _looks_like_a_trailer(remainder):
             return True
+    return _looks_like_a_trailer(tail)
+
+
+def _looks_like_a_trailer(text: str) -> bool:
+    """One line, judged for trailer shape. **Unicode-aware on purpose.**
+
+    An ASCII-only version of this was written first and quietly excused a
+    regression: `Ünicode-Trailer:` is trailer-*shaped*, so a lost refusal on it
+    is a lost refusal, and an oracle that cannot see the shape cannot judge the
+    loss. The implementation had the same ASCII assumption, which is exactly why
+    an oracle that shares it is no oracle.
+    """
+    import re
+
     return bool(
-        re.match(r"^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+:", tail)
+        re.match(r"^[^\W\d_][^\W_]*(?:-[^\W_]+)+\s*:", text)
         or re.match(r"^(?:signed|reviewed|acked|tested|reported|suggested|helped|cc|refs?"
                     r"|closes?|fixe?s?|resolves?|change-id|bug|ticket|issue|see-also|link)\s*:",
-                    tail, re.IGNORECASE)
+                    text, re.IGNORECASE)
     )
 
 
@@ -465,7 +477,14 @@ def test_nothing_the_qualified_baseline_refused_is_accepted_except_the_one_inten
              # falsification run proved it could not — the same shape of gap as
              # the pathmatch grid that could not see a trailing `**`.
              "docs: Signed-off-by: A Person", "chore: Reviewed-by: X",
-             "test: Change-Id: I0123", "feat: ordinary subject text"]
+             "test: Change-Id: I0123", "feat: ordinary subject text",
+             # Non-ASCII trailer tokens. `[A-Za-z]` let `Ünicode-Trailer:`
+             # through once the prefix in front of it was removed — the same
+             # lost-refusal class, found by probing rather than by review.
+             "Ünicode-Trailer: value", "Ärger-Bericht: x", "Ünicode subject text",
+             # Casing and spacing variants of a real token.
+             "signed-off-by: a person", "SIGNED-OFF-BY: A Person",
+             "Signed-off-by:no space", "- Signed-off-by: A Person"]
 
     def codes(module, terms, message):
         return {str(violation).split(":")[0]
