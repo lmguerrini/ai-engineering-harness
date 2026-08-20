@@ -426,6 +426,51 @@ def test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it():
     assert checked >= 5, f"only {checked} role rows compared; the parser is not seeing the table"
 
 
+#: The frozen release this candidate must not regress against. Not read from a
+#: document — the digest and state of that revision are what `pack_pin` checks,
+#: and this is the same revision by name.
+QUALIFIED_BASELINE = "4495e61850c08027e47eac6d0db84b4b3380e300"
+
+
+def test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline():
+    """The non-regression claim, measured against the WORKING TREE rather than
+    against `HEAD`.
+
+    The gate record asserted this in prose from an audit snapshot, and it went
+    stale the moment a test function gained a parameter — harmlessly, but a
+    reader cannot tell a harmless staleness from a real removal without
+    re-running the tool, which is the whole objection this release keeps
+    meeting. Tests are excluded deliberately: `tools/tests/` is not a surface
+    anything imports, and parametrising a test is not a compatibility event.
+    """
+    import subprocess
+
+    import surface_diff
+
+    removals = []
+    for path in sorted(ROOT.glob("tools/*.py")):
+        name = f"tools/{path.name}"
+        before = subprocess.run(
+            ["git", "show", f"{QUALIFIED_BASELINE}:{name}"],
+            cwd=str(ROOT), capture_output=True, text=True,
+        )
+        if before.returncode != 0:
+            continue  # a module this release adds has nothing to regress against
+        module = surface_diff._module_name(name)
+        changes = surface_diff.compare(
+            surface_diff.surface(before.stdout, module),
+            surface_diff.surface(path.read_text(encoding="utf-8"), module),
+        )
+        removals.extend(
+            f"{name}: {change.kind} {change.name}"
+            for change in changes
+            if change.kind.startswith("removed") or change.kind.startswith("changed")
+        )
+    assert not removals, (
+        "the qualified baseline's callers would break on:\n  " + "\n  ".join(removals)
+    )
+
+
 # --- the pin field set, bound the way D17 bound the push form ------------------
 
 

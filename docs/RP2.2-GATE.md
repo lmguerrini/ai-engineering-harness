@@ -461,7 +461,12 @@ negation sets across 145 paths and found **zero**. Between them 21 and 23
 injected mutations reverting every claimed repair — **all killed**. The 2.1.1
 suite over this implementation: 233 of 237, with all four failures
 self-referential release-identity checks. `surface_diff` and an independent AST
-walk agree that **no public name was removed and no signature changed**.
+walk agreed that **no public name was removed and no signature changed** in
+`tools/`, and that claim is now a test rather than a snapshot: it compares every
+shipped module against the frozen baseline's copy of the same file, in the
+working tree, and fails on any removal or signature change. Written after the
+prose form of it went stale — a test function gained a parameter, harmlessly,
+and nothing could tell a reader that was the harmless kind.
 
 And the question the brief asked specifically — does the `pathmatch` rework make
 any exemption cover *more* than 2.1.1 did? It covers more in a number of cases, and every
