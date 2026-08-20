@@ -54,7 +54,7 @@ PACK_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 #: **Asserted here and verified by computation**, never the other way round.
 #: Under-matching means a declared rule silently covered nothing; over-matching
 #: means it silently covered more than it said. Both directions were present.
-BASELINE_DIVERGENCES = (131, 114, 17)
+BASELINE_DIVERGENCES = (211, 194, 17)
 
 
 # --- individually reproduced divergences, as direct assertions ---------------
@@ -194,6 +194,7 @@ PATHS = [
     "foo", "foo/bar", "foo/bar/baz.txt", "a/foo.tar.gz", "b/a", "b/a/c", "a/d.txt",
     "q/r/u.txt", "fixtures/one.md", "fixtures/real-notes.md", "a b/c.txt", "q.txt",
     "a*b.txt", "aXb.txt", "?.txt", "fix!.txt", "a.txt\t", "b.txt",
+    "z.txt", "A.txt", "1.txt", "-.txt", "].txt", "[.txt", "~.txt",
 ]
 
 PATTERNS = [
@@ -207,6 +208,10 @@ PATTERNS = [
     # Forms an independent differential found and this grid could not see:
     # escapes, `[^…]` negation, and non-space trailing whitespace.
     "[^a].txt", "a\\*b.txt", "\\?.txt", "fix\\!.txt", "*.txt\t", "dist//",
+    # POSIX classes: git's wildmatch has them and `fnmatch` does not, so an
+    # untranslated one matched nothing — a silently dead declaration.
+    "[[:alpha:]].txt", "[[:digit:]].txt", "[[:punct:]].txt", "[[:upper:]].txt",
+    "[![:digit:]].txt", "[^[:alpha:]].txt", "[a-z].txt", "[]].txt",
 ]
 
 
@@ -456,3 +461,28 @@ def test_a_character_class_negates_with_either_marker(pattern, path, expected):
 def test_a_doubled_separator_matches_nothing_as_git_treats_it():
     assert not matches_any("dist/a.txt", ["dist//"])
     assert matches_any("dist/a.txt", ["dist/"])
+
+
+@pytest.mark.parametrize(
+    "pattern, path, expected",
+    [
+        ("[[:alpha:]].txt", "a.txt", True),
+        ("[[:alpha:]].txt", "1.txt", False),
+        ("[[:digit:]].txt", "1.txt", True),
+        ("[[:digit:]].txt", "a.txt", False),
+        ("[[:upper:]].txt", "A.txt", True),
+        ("[[:upper:]].txt", "a.txt", False),
+        ("[[:punct:]].txt", "-.txt", True),
+        ("[[:punct:]].txt", "a.txt", False),
+        ("[![:digit:]].txt", "a.txt", True),
+        ("[![:digit:]].txt", "1.txt", False),
+        ("[^[:alpha:]].txt", "1.txt", True),
+        ("[^[:alpha:]].txt", "a.txt", False),
+    ],
+)
+def test_a_posix_character_class_is_understood_as_git_understands_it(pattern, path, expected):
+    """`fnmatch` has no POSIX classes, so an untranslated `[[:alpha:]]` matched
+    nothing at all — a silently dead declaration, which is what this module
+    exists to prevent. The class body also carries its own `]`, so finding the
+    closing bracket by searching for the next one truncated it."""
+    assert matches_any(path, [pattern]) is expected

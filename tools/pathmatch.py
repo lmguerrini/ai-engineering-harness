@@ -212,6 +212,56 @@ def _strip_trailing_space(pattern: str) -> str:
     return stripped
 
 
+#: POSIX character classes, which git's wildmatch understands and `fnmatch` does
+#: not. Without translation `[[:alpha:]].txt` matched nothing here and matched
+#: every letter in git — a silently dead declaration, which is the failure this
+#: module exists to prevent. Found by differential rather than by reading.
+_POSIX_CLASSES = {
+    "alpha": "a-zA-Z",
+    "digit": "0-9",
+    "alnum": "a-zA-Z0-9",
+    "upper": "A-Z",
+    "lower": "a-z",
+    "space": " \\t\\n\\r\\f\\v",
+    "blank": " \\t",
+    "xdigit": "0-9A-Fa-f",
+    # `]` first, `-` last, backslash doubled — the three positional rules a
+    # character class has. Written as an explicit set rather than as ranges,
+    # because the range form put `]` and `-` in positions that changed what
+    # the class meant.
+    "punct": ']!"#$%&\'()*+,./:;<=>?@[^_`{|}~\\\\-',
+    "print": " -~",
+    "graph": "!-~",
+    "cntrl": "\\x00-\\x1f\\x7f",
+}
+
+
+def _class_end(segment: str, start: int) -> int:
+    """Index of the `]` closing the class opened at ``start``, or -1.
+
+    POSIX class syntax contains its own `]`, so a naive search for the next one
+    truncated `[[:alpha:]]` to `[[:alpha:` and produced a class of literal
+    punctuation. The scan skips over `[:…:]` and over a `]` in first position,
+    which is how a class says "a literal right bracket".
+    """
+    index = start + 1
+    if index < len(segment) and segment[index] in "!^":
+        index += 1
+    if index < len(segment) and segment[index] == "]":
+        index += 1                          # a leading `]` is a member
+    while index < len(segment):
+        if segment.startswith("[:", index):
+            closing = segment.find(":]", index + 2)
+            if closing == -1:
+                return -1
+            index = closing + 2
+            continue
+        if segment[index] == "]":
+            return index
+        index += 1
+    return -1
+
+
 def _fnmatch_safe(segment: str) -> str:
     """One pattern segment, with git's escapes and `[^…]` translated for fnmatch.
 
@@ -242,7 +292,7 @@ def _fnmatch_safe(segment: str) -> str:
             index += 2
             continue
         if character == "[":
-            close = segment.find("]", index + 2)
+            close = _class_end(segment, index)
             if close == -1:
                 out.append("[[]")          # an unclosed bracket is a literal
                 index += 1
@@ -250,6 +300,8 @@ def _fnmatch_safe(segment: str) -> str:
             body = segment[index + 1:close]
             if body.startswith("^"):
                 body = "!" + body[1:]
+            for name, members in _POSIX_CLASSES.items():
+                body = body.replace(f"[:{name}:]", members)
             out.append("[" + body + "]")
             index = close + 1
             continue
