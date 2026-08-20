@@ -41,9 +41,12 @@ the suite is green, but no auditor has seen the result of closing them.
 **And then, after the audit budget closed, two minutes of contact with reality
 beat four rounds of inspection.** Running the shipped tools read-only against
 the three real `PROJECT.yaml` files on this machine — which no round had ever
-done — found that the contract reader **raised on a live project's contract**,
-making it unreadable by every tool over one optional block, because this release
-had invented a field spelling that project does not use. Eight auditors were
+done — found three defects in about half an hour. The worst: the contract reader
+**raised on a live project's contract**, making it unreadable by every tool over
+one optional block, because this release had invented a field spelling that
+project does not use. The other two: a pin classifier that answered about a
+project whose contract it had never opened, and every CLI printing a stack trace
+where it should have reported a refusal. Eight auditors were
 given the repository and audited the repository; nobody was asked to point the
 release at the world it ships into, and that omission is the coordinator's. Both
 defects are repaired and mutation-tested; the account is in
@@ -177,8 +180,8 @@ adapter. None is a blocker for a project adopting this release.
   what remains, and it is the release authority's call rather than a step that
   was skipped.
 - **The release was never exercised against a real consumer until after the
-  audit budget closed**, and doing so immediately found the most serious defect
-  in it. Two of the three real projects on this machine are still on legacy pins
+  audit budget closed**, and doing so immediately found three defects including
+  the most serious in the release. Two of the three real projects are still on legacy pins
   — theirs to change at a capability boundary, and deliberately not touched —
   and the third now reads correctly: a verified pack pin, and a Project Context
   that names the one field it does not record. What is *not* established is

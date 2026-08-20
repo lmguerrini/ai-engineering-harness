@@ -471,6 +471,84 @@ def test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline
     )
 
 
+# --- a refusal is reported, never raised at the caller ------------------------
+
+def test_every_tool_cli_reports_a_refusal_instead_of_raising_it():
+    """Structural half. Every tool exited on an unhandled traceback when git
+    could not answer — found by pointing the toolbelt at real projects rather
+    than at fixtures, where three tools crashed identically and the crash was
+    indistinguishable from a bug in the tool.
+
+    Checked by shape rather than by running sixteen CLIs, so a NEW tool that
+    forgets the wrapper fails here rather than the first time git refuses it.
+    """
+    unwrapped = []
+    for path in sorted(ROOT.glob("tools/*.py")):
+        source = path.read_text(encoding="utf-8")
+        if 'if __name__ == "__main__":' not in source:
+            continue
+        entry = source.split('if __name__ == "__main__":', 1)[1]
+        if "run_cli(" not in entry:
+            unwrapped.append(f"tools/{path.name}")
+    assert not unwrapped, (
+        "these CLIs raise a refusal at the caller instead of reporting it: " + ", ".join(unwrapped)
+    )
+
+
+def test_a_refusal_becomes_a_stated_code_a_cause_and_an_exit_status(capsys):
+    """Behavioural half, on the wrapper itself."""
+    import errors
+
+    def refuses(argv):
+        raise errors.GitRefusal("git invocation failed", command="git ls-tree bad", returncode=128)
+
+    status = errors.run_cli(refuses, [])
+    printed = capsys.readouterr().out
+
+    assert status == errors.GitRefusal.exit_status and status != 0
+    assert "REFUSED" in printed and "HX_GIT_REFUSAL" in printed
+    assert "git invocation failed" in printed          # the cause
+    assert "git ls-tree bad" in printed                # the detail that locates it
+
+
+def test_the_wrapper_does_not_swallow_an_exit_or_an_interrupt():
+    """`argparse` exits by raising `SystemExit`, and a user interrupting is not
+    a refusal. Catching either would turn a bad command line into a success and
+    a Ctrl-C into a report."""
+    import errors
+    import pytest as _pytest
+
+    with _pytest.raises(SystemExit):
+        errors.run_cli(lambda argv: (_ for _ in ()).throw(SystemExit(2)), [])
+    with _pytest.raises(KeyboardInterrupt):
+        errors.run_cli(lambda argv: (_ for _ in ()).throw(KeyboardInterrupt()), [])
+
+
+def test_a_tool_given_a_ref_git_cannot_resolve_prints_no_traceback(tmp_path):
+    """End to end through a real subprocess, because the defect was that a
+    traceback reached the terminal — which nothing testing return values would
+    have caught."""
+    import subprocess
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", "."], cwd=repository, check=True)
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "workspace_report.py"), str(repository), "--ref", "no-such-ref"],
+        capture_output=True, text=True,
+    )
+    if "unrecognized arguments" in result.stderr:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "outgoing_scan.py"), str(repository), "no-such-ref"],
+            capture_output=True, text=True,
+        )
+
+    assert result.returncode != 0, result.stdout
+    assert "Traceback" not in result.stderr, result.stderr
+    assert "REFUSED" in result.stdout, result.stdout + result.stderr
+
+
 # --- the pin field set, bound the way D17 bound the push form ------------------
 
 

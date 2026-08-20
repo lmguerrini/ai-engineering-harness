@@ -110,6 +110,12 @@ fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
   An absent field is now `UNVERIFIABLE`, naming exactly what is missing; a field
   present and malformed still raises, because a typo is not an older shape. The
   field is spelled `control_revision`, after the project that has one.
+- **Every tool exited on an unhandled traceback when git could not answer.** A
+  ref that does not resolve, a repository that cannot be read: the caller got a
+  stack trace instead of the stable code and specific cause a refusal carries,
+  and could not tell a refusal from a bug in the tool. Every CLI now reports
+  `REFUSED <code>: <cause>` and exits on the refusal's own status;
+  `SystemExit` and `KeyboardInterrupt` still pass through.
 - **`Pin.from_contract` answered about contracts it had never opened.** Given
   anything without a `raw` mapping — a path, for instance — it produced an empty
   pin and reported a well-formed four-field pin as an unverifiable legacy one.

@@ -59,3 +59,26 @@ class GitRefusal(GateRefusal):
     """Git could not perform a requested, bounded repository operation."""
 
     code = "HX_GIT_REFUSAL"
+
+
+def run_cli(entry, argv: "list[str]") -> int:
+    """Run a tool's CLI so that a refusal is REPORTED rather than raised.
+
+    Every tool exited on an unhandled traceback when git could not answer — a
+    ref that does not resolve, a repository that cannot be read. Found by
+    pointing the toolbelt at the three real projects on this machine rather
+    than at fixtures: three tools crashed identically, and the crash was
+    indistinguishable from a bug in the tool.
+
+    A refusal is an answer this pack has a word for, and printing a stack trace
+    instead loses the two things the caller needs — the stable code and the
+    specific cause — behind the one thing they do not.
+
+    `SystemExit` and `KeyboardInterrupt` pass through untouched: argparse exits
+    that way, and a user interrupting is not a refusal.
+    """
+    try:
+        return entry(argv)
+    except HxError as refusal:
+        print(f"REFUSED {refusal.render()}")
+        return refusal.exit_status

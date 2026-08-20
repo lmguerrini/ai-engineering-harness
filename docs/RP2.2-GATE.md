@@ -688,9 +688,34 @@ opening three files nobody had opened. The auditors were given the repository
 and audited the repository. **Nobody was asked to point the release at the world
 it ships into**, and that omission is the coordinator's.
 
-Four mutations of these repairs were run and all four are killed: absence
+Seven mutations of these repairs were run and all seven are killed: absence
 raising again, the unreadable block reported as `NOT_PRESENT`, the invented
 field spelling returning, and `from_contract` answering about a path.
+
+### And a third, from the same two minutes
+
+Every tool exited on an **unhandled traceback** when git could not answer. The
+probe above mis-invoked `outgoing_scan` — passing a repository path where the
+contract had already supplied one, so it arrived as a ref — and three real
+projects produced three identical stack traces. The mis-invocation was the
+prober's mistake; printing a traceback for it was the tool's.
+
+A refusal is an answer this pack has a word for, a stable code and a specific
+cause, and a stack trace loses all three behind the one thing a caller does not
+need. Worse, it is indistinguishable from a bug in the tool, so the honest
+reading of "the toolbelt crashed on all three real projects" was unavailable.
+
+`errors.run_cli` now wraps every CLI: an `HxError` is printed as
+`REFUSED <code>: <cause>` with its detail and exits on the refusal's own status;
+`SystemExit` and `KeyboardInterrupt` pass through, because argparse exits that
+way and a user interrupting is not a refusal. Sixteen CLIs route through it, and
+the check is structural — a new tool that forgets the wrapper fails the suite
+rather than the first time git refuses it. Three mutations killed: dropping the
+wrapper from one CLI, exiting 0 on a refusal, swallowing `SystemExit`.
+
+Run correctly, all three projects scan clean of tool error: one reports clean,
+one reports 1,244 leaks against its own declared vocabulary with every match
+redacted, one reports zero and names the binary files it could not read.
 
 Both defects were found **read-only**. No project file was modified, and the
 founder's instruction not to migrate the existing projects was not touched: this

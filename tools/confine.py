@@ -457,4 +457,8 @@ def _cli(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(_cli(sys.argv[1:]))
+    import sys
+
+    from errors import run_cli
+
+    raise SystemExit(run_cli(_cli, sys.argv[1:]))
