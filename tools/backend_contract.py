@@ -319,3 +319,43 @@ def record_for(
     }
     base = identity or BackendIdentity(family=family)
     return BackendRecord(identity=replace(base, family=family), capability=capability, **overrides)
+
+
+def _cli(argv: list[str]) -> int:
+    """Print the derived grade table. A view over the log, never a record."""
+    import argparse
+    import sys
+    from pathlib import Path as _Path
+
+    parser = argparse.ArgumentParser(
+        prog="backend_contract.py",
+        description="Derive per-backend, per-task-class qualification from the observation log.",
+    )
+    parser.add_argument(
+        "observations", nargs="?",
+        default=str(_Path(__file__).resolve().parent.parent / "policy" / "observations.jsonl"),
+        help="path to observations.jsonl",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        graded = grades_from_observations(args.observations)
+    except Exception as exc:
+        print(f"the observation log could not be read: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"derived from {args.observations} — a view, not a record; the log wins")
+    for (family, task_class), grade in sorted(graded.items()):
+        counts = (
+            f"{grade.validated} validated, {grade.contradicted} contradicted, "
+            f"{grade.environmental} environmental"
+        )
+        print(f"  {family:14} {task_class:48} {grade.grade:22} ({counts})")
+    print("  availability is never qualification; a grade at one class is unprobed at every other")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    raise SystemExit(_cli(sys.argv[1:]))

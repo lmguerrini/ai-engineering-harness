@@ -53,3 +53,31 @@ accreted — it is current state, not a log. **≤200 lines.** Everything durabl
 belongs in SCOPE.md, PROGRESS.md, FINDINGS.md or DECISIONS.md instead; HANDOFF.md
 only points at them. A HANDOFF.md that is growing is a HANDOFF.md absorbing
 content that has a real home elsewhere.
+
+## Context is spent, so spend it on ground truth
+
+Stable invariants only. Anything vendor-specific — a client's cache behaviour, a
+model's window, a flag — belongs in that vendor's adapter, which can be wrong
+without the Core being wrong.
+
+*   **Route from ground truth, not from recollection.** A fact re-derived from
+    disk costs one read; a fact carried in a summary costs every turn until it
+    turns out to be stale.
+*   **Reduce command-output noise at the source.** Ask for the lines that decide
+    something. A gate's verdict and its findings are the answer; its full
+    transcript is an evidence entry, stored once and cited, not pasted.
+*   **Irrelevant context is not free and is not neutral.** It displaces the
+    material a judgement actually needs, and it makes a wrong answer look
+    well-supported.
+*   **Durable state lives on disk, continuously** — not assembled at the end.
+    Work that exists only in a session is work a limit can delete.
+*   **Independence needs a fresh context, not a request for one.** Where a task's
+    semantics require an unseeded reader — an audit, a blind check — start a new
+    session. Asking a session that has seen the implementation to disregard it
+    does not make it a blind reader.
+*   **Do not switch model or effort inside a session for a marginal reason.**
+    A switch is not free, and a saving that costs a re-read of everything so far
+    is not a saving.
+*   **Context reduction is a reconstruction, never a compression.** When context
+    must be shed, the recovery path is the four reads above. A summary of a
+    summary is the failure mode this whole file exists to prevent.
