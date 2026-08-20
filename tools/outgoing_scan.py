@@ -560,6 +560,15 @@ def _cli(argv: list[str]) -> int:
 if __name__ == "__main__":
     import sys
 
+    # Run the module, not a second copy of it. A file executed as a script is
+    # `__main__`, and a sibling that imports it BY NAME gets a separate module
+    # object with separate class objects — so an `isinstance` check across that
+    # boundary is False for an object that is exactly that class. It crashed
+    # `project_context.py --project` against a real consumer's contract, on a
+    # shape the suite covers completely: tests import the module and never run
+    # it as a script. Imported statically, by name, because a dynamic import
+    # would route around the toolbelt's import-closure check.
     from errors import run_cli
+    from outgoing_scan import _cli as _entry
 
-    raise SystemExit(run_cli(_cli, sys.argv[1:]))
+    raise SystemExit(run_cli(_entry, sys.argv[1:]))

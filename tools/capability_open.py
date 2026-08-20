@@ -318,17 +318,32 @@ def _pin_components(contract: ProjectContract) -> tuple[ComponentResult, Compone
 
 def _adapter_component(contract: ProjectContract, home: str | Path | None) -> ComponentResult:
     declarations = contract.adapters
+    if declarations is None:
+        # "Nobody said" is not "someone said none" — `adapter_pin`'s own
+        # distinction, kept here rather than flattened. It does not block: a
+        # project that dispatches through nothing needs no adapters, and
+        # refusing every contract that predates the block would be punishing an
+        # omission. It is `UNKNOWN` rather than `NOT_PRESENT`, because what the
+        # project dispatches through has not been stated.
+        return ComponentResult(
+            name="adapters",
+            state=UNKNOWN,
+            required=False,
+            blocking=False,
+            notes=(
+                "no `adapters:` block. A project that dispatches through an installed agent "
+                "or skill and declares none has an executable surface nothing verifies, and "
+                "this cannot tell that apart from a project that dispatches through none. "
+                "Declare `adapters: []` to say the second one",
+            ),
+        )
     if not declarations:
         return ComponentResult(
             name="adapters",
             state=NOT_PRESENT,
             required=False,
             blocking=False,
-            notes=(
-                "no adapter is declared, so none is required. A project that dispatches "
-                "through an installed agent or skill and declares none has an unverified "
-                "executable surface, which this cannot see",
-            ),
+            notes=("the project declares it dispatches through no adapter",),
         )
     report = adapter_pin.verify(declarations, home=home)
     findings = tuple(finding.sentence() if hasattr(finding, "sentence") else str(finding)
@@ -629,6 +644,15 @@ def _cli(argv: list[str]) -> int:
 if __name__ == "__main__":
     import sys
 
+    # Run the module, not a second copy of it. A file executed as a script is
+    # `__main__`, and a sibling that imports it BY NAME gets a separate module
+    # object with separate class objects — so an `isinstance` check across that
+    # boundary is False for an object that is exactly that class. It crashed
+    # `project_context.py --project` against a real consumer's contract, on a
+    # shape the suite covers completely: tests import the module and never run
+    # it as a script. Imported statically, by name, because a dynamic import
+    # would route around the toolbelt's import-closure check.
     from errors import run_cli
+    from capability_open import _cli as _entry
 
-    raise SystemExit(run_cli(_cli, sys.argv[1:]))
+    raise SystemExit(run_cli(_entry, sys.argv[1:]))

@@ -549,6 +549,55 @@ def test_a_tool_given_a_ref_git_cannot_resolve_prints_no_traceback(tmp_path):
     assert "REFUSED" in result.stdout, result.stdout + result.stderr
 
 
+# --- a CLI must run the module, not a second copy of it -----------------------
+
+def test_every_cli_entry_runs_the_canonical_module():
+    """A file executed as a script is `__main__`. A sibling that imports it by
+    name gets a SEPARATE module object with SEPARATE class objects, so an
+    `isinstance` check across that boundary is False for an object that is
+    exactly that class.
+
+    It crashed `project_context.py --project` against a real consumer's
+    contract, with a traceback, on a shape the suite covers completely — because
+    tests import the module and never run it as a script. Structural, so a new
+    tool that reintroduces the split fails here rather than the first time
+    somebody runs it.
+    """
+    offenders = []
+    for path in sorted(ROOT.glob("tools/*.py")):
+        source = path.read_text(encoding="utf-8")
+        if 'if __name__ == "__main__":' not in source:
+            continue
+        entry = source.split('if __name__ == "__main__":', 1)[1]
+        if "import _cli as _entry" not in entry or "run_cli(_entry" not in entry:
+            offenders.append(f"tools/{path.name}")
+    assert not offenders, (
+        "these run a second copy of themselves, so an isinstance across a sibling "
+        "boundary is False: " + ", ".join(offenders)
+    )
+
+
+def test_a_cli_and_an_import_agree_about_a_type_that_crosses_a_sibling_boundary(tmp_path):
+    """The behavioural half, through a real subprocess, on the exact shape that
+    crashed: a context declaration built by `project_contract` and classified by
+    `project_context`."""
+    import subprocess
+
+    contract = tmp_path / "PROJECT.yaml"
+    contract.write_text(
+        "project:\n  name: x\n"
+        "project_context:\n  context_id: C1\n  reference_path: /x\n  control_revision: 12\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "project_context.py"), "--project", str(contract)],
+        capture_output=True, text=True,
+    )
+    assert "Traceback" not in result.stderr, result.stderr
+    assert "UNVERIFIABLE" in result.stdout, result.stdout + result.stderr
+    assert result.returncode != 0
+
+
 # --- qualification is not self-tests --------------------------------------
 
 def test_qualification_includes_probes_against_representative_consumer_shapes():

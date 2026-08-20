@@ -838,3 +838,43 @@ finding for the separate publication audit, not something this phase resolved. A
 private remote does not make it resolved either.
 
 No remote was created, nothing was pushed, and no history was rewritten.
+
+### Two more, from sweeping every CLI across every real consumer
+
+Run after the readiness path was committed and the closure auditors dispatched:
+all eight contract-reading tools against all three real consumer contracts,
+read-only. Twenty-four invocations.
+
+**`project_context.py --project` crashed with a traceback** on the one real
+consumer that declares a context — the same consumer, the same shape, and a
+shape the test suite covers completely.
+
+The mechanism is worth stating exactly, because it defeats a whole class of
+test. A file executed as a script is the module `__main__`; a sibling that
+imports it **by name** gets a *separate module object with separate class
+objects*. `project_contract` builds the declaration using the imported
+`project_context`, and the running script tests it with
+`isinstance(declaration, UnreadableDeclaration)` against `__main__`'s copy of
+that class — **False for an object that is exactly that class**. Tests import
+modules and never run them as scripts, so no test in the suite could see it,
+including the tests written for this exact declaration shape.
+
+Every CLI now statically imports itself by name and runs *that* entry point, so
+a script and an import are the same module. Pinned twice: structurally, so a new
+tool that reintroduces the split fails the suite, and behaviourally, through a
+subprocess against the shape that crashed. A first attempt used a dynamic
+`__import__`, which the toolbelt's own import-closure rule refused — correctly,
+and the refusal is why the static form is there.
+
+**Second, smaller:** `adapter_pin` refuses a contract with no `adapters:` block,
+on the deliberate ground that "nobody said" is not "someone said none". All
+three real consumers omit the block, so all three see that refusal at every
+capability open with no way to clear it. The rule is right and the way out was
+undocumented. The refusal now says how to clear it, the contract template states
+the distinction, and `capability_open` keeps the two apart — `UNKNOWN` for an
+absent block, `NOT_PRESENT` for a declared empty one, neither blocking. Reporting
+all three real consumers as a confident `NOT_PRESENT` would have been a false
+answer about all three.
+
+Mutations: collapsing the two adapter states, and restoring the module/script
+split — both killed.

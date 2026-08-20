@@ -442,3 +442,30 @@ def test_a_project_declaring_no_requirements_gets_the_permissive_default():
     assert capability_open.requirements_from(None) == {"project_context": False}
     assert capability_open.requirements_from({}) == {"project_context": False}
     assert capability_open.requirements_from({"project_context": True})["project_context"] is True
+
+
+# --- undeclared is not declared-none ------------------------------------------
+
+def test_an_absent_adapters_block_is_unknown_and_a_declared_empty_one_is_not(
+    tmp_path, release, context_tree
+):
+    """`adapter_pin` refuses to read "nobody said" as "someone said none", and
+    the readiness path keeps that distinction instead of flattening it. Neither
+    blocks — a project that dispatches through nothing needs no adapters — but a
+    reader is told which of the two they are looking at.
+
+    Every real consumer omits the block, so this is the state they are actually
+    in, and reporting it as a confident NOT_PRESENT would be a false answer
+    about all three.
+    """
+    path = _contract(tmp_path, "full_pin_qualified_no_context", release, context_tree)
+    absent = capability_open.open_capability(path).component("adapters")
+    assert absent.state == capability_open.UNKNOWN
+    assert absent.blocking is False
+    assert any("adapters: []" in note for note in absent.notes), "no remedy is stated"
+
+    path.write_text(path.read_text() + "\nadapters: []\n")
+    declared = capability_open.open_capability(path).component("adapters")
+    assert declared.state == capability_open.NOT_PRESENT
+    assert declared.blocking is False
+    assert capability_open.open_capability(path).ready

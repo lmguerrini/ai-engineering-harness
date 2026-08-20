@@ -125,6 +125,13 @@ adapters:
   # be different: a declared adapter that is present and does not match its
   # digest blocks either way. Unreadable blocks too — that is a failure to look,
   # not an absence.
+  #
+  # OMITTING THIS BLOCK IS NOT THE SAME AS DECLARING NONE. A contract with no
+  # `adapters:` key says nothing about what the project dispatches through, and
+  # `adapter_pin.py --project` refuses rather than guessing; `capability_open`
+  # reports UNKNOWN and does not block. **Write `adapters: []`** to state that
+  # this project dispatches through no adapter — that is a claim, and it
+  # verifies.
 
 requires:
   # WHICH PREREQUISITES THIS PROJECT MUST SATISFY before a capability opens.
