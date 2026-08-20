@@ -26,10 +26,12 @@ A project may declare paths whose *content* is exempt. This is not an override
 and it is deliberately narrow: some files in a security-conscious project **are**
 the denylist, or the negative fixtures for it — or, as here, a reviewed-baseline
 record that itself names a prior match — and a scanner that cannot be told so is
-one that gets switched off. The exemption covers blob content only: the path
-itself, every reference and tag name, every message and every identity are
-still scanned, and every exempted blob is named in `exempted`, so the report
-says what it did not read rather than reading clean.
+one that gets switched off. The exemption covers **the project's own
+vocabulary in blob content**, and nothing else: the path itself, every
+reference and tag name, every message and every identity are still scanned, the
+universal rules — credential, local path, private identifier — still apply to
+the exempted blob's content, and every exempted blob is named in `exempted`, so
+the report says what it narrowed rather than reading clean.
 """
 
 from __future__ import annotations
@@ -67,6 +69,22 @@ VOCABULARY_LEAK_KINDS = ("private_term", "private_pattern")
 #: account, a generated identifier. No repository has a reason to carry these,
 #: so no project gets to declare them acceptable.
 UNIVERSAL_LEAK_KINDS = ("credential", "local_path", "private_identifier")
+
+#: What a declared content exemption may switch off: **the project's own
+#: vocabulary, and nothing else.**
+#:
+#: RP2.2 (CA-AMD-5 / RP-EC-1) found the sentence above stated and not
+#: implemented. An exempted blob was not scanned at all, so a project that
+#: exempted `fixtures/` to stop its denylist matching itself also switched off
+#: credential and local-path detection for everything under it. Reproduced: an
+#: AWS-shaped key and a path naming a home directory, both inside an exempted
+#: file, reported `clean`.
+#:
+#: The exemption exists for a real case — a file that *is* the denylist, or the
+#: negative fixtures for it — and that case is entirely about the project's own
+#: vocabulary. It was never about credentials, and a credential in a fixture is
+#: exactly the thing somebody should have to look at.
+EXEMPTIBLE_LEAK_KINDS = VOCABULARY_LEAK_KINDS
 
 #: Blobs above this size are recorded as skipped rather than read into memory.
 MAX_SCANNED_BLOB_BYTES = 5 * 1024 * 1024
@@ -229,7 +247,10 @@ class OutgoingReport:
         # content-exempt by declaration` beats silence: a declaration that
         # matched nothing produced a report byte-identical to one where it
         # matched, and that is what made a dead exemption invisible.
-        exemption_lines = [f"  {len(self.exempted)} file(s) content-exempt by declaration"]
+        exemption_lines = [
+            f"  {len(self.exempted)} file(s) content-exempt by declaration "
+            "(project vocabulary only; credential, local-path and identifier rules still applied)"
+        ]
         exemption_lines.extend(f"    content exempt by declaration: {path}" for path in self.exempted)
         exemption_lines.extend(
             f"    DECLARED BUT MATCHED NOTHING: {pattern}" for pattern in self.unused_exemptions
@@ -342,19 +363,19 @@ def scan_outgoing(
             if size > MAX_SCANNED_BLOB_BYTES:
                 report.skipped.append(SkippedObject(sha, path, f"{size} bytes exceeds the scan limit"))
                 continue
-            if path:
-                matched = _matching_exemptions(path, exempt_patterns)
-                if matched:
-                    exemptions_used.update(matched)
-                    report.exempted.append(path)
-                    continue
+            exempted = _matching_exemptions(path, exempt_patterns) if path else []
+            if exempted:
+                exemptions_used.update(exempted)
+                report.exempted.append(path)
             data = gitread.object_bytes(repository, sha)
             text = _decoded(data)
             if text is None:
                 report.skipped.append(SkippedObject(sha, path, "content is not decodable as text"))
                 continue
             report.blobs_examined += 1
-            report.leaks.extend(scanner.scan(text, location="blob", subject=path or sha[:12]))
+            report.leaks.extend(
+                _scoped(scanner.scan(text, location="blob", subject=path or sha[:12]), exempted)
+            )
         elif kind == "tree":
             # Paths inside a tree arrive as the second column of the object
             # listing, so they are scanned with their blobs.
@@ -397,11 +418,10 @@ def scan_staged(
 
     for path, sha in gitread.staged_entries(repository):
         report.leaks.extend(scanner.scan_name(path, location="path", subject=path))
-        matched = _matching_exemptions(path, exempt_patterns)
-        if matched:
-            exemptions_used.update(matched)
+        exempted = _matching_exemptions(path, exempt_patterns)
+        if exempted:
+            exemptions_used.update(exempted)
             report.exempted.append(path)
-            continue
         if gitread.object_size(repository, sha) > MAX_SCANNED_BLOB_BYTES:
             report.skipped.append(SkippedObject(sha, path, "exceeds the scan limit"))
             continue
@@ -410,10 +430,23 @@ def scan_staged(
             report.skipped.append(SkippedObject(sha, path, "content is not decodable as text"))
             continue
         report.blobs_examined += 1
-        report.leaks.extend(scanner.scan(text, location="blob", subject=path))
+        report.leaks.extend(_scoped(scanner.scan(text, location="blob", subject=path), exempted))
 
     report.unused_exemptions = [p for p in exempt_patterns if p not in exemptions_used]
     return report
+
+
+def _scoped(leaks: list[Leak], exempted: Sequence[str]) -> list[Leak]:
+    """Apply a declared content exemption to one blob's findings.
+
+    An exemption removes the project's **own vocabulary** and leaves every
+    universal rule in force. Not implemented as "skip the blob", which is what
+    it was: skipping is indistinguishable from exempting everything, and the
+    difference is a credential.
+    """
+    if not exempted:
+        return leaks
+    return [leak for leak in leaks if leak.kind not in EXEMPTIBLE_LEAK_KINDS]
 
 
 def _matching_exemptions(path: str, patterns: Sequence[str]) -> list[str]:

@@ -162,6 +162,19 @@ publication:
   # git log, status, ls-files, diff and show.
   publishable_refs: ["refs/heads/*", "refs/tags/*"]
 
+  # THE PUSH FORM IS NOT PROJECT-CONFIGURABLE. It is fixed by the pack, in
+  # `tools/publication_gate.py` as `SUPPORTED_PUSH_FORM`, and stated once:
+  #
+  #     git push <remote> refs/heads/<branch>:refs/heads/<branch>
+  #
+  # One remote, one explicit non-wildcard refspec, nothing else. Never
+  # `--mirror`, `--all`, `--tags`, or a second refspec. The same string is what
+  # the gate checks, what the publication runbook prints and what is actually
+  # run — planning, gating and execution read one canonical form, because a
+  # form restated in three places is three forms that will eventually differ.
+  # A release-integrity test compares every restatement in this release against
+  # the constant, so a drifted copy cannot be committed.
+
 workspace_classification:
   # Inputs to `tools/workspace_report.py`, run at capability OPEN and CLOSE.
   # The tool ships with an EMPTY safe-generated set on purpose: an artifact is

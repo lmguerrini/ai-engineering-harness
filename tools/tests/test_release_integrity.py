@@ -236,3 +236,81 @@ def test_the_verification_command_the_readme_prints_is_the_real_one(readme, mani
         ROOT, expect_version=version, expect_sha=head,
         expect_digest=manifest["tree_digest_sha256"], expect_state=manifest["state"],
     ) == []
+
+
+# --- CA-AMD-7: one canonical refspec across planning, gating and execution ---
+
+
+#: Surfaces a person READS THE FORM FROM in order to run it: the runbook, the
+#: contract template, the procedure skills, the policy, the README. Deliberately
+#: not `tools/tests/` (whose whole job is to carry wrong forms as negative
+#: cases), not `CHANGELOG.md` and not `docs/` (history, left as written), and not
+#: `tools/` itself (where the constant is defined and exercised).
+_INSTRUCTIONAL_GLOBS = ("templates/*.md", "templates/*.template", "skills/core/*.md",
+                        "policy/*.md", "README.md")
+
+
+def _instructional_files():
+    seen = set()
+    for pattern in _INSTRUCTIONAL_GLOBS:
+        for path in sorted(ROOT.glob(pattern)):
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            yield path, path.read_text(encoding="utf-8")
+
+
+def test_every_documented_push_form_is_the_one_the_gate_checks():
+    """The gate holds the form as a constant; the runbook and the contract
+    restate it for a human to run. A restatement nothing compares is a second
+    authority — the defect D11 named for release identity, applied to the push
+    form. Planning, gating and execution now read one canonical string.
+    """
+    import publication_gate
+
+    canonical = publication_gate.SUPPORTED_PUSH_FORM
+    drifted = []
+    for path, text in _instructional_files():
+        for number, line in enumerate(text.splitlines(), 1):
+            if "git push " not in line or canonical in line:
+                continue
+            # A line that names a form in order to FORBID it is not a
+            # restatement of the supported one.
+            if any(word in line for word in ("Never", "never", "forbidden", "refus", "not `")):
+                continue
+            drifted.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
+    assert not drifted, "these state a push form that is not the canonical one: " + "; ".join(drifted)
+
+
+def test_the_canonical_form_is_actually_restated_somewhere():
+    """Guards the check above from passing vacuously: a scan that finds no
+    occurrences would report agreement about nothing."""
+    import publication_gate
+
+    occurrences = sum(
+        text.count(publication_gate.SUPPORTED_PUSH_FORM) for _, text in _instructional_files()
+    )
+    assert occurrences >= 2, f"only {occurrences} restatement(s) found to compare"
+
+
+def test_the_canonical_form_is_what_the_checker_accepts():
+    """Binds the constant to behaviour, not just to text. A canonical string
+    every document agrees on is worth nothing if the checker refuses it."""
+    import publication_gate
+
+    concrete = publication_gate.SUPPORTED_PUSH_FORM.replace("<remote>", "origin").replace(
+        "<branch>", "main"
+    )
+    assert publication_gate.check_push_command(concrete, expected_remote="origin") == []
+
+
+def test_a_near_miss_of_the_canonical_form_is_refused():
+    import publication_gate
+
+    for wrong in (
+        "git push origin main",                                   # implicit refspec
+        "git push origin refs/heads/*:refs/heads/*",              # wildcard
+        "git push --mirror origin",                               # whole namespace
+        "git push origin refs/heads/main:refs/heads/main refs/tags/v1:refs/tags/v1",
+    ):
+        assert publication_gate.check_push_command(wrong, expected_remote="origin"), wrong

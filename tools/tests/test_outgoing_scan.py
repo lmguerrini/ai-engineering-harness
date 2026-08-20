@@ -185,3 +185,92 @@ def test_the_report_does_not_echo_the_private_term_it_found(repo):
     assert "declared private term" in rendered
     assert "sessioné-private/notes.md" in rendered  # the path is named
     assert "'sessioné-private'" not in rendered     # the term is not
+
+
+# --- CA-AMD-5 / RP-EC-1: an exemption scopes the project's vocabulary --------
+#
+# `UNIVERSAL_LEAK_KINDS` states that a credential, a local path and a generated
+# identifier are private whoever wrote them, so "no project gets to declare them
+# acceptable". That sentence was in the source and was not implemented: an
+# exempted blob was not read at all. Reproduced against frozen 2.1.1 — an
+# AWS-shaped key and a home-directory path inside an exempted file reported
+# `clean`.
+
+
+CREDENTIAL = "AKIAIOSFODNN7EXAMPLE"
+LOCAL_PATH = "/Users/someone/private/session-4417/notes"
+
+
+@pytest.fixture
+def repo_with_fixture_dir(repo):
+    (repo / "fixtures").mkdir()
+    (repo / "fixtures" / "leaky.md").write_text(
+        f"a credential: {CREDENTIAL}\nand a path: {LOCAL_PATH}\n"
+    )
+    (repo / "fixtures" / "denylist.md").write_text(
+        "the denylist itself names forbidden-codename-alpha as a fixture\n"
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "--quiet", "-m", "add fixtures")
+    return repo
+
+
+def _scan(repo, exempt=()):
+    scanner = outgoing_scan.Scanner(TermSet.of(terms=["forbidden-codename-alpha"]))
+    return outgoing_scan.scan_outgoing(
+        repo, ref="refs/heads/main", baseline=None, scanner=scanner,
+        content_exempt_paths=tuple(exempt),
+    )
+
+
+def test_an_exemption_does_not_switch_off_credential_detection(repo_with_fixture_dir):
+    report = _scan(repo_with_fixture_dir, exempt=["fixtures/"])
+    assert not report.clean
+    assert any(leak.kind == "credential" for leak in report.leaks)
+
+
+def test_an_exemption_does_not_switch_off_local_path_detection(repo_with_fixture_dir):
+    report = _scan(repo_with_fixture_dir, exempt=["fixtures/"])
+    assert any(leak.kind == "local_path" for leak in report.leaks)
+
+
+def test_an_exemption_does_remove_the_projects_own_vocabulary(repo_with_fixture_dir):
+    """The motivating case, which must keep working: a file that *is* the
+    denylist, or the negative fixtures for it."""
+    without = _scan(repo_with_fixture_dir)
+    assert any(leak.kind == "private_term" for leak in without.leaks)
+
+    with_exemption = _scan(repo_with_fixture_dir, exempt=["fixtures/denylist.md"])
+    assert not any(leak.kind == "private_term" for leak in with_exemption.leaks)
+    # Everything still reported comes from the file that was NOT exempted, and
+    # every one of those is a universal kind.
+    assert {leak.kind for leak in with_exemption.leaks} <= set(outgoing_scan.UNIVERSAL_LEAK_KINDS)
+    assert {leak.subject for leak in with_exemption.leaks} == {"fixtures/leaky.md"}
+
+
+def test_the_report_states_that_the_exemption_was_narrow(repo_with_fixture_dir):
+    """A reader must not take `content-exempt` to mean `not scanned`."""
+    rendered = _scan(repo_with_fixture_dir, exempt=["fixtures/"]).render()
+    assert "project vocabulary only" in rendered
+    assert "still applied" in rendered
+
+
+def test_every_universal_kind_survives_an_exemption():
+    """Stated against the constant rather than against three examples, so a
+    kind added later is covered by construction."""
+    exemptible = set(outgoing_scan.EXEMPTIBLE_LEAK_KINDS)
+    assert exemptible == set(outgoing_scan.VOCABULARY_LEAK_KINDS)
+    assert not exemptible & set(outgoing_scan.UNIVERSAL_LEAK_KINDS)
+
+
+def test_the_staged_gate_applies_the_same_rule(repo_with_fixture_dir):
+    """The staged gate is the strict one; an exemption may not make it looser
+    there either."""
+    (repo_with_fixture_dir / "fixtures" / "staged.md").write_text(f"key {CREDENTIAL}\n")
+    _git(repo_with_fixture_dir, "add", "fixtures/staged.md")
+
+    scanner = outgoing_scan.Scanner(TermSet.of(terms=["forbidden-codename-alpha"]))
+    report = outgoing_scan.scan_staged(
+        repo_with_fixture_dir, scanner=scanner, content_exempt_paths=("fixtures/",)
+    )
+    assert any(leak.kind == "credential" for leak in report.leaks)

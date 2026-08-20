@@ -85,7 +85,7 @@ Derived from the tracked tree, not maintained by hand
     ├── VERSION                     the single machine-readable version authority
     ├── PACK_MANIFEST.json          release identity: state, digest, test count, gate
     ├── CHANGELOG.md                per-version record, including errata
-    ├── DECISIONS.md                pack-level decisions D1–D15, append-only
+    ├── DECISIONS.md                pack-level decisions D1–D17, append-only
     ├── skills/core/                13 public-safe skills, roles only, no vendor names
     ├── policy/                     private operational policy
     │   ├── observations.jsonl      append-only routing evidence — the record

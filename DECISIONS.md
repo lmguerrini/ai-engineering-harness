@@ -313,3 +313,50 @@ because the safe verdict is still a claim nobody established.
 **Evidence.** All three call sites reproduced by execution before repair.
 **Reverses on:** nothing. This is D1's rule about adjudication applied to the
 narrower case of a component adjudicating a question it could not ask.
+
+---
+
+## D16 — a content exemption scopes the project's vocabulary, never a universal rule (RP2.2)
+
+`outgoing_scan` already separated the two classes and said why:
+`UNIVERSAL_LEAK_KINDS` — credential, local path, generated identifier — are
+"private whoever wrote it, so no project gets to declare them acceptable".
+`skills/core/public-safety.md` went further and named the exact failure:
+"writing the exemption as *skip blob content* takes both out at once."
+
+It was written that way. A declared `content_exempt` path caused the blob to be
+skipped entirely, so a project exempting `fixtures/` to stop its own denylist
+matching itself also switched off credential and machine-path detection for
+everything underneath. Reproduced: an AWS-shaped key and a home-directory path,
+both inside an exempted file, reported `clean`.
+
+**Decided.** An exemption removes the project's own vocabulary from a blob's
+findings and leaves every universal rule in force. It is implemented as a
+**scope over the findings**, not as a skip over the object, because skipping is
+indistinguishable from exempting everything and the difference is a credential.
+The report states the narrowing rather than printing `content-exempt` and
+letting a reader supply "and therefore unscanned".
+
+**Evidence.** Reproduced against the frozen 2.1.1 baseline before repair, and
+the tests fail against that behaviour. The motivating case is unchanged: a file
+that *is* the denylist still exempts cleanly.
+**Reverses on:** nothing. This is D9's tiering rule applied to the one surface
+where the project, rather than the pack, was choosing what not to look at.
+
+---
+
+## D17 — the release states its push form once (RP2.2)
+
+`publication_gate.SUPPORTED_PUSH_FORM` is the authority for the publication
+command, and the runbook and the project contract restate it for a person to
+run. Nothing compared them, which is the same defect D11 named for release
+identity: a restatement nothing checks is a second authority.
+
+**Decided.** Planning, gating and execution read one canonical string. A
+release-integrity test compares every restatement on an *instructional* surface
+— templates, procedure skills, policy, README — against the constant, and a
+second test asserts the constant is what the checker actually accepts, so the
+agreement is about behaviour and not only about text. Test fixtures, changelog
+entries and gate records are deliberately outside the comparison: their job is
+to carry the wrong forms, and history is left as written.
+**Reverses on:** nothing.
