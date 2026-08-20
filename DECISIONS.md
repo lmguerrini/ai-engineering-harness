@@ -397,3 +397,47 @@ carries a complete pin whose root was being written to. None was migrated or
 modified while this release was built: they are evidence, not authorisation.
 **Reverses on:** nothing. A release that shares a directory with the work that
 supersedes it is not frozen, whatever its manifest says.
+
+---
+
+## D19 — Project Context is a contract capability; its meaning stays project-local (RP2.2)
+
+A real project already runs a Project Context — a durable record of what the
+product means, what it has decided, and what is still open — and proves
+non-mutation across a capability by showing the same digest before and after.
+The pack knew nothing about it, so a capability could run against a semantic
+authority that was absent, stale, or being edited underneath it, and no gate
+could tell.
+
+**Decided.** Project Context becomes a first-class contract capability **at the
+declaration and verification level only**:
+
+*   declared in `PROJECT.yaml`, so a capability cannot consult a context nobody
+    declared;
+*   located by a **canonical, resolved** reference path;
+*   carrying a **project-local revision** and a **digest**, so non-mutation is a
+    fact rather than an assurance;
+*   in one of five distinct states — `NOT_PRESENT`, `DECLARED`,
+    `CURRENTLY_VERIFIED`, `STALE`, `UNVERIFIABLE`. "Nobody declared one" and
+    "one was declared and cannot be found" are different facts and the second is
+    a stop;
+*   with the digest taken at capability open and recomputed at close. A context
+    that changed in between makes that capability's evidence **uninterpretable**
+    rather than stale, because the evidence was produced against a semantic
+    authority that no longer exists;
+*   with **proposal separated from adoption**, so a suggestion cannot become
+    authority by being written down.
+
+**The Core does not adjudicate product meaning.** The verifier reads no content
+and has exactly one opinion: whether the bytes are the ones declared. A
+semantically enormous change and a one-space change are reported identically,
+and that is deliberate — a governance layer that started grading product meaning
+would hold state it also judged (D1).
+
+None of the motivating project's implementation is vendored. Only the contract
+and verifier semantics are generalised, and the generalisation was checked
+against the real thing: this module's tree walk counts the files in that
+context and matches the count the project itself records.
+
+**Reverses on:** nothing short of Core needing to read context contents to make
+a governance decision — which would be the reversal of D1, not of this.

@@ -125,6 +125,42 @@ adapters:
   # digest blocks either way. Unreadable blocks too — that is a failure to look,
   # not an absence.
 
+project_context:
+  # PROJECT CONTEXT — the project's DURABLE SEMANTIC AND PRODUCT AUTHORITY:
+  # what the product means, what it has decided, what is still open. Optional;
+  # a project that declares none simply has no semantic authority to consult and
+  # reports NOT_PRESENT, which is a clean state.
+  #
+  # THE CORE DOES NOT ADJUDICATE PRODUCT MEANING. `tools/project_context.py`
+  # verifies IDENTITY — is the thing at the locator the revision this project
+  # declared, unchanged since the capability opened — and reads none of its
+  # contents. Product meaning is the project's authority; a governance layer
+  # that graded it would hold state it also judged, which is what D1 forbids.
+  # Project Context evolution is project-local and is a different thing from
+  # Core evolution: a new pack release neither carries nor supersedes it.
+  #
+  # context_id:      PROJECT-CONTEXT-001    # project-local identity
+  # reference_path:  /absolute/path/to/.project_context   # canonical locator, resolved
+  # revision:        12                     # project-local, monotonic
+  # digest:          <64-char sha256 over the context tree>
+  # digest_algorithm: sha256-framed-tree-v1 # named, so a checkout carrying another fails as a version mismatch
+  # authority_role:  DURABLE_SEMANTIC_PRODUCT_AUTHORITY   # the project's own words; recorded, never interpreted
+  # activated:       true                   # declared-but-inactive is verified AND NOT CONSULTED — a third state
+  # proposals_pending: 0                    # A PROPOSAL IS NOT AN ADOPTION and changes nothing about what the context says
+  #
+  # FIVE STATES, deliberately distinct:
+  #   NOT_PRESENT         no context declared — fine
+  #   DECLARED            declared, not yet verified this session — neither pass nor fail
+  #   CURRENTLY_VERIFIED  located, and matching the declared revision and digest
+  #   STALE               located and readable, and not what the declaration describes
+  #   UNVERIFIABLE        declared and CANNOT BE FOUND — a stop, and not the same as NOT_PRESENT
+  #
+  # NO SILENT MUTATION DURING A CAPABILITY. The digest is taken at capability
+  # open and recomputed at close. A context that changed in between makes that
+  # capability's evidence UNINTERPRETABLE — it was produced against a semantic
+  # authority that no longer exists — so it is a stop, not a refresh. Proving
+  # non-mutation is showing the same digest twice.
+
 dimensions:
   # Declared validation dimensions for this project. Every capability's
   # SCOPE.md selects a subset of these; a dimension not selected here may not
