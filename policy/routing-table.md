@@ -5,8 +5,9 @@ capability boundary — the full log each time, never patched, never a rolling
 summary that overwrites adverse evidence. If this file and `observations.jsonl`
 disagree, the log wins and this file is due for regeneration.
 
-Regenerated 2026-08-15 at the RP2.1 evolution boundary from **19** observations
-(14 prior + 5 from the completed Pilot Run Project). Ordinal bands only. A
+Regenerated 2026-08-20 at the RP2.2 evolution boundary from **26** observations
+(19 prior + 7 from that session). The count is compared against the log by
+`test_the_routing_table_grades_are_the_derived_ones`. Ordinal bands only. A
 configuration nothing has dispatched stays `unprobed` — never assumed working,
 never assumed broken, no invented telemetry.
 
@@ -21,7 +22,7 @@ second.
 | Role | Purpose | Evidence today |
 |---|---|---|
 | COORDINATOR | judgement, decomposition, all Git writes | n/a — never delegated |
-| AUDIT_PRIMARY | fresh, blind, same-family closure audit | `provisional` — 1 real closure audit, 15 findings, 0 false positives |
+| AUDIT_PRIMARY | fresh, blind, same-family closure audit | **`confirmed`** — 7 real closure audits across four sessions, every finding reproduced, 0 false positives |
 | AUDIT_CROSS | fresh, blind, cross-vendor closure audit | **`confirmed`** — 2 real closure audits, 17 findings, 0 false positives |
 | IMPL_SUBSTANTIVE | multi-file, weaker-oracle implementation | `provisional` — claude-cli, 3 RP2 dispatches, none on the Pilot Run |
 | IMPL_ROUTINE | familiar, bounded, strongly-tested implementation | `provisional` — claude-cli, incl. 1 bounded repair |
@@ -42,13 +43,16 @@ Per-configuration detail with evidence paths: `policy/observations.jsonl`.
 
 `AUDIT_PRIMARY` and `READER` both read **`confirmed`** through 2.1.1. Neither was,
 under the rule stated at the top of this file and applied by the command below:
-`AUDIT_PRIMARY` has one validation, which is `provisional`; `READER` has two
+`AUDIT_PRIMARY` had one validation, which is `provisional`; `READER` has two
 dispatches at **two different task classes**, which is one each — and "grades are
 per task class, never per worker" is this file's own rule, three lines up.
 
 An independent audit found it by running the command printed here and reading
 the table above it. Corrected, and now compared by a test rather than by a
-reader.
+reader — which is why `AUDIT_PRIMARY` reads `confirmed` again today and means it:
+six more real closure audits happened during the RP2.2 evolution session, every
+finding reproduced before it counted, and the grade follows the log rather than
+the other way round.
 
 ## The grades are computable, and this file is not the authority
 

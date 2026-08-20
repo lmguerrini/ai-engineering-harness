@@ -54,7 +54,7 @@ def test_unc_path_is_refused():
 
 def test_drive_letter_is_refused():
     assert scope_check.normalise("C:\\Users\\secret") is None
-    assert scope_check.normalise("C:/Users/secret") is None
+    assert scope_check.normalise("C:/Users/someone") is None
 
 
 def test_nul_byte_is_refused_without_crashing():

@@ -103,10 +103,10 @@ were.
 `git check-ignore` rather than a hand-written table.
 
 **An oracle failure worth recording.** The first `pathmatch` differential
-reported 114 divergences and every one was the harness: `git check-ignore`
+reported a great many divergences and every one was the harness: `git check-ignore`
 consults `core.excludesFile`, and this machine's global ignore file contains
 `dist/`, `build/`, `node_modules/` and `*.log`, so the oracle answered for
-patterns it had never been given. Isolating it left 13. An oracle answering from
+patterns it had never been given. Isolating it left a small fraction. An oracle answering from
 a source the test did not control produces confident, specific, entirely
 fictional findings — and it fails toward *more* findings, which reads as
 diligence. The isolation is now part of the test module, with the reason.
@@ -232,11 +232,11 @@ None is tracked, so none is inside the digest.
 
 Held prose, by the `BUDGETS.md` rule:
 
-    in-release (skills/core/*.md + policy/*.md)   1456
+    in-release (skills/core/*.md + policy/*.md)   1460
     installed adapters (outside the envelope)     1023
-    total                                         2479     target ~2,000
+    total                                         2483     target ~2,000
 
-**24.0% over, recorded rather than shaved** — 2.1.1 was 14.9% over on the same
+**24.2% over, recorded rather than shaved** — 2.1.1 was 14.9% over on the same
 rule. One principled reduction was made rather than a cosmetic one: the routing
 table's narrative moved to `docs/`, where read-once evidence belongs, and its
 grade rows became computable from the observation log. Trimming further would
@@ -284,17 +284,22 @@ the namespace is re-verified. Recorded in `tools/adapter_pin.py` and
 
 ## Installed adapters, as they stand at this candidate
 
+Recorded **in full**, because `adapter_pin` requires 64 lowercase hex
+characters and refuses anything shorter — a truncated digest is a digest that
+cannot be pinned, which would have defeated the whole of C2 through the form of
+its own evidence. Found by an independent audit that tried to use them.
+
 Recorded so the founder can pin them, and so a later reader can tell whether the
 adapters changed under a running project. **They are outside the release
 envelope and covered by no tree digest** — that is exactly why they are declared
 and verified rather than frozen (D12, D14 clause 10).
 
-| Adapter | sha256 | Change in this session |
+| Adapter | sha256 (full, so `adapter_pin` accepts it) | Change in this session |
 |---|---|---|
-| `~/.claude/agents/capability-auditor.md` | `62d1a9c1d24eb187…` | **repaired** — isolation mode removed, detached checkout replaced by verification, ref-namespace writes named and refused |
-| `~/.claude/agents/capability-implementer.md` | `c5a0a07daa65c3e7…` | unchanged; it declares no isolation, which is correct for a mutating worker and was the inverted half of the B2 finding |
-| `~/.claude/skills/capability-closure/SKILL.md` | `c2055158b8ff28a9…` | unchanged |
-| `~/.claude/skills/codex-worker/SKILL.md` | `ac750a8b516cfc7e…` | **repaired** — its reads of undocumented Codex internals now carry the four rules in full: explicitly optional, version-fragile, never normative, fallback `requested_only`/`UNKNOWN`. `§8.1` previously *required* the session rollout for identity evidence, which contradicted "optional"; an unreadable rollout now yields `UNKNOWN` rather than a failed dispatch |
+| `~/.claude/agents/capability-auditor.md` | `62d1a9c1d24eb1871f43dcdb2bb1819c3ed7c47289a7152d31ad58309a08a84b` | **repaired** — isolation mode removed, detached checkout replaced by verification, ref-namespace writes named and refused |
+| `~/.claude/agents/capability-implementer.md` | `c5a0a07daa65c3e7c93fa0f9ea2644996cc54e8fe3ecdc4441d04eb60afa916d` | unchanged; it declares no isolation, which is correct for a mutating worker and was the inverted half of the B2 finding |
+| `~/.claude/skills/capability-closure/SKILL.md` | `c2055158b8ff28a9d06203f3bb98c45d0145f14a5963856ba5d7ade80d81368e` | unchanged |
+| `~/.claude/skills/codex-worker/SKILL.md` | `ac750a8b516cfc7ecb2091d16a28091ce840f45ab47b33d3de71dcf9ed8cebae` | **repaired** — its reads of undocumented Codex internals now carry the four rules in full: explicitly optional, version-fragile, never normative, fallback `requested_only`/`UNKNOWN`. `§8.1` previously *required* the session rollout for identity evidence, which contradicted "optional"; an unreadable rollout now yields `UNKNOWN` rather than a failed dispatch |
 
 Both repairs take effect **at the next session** (`RP-EC-6`), so neither changed
 the behaviour of this one.
@@ -318,7 +323,7 @@ twenty-nine.
 
 | Finding | Reproduced | Repair |
 |---|---|---|
-| **The `13 divergences` figure does not reproduce** | 13 was measured on a grid that was then replaced without re-measuring | **restated on the wrong grid, and caught again in round 2.** See below |
+| **The divergence figure does not reproduce** | it was measured on a grid that was then replaced without re-measuring | **restated on the wrong grid, caught again in round 2, and found still restated in round 3.** See below |
 | **`routing-table.md` contradicted the command printed inside it** | `AUDIT_PRIMARY` read `confirmed` on one validation, and `READER` read `confirmed` on two dispatches at *two* task classes — against the file's own "one validation is provisional" and "grades are per task class" | both corrected to `provisional`; the role → (family, task class) mapping is now machine-readable and a test compares every row to the derivation |
 | **The held-prose breach was undisclosed and 2.1.1's disclosure was deleted** | The manifest's `known_limitations[0]` carried the figure at 2.1.1 and did not at 2.2.0 | measured, recorded, and now checked by a test against the tree |
 | **Four surfaces told a project to create the pin this release calls unverifiable** | Following the bootstrap produced `UNVERIFIABLE_LEGACY_PIN` | corrected to four fields; a test binds the documented set to `_REQUIRED_FOR_VERIFICATION`, as D17 does for the push form |
@@ -362,8 +367,8 @@ twenty-nine.
 
 Two blind auditors again, fresh context, distinct lenses — *did the repairs
 actually repair* and *non-regression plus honesty* — each on its own
-coordinator-prepared snapshot at the repair revision, with the tree frozen for
-the duration. **Both returned NOT READY.** Between them: 11 blockers, 11 majors,
+coordinator-prepared snapshot at `7faf79f64b671a961fb2245595577b565d566274`,
+with the tree frozen for the duration. **Both returned NOT READY.** Between them: 11 blockers, 11 majors,
 15 minors. Every material claim was reproduced before it counted.
 
 ### The finding that matters most
@@ -397,11 +402,10 @@ tail bears a trailer, and calls a lost refusal a regression whenever it does.
 
 ### The same defect, a second time
 
-The divergence figure was corrected in round 1 **onto the wrong grid**. 29 was
-re-measured on the 986-pair grid that had just been replaced, in the same commit
-that widened the grid to 1,978 pairs, where the measured figure is larger and
-includes over-matches. One auditor put it precisely: this file had narrated the
-mistake and then committed it a generation later.
+The divergence figure was corrected in round 1 **onto the wrong grid** — the one
+that had just been replaced, in the same commit that widened it, where the real
+figure is larger and includes over-matches. One auditor put it precisely: this
+file had narrated the mistake and then committed it a generation later.
 
 **So the number is no longer written anywhere.** `BASELINE_DIVERGENCES` lives in
 `tools/tests/test_pathmatch.py`, a test computes it from the frozen 2.1.1 module
@@ -453,3 +457,59 @@ one of them is a case where 2.1.1 disagreed with git and this release agrees. An
 reproduced the safety consequence end to end on the same repository: 2.1.1
 scanned it `clean`; this release reports three leaks, because an exempted blob
 is now read and only the project's own vocabulary is filtered from its findings.
+
+
+## Closure audit — round 3
+
+Two blind auditors, snapshots at `47b7c677fdf8458f7fac1a276bb658061b0eb5c9`,
+lenses *break it* and *is this fit for a release authority*. **Both returned NOT
+READY.** Six blockers between them, and again almost no overlap.
+
+### The code held; the account did not, again
+
+One auditor ran **143,820** single-pattern comparisons against real
+`git check-ignore` plus 1,500 generated negation sets, the other **111,267** on
+a grid the release does not ship. Between them they removed the `-z` from all
+ten path enumerations and injected mutations reverting every claimed repair —
+all killed. Six of the seven binding tests introduced in round 2 failed under
+mutation of what they guard. The digest reproduced from two independent
+clean-room implementations.
+
+### What they found
+
+| Finding | Reproduced | Repair |
+|---|---|---|
+| **The divergence figure was restated a third time** — and a fabricated one shipped green, because the guard written to prevent that could not see the shape it was written in | demonstrated by mutation | **no prose states a count anywhere now.** The guard scans every file this release touched, in every shape a restatement has taken, and prior releases' records are excluded mechanically from the diff rather than by a filename list |
+| **The commit gate accepted four more classes 2.1.1 refused** — an invisible character after the prefix, a doubled `!!`, an empty scope `()`, two scope groups `(a)(b)` | all reproduced through both CLIs | the prefix stripper is a **parser, not a pattern** — three regexes each missed a decoration nobody had thought of. Invisible formatting characters are now refused outright *and* removed from the trailer surface, so the message fails and the reader is told which rule |
+| **A leading space defeated trailer detection entirely** — pre-existing at 2.1.1, and the test asserting the opposite was named for the universal it did not hold | reproduced | both trailer patterns tolerate leading whitespace; the prefix stripper does too, so an indented Conventional subject still passes |
+| **`pathmatch` stripped trailing tabs; git strips only spaces** — and the test pinning it asserted the divergence *while naming git in its own title* | differential | spaces only, and the test now asserts git's answer |
+| **`pathmatch` implemented no backslash escapes and read `[^…]` as a literal class** — silently dead declarations, and over-matching in the negated-class case. Both pre-existing at 2.1.1 | differential | escapes and `[^…]` translated for `fnmatch`; both directions now agree with git |
+| **The YAML subset returned double-quoted escapes unresolved** — a declared private *pattern* compiled to something matching nothing, so a leak could ship clean. The founding defect of this toolbelt, reintroduced through the parser | reproduced end to end | escapes resolved, unknown ones refused, and an escaped quote inside a double-quoted scalar no longer reads as unterminated |
+| **`PACK_MANIFEST.json` still instructed a three-field pin** — the fourth surface, missed by round 1's repair, in the field D18 added | reproduced with `classify_pin` | corrected, and the manifest added to the binding test's file list |
+| **The adapter digests were recorded truncated**, so `adapter_pin` refuses them — C2's whole guarantee defeated by the form of its own evidence | reproduced | recorded in full |
+| **The packet was written before round 2 and never revisited** — it never said any audit returned NOT READY, nor that a repair had regressed the gate | read against `git log` | rewritten, and it now opens with that history |
+| **D14 clause 7 was contradicted by two shipped drills** telling a project to append to `policy/observations.jsonl` — inside the pinned release, inside its digest | read | both corrected; D14 clause 7 states that the pack's log is pack evidence written only in an evolution session |
+| The manifest's `deferred` block was a release out of date; a test hardcoded an adapter line count; the machine-path guard exempted two plausible usernames; `resource_observation` exited 0 on an unreadable payload | each read or run | each repaired |
+
+### What this round says about the process
+
+Three rounds, six auditors, and the same shape every time: **the code was hard
+to break and the release's account of itself was not.** Every number bound to a
+measurement reproduced; every number left in prose was stale or wrong. Three of
+the coordinator's own oracles had to be repaired before they could catch the
+thing they were written for — a differential that excused the regression because
+the baseline had not detected it either, a neutral-substitution variant that
+excused it for the same reason, and an ASCII-only tail judge that excused a
+non-ASCII variant. Each was found by falsifying it, not by reading it.
+
+**No round has returned READY.** These findings are closed and the suite is
+green; no auditor has yet seen the result.
+
+### C12 — qualification and release packet — CLOSED
+
+Three audit rounds, every finding reproduced before repair and every repair
+falsified against the behaviour it replaced. The candidate's identity, its
+qualification figures, its prose budget, its pin field set, its push form, its
+routing grades and its divergence figure are each bound to a measurement rather
+than restated. What remains unverifiable from the repository is listed in the
+release packet's known limitations rather than left to be discovered.

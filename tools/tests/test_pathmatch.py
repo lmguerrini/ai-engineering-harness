@@ -54,7 +54,7 @@ PACK_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 #: **Asserted here and verified by computation**, never the other way round.
 #: Under-matching means a declared rule silently covered nothing; over-matching
 #: means it silently covered more than it said. Both directions were present.
-BASELINE_DIVERGENCES = (95, 88, 7)
+BASELINE_DIVERGENCES = (131, 114, 17)
 
 
 # --- individually reproduced divergences, as direct assertions ---------------
@@ -193,6 +193,7 @@ PATHS = [
     # one could not.
     "foo", "foo/bar", "foo/bar/baz.txt", "a/foo.tar.gz", "b/a", "b/a/c", "a/d.txt",
     "q/r/u.txt", "fixtures/one.md", "fixtures/real-notes.md", "a b/c.txt", "q.txt",
+    "a*b.txt", "aXb.txt", "?.txt", "fix!.txt", "a.txt\t", "b.txt",
 ]
 
 PATTERNS = [
@@ -203,6 +204,9 @@ PATTERNS = [
     "notes/*/day.md", "t/**", "**", "*",
     "foo/**", "foo/**/", "**/a/**", "a/**", "a/**/", "annotations/**", "annotations/**/",
     "q/**/u.txt", "*/*/*", "**/**", "a b/", "fixtures/*", "[!a].txt", "*.txt ",
+    # Forms an independent differential found and this grid could not see:
+    # escapes, `[^…]` negation, and non-space trailing whitespace.
+    "[^a].txt", "a\\*b.txt", "\\?.txt", "fix\\!.txt", "*.txt\t", "dist//",
 ]
 
 
@@ -314,11 +318,13 @@ def test_an_interior_double_star_still_matches_zero_components():
 # --- whitespace ---------------------------------------------------------------
 
 
-def test_trailing_whitespace_is_stripped_from_a_pattern_as_git_strips_it():
-    """`"*.txt "` matched nothing, which is the silent-dead-declaration failure
-    this module exists to prevent."""
+def test_trailing_spaces_are_stripped_from_a_pattern_and_other_whitespace_is_not():
+    """Git strips trailing **spaces** only. This test asserted that a trailing
+    tab was stripped too — a divergence from the oracle named in its own title,
+    and in the over-matching direction. Found by an independent differential."""
     assert matches_any("a.txt", ["*.txt "])
-    assert matches_any("a.txt", ["*.txt\t"])
+    assert not matches_any("a.txt", ["*.txt\t"])
+    assert matches_any("a.txt\t", ["*.txt\t"])
 
 
 def test_an_escaped_trailing_space_is_kept():
@@ -401,4 +407,52 @@ def test_the_repaired_module_has_no_divergences_on_the_same_grid(oracle):
 
 
 def test_the_grid_is_the_size_the_documents_quote():
-    assert len(PATTERNS) * len(PATHS) == 1978
+    #: The grid must stay large enough to be worth the name. The *figure* is
+    #: bound by `test_the_recorded_baseline_divergence_figure_is_the_measured_one`,
+    #: which fails whenever the grid changes and the number does not — which is
+    #: exactly what happened when this grid was last widened.
+    assert len(PATTERNS) * len(PATHS) >= 2000
+
+
+# --- escapes and character classes ---------------------------------------------
+#
+# `fnmatch` has neither git's backslash escapes nor its `[^…]` negation, so a
+# pattern using either was silently dead or silently over-matching. Both
+# pre-existing at 2.1.1, both found by an independent differential rather than
+# by reading the code.
+
+
+@pytest.mark.parametrize(
+    "pattern, path, expected",
+    [
+        ("a\\*b.txt", "a*b.txt", True),      # an escaped star is a literal star
+        ("a\\*b.txt", "aXb.txt", False),
+        ("\\?.txt", "?.txt", True),
+        ("\\?.txt", "a.txt", False),
+        ("\\[a\\].txt", "[a].txt", True),
+        ("fix\\!.txt", "fix!.txt", True),
+        ("a\\ b", "a b", True),
+    ],
+)
+def test_a_backslash_escapes_a_wildcard(pattern, path, expected):
+    assert matches_any(path, [pattern]) is expected
+
+
+@pytest.mark.parametrize(
+    "pattern, path, expected",
+    [
+        ("[^a].txt", "a.txt", False),   # git reads `^` as a negator
+        ("[^a].txt", "b.txt", True),
+        ("[!a].txt", "a.txt", False),   # …and `!` as the same thing
+        ("[!a].txt", "b.txt", True),
+        ("[ab].txt", "a.txt", True),
+        ("[ab].txt", "c.txt", False),
+    ],
+)
+def test_a_character_class_negates_with_either_marker(pattern, path, expected):
+    assert matches_any(path, [pattern]) is expected
+
+
+def test_a_doubled_separator_matches_nothing_as_git_treats_it():
+    assert not matches_any("dist/a.txt", ["dist//"])
+    assert matches_any("dist/a.txt", ["dist/"])

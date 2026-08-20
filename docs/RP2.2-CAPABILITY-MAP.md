@@ -69,12 +69,16 @@ its symptom.
 ## Oracle notes
 
 **The grid a number is measured on is part of the number — and this was got
-wrong twice.** EC-A(ii) was first recorded as 13 divergences, measured on a grid
+wrong three times.** EC-A(ii)'s divergence count was first recorded from a grid
 that was then replaced without re-measuring. An audit caught it. The correction
-was recorded as 29 — measured on the *replaced* grid, in the same commit that
-widened the grid again to 1,978 pairs. A second audit caught that, observing
-that this file had narrated the mistake and then committed it a generation
-later. The measured figure on the shipped grid is **95 (88 under, 7 over)**.
+was measured on the *replaced* grid, in the same commit that widened the grid
+again. A second audit caught that, observing that this file had narrated the
+mistake and then committed it a generation later. A third found the corrected
+figure still restated in this very paragraph, and proved it by shipping a
+fabricated one green. The measured figure on the shipped grid is `BASELINE_DIVERGENCES` in
+`tools/tests/test_pathmatch.py`, and it is not repeated here — a third audit
+round demonstrated that a fabricated figure in *this sentence* shipped green,
+because the guard written to prevent exactly that could not see this shape.
 
 The repair is not the number. The repair is that no document states it: it is
 computed from the frozen baseline against the shipped grid, and the grid and the
@@ -83,8 +87,8 @@ artifacts is the defect class this pack exists to refuse, and it took two audits
 to stop restating one.
 
 **The oracle has to be isolated.** The first `pathmatch` differential reported
-114 divergences. Every one was the harness: `git check-ignore` was consulting a global `core.excludesFile`
-containing `dist/`, `build/`, `node_modules/` and `*.log`, so the oracle
-answered for patterns it had never been given. Isolating the oracle left 13.
-Recorded because the discarded 114 are the reason the remaining 13 are worth
-believing.
+a great many divergences and every one was the harness: `git check-ignore` was
+consulting a global `core.excludesFile` containing `dist/`, `build/`,
+`node_modules/` and `*.log`, so the oracle answered for patterns it had never
+been given. Isolating the oracle left a small fraction of them. Recorded because
+the discarded ones are the reason the remaining ones are worth believing.

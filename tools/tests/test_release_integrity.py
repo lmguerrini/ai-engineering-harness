@@ -390,8 +390,12 @@ def test_the_documented_pin_field_set_is_the_one_the_verifier_requires():
     spelled = {3: "three", 4: "four", 5: "five", 6: "six"}[len(required)]
 
     offenders = []
+    #: `PACK_MANIFEST.json` included. It is the machine-readable identity
+    #: document a consuming project is directed to read, and it was the one
+    #: surface of four that the round-1 repair missed — found by round 3, in the
+    #: field the repair itself had added.
     for name in ("README.md", "templates/PILOT_RUN_PROJECT_BOOTSTRAP.md",
-                 "templates/PROJECT.yaml.template"):
+                 "templates/PROJECT.yaml.template", "PACK_MANIFEST.json"):
         text = (ROOT / name).read_text(encoding="utf-8")
         for number, line in enumerate(text.splitlines(), 1):
             lowered = line.lower()
@@ -447,7 +451,12 @@ def test_the_held_prose_figure_the_gate_record_states_is_the_measured_one():
 def test_the_manifest_discloses_the_held_prose_breach_while_there_is_one(manifest):
     measured = _held_prose_lines()
     limitations = " ".join(manifest.get("known_limitations") or [])
-    if measured + 900 > 2000:  # the adapters alone are ~1,000 lines
+    # The adapter half is read from the manifest's own disclosure rather than
+    # guessed at — it was the one number in this file that was neither measured
+    # nor bound.
+    declared_adapters = re.search(r"(\d+) of\s+those lines are the two installed adapters", limitations)
+    adapters = int(declared_adapters.group(1)) if declared_adapters else 0
+    if measured + adapters > 2000:
         assert "held prose" in limitations, (
             "the release is over the held-prose target and the manifest does not say so"
         )
@@ -610,28 +619,67 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
     """
     import re
 
-    #: Phrases that would be a hand-written divergence count.
+    #: Every shape a hand-written divergence count takes. The first version
+    #: required a digit immediately followed by the word, so
+    #: `95 (88 under, 7 over)` — the only real restatement in the tree — sailed
+    #: past it, and a third audit round shipped a fabricated `400 (390 under, 10
+    #: over)` green to prove it. A guard that cannot see the thing it was
+    #: written for is worse than the unbound number it replaced.
+    number = r"(?:\d+|thirteen|twenty-?nine|ninety-?five|forty|fifty|sixty|seventy|eighty|ninety|hundred)"
     pattern = re.compile(
-        r"(?<![\d.])(\d+|thirteen|twenty-nine|ninety-five)\s+(?:pattern/path\s+)?"
-        r"(?:pairs?\s+)?(?:divergen|disagree|under-match|over-match)",
+        rf"(?<![\d.])(?:"
+        rf"{number}\s+(?:[\w/-]+\s+){{0,3}}(?:diverg|disagree|under-match|over-match)"
+        rf"|{number}\s*\(\s*{number}\s+(?:under|over)"
+        rf"|(?:left|leaving|remaining|remained)\s+(?:only\s+)?{number}\b"
+        rf"|{number}\s+(?:under|over)-?match"
+        rf")",
         re.IGNORECASE,
     )
-    #: A line that is explicitly recounting a *past* wrong figure, or the
-    #: contaminated-oracle episode, is a record of what happened rather than a
-    #: claim about the module. Those must stay — deleting them would remove the
-    #: disclosure, which is the same move this whole rule exists to prevent.
-    historical = (
-        "was first recorded", "was the harness", "does not reproduce",
-        "was measured on", "wrong twice", "measured on a grid", "re-measured",
-        "reported 114", "114 divergences",
-    )
+    #: **This is a heuristic over prose and it is not complete.** It kills every
+    #: restatement shape that has actually occurred, and a determined sentence
+    #: can evade it. That is why the durable repair is the *computation* in
+    #: `test_pathmatch.BASELINE_DIVERGENCES`, not this — this only stops the
+    #: figure being copied back out into a document, which is what happened
+    #: three times.
+    #:
+    #: No exemptions by phrasing. A list of "this line is historical" markers was
+    #: the first attempt and it is the wrong shape: it has to be extended every
+    #: time somebody writes a sentence the list did not anticipate, which is the
+    #: same failure as a hand-written grid. **No prose states a divergence count
+    #: at all** — the history is told without numbers, and the numbers live in
+    #: the two test modules that compute them.
+
+    #: **Every tracked file**, not a hand-written list. The sibling machine-path
+    #: guard already worked this way; this one did not, so a restatement in a
+    #: file nobody had listed was invisible. `tools/tests/test_pathmatch.py` is
+    #: the one exemption: it is where the figure legitimately lives.
+    import subprocess
+
+    #: Only what this release wrote. A prior release's gate record is history,
+    #: left as written — the same rule `_current_changelog_section` applies —
+    #: and a convention introduced now cannot retroactively govern it. Derived
+    #: from the diff rather than from a hand-written list of filenames, which is
+    #: the shape that let a restatement hide in the first place.
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", "-z",
+         "4495e61850c08027e47eac6d0db84b4b3380e300", "HEAD"],
+        cwd=str(ROOT), capture_output=True, check=True,
+    ).stdout
+    touched = [entry.decode("utf-8") for entry in changed.split(b"\0") if entry]
+    assert touched, "the diff against the baseline is empty; the scan would cover nothing"
 
     offenders = []
-    for name in ("tools/pathmatch.py", "CHANGELOG.md", "docs/RP2.2-GATE.md",
-                 "docs/RP2.2-CAPABILITY-MAP.md", "docs/RP2.2-RELEASE-PACKET.md", "README.md"):
-        text = (ROOT / name).read_text(encoding="utf-8")
+    for name in touched:
+        if name in ("tools/tests/test_pathmatch.py", "tools/tests/test_release_integrity.py"):
+            continue        # where the figure is computed, and where this rule lives
+        if not (ROOT / name).exists():
+            continue        # deleted in the delta
+        try:
+            text = (ROOT / name).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):  # pragma: no cover - environment
+            continue
         for number, line in enumerate(text.splitlines(), 1):
-            if pattern.search(line) and not any(marker in line for marker in historical):
+            if pattern.search(line):
                 offenders.append(f"{name}:{number}: {line.strip()[:90]}")
     assert not offenders, (
         "these state a divergence count in prose; the figure is computed by "
@@ -722,7 +770,13 @@ def test_no_tracked_file_carries_a_real_machine_path():
     import re
     import subprocess
 
-    fixture_names = ("someone", "alice", "exampleuser", "secret", "throwaway")
+    #: Names that only ever appear as synthetic fixtures. Two plausible-looking
+    #: words were on this list and should not have been: exempting a name a real
+    #: person might use means a real home directory under that name passes the
+    #: guard. An audit pointed it out. The list is now the smallest set that
+    #: still lets the scanner's own negative fixtures live in the tree, and the
+    #: fixtures that used the removed words were renamed rather than exempted.
+    fixture_names = ("someone", "alice", "exampleuser")
     real = re.compile(r"/(?:Users|home)/(?!(?:%s)\b)[\w.\-]+" % "|".join(fixture_names))
 
     listing = subprocess.run(
@@ -741,3 +795,19 @@ def test_no_tracked_file_carries_a_real_machine_path():
             if real.search(line):
                 offenders.append(f"{entry.decode()}:{number}: {line.strip()[:80]}")
     assert not offenders, "these ship a real machine path: " + "; ".join(offenders)
+
+
+def test_the_routing_table_states_the_observation_count_it_was_derived_from():
+    """A count in prose beside a derived view is a number nothing checks — the
+    defect this release spent three audit rounds on. Bound here."""
+    import re
+
+    table = (ROOT / "policy" / "routing-table.md").read_text(encoding="utf-8")
+    log = (ROOT / "policy" / "observations.jsonl").read_text(encoding="utf-8")
+    rows = len([line for line in log.splitlines() if line.strip()])
+
+    stated = re.search(r"from \*\*(\d+)\*\* observations", table)
+    assert stated, "the routing table does not say how many observations it was derived from"
+    assert int(stated.group(1)) == rows, (
+        f"the routing table says {stated.group(1)} observations; the log holds {rows}"
+    )

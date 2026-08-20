@@ -59,4 +59,8 @@ HANDOFF.md is bounded at 200 lines and is REPLACED, never accreted.
 ## Recording
 
 Result to the capability's `evidence/` via `evidence_put`, one line to
-`policy/observations.jsonl`. An interrupted drill is INCOMPLETE, never passed.
+the project's own routing-observations file — **never** to
+`policy/observations.jsonl` inside a pinned release, which a project writing
+there would mutate, changing its digest and breaking every pin to it mid-run.
+Observations are pooled into the pack's log only during a pack-evolution
+session (D13, D14 clause 7). An interrupted drill is INCOMPLETE, never passed.

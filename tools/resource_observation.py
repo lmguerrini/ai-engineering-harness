@@ -388,7 +388,7 @@ def _cli(argv: list[str]) -> int:
 
     if args.json:
         print(json.dumps(observation.as_record(), indent=2))
-        return 0
+        return 1 if observation.notes else 0
     if args.status_line:
         five = observation.window("five_hour")
         seven = observation.window("seven_day")
@@ -398,7 +398,10 @@ def _cli(argv: list[str]) -> int:
         print(" · ".join(parts))
         return 0
     print(observation.render(now))
-    return 0
+    # A payload that could not be read is not a reading. The report says so, but
+    # a `--json` consumer reads the exit status, and 0 there is indistinguishable
+    # from a clean observation.
+    return 1 if observation.notes else 0
 
 
 if __name__ == "__main__":

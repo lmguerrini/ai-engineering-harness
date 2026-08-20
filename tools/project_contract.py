@@ -76,6 +76,17 @@ def _strip_comment(line: str) -> str:
     while index < len(line):
         character = line[index]
         if quote:
+            # Inside a DOUBLE-quoted scalar a backslash escapes the next
+            # character, including the closing quote. Tracking quotes without
+            # that made `"q\\"inside"` look unterminated and refused a valid
+            # document — fail-closed, and still wrong. A single-quoted scalar
+            # has no backslash escape; there `''` is the doubled-quote form and
+            # is handled where the scalar is read.
+            if quote == '"' and character == "\\" and index + 1 < len(line):
+                out.append(character)
+                out.append(line[index + 1])
+                index += 2
+                continue
             out.append(character)
             if character == quote:
                 quote = None
@@ -92,6 +103,18 @@ def _strip_comment(line: str) -> str:
     return "".join(out).rstrip()
 
 
+def _escaped_close(text: str) -> bool:
+    """Whether a double-quoted scalar's closing quote is itself escaped."""
+    if text[0] != '"':
+        return False
+    backslashes = 0
+    index = len(text) - 2
+    while index >= 0 and text[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return backslashes % 2 == 1
+
+
 def _scalar(raw: str) -> object:
     """One YAML scalar, in the forms the contract template uses."""
     text = raw.strip()
@@ -105,11 +128,13 @@ def _scalar(raw: str) -> object:
             f"YAML anchors and aliases are not in the supported subset: {raw!r}"
         )
     if text[0] in "\"'":
-        if len(text) < 2 or text[-1] != text[0]:
+        if len(text) < 2 or text[-1] != text[0] or _escaped_close(text):
             raise ContractError(f"unterminated quoted scalar {raw!r}")
         inner = text[1:-1]
         # In a single-quoted YAML scalar, `''` is one literal quote.
-        return inner.replace("''", "'") if text[0] == "'" else inner
+        if text[0] == "'":
+            return inner.replace("''", "'")
+        return _double_quoted(inner, raw)
     lowered = text.lower()
     if lowered in ("true", "false"):
         return lowered == "true"
@@ -118,6 +143,60 @@ def _scalar(raw: str) -> object:
     if re.fullmatch(r"-?\d+", text):
         return int(text)
     return text
+
+
+#: The escape sequences a YAML double-quoted scalar defines. Anything else is
+#: refused rather than passed through — this module's stated policy, and the
+#: reason it matters here is not stylistic.
+#:
+#: Returning the raw text was a **silent mis-parse with a leak behind it**. A
+#: project declaring `project_patterns: ["\\bAcmeSecret\\b"]` — the ordinary way
+#: to write a regex in double quotes — got the two-character sequence
+#: backslash-b, which compiles to a literal `b` preceded by a backslash and
+#: matches nothing. The declared rule applied to every surface and found
+#: nothing, and the scan reported clean. That is the founding defect of this
+#: whole toolbelt, reintroduced through the parser. Found by an independent
+#: audit, reproduced end to end through the real gate.
+_DOUBLE_QUOTE_ESCAPES = {
+    "0": "\0", "a": "\a", "b": "\b", "t": "\t", "\t": "\t", "n": "\n", "v": "\v",
+    "f": "\f", "r": "\r", "e": "\x1b", " ": " ", '"': '"', "/": "/", "\\": "\\",
+    "N": "\x85", "_": "\xa0", "L": "\u2028", "P": "\u2029",
+}
+
+
+def _double_quoted(inner: str, raw: str) -> str:
+    """A double-quoted scalar with its escapes resolved, or a stated failure."""
+    out: list[str] = []
+    index = 0
+    while index < len(inner):
+        character = inner[index]
+        if character != "\\":
+            out.append(character)
+            index += 1
+            continue
+        if index + 1 >= len(inner):
+            raise ContractError(f"trailing backslash in double-quoted scalar {raw!r}")
+        following = inner[index + 1]
+        if following in _DOUBLE_QUOTE_ESCAPES:
+            out.append(_DOUBLE_QUOTE_ESCAPES[following])
+            index += 2
+            continue
+        if following in ("x", "u", "U"):
+            width = {"x": 2, "u": 4, "U": 8}[following]
+            digits = inner[index + 2:index + 2 + width]
+            if len(digits) != width or any(d not in "0123456789abcdefABCDEF" for d in digits):
+                raise ContractError(
+                    f"malformed \\{following} escape in double-quoted scalar {raw!r}"
+                )
+            out.append(chr(int(digits, 16)))
+            index += 2 + width
+            continue
+        raise ContractError(
+            f"unknown escape \\{following} in double-quoted scalar {raw!r}; this parser "
+            "resolves the escapes YAML defines and refuses the rest rather than passing "
+            "them through as text"
+        )
+    return "".join(out)
 
 
 def _flow_sequence(raw: str) -> list[object]:

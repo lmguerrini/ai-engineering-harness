@@ -51,5 +51,5 @@ rule. They are as load-bearing as the seven blocks.
 ## Verdict recording
 
 Result goes to the capability's `evidence/` as a content-addressed file via
-`evidence_put`, and one line to `policy/observations.jsonl`. A partial run is
+`evidence_put`, and one line to the **project's own** routing-observations file. Never to `policy/observations.jsonl` inside a pinned release: a project that writes there mutates the release, changes its digest and breaks every pin to it mid-run. Observations are pooled into the pack's log only during a pack-evolution session (D13, D14 clause 7). A partial run is
 recorded as INCOMPLETE, never as passed.

@@ -264,7 +264,12 @@ prior gate or decision record was rewritten.
     qualified fail-closed gate, and a gate may not be relaxed because a vendor
     feature is believed to cover it.
 7.  **Project runtime state stays project-local** — evidence, routing
-    observations, Evolution Candidates and Project Context included.
+    observations, Evolution Candidates and Project Context included. The pack's
+    own `policy/observations.jsonl` is **pack** evidence, not project state: it
+    is written only during a pack-evolution session, and a project that appends
+    to it would mutate the release it is pinned to, change its digest, and break
+    every pin to it mid-run. Two shipped drill documents said to write there and
+    were corrected in RP2.2; an audit found them.
 8.  **Releases remain immutable per active project capability.** A new release
     is never silently adopted by a running project.
 9.  **Project Context is a first-class contract capability** at the declaration

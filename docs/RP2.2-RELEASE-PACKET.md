@@ -1,9 +1,26 @@
 # RP2.2 — founder release packet
 
-**Status: `READY_FOR_FOUNDER_RELEASE`** as a candidate. The manifest declares
-`IN_PROGRESS`, which is the closest state the existing model permits: `pack_pin`
-knows two states, and `QUALIFIED_AND_FROZEN` is the one a project may adopt.
-Moving it there is a human act and was not performed.
+**The manifest declares `IN_PROGRESS`**, which is the closest state the existing
+model permits: `pack_pin` knows two, and `QUALIFIED_AND_FROZEN` is the one a
+project may adopt. Moving it there is a human act and was not performed.
+
+**Read this before deciding.** Three closure-audit rounds ran — six blind
+auditors on distinct lenses — and **every round returned NOT READY**. Every
+finding was reproduced by the coordinator and repaired, and the next round then
+found more, including in the repairs themselves. Round 1's repair **regressed
+the commit gate against the qualified 2.1.1 baseline**, which two independent
+auditors caught. `docs/RP2.2-GATE.md` records each round, what was right, and
+what the coordinator got wrong.
+
+That history is the most decision-relevant thing about this candidate, and it
+cuts both ways: the code was hard to break — one auditor ran 143,820 pattern
+comparisons against `git check-ignore` and another 111,267, both finding zero
+divergences; injected mutations reverting every claimed repair were killed every
+time — while the release's **account of itself** failed repeatedly, and had to
+be repaired by binding numbers to measurements rather than by retyping them.
+
+**No round has yet returned READY.** The final round's findings are closed and
+the suite is green, but no auditor has seen the result of closing them.
 
 ## What to check first
 
@@ -48,8 +65,9 @@ configured and none was added.
 The pack now checks four things it previously asserted and could not check: the
 **adapters** it dispatches through, the **release** a project is pinned to and
 how it moves between releases, the **semantic authority** a project runs
-against, and the **capacity** a routing decision assumes. Plus eleven reproduced
-defects in the machinery that was already there — one of which was a real leak.
+against, and the **capacity** a routing decision assumes. Plus **ten** reproduced defects in the machinery that was already there — one of
+them a real leak — and one enforcement added where no drift existed. The gate
+record's C3 table has eleven rows and says so of the eleventh.
 
 ## The finding that most deserves a decision
 
@@ -80,7 +98,7 @@ performed.** Nothing was migrated and no project file was touched.
 `~/.claude/agents/capability-auditor.md` (isolation mode removed) and
 `~/.claude/skills/codex-worker/SKILL.md` (its reads of undocumented Codex
 internals now carry the four required rules). Digests are in the gate record so
-they can be pinned. Originals are retained in this session's scratch directory.
+they can be pinned. **The pre-repair originals are not retained anywhere durable** — they were held in an ephemeral session directory. Their content is recoverable only from the description in the gate record, which is a real gap in the evidence for C2 and is stated here rather than left to be discovered.
 
 **Both take effect at the next session, not this one** — see RP-EC-6, which was
 reproduced live when two auditors dispatched after the repair still received
@@ -94,19 +112,35 @@ adapter. None is a blocker for a project adopting this release.
 
 ## Known limitations
 
-- **Held prose is 24.0% over the ~2,000-line target** (2.1.1 was 14.9% over).
-  Recorded rather than shaved; one principled reduction was made.
-- **Both closure auditors were same-family.** The final-gate tier requires two
-  blind auditors, "one cross-vendor **where available**"
-  (`policy/auditor-strategy.md`). Two blind auditors ran, on distinct lenses,
-  each on its own coordinator-prepared snapshot. Cross-vendor was **not**
-  available: the session's routing direction was that the Codex general pool is
-  constrained and should not be used. So the tier is satisfied as written,
-  and the more valuable half of it — the measured finding that the two auditor
-  populations are *almost disjoint* rather than redundant — was not obtained.
-  Recorded as a real reduction in coverage rather than as a met requirement.
-- The routing evidence base is still the same recorded observations. Nothing was
-  invented, and unprobed configurations stay unprobed.
+- **No audit round has returned READY.** Three rounds each returned NOT READY;
+  the last round's findings are repaired and unaudited. A fourth round is the
+  obvious next step and was not run before handing this over.
+- **Round 1's repair regressed the commit gate** against 2.1.1 (a trailer
+  escaping behind whitespace or a second prefix). Repaired, and now pinned by a
+  differential against the frozen baseline — but it happened, and it happened in
+  a repair.
+- **Held prose is over the ~2,000-line target** — the figure is in
+  `PACK_MANIFEST.json` `known_limitations` and `docs/RP2.2-GATE.md`, measured
+  and bound by test. 2.1.1 was 14.9% over on the same rule.
+- **Both halves of that figure are not equally checkable.** The in-release lines
+  are measured by a test; the installed-adapter lines are outside the release and
+  cannot be verified from it.
+- **Several claims are unfalsifiable from the repository**, and are marked as
+  such in the gate record: the four adapter digests and the two adapter repairs
+  (outside the envelope), the Project Context file count (in another project),
+  and the status-line payload schema (read from the installed client's own
+  documentation, with no artifact shipped). `resource_observation.py` has been
+  exercised against constructed payloads and **never against a live one**.
+- **Cross-vendor audit was not available** in any round. The tier asks for two
+  blind auditors with one cross-vendor *where available*; two ran each round, and
+  the measured value of the tier — that the two populations come back almost
+  disjoint — was obtained within one family instead. Recorded as a real
+  reduction in coverage.
+- **The tree digest is over working-tree bytes.** A checkout with
+  `core.autocrlf=true` produces a different digest for the same commit. There is
+  no `.gitattributes`.
+- The routing evidence base is still the recorded observations plus this
+  session's. Nothing was invented, and unprobed configurations stay unprobed.
 
 ## Where the detail is
 

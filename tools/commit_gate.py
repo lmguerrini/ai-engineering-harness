@@ -57,6 +57,23 @@ _COAUTHOR = re.compile(r"co-authored-by", re.IGNORECASE)
 # Includes the Unicode line and paragraph separators. Python's ``.`` matches
 # them, so without this they can smuggle a visual line break past the shape.
 _CONTROL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\r\x85\u2028\u2029]")
+
+#: Characters that occupy no width and therefore cannot be seen in a diff, a
+#: log, or a review. Unicode general category `Cf` (zero-width space, joiners,
+#: word joiner, byte-order mark, bidirectional overrides) plus the soft hyphen
+#: and the Mongolian vowel separator, which render as nothing in practice.
+#:
+#: They are prohibited for the same reason the control characters above are,
+#: and the reason is not hypothetical: one of them placed after a Conventional
+#: Commit prefix hid a trailer from a `^`-anchored pattern, so
+#: `fix: <U+200B>Signed-off-by: A Person` passed a gate that 2.1.1 refused.
+#: A message a reviewer cannot see the whole of is not a public-safe message,
+#: whatever else is true of it.
+_INVISIBLE = re.compile(
+    "[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f"
+    "\u202a-\u202e\u2060-\u2064\u2066-\u206f\u3164\ufe00-\ufe0f\ufeff"
+    "\uffa0\ufff9-\ufffb]"
+)
 _UUID = re.compile(
     r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
 )
@@ -69,14 +86,20 @@ _UUID = re.compile(
 # positive.
 # The colon does not have to be followed by a space: Git parses
 # ``Signed-off-by:someone`` as a trailer just as readily as the spaced form.
+#
+# Leading whitespace does not hide one either. Both patterns anchor with ``^``,
+# and a single leading space defeated them entirely — `` fix: Signed-off-by: …``
+# and even ``  Reviewed-by: X`` read clean. Pre-existing at 2.1.1 rather than a
+# regression, and found by an audit reading a test whose *name* claimed the
+# universal the code did not hold.
 #: Unicode-aware. `[A-Za-z]` let `Ünicode-Trailer:` through once the
 #: Conventional prefix in front of it was removed — a message 2.1.1 refused
 #: and this release accepted, which is the regression class two audits had
 #: already found twice. Hyphenated tokens are trailer syntax by construction,
 #: and that construction does not stop at ASCII.
-_TRAILER_HYPHENATED = re.compile(r"(?m)^(?:-\s+)?[^\W\d_][^\W_]*(?:-[^\W_]+)+:")
+_TRAILER_HYPHENATED = re.compile(r"(?m)^[ \t]*(?:-[ \t]+)?[^\W\d_][^\W_]*(?:-[^\W_]+)+:")
 _TRAILER_TOKENS = re.compile(
-    r"(?mi)^(?:-\s+)?(?:signed|reviewed|acked|tested|reported|suggested|helped"
+    r"(?mi)^[ \t]*(?:-[ \t]+)?(?:signed|reviewed|acked|tested|reported|suggested|helped"
     r"|cc|refs|ref|closes|close|fixes|fix|resolves|resolve|change-id|bug|ticket"
     r"|issue|see-also|link)\s*:",
 )
@@ -94,48 +117,81 @@ _TRAILER_TOKENS = re.compile(
 #: the exemption exists so `fix:` stops looking like a trailer token, not so the
 #: rest of the subject stops being read. A real trailer does not become legal by
 #: moving up one line, or by having a type word put in front of it.
-_CONVENTIONAL_SUBJECT = re.compile(
-    r"^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)"
-    r"(?:\([^()\n]+\))?!?:\s+",
-)
+#: The declared Conventional Commit types. A frozen set, so a subject can only
+#: shed a prefix that is actually one of them — `Signed-off-by:` is not.
+CONVENTIONAL_TYPES = frozenset({
+    "build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor",
+    "revert", "style", "test",
+})
+
+
+def _strip_conventional_prefixes(subject: str) -> str:
+    """Remove every leading Conventional Commit prefix, however it is decorated.
+
+    A **parser, not a pattern.** Three regexes were tried and each missed a
+    decoration nobody had thought of — `fix:` plus two spaces, then a second
+    prefix, then an empty scope `()`, a doubled `!!`, and two scope groups
+    `(a)(b)`. Each miss left a trailer no longer at the start of the line, where
+    the `^`-anchored trailer patterns cannot see it, and each was a message the
+    previous release refused. Three independent audit rounds found three of them.
+
+    So the shape is read rather than matched: a declared type word, then any
+    number of balanced parenthesised scopes and `!` markers in any order, then a
+    colon. Anything else ends the strip. What cannot be enumerated in a pattern
+    can be parsed.
+    """
+    # Leading whitespace is skipped, so an indented Conventional subject still
+    # sheds its prefix. Without this, tolerating leading whitespace in the
+    # trailer patterns turned `  fix: an ordinary subject` into a finding.
+    subject = subject.lstrip()
+    while True:
+        match = re.match(r"[A-Za-z]+", subject)
+        if not match or match.group(0).lower() not in CONVENTIONAL_TYPES:
+            return subject
+        index = match.end()
+        while index < len(subject):
+            character = subject[index]
+            if character == "!":
+                index += 1
+                continue
+            if character != "(":
+                break
+            depth, cursor = 0, index
+            while cursor < len(subject):
+                if subject[cursor] == "(":
+                    depth += 1
+                elif subject[cursor] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                cursor += 1
+            if depth != 0:
+                return subject          # unbalanced: not a prefix
+            index = cursor + 1
+        if index >= len(subject) or subject[index] != ":":
+            return subject
+        subject = subject[index + 1:].lstrip()
 
 
 def _trailer_surface(message: str) -> str:
     """The part of a message trailer detection applies to.
 
-    Only the Conventional Commit **prefix** is removed, not the subject line.
-    Blanking the whole line was wrong and was caught by an independent audit:
-    `fix: Signed-off-by: A Person` passed clean, because nothing was left of
-    the subject to detect. The exemption exists so `fix:` stops looking like a
-    trailer token — it was never meant to make the rest of the subject
-    unreadable.
-
-    The prefix is *removed* rather than blanked, **exhaustively**, and the
-    remainder is left-stripped.
-
-    Both of those cost a regression before they were right. Padding with spaces
-    was the first attempt: the trailer patterns anchor with `^`, so leading
-    whitespace hid the token the removal exists to expose. Removing exactly one
-    prefix was the second, and it left the same hole one space wider — `fix:` +
-    **two** spaces put whitespace back in front of the token, and
-    `fix: docs: Signed-off-by:` put a second prefix there. Two blind audits
-    reproduced both, and both had been **refused by 2.1.1**, which makes them
-    regressions rather than gaps.
-
-    So: strip prefixes until none remains, and strip the whitespace each one
-    leaves behind. A subject cannot become a trailer-free surface by having more
-    of itself put in front of the trailer.
+    Only the Conventional Commit **prefixes** are removed, and only from the
+    subject. The exemption exists so `fix:` stops looking like a trailer token;
+    it was never meant to make the rest of the subject unreadable, and every
+    version of it that relied on a pattern let something through.
     """
+    # Invisible characters are removed from this surface as well as being
+    # refused outright by their own rule. Both are needed: the rule makes the
+    # message fail, and the removal makes the *trailer* visible, so a reader is
+    # told what is actually wrong rather than only that something is. One of
+    # them placed after a prefix hid a trailer from a `^`-anchored pattern.
+    message = _INVISIBLE.sub("", message)
     subject, separator, rest = message.partition("\n")
     if separator:
-        while True:
-            match = _CONVENTIONAL_SUBJECT.match(subject)
-            if not match:
-                break
-            # Every match consumes at least `x:` plus one space, so this
-            # terminates.
-            subject = subject[match.end():].lstrip()
+        subject = _strip_conventional_prefixes(subject)
     return subject + separator + rest
+
 
 # Path detection, in three shapes. A repository-relative path such as
 # ``src/loader.py`` is deliberately *not* matched: naming a file you changed is
@@ -372,6 +428,13 @@ class ContractViolation:
 def _structural_violations(message: str) -> list[ContractViolation]:
     out: list[ContractViolation] = []
 
+    if _INVISIBLE.search(message):
+        out.append(
+            ContractViolation(
+                "INVISIBLE_CHARACTER",
+                "message contains zero-width or bidirectional formatting characters",
+            )
+        )
     if _CONTROL.search(message):
         out.append(
             ContractViolation(

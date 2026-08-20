@@ -75,6 +75,7 @@ out. A hand-written table is exactly how the first implementation passed.
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections.abc import Sequence
 from pathlib import PurePosixPath
 
@@ -94,7 +95,7 @@ def _segment_match(segment: str, pattern: str) -> bool:
     case-sensitive one it would not. A declaration whose meaning depends on the
     filesystem it is read from is not a declaration.
     """
-    return fnmatch.fnmatchcase(segment, pattern)
+    return fnmatch.fnmatchcase(segment, _fnmatch_safe(pattern))
 
 
 def _match_segments(parts: tuple[str, ...], segments: list[str]) -> bool:
@@ -196,11 +197,65 @@ def _matches_one(path: str, pattern: str) -> bool:
 
 
 def _strip_trailing_space(pattern: str) -> str:
-    """Trailing whitespace removed, unless the last space is escaped."""
-    stripped = pattern.rstrip()
+    """Trailing **spaces** removed, unless the last one is escaped.
+
+    Spaces only. `rstrip()` was the first version and also removed tabs, which
+    git does not: `"*.txt\t"` matched `a.txt` here and nothing in git, and the
+    direction is over-matching — a `content_exempt` declaration silently
+    widened, which is the failure this module exists to prevent. Worse, the test
+    that pinned it asserted the divergence *and named git in its own title*.
+    Found by an independent differential.
+    """
+    stripped = pattern.rstrip(" ")
     if len(stripped) < len(pattern) and stripped.endswith("\\"):
         return stripped[:-1] + " "
     return stripped
+
+
+def _fnmatch_safe(segment: str) -> str:
+    """One pattern segment, with git's escapes and `[^…]` translated for fnmatch.
+
+    `fnmatch` has neither. Two consequences, both found by an independent
+    differential against git and both **pre-existing at 2.1.1**:
+
+    *   `a\\*b.txt` matched nothing here and matched the literal `a*b.txt` in
+        git — a silently dead declaration, which is this module's whole subject.
+    *   `[^a].txt` was read as a class containing `^` and `a`, so it matched
+        `a.txt` (git does not) and missed `b.txt` (git does) — divergent in
+        **both** directions, including the exemption-widening one.
+
+    An escaped metacharacter becomes a one-character class, which `fnmatch`
+    treats literally; `[^` becomes `[!`, which is the negation syntax it does
+    understand.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(segment):
+        character = segment[index]
+        if character == "\\" and index + 1 < len(segment):
+            following = segment[index + 1]
+            # Only `*`, `?` and `[` mean anything to `fnmatch` outside a class,
+            # and a one-character class is how you make them literal. Everything
+            # else — `!`, `^`, `-`, a space — is already literal, and wrapping it
+            # was wrong: `[!]` reads as an unterminated *negated* class.
+            out.append(f"[{following}]" if following in "*?[" else following)
+            index += 2
+            continue
+        if character == "[":
+            close = segment.find("]", index + 2)
+            if close == -1:
+                out.append("[[]")          # an unclosed bracket is a literal
+                index += 1
+                continue
+            body = segment[index + 1:close]
+            if body.startswith("^"):
+                body = "!" + body[1:]
+            out.append("[" + body + "]")
+            index = close + 1
+            continue
+        out.append(character)
+        index += 1
+    return "".join(out)
 
 
 def _split_negation(pattern: str) -> tuple[bool, str]:

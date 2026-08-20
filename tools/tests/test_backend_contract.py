@@ -203,21 +203,38 @@ def test_the_derived_view_is_a_pure_function_of_the_log():
 # rule `routing-table.md` calls "checkable rather than promised" was neither.
 
 
-def test_the_derived_grade_for_each_family_and_class_is_what_the_rule_says():
+def test_every_derived_grade_follows_the_stated_rule():
+    """The derivation rule, applied to the real log, entry by entry.
+
+    Written as the *rule* rather than as a snapshot of today's grades. The first
+    version hardcoded them and went stale the moment this session's own audit
+    observations were appended — which is the same defect as a figure in prose,
+    one layer along. A threshold mutation still fails here, because the grade is
+    compared against the counts that produced it.
+    """
+    for (family, task_class), grade in grades_from_observations(OBSERVATIONS).items():
+        if grade.contradicted:
+            expected = "contradicted"
+        elif grade.validated >= 2:
+            expected = "confirmed"
+        elif grade.validated == 1:
+            expected = "provisional"
+        else:
+            expected = "environmental-unknown"
+        assert grade.grade == expected, (
+            f"{family}/{task_class}: {grade.validated} validated, {grade.contradicted} "
+            f"contradicted, {grade.environmental} environmental derives {expected!r}, "
+            f"not {grade.grade!r}"
+        )
+
+
+def test_the_grades_that_do_not_move_with_new_evidence():
+    """Two anchors that adverse and absent evidence pin permanently."""
     graded = grades_from_observations(OBSERVATIONS)
-
-    def grade(family, task_class):
-        return graded[(family, task_class)]
-
-    # One validation is provisional. Two or more is confirmed.
-    assert grade("claude-cli", "blind_closure_audit_primary").grade == "provisional"
-    assert grade("claude-cli", "blind_closure_audit_primary").validated == 1
-    assert grade("codex-cli", "blind_closure_audit_cross_vendor").grade == "confirmed"
-    assert grade("codex-cli", "blind_closure_audit_cross_vendor").validated == 2
-    # Adverse evidence, not averaged away.
-    assert grade("local-mlx", "analytical_code_review").grade == "contradicted"
-    # A runtime that never started teaches nothing about capability.
-    assert grade("codex-cli", "confinement dispatch qualification (worker configuration ladder, 8 configs)").grade == "environmental-unknown"
+    assert graded[("local-mlx", "analytical_code_review")].grade == "contradicted"
+    assert graded[
+        ("codex-cli", "confinement dispatch qualification (worker configuration ladder, 8 configs)")
+    ].grade == "environmental-unknown"
 
 
 def test_a_provisional_grade_does_not_qualify_a_dispatch():
