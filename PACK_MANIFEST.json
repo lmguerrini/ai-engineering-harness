@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "849d32c4bda76f1c41fefb18caf9d933bd1f8f0f45db064f5cc417bd7821ecc7",
+  "tree_digest_sha256": "4f062f2b858ce14cc5d0b7015fec9cac1766db584a25fb1172636eb32a021edc",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 763
+    "passed": 764
   },
   "gate_record": "docs/RP2.2-GATE.md",
   "delta_audit": "docs/RP2.2-CAPABILITY-MAP.md",
@@ -34,7 +34,7 @@
     "REVIEW_LOCAL contradicted on one observation; EXTRACT_LOCAL provisional on two",
     "relative yield between AUDIT_PRIMARY and AUDIT_CROSS is still unmeasured. The log now holds more closure audits than it did, but they were not run as a comparison and a count is not a rate; the number lives in policy/observations.jsonl rather than here",
     "no durable routing evidence exists beyond the recorded observations; unprobed configurations stay unprobed and none was invented",
-    "NO CLOSURE AUDIT ROUND HAS RETURNED READY. Four rounds ran, eight blind auditors on distinct lenses, and every round returned NOT READY. Each round's findings were reproduced and repaired and the next round found more, including in the repairs. The last round's findings are repaired and unaudited. docs/RP2.2-GATE.md records each round. Four closure cycles were the authorised budget and four ran, so a fifth round is what remains rather than a smaller step. Because the fourth round's central finding was repairs with no oracle, every repair in the closing batch was mutation-tested before commit: five mutations, all killed.",
+    "NO CLOSURE AUDIT ROUND HAS RETURNED READY. Five rounds ran, ten blind auditors on distinct lenses, and every round returned NOT READY. Each round's findings were reproduced and repaired and the next round found more, including in the repairs. The fifth round was consumer-facing rather than another repository review, and found six more blockers. The last round's findings are repaired, and the two convergence audits dispatched against the repaired candidate are the outstanding evidence. docs/RP2.2-GATE.md records each round. Every repair since round 4 was mutation-tested before commit; the mutations are named in the gate record so a reader can re-apply them, and the two that survived a first attempt are described with what they exposed.",
     "A REPAIR REGRESSED THE COMMIT GATE against the qualified 2.1.1 baseline, more than once, before the guarantee was pinned by an absolute property test rather than by a differential. The regressions are closed; that they happened is the more useful fact.",
     "CROSS-VENDOR AUDIT WAS NOT AVAILABLE in any round. The final-gate tier asks for two blind auditors with one cross-vendor WHERE AVAILABLE; two ran each round, within one family. The measured value of the tier - that the two populations come back almost disjoint - was obtained, but not across vendors.",
     "SEVERAL CLAIMS ARE UNFALSIFIABLE FROM THIS REPOSITORY and are marked so in the gate record: the four adapter digests and both adapter repairs (outside the envelope, and the pre-repair originals were not retained), the Project Context file count (in another project), and the status-line payload schema (read from the installed client, no artifact shipped). resource_observation.py has been exercised against constructed payloads and never a live one.",

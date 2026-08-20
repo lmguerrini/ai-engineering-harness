@@ -207,7 +207,10 @@ performed.** Nothing was migrated and no project file was touched.
   still carry version-only pins, which classify as
   `UNVERIFIABLE_LEGACY_PIN`. They are evidence, not authorisation.
 - **No adapter was vendored.** Pinning was proved sufficient (D12, D14).
-- **No dependency was added.** D3 holds: 0 violations across 19 modules.
+- **No dependency was added.** D3 holds: 0 violations across every module in
+  `tools/`, checked by AST walk. The module count is not restated — it changes
+  whenever a tool is added, and this release has already shipped four figures
+  that went stale exactly that way.
 - **No new stateful runtime**, daemon, scheduler or registry.
 - **Global configuration was not modified to obtain telemetry.** The status-line
   adapter is opt-in and reversible; no `statusLine` was installed.

@@ -6,7 +6,8 @@ reproductions rather than from the handoff, and updated only by appending.
 Baseline: `2.1.1` at `4495e61850c08027e47eac6d0db84b4b3380e300`, state
 `QUALIFIED_AND_FROZEN`, tree digest
 `d445c5ce10095edd9a8f6063e9c708f2af7cf1cec266f6758d26f58f7bd50f3e` over 85
-tracked files, 237 tests passing. Verified with the shipped `pack_pin.py` and
+tracked files, 237 tests passing at that frozen revision. Verified with the
+shipped `pack_pin.py` and
 again with an independent re-implementation of `sha256-framed-v1` written from
 the algorithm description rather than by importing the module under test.
 

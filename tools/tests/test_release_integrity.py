@@ -719,6 +719,63 @@ def test_the_baseline_figure_this_release_quotes_is_the_baselines_own():
     )
 
 
+def test_no_document_restates_a_count_of_things_the_repository_can_count():
+    """The unbound-figure class, closed structurally rather than corrected again.
+
+    This release has now shipped four figures of this shape: a divergence count,
+    a routing-table audit count, a held-prose percentage quoted from the wrong
+    release, and a module count that said 19 when there were 20. Every one was
+    typed by hand beside a fact the repository can compute, and every one went
+    stale the moment the thing it counted changed.
+
+    So no document may restate the number of tool modules, the number of CLIs or
+    the number of tests. Each is one command away, and a reader who wants it
+    should run that command rather than trust a sentence.
+
+    Deliberately narrow: it refuses these three phrasings, not numbers in
+    general. A release record is full of legitimate counts — findings, rounds,
+    occurrences — and a guard broad enough to catch those would be turned off.
+    """
+    import re
+
+    forbidden = re.compile(
+        r"\b\d+\s+(?:tool\s+)?modules\b"
+        r"|\bacross\s+\d+\s+modules\b"
+        r"|\b\d+\s+CLIs?\b"
+        r"|\b\d+\s+(?:passing\s+)?tests\b",
+        re.IGNORECASE,
+    )
+    #: The documents THIS release is responsible for. Gate records of previous
+    #: releases are historical evidence: their counts were true when written and
+    #: rewriting them to satisfy a rule invented afterwards is the one thing
+    #: this pack's own policy forbids.
+    owned = ("docs/RP2.2-*.md", "README.md", "CHANGELOG.md", "policy/*.md",
+             "templates/*.md", "skills/core/*.md")
+    #: A count of something FROZEN cannot drift, so it is not this rule's
+    #: business. The exemption is by the words that make the line say so, which
+    #: keeps it visible in the text rather than hidden in a list here.
+    exempt_line = ("baseline", "frozen", "tests.passed", "collect-only")
+
+    offenders = []
+    seen = set()
+    for pattern in owned:
+        for path in sorted(ROOT.glob(pattern)):
+            name = str(path.relative_to(ROOT))
+            if name in seen or not path.is_file():
+                continue
+            seen.add(name)
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                match = forbidden.search(line)
+                if match and not any(marker in line.lower() for marker in exempt_line):
+                    offenders.append(f"{name}:{number}: {match.group(0)}")
+    assert len(seen) >= 6, f"only {len(seen)} owned documents scanned; the globs are not matching"
+
+    assert not offenders, (
+        "these restate a count the repository can compute, which is how the last four "
+        "stale figures got in: " + "; ".join(offenders)
+    )
+
+
 # --- qualification is not self-tests --------------------------------------
 
 def test_qualification_includes_probes_against_representative_consumer_shapes():

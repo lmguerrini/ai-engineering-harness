@@ -75,7 +75,7 @@ observation, not a verification. `required` governs absence only — a present
 adapter that differs blocks either way, and an unreadable one blocks because
 nothing was established.
 
-23 tests. Each was mutation-checked: five independent mutations of the
+Mutation-checked rather than merely counted: independent mutations of the
 implementation were introduced and every one was killed by the suite, so the
 oracle constrains behaviour rather than restating it.
 
@@ -221,7 +221,7 @@ context-efficiency invariants, and the routing-table reduction.
 | Clean-clone-equivalent run | a fresh local clone at the exact candidate revision: tree clean, whole suite passing. No remote operation of any kind |
 | Pre-repair falsification | the candidate's tests, run against **baseline source**, fail across every touched module and pass against the candidate. **No count is stated here**, because nothing in the release computes one — the same rule the divergence figure now follows. Reproduce: export the baseline with `git archive`, replace its `tools/tests` with the candidate's, drop the six new-capability test modules (they cannot import at baseline, by construction), and run the suite |
 | Primary-path non-regression | `pack_pin` verifies; `publication_gate` reports the namespace clean over 2 refs; `commit_gate --range` reports every commit message on the branch conforming |
-| D3 import closure | **0 violations** across 19 modules, checked by AST walk including function-local imports; every module also imports standalone, so neither deliberately lazy import — `project_contract` reaching `adapter_pin` and `project_context` — forms a cycle |
+| D3 import closure | **0 violations** across every module in `tools/`, checked by AST walk including function-local imports; the module count is deliberately not restated here, because it changes whenever a tool is added and a figure a later edit invalidates is one this document must not carry; every module also imports standalone, so neither deliberately lazy import — `project_contract` reaching `adapter_pin` and `project_context` — forms a cycle |
 
 `workspace_report` exits 1 against the pack itself. That is correct and not a
 finding: the pack is not a project, has no contract declaring its
@@ -688,7 +688,7 @@ opening three files nobody had opened. The auditors were given the repository
 and audited the repository. **Nobody was asked to point the release at the world
 it ships into**, and that omission is the coordinator's.
 
-Seven mutations of these repairs were run and all seven are killed: absence
+Each of these repairs was mutation-tested, and every mutation is killed: absence
 raising again, the unreadable block reported as `NOT_PRESENT`, the invented
 field spelling returning, and `from_contract` answering about a path.
 
@@ -936,7 +936,7 @@ commit and compared.
 | Finding | Repair |
 |---|---|
 | `ContractError` and `ContextError` were bare `Exception`s, outside the hierarchy `run_cli` catches, so a project declaring an unchecked requirement got a traceback | both are typed refusals now, with their own codes |
-| the structural wrapper test was **vacuous** — it grepped the `__main__` block for `run_cli(`, and only 5 of 17 CLIs were executed anywhere in the suite | every CLI is now executed as a subprocess against inputs designed to be refused, and a traceback anywhere fails the suite |
+| the structural wrapper test was **vacuous** — it grepped the `__main__` block for `run_cli(`, and at the audited revision only five of the seventeen CLIs then present were executed anywhere in the suite | every CLI is now executed as a subprocess against inputs designed to be refused, and a traceback anywhere fails the suite |
 | `ValueError` and `AttributeError` escaped `pack_migration` — `pack:` as a scalar, and `version_adopted: 3` unquoted, whose `.strip()` raised out of the function that exists to explain what a pin lacks | typed refusals; a field of the wrong type is *named as missing* |
 | an unreadable commit-message file raised `FileNotFoundError` — **pre-existing at 2.1.1**, and found only because every CLI was finally executed | a stated refusal with a cause |
 | a *permitted* adapter absence reported the component `VERIFIED`, directly above a finding reading "declared and not installed" | `VERIFIED` only when every declared adapter verified; otherwise `UNKNOWN`, non-blocking, saying how many of how many |
@@ -953,9 +953,18 @@ The relative-root test asserted `"relative" in finding` against a root spelled
 check left it green. The mutation survived and said so. The root no longer
 contains the word, and the assertion is on a phrase only the repair produces.
 
-Eleven mutations were run against this round's repairs. Nine were killed on the
-first attempt; two survived and are the two above — a missing test and a weak
-assertion — both then closed and re-killed.
+**Two mutations survived the first attempt, and what they exposed is the part
+worth keeping.** One made a *permitted* adapter absence report `VERIFIED` again
+and nothing failed — there was no test for that case at all. The other removed
+the relative-root refusal and nothing failed either, because the assertion that
+should have caught it read `"relative" in finding` against a fixture path
+spelled `../some/relative/root`: **satisfied by the test's own input rather than
+by the behaviour.** Both are closed, and both mutations now fail.
+
+No total is stated. A count of mutations run in a session is not derivable from
+this repository, and this release has already shipped two figures of exactly
+that kind. Each mutation named in the tables above can be re-applied and re-run
+by a reader, which is what makes those entries evidence.
 
 ### What the auditors could not break
 
