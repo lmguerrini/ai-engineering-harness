@@ -234,3 +234,82 @@ cuts a new version; each project adopts it independently at its own next safe
 capability boundary. No scheduler, no shared mutable runtime.
 **Reverses on:** nothing short of a project genuinely needing to write into a
 pinned pack, which would mean the release is not frozen.
+
+---
+
+## D14 — the founder architecture decision is the current authority layer (RP2.2)
+
+Recorded at the opening of the RP2.2 evolution session, before implementation,
+so that the decisions the rest of this release rests on are readable without
+reconstructing a conversation. It is **additive**: D1–D13 are unchanged, and no
+prior gate or decision record was rewritten.
+
+1.  **2.1.1 is the qualified semantic and non-regression floor.** No capability
+    it holds may be lost except by replacement with a demonstrated semantic
+    superset.
+2.  **D1 remains normative**, in its sharpest form: no component may both hold
+    authoritative state and adjudicate it.
+3.  The **coordinator is the semantic decision-maker**. That authority is not
+    delegable to a worker, a harness, or a vendor feature.
+4.  **Execution harnesses are subordinate.** A first-party CLI is an execution
+    backend. Harness functionality never silently becomes project, release,
+    HITL, routing, certification or integration authority.
+5.  The **workflow shape is an architectural invariant** — decomposition and
+    routing, workers, deterministic fail-closed gates, independent semantic
+    audit where required, coordinator synthesis, human authority where genuinely
+    mandatory, then integration — replaceable only by a demonstrated semantic
+    superset.
+6.  **Vendor enforcement is defence in depth.** Hooks, sandboxes, permission
+    modes and orchestration features are additive; they never replace a
+    qualified fail-closed gate, and a gate may not be relaxed because a vendor
+    feature is believed to cover it.
+7.  **Project runtime state stays project-local** — evidence, routing
+    observations, Evolution Candidates and Project Context included.
+8.  **Releases remain immutable per active project capability.** A new release
+    is never silently adopted by a running project.
+9.  **Project Context is a first-class contract capability** at the declaration
+    and verification level; its semantic content and evolution stay
+    project-local.
+10. **External executable adapters are pinned and verified, not vendored**,
+    unless pinning is proved insufficient for the guarantee being claimed.
+11. **No stateful global coordinator** — no daemon, scheduler, event database,
+    single-runtime-authority store, generic provider runtime, or third-party
+    harness.
+12. **First-party subscription paths are the preferred cloud execution
+    surfaces.** Provider API-key billing is not an allowed architectural
+    dependency.
+
+**Evidence.** The 2.1.1 baseline was verified on every axis it declares before
+this entry was written. Clauses 2, 4 and 6 are the ones the session immediately
+tested: an installed reviewer adapter was found asserting an isolation mode the
+pinned reviewer contract forbids, which is clause 4's failure mode occurring in
+the live installation rather than in theory.
+
+**Reverses on:** an explicit human decision. Primary evidence appearing to
+require the reversal of clause 2 is a stop condition, not an implementation
+choice.
+
+---
+
+## D15 — an unanswerable question is never rendered as its reassuring answer (RP2.2)
+
+`pack_pin` already stated the rule for verifiers: a check that passes for a
+reason weaker than its message is worse than no check, because it is believed.
+The same rule was found unenforced one layer below the checkers.
+
+`gitread.probe` distinguishes three outcomes — Git answered, Git ran and could
+not answer, nobody looked — and exposes `failed` for the middle one. Three
+callers consulted only `answered`, so an undeclared exit status arrived as an
+ordinary negative: an unreadable `.git/config` reported as a repository with no
+settings and therefore no `notes.*` keys, which is the exact surface D7 exists
+to watch; an ancestry question about a non-commit reported "not contained", and
+the publication report printed that guess as a fact.
+
+**Decided.** A probe result is consumed through `require`, or through an
+explicit `failed` branch that produces an `UNKNOWN`. Rendering an unanswered
+question as either verdict is a defect regardless of which verdict is safer,
+because the safe verdict is still a claim nobody established.
+
+**Evidence.** All three call sites reproduced by execution before repair.
+**Reverses on:** nothing. This is D1's rule about adjudication applied to the
+narrower case of a component adjudicating a question it could not ask.
