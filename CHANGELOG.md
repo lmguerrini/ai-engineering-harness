@@ -9,7 +9,112 @@ defect below was reproduced by execution against the frozen 2.1.1 baseline
 before it was repaired, and every repaired guarantee carries an oracle that
 fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
 
-_Entries are appended as capabilities close._
+### Adapter integrity
+
+- **The installed reviewer adapter declared an isolation mode the reviewer
+  contract forbids.** `worker-contract.md` and `audit-brief.template.md` both
+  say a reviewer never creates a ref, a branch or a worktree, and say why; the
+  adapter carried `isolation: worktree` anyway. Reproduced end to end: that mode
+  lands `refs/heads/worktree-agent-*` in the audited repository and
+  `publication_gate.py` exits 1 on exactly that ref. Every gate passed, because
+  nothing was looking at adapters at all. The mutating implementer adapter
+  declared no isolation — the two were exactly inverted.
+- **`tools/adapter_pin.py`** gives an adapter a pinning contract: exact
+  identity, canonical locator, digest, required/optional status, and the name
+  read from the file rather than inferred from its path. Verified at capability
+  open, fails closed, and **never refreshes a declared digest** — `--observe`
+  prints a current digest labelled an observation, not a verification.
+  `required` governs absence only: a present adapter that differs blocks either
+  way, and an unreadable one blocks because nothing was established.
+
+### Tooling integrity — every defect reproduced before repair
+
+- **Declared path patterns did not mean what the documentation said.**
+  Differentially tested against real `git check-ignore`, thirteen pattern/path
+  pairs disagreed and **every one under-matched**: a wildcard directory name was
+  compared with string equality, a bare name did not cover the directory it
+  named, and `dist/*` stopped one level down. Matching is now defined once in
+  git's terms — a pattern matches an entity, and a file is covered when the
+  pattern matches it or any ancestor. `**` is implemented, matching is
+  case-sensitive, and `pathmatch` has its first direct test module, oracled
+  against git rather than against a table.
+- **A private term in a path could scan clean.** Git C-quotes any path it cannot
+  print literally, and the leak scanner read that output, so a directory whose
+  name was a declared private term was matched against
+  `"session\303\251-private/..."` — which does not contain the term. Every path
+  enumeration is now NUL-separated through one decoder. `pack_pin.py` already
+  did this and said why; the other four sites did not.
+- **An unanswerable git question was rendered as an answer.** `probe`
+  distinguishes "git answered" from "git ran and could not answer", and three
+  callers consulted only the first: an unreadable `.git/config` reported as a
+  repository with no settings — including no `notes.*` keys, the exact surface
+  D7 exists to watch — and an ancestry question about a non-commit reported "not
+  contained", which the publication gate printed as fact. Both "nobody looked"
+  refusal paths also raised `TypeError` instead of a named refusal, latent since
+  2.1.1, because `cause=` collides with a positional parameter of that name.
+- **Publication reasoning ignored ref object type.** An annotated tag reported
+  "carries no extra object", in the reassuring direction, although the tag
+  object is an extra object carrying a tagger identity and message. Containment
+  is now four-valued — contained, not contained, not applicable, unknown — and
+  the object type, already read and never used, selects the sentence.
+- **A content exemption switched off the universal rules.** `UNIVERSAL_LEAK_KINDS`
+  said no project may declare a credential acceptable, and
+  `skills/core/public-safety.md` named the exact mechanism — "writing the
+  exemption as *skip blob content* takes both out at once". It was written that
+  way. An AWS-shaped key and a home-directory path inside an exempted file
+  reported `clean`. An exemption is now a scope over findings, not a skip over
+  the object.
+- **A Conventional Commit subject was refused as a trailer.** `fix: …` was
+  rejected `TRAILER` while `feat: …` passed, so the gate refused the form its own
+  contract asks for.
+- **The contract reader refused valid multi-line data.** `|`, `>`, `|-`, `|+` and
+  a flow sequence spanning lines all raised `unexpected indentation`, so a
+  project could not write a multi-line value in the one file D10 makes the single
+  source for every gate. Block scalars are implemented in the subset parser and
+  verified against a reference implementation across the full cross-product of
+  style, chomping and body shape — **no dependency was added**, and D3 holds.
+- **Evidence was written world-readable.** Directory `0o755`, entries `0o644`,
+  mode checked by nothing. Evidence is now created owner-only and the mode is
+  read back from the filesystem, because the mode a call requests and the mode a
+  file has are different facts.
+- **The repository listing named fewer modules than the release ships**, and
+  five more went unlisted while the edits meant to add them silently matched
+  nothing. Now complete, and checked mechanically — an omission is harder to
+  notice than a lie.
+
+### New capability
+
+- **`tools/pack_migration.py`** — `pack.root_path`, required, canonicalised and
+  verified; `UNVERIFIABLE_LEGACY_PIN` for a pin that cannot be checked, named
+  rather than repaired into one that verifies and describes nothing; a migration
+  gate requiring a verified target at a capability boundary; rollback only to a
+  retained root that still verifies; a release index that lives outside every
+  release and is read as untrusted input; and candidate accounting, so one that
+  arrived late cannot be skipped. A security advisory is disclosed and
+  authorises nothing.
+- **`tools/project_context.py`** — a project's durable semantic authority,
+  declared, located, revisioned and digested, in five distinct states, with
+  non-mutation across a capability proved by comparing the digest and proposal
+  separated from adoption. The Core reads no content.
+- **`tools/backend_contract.py`** — backend identity where availability cannot
+  reach a qualification answer and permission cannot reach a capability answer,
+  with per-task-class grades derived from the observation log.
+- **`tools/resource_observation.py`** — the documented Claude Code status-line
+  rate limits as timestamped routing evidence. Absent means `UNKNOWN`, never
+  `0% used`; readings carry their age; the projection is an allowlist, so no
+  session id, transcript path or working directory reaches a record.
+- **`tools/evidence_index.py`** — certification bound to an exact candidate,
+  over raw checker results that cannot be recorded as anything else.
+
+### Decisions
+
+D14 records the founder architecture decision as the current authority layer.
+D15–D19 record the rules the repairs established: an unanswerable question is
+never rendered as its reassuring answer; an exemption scopes the project's
+vocabulary and never a universal rule; the release states its push form once; a
+release root is a checkout nobody works in; and Project Context is a contract
+capability whose meaning stays project-local. D1–D13 are unchanged and no prior
+gate record was rewritten.
 
 ## 2.1.1 — release integrity: the checks now mean what they said
 

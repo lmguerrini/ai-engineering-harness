@@ -38,6 +38,30 @@ What this module does **not** do is as load-bearing as what it does:
 not match its digest is blocking whether or not it is required, because the
 project recorded a digest for it: "optional" is a statement that the workflow
 can proceed without the adapter, never a statement that any bytes will do.
+
+## When a repair to an adapter takes effect
+
+**At the next session, not the current one** — and this was reproduced during
+the release that added this module, which is the reason it is stated here rather
+than assumed.
+
+The reviewer adapter's `isolation: worktree` was removed and the corrected file
+was on disk. Two reviewers dispatched afterwards, in the same session, were
+nonetheless given worktrees, and two `refs/heads/worktree-agent-*` refs appeared
+inside the audited repository — where `publication_gate.py` refused them, by
+name, exactly as it is supposed to.
+
+The harness had loaded the definition when the session started. Editing the file
+later changed the file and not the behaviour.
+
+Two consequences, both load-bearing:
+
+*   **Verification belongs at capability open, before the first dispatch.** An
+    adapter verified afterwards has already run, and an adapter *repaired*
+    afterwards has not. Neither report describes the session it was produced in.
+*   **A verified digest describes the file, not the loaded configuration.** They
+    agree only across a session boundary. So a repair is followed by a new
+    session, and the pin is what makes the two comparable at all.
 """
 
 from __future__ import annotations

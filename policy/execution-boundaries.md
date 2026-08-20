@@ -50,6 +50,23 @@ when the harness is the only thing present at the moment a decision is needed.
     authority to close a capability, cut a release, or publish is held by the
     coordinator and, where the matrix says so, by a human.
 
+## An adapter repair takes effect at the next session
+
+Reproduced, while building the release that added adapter pinning. The reviewer
+adapter's forbidden isolation mode was removed and the corrected file was on
+disk; two reviewers dispatched afterwards **in the same session** were still
+given worktrees, and the agent-named branch refs appeared inside the audited
+repository, where the publication gate refused them by name.
+
+The harness reads an adapter definition when the session starts. Editing it
+later changes the file and not the behaviour.
+
+So: **verify adapters at capability open, before the first dispatch** — a check
+that runs afterwards describes a dispatch that has already happened. And after
+repairing an adapter, start a new session before relying on the repair. The
+digest describes the file; the session describes what is running; they agree
+only across a session boundary.
+
 ## Provider internal surfaces
 
 Reads of **undocumented** provider internals — rollout files, session caches,
