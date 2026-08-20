@@ -1,4 +1,4 @@
-# Runtime Pack 2.1.1
+# Runtime Pack 2.2.0
 
 A coordinator-governance layer for AI-delegated engineering: durable structured
 context, Skills, and a small stateless toolbelt — no deterministic software
@@ -10,17 +10,22 @@ every audit round while its stateless checkers survived every one
 
 | | |
 |---|---|
-| Version | **2.1.1** — `VERSION` is the single machine-readable authority |
-| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) |
-| Gate record | `docs/RP2.1.1-GATE.md` |
+| Version | **2.2.0** — `VERSION` is the single machine-readable authority |
+| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — an evolution candidate, not adoptable |
+| Gate record | `docs/RP2.2-GATE.md` |
 | Identity | version **+** full 40-character revision **+** manifest tree digest. All three, or the pin does not discriminate |
 
 Verify a checkout — run it, do not read it:
 
 ```bash
-python3 tools/pack_pin.py . --version 2.1.1 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
+python3 tools/pack_pin.py . --version 2.2.0 --sha <full 40-char revision> \
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
 ```
+
+`--state` is the state this checkout actually declares, and it is currently
+`IN_PROGRESS`. **A project may only adopt `QUALIFIED_AND_FROZEN`**, so this
+release is not adoptable yet; the command a consumer will run names that state
+instead, and passing it against this checkout fails — correctly.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a
@@ -80,7 +85,7 @@ Derived from the tracked tree, not maintained by hand
     ├── VERSION                     the single machine-readable version authority
     ├── PACK_MANIFEST.json          release identity: state, digest, test count, gate
     ├── CHANGELOG.md                per-version record, including errata
-    ├── DECISIONS.md                pack-level decisions D1–D13, append-only
+    ├── DECISIONS.md                pack-level decisions D1–D15, append-only
     ├── skills/core/                13 public-safe skills, roles only, no vendor names
     ├── policy/                     private operational policy
     │   ├── observations.jsonl      append-only routing evidence — the record
@@ -103,7 +108,8 @@ Derived from the tracked tree, not maintained by hand
     │   ├── commit_gate.py          one message, or a whole range
     │   └── tests/                  the suite; `python3 -m pytest tools/tests/ -q`
     └── docs/                       what happened: gate records, findings, probes
-        ├── RP2.1.1-GATE.md         this release's gate
+        ├── RP2.1.1-GATE.md         the previous release's gate
+        ├── RP2.2-GATE.md           this release's gate
         ├── RP2.1-GATE.md           prior releases, left as written
         └── acceptance/             drills and injection results
 

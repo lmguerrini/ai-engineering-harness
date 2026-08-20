@@ -52,6 +52,44 @@ pack:
   # - Each project adopts a new release INDEPENDENTLY, at its own next safe
   #   capability boundary. There is no coordinated upgrade and no scheduler.
 
+adapters:
+  # EXECUTABLE ADAPTERS — material that RUNS and lives OUTSIDE the pinned pack:
+  # installed agent definitions, worker skills, dispatch templates. The pack
+  # cannot freeze them (D12) and does not vendor them (D14 clause 10), so the
+  # project declares which one it qualified against and verifies that claim:
+  #
+  #   python3 <pack_root>/tools/adapter_pin.py --project PROJECT.yaml
+  #
+  # VERIFIED AT EVERY CAPABILITY OPEN, before the first dispatch, alongside the
+  # pack pin. A required adapter that does not match is a STOP, not a warning:
+  # an unverified adapter has already run by the time anyone reads the report.
+  #
+  # Why this block exists, concretely: the installed reviewer adapter declared
+  # `isolation: worktree` while the pinned reviewer contract forbids a reviewer
+  # from creating a ref, a branch or a worktree — and the pack's own
+  # publication gate refuses exactly the ref that mode creates. Every gate
+  # passed. Nothing was looking at the adapter.
+  #
+  # Record a digest only after qualifying the adapter. To read the current one:
+  #
+  #   python3 <pack_root>/tools/adapter_pin.py --observe <path>
+  #
+  # That prints an OBSERVATION, not a verification, and nothing updates a
+  # declared digest automatically — a checker that refreshes its own
+  # expectation on mismatch is a checker that always passes.
+  #
+  # - id:        capability-auditor          # exact identity, referenced in briefs
+  #   locator:   ~/.claude/agents/capability-auditor.md   # `~` expands to the invoking user's home
+  #   digest:    <64-character lowercase sha256 of the file's bytes>
+  #   required:  true                        # governs ABSENCE ONLY (see below)
+  #   declares:  capability-auditor          # the name: the file must declare — a path is a locator, not an identity
+  #   note:      "read-only reviewer; must not declare an isolation mode"
+  #
+  # `required: false` permits the adapter to be ABSENT. It does NOT permit it to
+  # be different: a declared adapter that is present and does not match its
+  # digest blocks either way. Unreadable blocks too — that is a failure to look,
+  # not an absence.
+
 dimensions:
   # Declared validation dimensions for this project. Every capability's
   # SCOPE.md selects a subset of these; a dimension not selected here may not

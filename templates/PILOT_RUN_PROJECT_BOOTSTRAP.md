@@ -27,6 +27,18 @@ Confirm on disk, do not assume:
 - [ ] The gate record named by the manifest exists in `runtime-pack-2/docs/`.
 - [ ] `tools/` tests pass at the exact pack HEAD.
 - [ ] No project pins Kernel `042c1b9`. It is a frozen evidence archive.
+- [ ] Every declared **executable adapter** verifies — the installed agents and
+      worker skills this project dispatches through, which live outside the
+      pinned root and are covered by no tree digest:
+
+      ```bash
+      python3 <pack_root>/tools/adapter_pin.py --project PROJECT.yaml
+      ```
+
+      **Re-run this at every capability open, before the first dispatch**, for
+      the same reason the pack pin is re-verified: an unverified adapter has
+      already run by the time anyone reads the report. A required adapter that
+      does not match is a stop.
 
 Record all three pin fields in `PROJECT.yaml` `pack:`. Another project may be
 pinned to this same release right now — that is supported and requires nothing

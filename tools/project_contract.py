@@ -309,6 +309,11 @@ class ProjectContract:
     content_exempt: tuple[str, ...]
     must_be_tracked: tuple[str, ...]
     publishable_refs: tuple[str, ...]
+    #: Declared executable adapters, parsed. ``None`` means the contract has no
+    #: `adapters:` block at all, which is a different statement from an empty
+    #: one: "nobody said" against "someone said none". A caller that needs the
+    #: declaration can refuse the first and accept the second.
+    adapters: tuple = ()
 
     @classmethod
     def load(cls, path: str | Path, *, pack_root: str | Path | None = None) -> "ProjectContract":
@@ -386,6 +391,7 @@ class ProjectContract:
             publishable_refs=_as_str_list(
                 publication.get("publishable_refs"), field="publication.publishable_refs"
             ),
+            adapters=_load_adapters(raw),
         )
 
     def repository(self, override: str | None = None) -> str:
@@ -397,6 +403,26 @@ class ProjectContract:
                 f"{self.path} declares no project.repo_path, so the repository must be given explicitly"
             )
         return self.repo_path
+
+
+def _load_adapters(raw: dict) -> tuple | None:
+    """The declared adapters, parsed at load so a malformed one raises here.
+
+    Imported lazily: `adapter_pin` reads a contract when run as a CLI, and a
+    module-level import in both directions is a cycle. The parse still happens
+    during `load`, so an unreadable adapters block fails at the same moment
+    every other unreadable block does (D10) rather than at first use.
+    """
+    if "adapters" not in raw:
+        return None
+    import adapter_pin
+
+    try:
+        return adapter_pin.declarations_from(raw.get("adapters"))
+    except adapter_pin.IntegrityError as exc:
+        raise ContractError(f"{exc.cause}" + "".join(
+            f"; {key}: {value}" for key, value in sorted(exc.detail.items())
+        )) from exc
 
 
 def _optional_str(value: object) -> str | None:

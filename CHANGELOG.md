@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.0 — adapter integrity, tooling integrity, and truth about execution
+
+A **MINOR** release (`DECISIONS.md` D11): new backward-compatible capability,
+plus enforcement of guarantees earlier versions already promised. **State
+`IN_PROGRESS` — this is an evolution candidate and is not adoptable.** Every
+defect below was reproduced by execution against the frozen 2.1.1 baseline
+before it was repaired, and every repaired guarantee carries an oracle that
+fails against the pre-repair behaviour. Gate: `docs/RP2.2-GATE.md`.
+
+_Entries are appended as capabilities close._
+
 ## 2.1.1 — release integrity: the checks now mean what they said
 
 A **PATCH** release (`DECISIONS.md` D11): backward-compatible fixes, metadata

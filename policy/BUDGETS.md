@@ -77,3 +77,33 @@ prompt. On breach: cut scope to toolbelt + existing skills + templates and start
 the Pilot Run anyway (audit §11.1). If pack work is still ongoing with no real
 project started after the cap, that is itself a mandatory HITL escalation with a
 recommendation to ship as-is (§11.6).
+
+## Session-scoped authorisation — pack-evolution sessions only (RP2.2)
+
+The frozen table above is unchanged and continues to govern **project runtime**.
+A recorded human decision may raise the repair and audit counters for a single
+**pack-evolution session**, which is not a project run: it cuts a release rather
+than delivering a capability against a pinned one, and it carries no consuming
+project whose guarantees a longer repair loop could weaken.
+
+The RP2.2 evolution session was authorised at:
+
+| Counter | Session bound |
+|---|---|
+| Repair attempts per reproduced root cause | 12 |
+| Repair rounds per capability | 8 |
+| Closure / requalification cycles per capability | 4 |
+
+Two rules survive the raise, because they are what makes the counters mean
+anything:
+
+- **Environmental and transient retries still do not charge budget**, and still
+  have to be classified before that is decided.
+- **Three consecutive failures on one root-cause hypothesis end that
+  hypothesis.** Diagnosis reopens, the defect is reproduced again, and the next
+  attempt uses a materially different strategy. A raised ceiling buys more
+  distinct approaches, never more repetitions of one.
+
+An authorisation is per session and is recorded in the gate record of the
+version it cut. It does not carry forward, and it never applies to a project
+running against a pinned release.

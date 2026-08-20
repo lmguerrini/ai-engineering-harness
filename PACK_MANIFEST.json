@@ -1,37 +1,39 @@
 {
   "pack": "runtime-pack-2",
-  "version": "2.1.1",
-  "state": "QUALIFIED_AND_FROZEN",
-  "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state QUALIFIED_AND_FROZEN`. See docs/RP2.1.1-GATE.md.",
-  "qualified_at": "2026-08-15",
-  "tracked_files": 85,
-  "tree_digest_sha256": "d445c5ce10095edd9a8f6063e9c708f2af7cf1cec266f6758d26f58f7bd50f3e",
+  "version": "2.2.0",
+  "state": "IN_PROGRESS",
+  "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
+  "qualified_at": null,
+  "tracked_files": 90,
+  "tree_digest_sha256": "1ae52e4caa25953b9bccd0bf7164fc19372ad1cbb2f118893337a1275ea4124a",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 237
+    "passed": 260
   },
-  "gate_record": "docs/RP2.1.1-GATE.md",
-  "delta_audit": "docs/RP2.1-DELTA-AUDIT.md",
-  "supersedes": "2.1.0 — not replaced; prior runs stay pinned to it. 2.1.0 and 2.0.0 histories are untouched.",
+  "gate_record": "docs/RP2.2-GATE.md",
+  "delta_audit": "docs/RP2.2-CAPABILITY-MAP.md",
+  "supersedes": "2.1.1 — not replaced; runs pinned to it stay pinned to it. 2.1.1, 2.1.0 and 2.0.0 histories are untouched. This candidate is IN_PROGRESS and no project may adopt it: QUALIFIED_AND_FROZEN is the only adoptable state.",
   "version_semantics": "PATCH: backward-compatible fixes, metadata/docs corrections, enforcement of already-promised guarantees. MINOR: new backward-compatible policy/tool/capability. MAJOR: incompatible authority, contract or migration change. VERSION is the single machine-readable authority (DECISIONS.md D11).",
   "pin_instruction": "a project records version AND full 40-character sha AND tree digest AND state in PROJECT.yaml pack.*, and verifies them rather than copying them. Adoption happens only at a capability boundary. A frozen release never mutates during a project run; verification failing mid-project is a stop, not a pin to refresh.",
   "concurrent_use": "several projects may pin this same release at once, or different qualified releases, provided each version resolves to a distinct immutable root. Operational state and Evolution Candidate inboxes are project-local and never written into this repository (DECISIONS.md D13).",
   "external_installed_skills": {
-    "authority": "ADAPTERS, NOT AUTHORITY. Outside this release envelope, covered by no tree_digest_sha256, and changeable without a pin noticing. Where an adapter and this pinned pack disagree, the pinned pack wins. An external skill that must be normative is pinned and verified under the project's own dependency contract (DECISIONS.md D12).",
+    "authority": "ADAPTERS, NOT AUTHORITY. Outside this release envelope, covered by no tree_digest_sha256, and changeable without a pin noticing. Where an adapter and this pinned pack disagree, the pinned pack wins. From 2.2.0 an adapter a project dispatches through is DECLARED AND VERIFIED under the project's own adapters contract (tools/adapter_pin.py, PROJECT.yaml `adapters:`) — this list is an observation of what was installed here, never a substitute for that declaration (DECISIONS.md D12, D14).",
     "observed": [
       "~/.claude/skills/capability-closure/SKILL.md",
-      "~/.claude/skills/codex-worker/SKILL.md"
+      "~/.claude/skills/codex-worker/SKILL.md",
+      "~/.claude/agents/capability-auditor.md",
+      "~/.claude/agents/capability-implementer.md"
     ]
   },
   "known_limitations": [
-    "held prose 2298 lines against a ~2000 target (14.9% over, recorded not shaved; 997 of those lines are the two installed adapters, outside this envelope). 2.1.0 recorded 2204 under a rule that yields 2256 — corrected as an erratum in CHANGELOG.md, not by rewriting the 2.1.0 gate record",
-    "installed adapter skills live outside this repository and are not covered by tree_digest_sha256",
+    "STATE IS IN_PROGRESS. This candidate has not been released by a human authority and no project may pin it.",
+    "installed adapter skills and agents live outside this repository and are not covered by tree_digest_sha256; they are covered instead by a project's declared adapters contract, which is verified rather than frozen",
     "REVIEW_LOCAL contradicted on one observation; EXTRACT_LOCAL provisional on two",
     "relative yield between AUDIT_PRIMARY and AUDIT_CROSS still unmeasured (3 audits is not a rate)",
-    "no durable routing evidence exists beyond the 19 recorded observations; unprobed configurations stay unprobed and none was invented"
+    "no durable routing evidence exists beyond the recorded observations; unprobed configurations stay unprobed and none was invented"
   ],
   "deferred": {
     "EC-O": "second project blocked by the machine-path rule",
