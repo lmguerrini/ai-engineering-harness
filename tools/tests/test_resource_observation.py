@@ -179,3 +179,73 @@ def test_seconds_until_reset_never_goes_negative():
     observation = from_status_line(FULL, observed_at=NOW)
     assert observation.window("five_hour").seconds_until_reset(NOW) == 3600
     assert observation.window("five_hour").seconds_until_reset(NOW + 999_999) == 0
+
+
+# --- the capture path -----------------------------------------------------------
+
+
+def test_an_observation_appends_as_one_json_line(tmp_path):
+    from resource_observation import append_observation
+
+    target = tmp_path / "routing" / "resource.jsonl"
+    assert append_observation(target, from_status_line(FULL, observed_at=NOW)) is True
+    assert len(target.read_text().strip().splitlines()) == 1
+    assert json.loads(target.read_text())["model_observed"] == "claude-opus-5"
+
+
+def test_an_identical_reading_is_not_appended_again(tmp_path):
+    """A status line runs on every render. An unconditional append turns a
+    routing record into a log of how often the terminal repainted, and a file
+    that large stops being read."""
+    from resource_observation import append_observation
+
+    target = tmp_path / "resource.jsonl"
+    append_observation(target, from_status_line(FULL, observed_at=NOW))
+    assert append_observation(target, from_status_line(FULL, observed_at=NOW + 900)) is False
+    assert len(target.read_text().strip().splitlines()) == 1
+
+
+def test_a_changed_reading_is_appended(tmp_path):
+    from resource_observation import append_observation
+
+    target = tmp_path / "resource.jsonl"
+    append_observation(target, from_status_line(FULL, observed_at=NOW))
+
+    moved = dict(FULL)
+    moved["rate_limits"] = {
+        "five_hour": {"used_percentage": 55.0, "resets_at": NOW + 3600},
+        "seven_day": {"used_percentage": 63.8, "resets_at": NOW + 86400},
+    }
+    assert append_observation(target, from_status_line(moved, observed_at=NOW + 60)) is True
+    assert len(target.read_text().strip().splitlines()) == 2
+
+
+def test_a_timestamp_alone_is_not_an_observation(tmp_path):
+    """Only `observed_at` differs between two identical readings, and a
+    timestamp is not something observed."""
+    from resource_observation import append_observation
+
+    target = tmp_path / "resource.jsonl"
+    append_observation(target, from_status_line(FULL, observed_at=NOW))
+    for offset in (1, 10, 10_000):
+        assert append_observation(target, from_status_line(FULL, observed_at=NOW + offset)) is False
+
+
+def test_an_unreadable_last_line_does_not_drop_the_reading(tmp_path):
+    """Appending is the safe direction: a corrupt tail must not silently
+    swallow an observation."""
+    from resource_observation import append_observation
+
+    target = tmp_path / "resource.jsonl"
+    target.write_text("{not json\n")
+    assert append_observation(target, from_status_line(FULL, observed_at=NOW)) is True
+
+
+def test_the_appended_record_carries_nothing_private(tmp_path):
+    from resource_observation import append_observation
+
+    target = tmp_path / "resource.jsonl"
+    append_observation(target, from_status_line(FULL, observed_at=NOW))
+    written = target.read_text()
+    assert "5e551011" not in written
+    assert "/Users/" not in written

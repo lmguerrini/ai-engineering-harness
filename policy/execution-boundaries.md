@@ -116,6 +116,15 @@ To enable, the operator adds a `statusLine` command to their own settings:
 
 To disable, remove that key. There is no other state.
 
+To keep a reading as project-local routing evidence, at a capability boundary:
+
+    … | python3 <pack_root>/tools/resource_observation.py --append <project>/ROUTING_OBSERVATIONS.jsonl
+
+Append-only, and deduplicated against the last line. Not on the status line
+itself: that command runs on every render, so an unconditional append records
+how often the terminal repainted rather than how much quota moved — and a file
+that large stops being read, which is the same as not having one.
+
 `rate_limits` is documented as present only for subscribers and only after a
 first API response, so **absent is the ordinary case** and is reported
 `UNKNOWN` — never as `0% used`, which reads as room to spend. A reading is

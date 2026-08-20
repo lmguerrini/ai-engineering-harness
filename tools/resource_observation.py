@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 __all__ = [
@@ -65,6 +66,7 @@ __all__ = [
     "Window",
     "ResourceObservation",
     "from_status_line",
+    "append_observation",
 ]
 
 UNKNOWN = "UNKNOWN"
@@ -291,6 +293,46 @@ def from_status_line(payload: str | bytes | dict, *, observed_at: float) -> Reso
     return observation
 
 
+def append_observation(path: str | Path, observation: ResourceObservation) -> bool:
+    """Append one observation to a project-local JSONL. Returns whether it wrote.
+
+    **Append-only project-local facts**, which is the shape everything else in
+    this pack uses for evidence: the file is the record and any view over it is
+    derived. Core writes only where the caller points it, owns no location, and
+    never writes into a pinned release.
+
+    Deduplicated against the last line, and this is not an optimisation. A
+    status-line command runs on **every render**, so an unconditional append
+    turns a routing record into a log of how often the terminal repainted — and
+    a file that large stops being read, which is the same as not having it. A
+    reading whose quota figures and model are unchanged records nothing new; only
+    its timestamp would differ, and a timestamp is not an observation.
+    """
+    path = Path(path)
+    record = observation.as_record()
+    comparable = {key: value for key, value in record.items() if key != "observed_at"}
+
+    if path.exists():
+        try:
+            previous = path.read_text(encoding="utf-8").strip().splitlines()
+        except OSError:
+            previous = []
+        if previous:
+            try:
+                last = json.loads(previous[-1])
+                if {k: v for k, v in last.items() if k != "observed_at"} == comparable:
+                    return False
+            except ValueError:
+                # An unreadable last line is not a match. Append rather than
+                # silently drop the reading.
+                pass
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+    return True
+
+
 def _cli(argv: list[str]) -> int:
     """Read a status-line payload on stdin; print an observation.
 
@@ -314,10 +356,28 @@ def _cli(argv: list[str]) -> int:
         action="store_true",
         help="emit one terse line, for use as the statusLine command itself",
     )
+    parser.add_argument(
+        "--append",
+        metavar="PATH",
+        help=(
+            "append this observation to a project-local JSONL, unless it is identical "
+            "to the last one. For capability boundaries; a status line runs on every "
+            "render and does not need a record of each"
+        ),
+    )
     args = parser.parse_args(argv)
 
     now = time.time()
     observation = from_status_line(sys.stdin.read(), observed_at=now)
+
+    if args.append:
+        try:
+            wrote = append_observation(args.append, observation)
+        except OSError as exc:
+            print(f"the observation could not be appended: {exc}", file=sys.stderr)
+            return 2
+        if not args.status_line and not args.json:
+            print(f"{'appended to' if wrote else 'unchanged since the last reading in'} {args.append}")
 
     if args.json:
         print(json.dumps(observation.as_record(), indent=2))
