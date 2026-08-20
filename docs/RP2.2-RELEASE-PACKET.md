@@ -4,7 +4,7 @@
 model permits: `pack_pin` knows two, and `QUALIFIED_AND_FROZEN` is the one a
 project may adopt. Moving it there is a human act and was not performed.
 
-**Read this before deciding.** Four closure-audit rounds ran — eight blind
+**Read this before deciding.** Five closure-audit rounds ran — ten blind
 auditors on distinct lenses — and **every round returned NOT READY**. Every
 *material* finding was reproduced by the coordinator before it counted, and
 repaired; a few were artefacts of auditing a moving branch, and the gate record
@@ -56,6 +56,33 @@ defects are repaired and mutation-tested; the account is in
 packet about what kind of defect this candidate is still likely to contain, and
 it argues for a specific next step: a round that runs the release against real
 consumers rather than against itself.
+
+## What the fifth round changed
+
+It was consumer-facing by mandate, and it earned that. Six blockers, every one
+reproduced:
+
+- **Two components answered by restating the project's own claim** rather than
+  reading the release — including the one whose entire reason for existing is
+  that the pin verifier answers a different question. Both now read the artifact.
+- **A release index was consumed as trusted input**, so an unqualified release
+  and a root that does not exist were announced as available qualified releases.
+  Entries are verified before being offered; one that does not verify is
+  *listed, not offered*.
+- **A whole path had no test.** A mutation making every pin verify let a project
+  pointed at the wrong release report `READY`, with the suite green.
+- **Two error types sat outside the hierarchy the CLI wrapper catches**, and the
+  test guarding that wrapper turned out to be a string grep over 17 tools of
+  which 5 were ever executed. Every CLI is now run as a subprocess against
+  inputs designed to be refused.
+- **The manifest quoted the baseline's line count with this release's own
+  percentage**, concealing that held prose grew from 14.9% over target to 24.3%.
+- Seven smaller truthfulness defects, each a state reported where a different
+  one was true.
+
+One of the coordinator's own oracles was weak in the way this release keeps
+finding: an assertion satisfied by the test fixture's own path rather than by
+the behaviour. The mutation survived and said so.
 
 ## What changed in the final hardening phase
 
@@ -225,11 +252,13 @@ No remote was created, nothing was pushed, no history was rewritten.
 
 ## Known limitations
 
-- **No audit round has returned READY.** Four rounds each returned NOT READY;
-  the last round's findings are repaired and unaudited. Four closure cycles were
-  the authorised budget and four ran, so a fifth round — not a smaller step — is
-  what remains, and it is the release authority's call rather than a step that
-  was skipped.
+- **No audit round has returned READY.** Five rounds each returned NOT READY;
+  the last round's findings are repaired and unaudited. The fifth was
+  consumer-facing rather than another repository review, on the evidence that
+  the first four had missed what contact with real projects found immediately —
+  and it found six more blockers, including two components that answered by
+  restating the project's own claim and one whole path with no test at all.
+  Whether that pattern has converged is the release authority's call.
 - **The release was never exercised against a real consumer until after the
   audit budget closed**, and doing so immediately found three defects including
   the most serious in the release. Two of the three real projects are still on legacy pins

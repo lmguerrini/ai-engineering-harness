@@ -52,6 +52,8 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from errors import GateRefusal
+
 __all__ = [
     "DIGEST_ALGORITHM",
     "NOT_PRESENT",
@@ -99,8 +101,15 @@ _SKIP_DIRECTORIES = frozenset({".git", "__pycache__", ".pytest_cache", ".DS_Stor
 _SKIP_NAMES = frozenset({".DS_Store"})
 
 
-class ContextError(Exception):
-    """The Project Context declaration could not be read, or does not verify."""
+class ContextError(GateRefusal):
+    """The Project Context declaration could not be read, or does not verify.
+
+    A refusal in the toolbelt's hierarchy, for the same reason `ContractError`
+    is: outside it, `errors.run_cli` cannot report it and the caller gets a
+    traceback where a stated cause was written.
+    """
+
+    code = "HX_PROJECT_CONTEXT"
 
 
 def tree_digest(root: str | Path) -> tuple[str, int]:

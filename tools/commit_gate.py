@@ -36,7 +36,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-from errors import CommitContractError
+from errors import CommitContractError, IntegrityError
 
 __all__ = [
     "ContractViolation",
@@ -710,8 +710,16 @@ def _cli(argv: list[str]) -> int:
         return 1
 
     if args.file:
-        with open(args.file, encoding="utf-8") as handle:
-            message = handle.read()
+        # A message file that cannot be read is a refusal with a cause, not a
+        # traceback. Pre-existing at 2.1.1 and found by executing every CLI
+        # against inputs designed to be refused, which nothing had done.
+        try:
+            with open(args.file, encoding="utf-8") as handle:
+                message = handle.read()
+        except OSError as exc:
+            raise IntegrityError(
+                f"the commit message file could not be read: {exc}", path=args.file
+            ) from exc
     else:
         message = sys.stdin.read()
 

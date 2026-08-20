@@ -293,27 +293,63 @@ def _pin_components(contract: ProjectContract) -> tuple[ComponentResult, Compone
             notes=(f"{pin.version} at {pin.root_path}",),
         )
 
-    if pin.state == ADOPTABLE_STATE:
-        state_result = ComponentResult(name="pack_release_state", state=VERIFIED, required=True)
-    elif pin.state is None:
-        state_result = ComponentResult(
-            name="pack_release_state",
-            state=UNKNOWN,
-            required=True,
+    return pin_result, _release_state_component(pin)
+
+
+def _release_state_component(pin: "pack_migration.Pin") -> ComponentResult:
+    """The state of the release ON DISK, not the state the project claims.
+
+    This component exists because *is this root what you pinned* and *is what
+    you pinned adoptable* are different questions. Reading `state_adopted` back
+    out of the contract answers **neither** — it restates the project's claim
+    and calls it verification. An independent audit reproduced it against a real
+    consumer: one line said the pinned root's manifest reads `IN_PROGRESS`, and
+    the next said the release-state prerequisite was `VERIFIED`.
+
+    The state of a release that cannot be located is `UNKNOWN`. It is never
+    `VERIFIED`.
+    """
+    declared = pin.state
+    if declared is None:
+        return ComponentResult(
+            name="pack_release_state", state=UNKNOWN, required=True,
             findings=("the pin declares no release state",),
         )
-    else:
-        state_result = ComponentResult(
-            name="pack_release_state",
-            state=UNVERIFIABLE,
-            required=True,
+
+    root = pin.root_path
+    if not root or not Path(root).expanduser().is_absolute():
+        return ComponentResult(
+            name="pack_release_state", state=UNKNOWN, required=True,
+            findings=("the pinned root cannot be located, so the release's state is unknown",),
+        )
+    manifest_path = pack_migration.canonical_root(root) / "PACK_MANIFEST.json"
+    try:
+        observed = json.loads(manifest_path.read_text(encoding="utf-8")).get("state")
+    except (OSError, ValueError) as exc:
+        return ComponentResult(
+            name="pack_release_state", state=UNKNOWN, required=True,
+            findings=(f"the pinned release's manifest could not be read: {exc}",),
+        )
+
+    if observed != declared:
+        return ComponentResult(
+            name="pack_release_state", state=UNVERIFIABLE, required=True,
             findings=(
-                f"the project pinned a release in state {pin.state!r}; a capability may open "
-                f"only against {ADOPTABLE_STATE}. The pin verifies — the root IS what was "
-                "pinned — and what was pinned is not adoptable",
+                f"the project pinned a release in state {declared!r} and the root holds one in "
+                f"state {observed!r}. Whichever is right, this project is not running against "
+                "the release it believes it is",
             ),
         )
-    return pin_result, state_result
+    if observed != ADOPTABLE_STATE:
+        return ComponentResult(
+            name="pack_release_state", state=UNVERIFIABLE, required=True,
+            findings=(
+                f"the pinned release is in state {observed!r}; a capability may open only "
+                f"against {ADOPTABLE_STATE}. The pin may verify perfectly — the root IS what "
+                "was pinned — and what was pinned is not adoptable",
+            ),
+        )
+    return ComponentResult(name="pack_release_state", state=VERIFIED, required=True)
 
 
 def _adapter_component(contract: ProjectContract, home: str | Path | None) -> ComponentResult:
@@ -349,16 +385,33 @@ def _adapter_component(contract: ProjectContract, home: str | Path | None) -> Co
     findings = tuple(finding.sentence() if hasattr(finding, "sentence") else str(finding)
                      for finding in report.findings)
     required = any(getattr(declaration, "required", True) for declaration in declarations)
-    # `clean` is the adapter verifier's own judgement, which already applies the
-    # requirement-governs-absence rule per declaration. Re-deriving it here
-    # would be a second opinion about a question that has an owner.
+    # `clean` is the adapter verifier's own judgement about whether to BLOCK,
+    # and it already applies the requirement-governs-absence rule per
+    # declaration. Re-deriving that would be a second opinion about a question
+    # that has an owner. But clean is not the same as verified: an adapter that
+    # is absent BY PERMISSION is clean and was not checked, and reporting the
+    # component `VERIFIED` while a finding below it says "declared and not
+    # installed" collapses two of the states this module exists to keep apart.
+    verified = len(getattr(report, "verified", ()) or ())
+    if not report.clean:
+        state = UNVERIFIABLE
+    elif verified == len(declarations):
+        state = VERIFIED
+    else:
+        state = UNKNOWN
+    notes = tuple(report.notes)
+    if state is UNKNOWN:
+        notes += (
+            f"{verified} of {len(declarations)} declared adapters verified; the rest are absent "
+            "by permission, so what they would have done is unverified rather than confirmed",
+        )
     return ComponentResult(
         name="adapters",
-        state=VERIFIED if report.clean else UNVERIFIABLE,
+        state=state,
         required=required,
         blocking=not report.clean,
         findings=findings,
-        notes=tuple(report.notes),
+        notes=notes,
     )
 
 
@@ -383,6 +436,20 @@ def _context_component(contract: ProjectContract, required: bool) -> ComponentRe
                 )
                 if required
                 else ()
+            ),
+        )
+
+    if required and getattr(declaration, "activated", True) is False:
+        return ComponentResult(
+            name="project_context",
+            state=UNVERIFIABLE,
+            required=True,
+            blocking=True,
+            findings=(
+                "this project declares `requires.project_context: true` and the declared "
+                "context is NOT ACTIVATED. A deactivated context is verified and not "
+                "consulted, which is precisely what a project requiring one cannot proceed "
+                "on. Its identity may be perfect; nothing will read it",
             ),
         )
 
@@ -473,13 +540,56 @@ def _update_component(
         )
 
     pin = pack_migration.Pin.from_contract(contract)
-    newer = [
-        entry
-        for entry in entries
-        if entry.state == ADOPTABLE_STATE
-        and entry.version != pin.version
-        and _sortable(entry.version) > _sortable(pin.version)
-    ]
+    current = _sortable(pin.version)
+    if not current:
+        # An unparseable pin version sorts below everything, which would tell a
+        # project it is behind a release it may not be behind at all. Reproduced
+        # by an audit: a pin reading `wave-a` was told 3.0.0 was newer.
+        return ComponentResult(
+            name="release_update",
+            state=UNKNOWN,
+            required=False,
+            blocking=False,
+            notes=(
+                f"the pinned version {pin.version!r} cannot be ordered against the index, so "
+                "whether anything newer exists is unknown. Nothing is offered rather than "
+                "something being invented",
+            ),
+        )
+
+    # The index is UNTRUSTED INPUT — `pack_migration` says so of itself, and
+    # then this offered entries on the index's word alone. An audit put an
+    # `IN_PROGRESS` release and a root that does not exist into an index that
+    # declared both qualified, and both were announced as available qualified
+    # releases. An entry is verified against the release it names before it is
+    # offered.
+    newer, unverified = [], []
+    for entry in entries:
+        if entry.state != ADOPTABLE_STATE or _sortable(entry.version) <= current:
+            continue
+        try:
+            problems = pack_migration.verify_pinned_root(
+                pack_migration.Pin(
+                    version=entry.version, sha=entry.sha, digest=entry.digest,
+                    state=entry.state, root_path=entry.root_path, retained_roots=(),
+                )
+            )
+        except Exception as exc:  # an entry that cannot be checked is not offered
+            problems = [str(exc)]
+        (newer if not problems else unverified).append((entry, problems))
+
+    if unverified and not newer:
+        return ComponentResult(
+            name="release_update",
+            state=UNKNOWN,
+            required=False,
+            blocking=False,
+            notes=tuple(
+                f"the index lists {entry.version} at {entry.root_path} as qualified, and it does "
+                f"not verify ({problems[0]}). Listed, not offered"
+                for entry, problems in unverified
+            ),
+        )
     if not newer:
         return ComponentResult(
             name="release_update",
@@ -488,18 +598,28 @@ def _update_component(
             blocking=False,
             notes=("no newer qualified release is listed",),
         )
+    notes = []
+    for entry, _problems in newer:
+        advisory = (
+            f" It carries a SECURITY ADVISORY: {entry.security_advisory}. That is a human "
+            "decision about urgency and nothing here makes it faster."
+            if entry.security_advisory
+            else ""
+        )
+        notes.append(
+            f"a newer qualified release is available and verifies: {entry.version} at "
+            f"{entry.root_path}. This is information, not a finding — adoption happens at a "
+            "capability boundary, through the migration gate, and staying on the current "
+            "qualified release is a supported choice." + advisory
+        )
+    notes.extend(
+        f"the index lists {entry.version} at {entry.root_path} as qualified, and it does not "
+        f"verify ({problems[0]}). Listed, not offered"
+        for entry, problems in unverified
+    )
     return ComponentResult(
-        name="release_update",
-        state=UPDATE_AVAILABLE,
-        required=False,
-        blocking=False,
-        notes=tuple(
-            f"a newer qualified release is available: {entry.version} at {entry.root_path}. "
-            "This is information, not a finding — adoption happens at a capability boundary, "
-            "through the migration gate, and staying on the current qualified release is a "
-            "supported choice"
-            for entry in newer
-        ),
+        name="release_update", state=UPDATE_AVAILABLE, required=False,
+        blocking=False, notes=tuple(notes),
     )
 
 

@@ -43,6 +43,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from errors import GateRefusal
+
 __all__ = [
     "ContractError",
     "ProjectContract",
@@ -58,8 +60,18 @@ _KEY = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_.\-]*)\s*:(?:\s+(?P<value>.*))?
 _ITEM = re.compile(r"^-(?:\s+(?P<value>.*))?$")
 
 
-class ContractError(Exception):
-    """The contract could not be read, or does not say what was asked of it."""
+class ContractError(GateRefusal):
+    """The contract could not be read, or does not say what was asked of it.
+
+    A **refusal**, in the toolbelt's own hierarchy, rather than a bare
+    `Exception`. It was the second: `errors.run_cli` catches `HxError` and this
+    was outside it, so a project whose contract declared a requirement nothing
+    checks got a stack trace instead of the refusal that was written for it.
+    Found by an independent audit, which also found that the structural test
+    guarding the wrapper could not see it.
+    """
+
+    code = "HX_CONTRACT"
 
 
 def _strip_comment(line: str) -> str:

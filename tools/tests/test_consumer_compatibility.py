@@ -84,6 +84,49 @@ def release(tmp_path_factory):
             "state": "QUALIFIED_AND_FROZEN"}
 
 
+def _build_release(root, version, state="QUALIFIED_AND_FROZEN"):
+    root.mkdir(parents=True)
+    _git(root, "init", "--quiet", "--initial-branch", "main")
+    _git(root, "config", "user.name", "Ordinary Human")
+    _git(root, "config", "user.email", "human@example.invalid")
+    _git(root, "config", "commit.gpgsign", "false")
+    (root / "VERSION").write_text(f"{version}\n")
+    (root / "GATE.md").write_text("# gate\n")
+    _git(root, "add", "VERSION", "GATE.md")
+    _git(root, "commit", "--quiet", "-m", "release")
+
+    manifest = {
+        "pack": "representative-release", "version": version, "state": state,
+        "digest_excludes": pack_pin.MANIFEST_NAME,
+        "digest_algorithm": pack_pin.DIGEST_ALGORITHM,
+        "gate_record": "GATE.md", "tests": {"passed": 1},
+        pack_pin.DIGEST_COUNT_KEY: 0, "tree_digest_sha256": "0" * 64,
+    }
+    (root / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    _git(root, "add", pack_pin.MANIFEST_NAME)
+    _git(root, "commit", "--quiet", "-m", "manifest")
+
+    digest, count = pack_pin.tree_digest(root)
+    manifest[pack_pin.DIGEST_COUNT_KEY] = count
+    manifest["tree_digest_sha256"] = digest
+    (root / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root),
+                         capture_output=True, text=True, check=True).stdout.strip()
+    return {"root": str(root), "version": version, "sha": sha, "digest": digest, "state": state}
+
+
+@pytest.fixture(scope="module")
+def newer_release(tmp_path_factory):
+    """A REAL second qualified release, so "available" can mean verified.
+
+    The first version of the availability test listed a release at a path that
+    did not exist. It passed, because the checker took the index's word — which
+    is the blocker an audit reproduced by putting an `IN_PROGRESS` release and a
+    nonexistent root into an index that declared both qualified.
+    """
+    return _build_release(tmp_path_factory.mktemp("newer") / "pack", "4.0.0")
+
+
 @pytest.fixture
 def context_tree(tmp_path):
     """A Project Context directory and its digest, built the way a project's is."""
@@ -125,6 +168,7 @@ def test_every_compatibility_class_the_release_learned_is_still_listed():
         "context_required_and_absent",
         "context_required_and_verified",
         "pin_to_an_unqualified_release",
+        "full_pin_that_does_not_verify",
     }
     assert set(consumer_shapes.SHAPES) == expected
     for name, (description, template) in consumer_shapes.SHAPES.items():
@@ -157,7 +201,8 @@ def test_blocks_core_does_not_understand_never_stop_a_contract_loading(
     """All three real consumers declare blocks Core never reads. A reader that
     refused them would have broken every real consumer at once."""
     contract = ProjectContract.load(_contract(tmp_path, shape, release, context_tree))
-    for block in ("dimensions", "critical_domains", "mutation_policy", "validation_profiles"):
+    for block in ("dimensions", "critical_domains", "mutation_policy", "validation_profiles",
+                  "private_terms", "workspace_classification", "publication"):
         assert block in contract.raw, f"{shape} lost {block}"
 
 
@@ -286,7 +331,7 @@ def test_a_verified_context_that_then_changes_stops_the_next_open(
 # --- release selection: newer is information, never a block -------------------
 
 def test_a_newer_qualified_release_is_reported_and_does_not_block(
-    tmp_path, release, context_tree
+    tmp_path, release, context_tree, newer_release
 ):
     """`READY_WITH_UPDATE_AVAILABLE`, never `BLOCKED_BECAUSE_NOT_LATEST`.
 
@@ -300,8 +345,8 @@ def test_a_newer_qualified_release_is_reported_and_does_not_block(
         "releases": [
             {"version": "3.0.0", "root_path": release["root"], "sha": release["sha"],
              "digest": release["digest"], "state": "QUALIFIED_AND_FROZEN"},
-            {"version": "4.0.0", "root_path": str(tmp_path / "future-release"),
-             "sha": "b" * 40, "digest": "c" * 64, "state": "QUALIFIED_AND_FROZEN"},
+            {"version": "4.0.0", "root_path": newer_release["root"], "sha": newer_release["sha"],
+             "digest": newer_release["digest"], "state": "QUALIFIED_AND_FROZEN"},
         ]
     }, indent=2))
 
@@ -469,3 +514,213 @@ def test_an_absent_adapters_block_is_unknown_and_a_declared_empty_one_is_not(
     assert declared.state == capability_open.NOT_PRESENT
     assert declared.blocking is False
     assert capability_open.open_capability(path).ready
+
+
+# --- an index is untrusted input ---------------------------------------------
+
+def test_an_index_entry_that_does_not_verify_is_listed_and_not_offered(
+    tmp_path, release, context_tree
+):
+    """`pack_migration` calls the index untrusted input and verifies each entry
+    against the release it names. This composed it and then offered entries on
+    the index's word alone — an audit put an `IN_PROGRESS` release and a root
+    that does not exist into an index declaring both qualified, and both were
+    announced as available qualified releases.
+
+    "The index lists it and it does not verify" is a true, useful sentence.
+    "A newer qualified release is available" was not.
+    """
+    lying = _build_release(tmp_path / "unqualified", "4.0.0", state="IN_PROGRESS")
+
+    index = tmp_path / "RELEASE_INDEX.json"
+    index.write_text(json.dumps({"releases": [
+        {"version": "3.0.0", "root_path": release["root"], "sha": release["sha"],
+         "digest": release["digest"], "state": "QUALIFIED_AND_FROZEN"},
+        # The index CLAIMS qualified; the root itself says IN_PROGRESS.
+        {"version": "4.0.0", "root_path": lying["root"], "sha": lying["sha"],
+         "digest": lying["digest"], "state": "QUALIFIED_AND_FROZEN"},
+        {"version": "5.0.0", "root_path": str(tmp_path / "not-there"), "sha": "b" * 40,
+         "digest": "c" * 64, "state": "QUALIFIED_AND_FROZEN"},
+    ]}, indent=2))
+
+    report = capability_open.open_capability(
+        _contract(tmp_path, "full_pin_qualified_no_context", release, context_tree),
+        release_index=index,
+    )
+    update = report.component("release_update")
+
+    assert update.state == capability_open.UNKNOWN, update
+    assert report.ready, "an index that lies must still not block a correctly pinned project"
+    joined = " ".join(update.notes)
+    assert "does not verify" in joined and "Listed, not offered" in joined
+    assert "a newer qualified release is available" not in joined
+
+
+def test_an_unorderable_pin_version_is_never_told_it_is_behind(
+    tmp_path, release, context_tree, newer_release
+):
+    """A pin this cannot order sorted below everything, so a project pinned to
+    `wave-a` was told a numbered release was newer. Unknown, not behind."""
+    index = tmp_path / "RELEASE_INDEX.json"
+    index.write_text(json.dumps({"releases": [
+        {"version": "4.0.0", "root_path": newer_release["root"], "sha": newer_release["sha"],
+         "digest": newer_release["digest"], "state": "QUALIFIED_AND_FROZEN"},
+    ]}, indent=2))
+
+    path = _contract(tmp_path, "full_pin_qualified_no_context", release, context_tree,
+                     version="wave-a")
+    update = capability_open.open_capability(path, release_index=index).component("release_update")
+
+    assert update.state == capability_open.UNKNOWN
+    assert any("cannot be ordered" in note for note in update.notes)
+    assert not any("newer qualified release is available" in note for note in update.notes)
+
+
+def test_a_security_advisory_on_an_offered_release_is_carried_into_the_note(
+    tmp_path, release, context_tree, newer_release
+):
+    """It was parsed and then dropped by the one component a reader sees."""
+    index = tmp_path / "RELEASE_INDEX.json"
+    index.write_text(json.dumps({"releases": [
+        {"version": "4.0.0", "root_path": newer_release["root"], "sha": newer_release["sha"],
+         "digest": newer_release["digest"], "state": "QUALIFIED_AND_FROZEN",
+         "security_advisory": "CVE-0000-0000, a made-up one"},
+    ]}, indent=2))
+
+    report = capability_open.open_capability(
+        _contract(tmp_path, "full_pin_qualified_no_context", release, context_tree),
+        release_index=index,
+    )
+    update = report.component("release_update")
+    assert update.state == capability_open.UPDATE_AVAILABLE
+    assert any("SECURITY ADVISORY" in note for note in update.notes)
+    assert report.ready, "an advisory is a human decision about urgency, not a block here"
+
+
+def test_a_complete_pin_pointing_at_a_different_release_does_not_verify(
+    tmp_path, release, context_tree, newer_release
+):
+    """Every field present, none of them true of the root. Nothing in the suite
+    constrained this path — an audit reverted `if problems:` to `if False:` and
+    the whole suite stayed green while a project pointed at the wrong release
+    reported READY.
+
+    It is also the state a real consumer is in the moment anyone checks a branch
+    out in the directory it pinned, which is why the release carries a decision
+    about release roots being checkouts nobody works in.
+    """
+    path = _contract(tmp_path, "full_pin_that_does_not_verify", release, context_tree,
+                     root=newer_release["root"])
+    report = capability_open.open_capability(path)
+    pin = report.component("pack_pin")
+
+    assert pin.state == capability_open.UNVERIFIABLE, report.render()
+    assert pin.state != capability_open.LEGACY, "a complete pin that fails is not a legacy pin"
+    assert pin.blocking and report.state == capability_open.NOT_READY
+    assert any("does not match" in finding or "manifest says" in finding
+               for finding in pin.findings), pin.findings
+
+
+def test_the_release_state_component_reads_the_root_not_the_projects_own_claim(
+    tmp_path, release, context_tree, newer_release
+):
+    """It answered by re-reading `state_adopted` out of the contract — the
+    project's claim, restated and called verification. An audit reproduced it
+    against a real consumer: one line said the root holds `IN_PROGRESS`, the
+    next said the release-state prerequisite was VERIFIED.
+    """
+    unqualified = _build_release(tmp_path / "candidate-release", "9.9.9", state="IN_PROGRESS")
+    path = _contract(tmp_path, "pin_to_an_unqualified_release", release, context_tree,
+                     root=unqualified["root"], version=unqualified["version"],
+                     sha=unqualified["sha"], digest=unqualified["digest"],
+                     state="QUALIFIED_AND_FROZEN")
+
+    state = capability_open.open_capability(path).component("pack_release_state")
+    assert state.state == capability_open.UNVERIFIABLE, state
+    assert "IN_PROGRESS" in state.findings[0]
+
+
+def test_the_release_state_of_a_root_that_cannot_be_found_is_unknown(
+    tmp_path, release, context_tree
+):
+    """Never VERIFIED. The state of a release nobody can locate is unknown."""
+    path = _contract(tmp_path, "full_pin_that_does_not_verify", release, context_tree,
+                     root=str(tmp_path / "nowhere"))
+    state = capability_open.open_capability(path).component("pack_release_state")
+    assert state.state == capability_open.UNKNOWN, state
+    assert state.blocking
+
+
+def test_a_relative_pinned_root_is_refused_rather_than_resolved_against_the_cwd(
+    tmp_path, release, context_tree
+):
+    """The same contract answered differently from different directories, which
+    falsifies the module's own determinism claim.
+
+    The root deliberately does not contain the word this asserts on. A first
+    version used `../some/relative/root` and asserted `"relative" in finding` —
+    satisfied by the PATH ITSELF, so removing the check left the test green.
+    """
+    path = _contract(tmp_path, "full_pin_that_does_not_verify", release, context_tree,
+                     root="../elsewhere/pack")
+    report = capability_open.open_capability(path)
+    pin = report.component("pack_pin")
+
+    assert pin.state == capability_open.UNVERIFIABLE
+    assert any("depends on the current working directory" in finding
+               for finding in pin.findings), pin.findings
+    assert report.state == capability_open.NOT_READY
+
+
+def test_a_context_the_project_switched_off_does_not_satisfy_a_requirement_for_one(
+    tmp_path, release, context_tree
+):
+    """It verified, so the requirement read as satisfied and the aggregate was
+    READY — while the module's own note says a deactivated context is verified
+    AND NOT CONSULTED. The project said it needs one consulted."""
+    path = _contract(tmp_path, "context_required_and_verified", release, context_tree)
+    assert capability_open.open_capability(path).ready
+
+    path.write_text(path.read_text().replace("activated: true", "activated: false"))
+    report = capability_open.open_capability(path)
+
+    assert report.component("project_context").state == capability_open.UNVERIFIABLE
+    assert report.state == capability_open.NOT_READY
+    assert any("NOT ACTIVATED" in finding for finding in report.component("project_context").findings)
+
+
+def test_an_adapter_absent_by_permission_is_not_reported_as_verified(tmp_path, release, context_tree):
+    """`clean` is the adapter verifier's judgement about whether to BLOCK, and a
+    permitted absence is clean. Reporting the component VERIFIED on the strength
+    of that put the word "verified" above a finding reading "declared and not
+    installed" — a collapse of two of the seven states this module keeps apart.
+    """
+    home = tmp_path / "home"
+    (home / ".claude" / "skills").mkdir(parents=True)
+    installed = home / ".claude" / "skills" / "present.md"
+    installed.write_text("# a skill\n")
+
+    import adapter_pin
+    digest = adapter_pin.file_digest(installed)
+
+    path = _contract(tmp_path, "full_pin_qualified_no_context", release, context_tree)
+    path.write_text(path.read_text() + f"""
+adapters:
+  - id: "present"
+    locator: "~/.claude/skills/present.md"
+    digest: "{digest}"
+    required: true
+  - id: "absent-but-permitted"
+    locator: "~/.claude/skills/absent.md"
+    digest: "{'0' * 64}"
+    required: false
+""")
+
+    report = capability_open.open_capability(path, home=str(home))
+    adapters = report.component("adapters")
+
+    assert adapters.state == capability_open.UNKNOWN, adapters
+    assert adapters.state != capability_open.VERIFIED, "a permitted absence is not a verification"
+    assert adapters.blocking is False, "a permitted absence must not block"
+    assert any("1 of 2" in note for note in adapters.notes), adapters.notes
+    assert report.ready

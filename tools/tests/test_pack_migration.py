@@ -362,7 +362,31 @@ def test_a_pin_cannot_be_read_from_something_that_is_not_a_contract():
     project as UNVERIFIABLE_LEGACY_PIN, naming four fields that were sitting in
     the file it had never opened. A confident wrong answer about somebody
     else's project is worse than an error."""
+    from errors import IntegrityError
+
     for wrong in ("/some/path/PROJECT.yaml", 12, None, object()):
-        with pytest.raises(ValueError) as caught:
+        # A typed refusal, so the CLI wrapper can report it with a cause rather
+        # than letting a bare `ValueError` reach the caller as a traceback.
+        with pytest.raises(IntegrityError) as caught:
             Pin.from_contract(wrong)
         assert "loaded contract" in str(caught.value)
+
+
+def test_a_pin_field_of_the_wrong_type_is_named_as_missing_rather_than_crashing():
+    """`version_adopted: 3` unquoted arrives as an int. `.strip()` on it raised
+    `AttributeError` out of the function whose whole job is to say what a pin
+    lacks — so the pin classified as legacy and the explanation crashed.
+
+    Asserting on the NAMED field, not just on the classification: the
+    classification was already right, and the report was the part that broke.
+    """
+    from pack_migration import missing_pin_fields
+
+    pin = Pin(version=3, sha=None, digest="b" * 64,
+              state="QUALIFIED_AND_FROZEN", root_path="/x", retained_roots=())
+
+    missing = missing_pin_fields(pin)
+    assert "version_adopted" in missing, missing
+    assert "sha_adopted" in missing, missing
+    assert classify_pin(pin) == UNVERIFIABLE_LEGACY_PIN
+    assert any("version_adopted" in problem for problem in verify_pinned_root(pin))

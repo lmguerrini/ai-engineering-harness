@@ -708,7 +708,8 @@ reading of "the toolbelt crashed on all three real projects" was unavailable.
 `errors.run_cli` now wraps every CLI: an `HxError` is printed as
 `REFUSED <code>: <cause>` with its detail and exits on the refusal's own status;
 `SystemExit` and `KeyboardInterrupt` pass through, because argparse exits that
-way and a user interrupting is not a refusal. Sixteen CLIs route through it, and
+way and a user interrupting is not a refusal. Every CLI in `tools/` routes through
+it — 17 of them — and
 the check is structural — a new tool that forgets the wrapper fails the suite
 rather than the first time git refuses it. Three mutations killed: dropping the
 wrapper from one CLI, exiting 0 on a refusal, swallowing `SystemExit`.
@@ -717,7 +718,7 @@ Run correctly, all three projects scan clean of tool error: one reports clean,
 one reports 1,244 leaks against its own declared vocabulary with every match
 redacted, one reports zero and names the binary files it could not read.
 
-Both defects were found **read-only**. No project file was modified, and the
+All of these were found **read-only**. No project file was modified, and the
 founder's instruction not to migrate the existing projects was not touched: this
 was observation, and what it observed is that two of the three are still on
 legacy pins, which is theirs to change at a capability boundary.
@@ -757,13 +758,26 @@ cannot be established stops the open regardless.
 The contract gains `requires:`, whose only key today is `project_context`.
 Unknown keys are refused rather than ignored.
 
-### The three real consumers, read-only, through the new path
+### The real consumers, read-only, through the new path
+
+**This table is environment-dependent evidence and is dated.** An auditor
+pointed out that the first version stated it as fact: it was recorded while the
+pack root held the frozen release, and by the time the audit ran the evolution
+branch was checked out there, so the semantic product's pin had acquired a
+second, true finding the table did not mention. What is durable is in the
+consumer corpus; what is here is what these projects looked like on 2026-08-20.
 
 | Consumer role | Aggregate | Why |
 |---|---|---|
 | a fixture project | `NOT_READY` | `LEGACY` pin — version only. Reported as legacy, with the remedy named, and explicitly not as a defect in the project |
-| a semantic product | `NOT_READY` | its Project Context is declared in a shape whose identity cannot be established, and blocks despite not being declared required |
+| a semantic product | `NOT_READY` | its Project Context is declared in a shape whose identity cannot be established; and, while the evolution branch is checked out at the root it pins, its pin does not verify either — which is D18 happening, correctly reported |
 | a course project | `NOT_READY` | `LEGACY` pin |
+
+There is a **fourth** `PROJECT.yaml` on this machine, belonging to the frozen
+kernel archive. It is refused outright — `` `private_terms:` must be a mapping ``
+— because it uses a different schema and is not a pack consumer. Named here
+because an auditor found it, and "three real consumers" was a claim about a
+directory that holds four contracts.
 
 Every one of those answers is true of that project today, which is the bar the
 brief set: *a project being old or unverifiable is not a candidate defect; a
@@ -825,7 +839,7 @@ negative fixture.
 
 **Clean:** no real username, no absolute personal path, no credential, no email
 address, no raw prompt or conversation, no private runtime state and no
-transcript data is newly introduced. All 28 commit messages on the branch are
+transcript data is newly introduced. Every commit message on the branch is
 clear of private names and machine paths.
 
 **NOT clean, and not repaired here:** ten occurrences of private project names
@@ -878,3 +892,87 @@ answer about all three.
 
 Mutations: collapsing the two adapter states, and restoring the module/script
 split — both killed.
+
+## Closure audit — round 5, consumer-facing
+
+Two blind auditors at `8928a8f2924614ff79c6ea73815fc9d8b7f40918`, on the two
+mandates the brief named: **real-consumer compatibility** and **release
+non-regression plus unsupported claims**. Not another repository review. **Both
+returned NOT READY**, six blockers between them.
+
+### What they found that mattered most
+
+**Two components answered by restating the project's own claim.**
+`pack_release_state` read `state_adopted` back out of the contract and called it
+verification — the component whose entire reason for existing is that
+`verify_pin` answers a different question. Reproduced against a real consumer:
+one line reported the pinned root's manifest as `IN_PROGRESS`, and the next
+reported the release-state prerequisite `VERIFIED`. It now reads the manifest at
+the resolved root, reports `UNKNOWN` when the root cannot be located, and
+`UNVERIFIABLE` when disk and declaration disagree.
+
+**A release index was treated as trusted input** by the module that composes the
+one which calls it untrusted. An auditor put an `IN_PROGRESS` release and a root
+that does not exist into an index declaring both qualified, and both were
+announced as *available qualified releases*. Entries are now verified against
+the release they name before being offered; one that does not verify is
+**listed, not offered**, in those words.
+
+**A whole path had no test.** Line-coverage over the suite showed two lines that
+no test executes and a real contract does: the pin-complete-but-does-not-verify
+result. The auditor reverted `if problems:` to `if False:`, a project pointed at
+the wrong release reported `READY`, and the suite stayed green. That shape is
+now in the consumer corpus — it is also the state every consumer enters the
+moment somebody checks a branch out in the directory it pinned.
+
+**The manifest quoted the baseline's line count with this release's own
+percentage**, so held prose read as unchanged when it had grown from 14.9% over
+target to 24.3%. The existing guard could not see it: its regex takes the first
+`(N% over)` on the line. The baseline's figure is now read from the frozen
+commit and compared.
+
+### The rest, all reproduced and repaired
+
+| Finding | Repair |
+|---|---|
+| `ContractError` and `ContextError` were bare `Exception`s, outside the hierarchy `run_cli` catches, so a project declaring an unchecked requirement got a traceback | both are typed refusals now, with their own codes |
+| the structural wrapper test was **vacuous** — it grepped the `__main__` block for `run_cli(`, and only 5 of 17 CLIs were executed anywhere in the suite | every CLI is now executed as a subprocess against inputs designed to be refused, and a traceback anywhere fails the suite |
+| `ValueError` and `AttributeError` escaped `pack_migration` — `pack:` as a scalar, and `version_adopted: 3` unquoted, whose `.strip()` raised out of the function that exists to explain what a pin lacks | typed refusals; a field of the wrong type is *named as missing* |
+| an unreadable commit-message file raised `FileNotFoundError` — **pre-existing at 2.1.1**, and found only because every CLI was finally executed | a stated refusal with a cause |
+| a *permitted* adapter absence reported the component `VERIFIED`, directly above a finding reading "declared and not installed" | `VERIFIED` only when every declared adapter verified; otherwise `UNKNOWN`, non-blocking, saying how many of how many |
+| `requires.project_context: true` was satisfied by a context the project had **switched off** — verified, and by the module's own words not consulted | a deactivated context does not satisfy a requirement for one |
+| an unorderable pin version sorted below everything, so a project pinned to `wave-a` was told a numbered release was newer | unorderable is `UNKNOWN`; nothing is offered rather than something invented |
+| a **relative** `pack.root_path` resolved against the process working directory, so the same contract answered differently from different directories | refused, naming the reason |
+| `security_advisory` was parsed and dropped by the one component a reader sees | carried into the note, still not a block: urgency is a human decision |
+| the corpus omitted every block Core actually parses — `private_terms`, `workspace_classification`, `publication` | all three are in every shape now |
+
+### One of my own oracles was weak, in the way this release keeps finding
+
+The relative-root test asserted `"relative" in finding` against a root spelled
+`../some/relative/root` — **satisfied by the path itself**, so removing the
+check left it green. The mutation survived and said so. The root no longer
+contains the word, and the assertion is on a phrase only the repair produces.
+
+Eleven mutations were run against this round's repairs. Nine were killed on the
+first attempt; two survived and are the two above — a missing test and a weak
+assertion — both then closed and re-killed.
+
+### What the auditors could not break
+
+Between them: no false `READY` in twenty-odd constructed attacks; availability
+never blocking in either direction; determinism across timezone, hash seed and
+locale, byte-identical `--json`; the suite passing from `/` with an empty `HOME`;
+the tree digest reproducing from a fresh clone; zero public names removed and
+zero signatures changed since the frozen baseline, confirmed twice by
+independent AST walks; all 206 baseline test functions still present; sixteen
+adversarial manifests classified correctly, including the real 2.1.1 root
+verifying clean under this candidate's verifier; the seven earlier readiness
+mutations independently re-killed; and the public-safety claim verified in both
+halves — exactly ten private-name occurrences, in exactly the four named
+inherited files, with the candidate introducing zero.
+
+One auditor recorded that the pack root's working tree was dirty during its run
+and correctly attributed it to a concurrent process rather than to itself. That
+was this coordinator repairing the crash the other auditor had just reported.
+Recorded because an auditor noticing the ground moving, saying so, and not
+drawing a conclusion from it is the behaviour the tier exists to buy.

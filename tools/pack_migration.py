@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pack_pin
+from errors import IntegrityError
 
 __all__ = [
     "VERIFIED_PIN",
@@ -104,13 +105,13 @@ class Pin:
             # answered "is this project's pin checkable?" with a confident
             # UNVERIFIABLE_LEGACY_PIN about a project whose contract was never
             # read. Reproduced against three real contracts at once.
-            raise ValueError(
+            raise IntegrityError(
                 "from_contract needs a loaded contract, not "
                 f"{type(contract).__name__} — load it with ProjectContract.load first"
             )
         block = raw.get("pack") or {}
         if not isinstance(block, dict):
-            raise ValueError("`pack:` must be a mapping")
+            raise IntegrityError("`pack:` must be a mapping", found=type(block).__name__)
         retained = block.get("retained_roots") or ()
         if isinstance(retained, str):
             retained = (retained,)
@@ -152,7 +153,15 @@ def missing_pin_fields(pin: Pin) -> list[str]:
         "tree_digest_sha256": pin.digest,
         "root_path": pin.root_path,
     }
-    return [name for name in _REQUIRED_FOR_VERIFICATION if not (values.get(name) or "").strip()]
+    # A field of the WRONG TYPE is missing, not a crash. `version_adopted: 3`
+    # unquoted arrives as an int, and `.strip()` on it raised `AttributeError`
+    # out of a function whose whole job is to explain what a pin lacks. Found by
+    # executing the CLIs against inputs designed to be refused.
+    def stated(name: str) -> bool:
+        value = values.get(name)
+        return isinstance(value, str) and bool(value.strip())
+
+    return [name for name in _REQUIRED_FOR_VERIFICATION if not stated(name)]
 
 
 def canonical_root(path: str | Path) -> Path:
@@ -199,7 +208,17 @@ def verify_pinned_root(pin: Pin) -> list[str]:
             "produce a pin that verifies and describes nothing"
         ]
 
-    root = canonical_root(pin.root_path or "")
+    declared = pin.root_path or ""
+    if not Path(declared).expanduser().is_absolute():
+        # Otherwise the same contract answers differently from different working
+        # directories, and this module promises determinism. A pin is a claim
+        # about one directory on this machine; a relative path names a different
+        # directory depending on who is asking.
+        return [
+            f"pack.root_path {declared!r} is relative, so the release it names depends on the "
+            "current working directory. A pin must name one absolute root"
+        ]
+    root = canonical_root(declared)
     if not root.is_dir():
         return [f"pack.root_path {pin.root_path!r} does not resolve to a directory ({root})"]
 

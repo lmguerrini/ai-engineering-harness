@@ -5,7 +5,7 @@ capability boundary — the full log each time, never patched, never a rolling
 summary that overwrites adverse evidence. If this file and `observations.jsonl`
 disagree, the log wins and this file is due for regeneration.
 
-Regenerated 2026-08-20 at the RP2.2 evolution boundary from **29** observations.
+Regenerated 2026-08-20 at the RP2.2 evolution boundary from **31** observations.
 The observation count,
 every grade and **every count in the evidence column** are compared against the
 log by `test_the_routing_table_grades_are_the_derived_ones` and
@@ -25,7 +25,7 @@ second.
 | Role | Purpose | Evidence today |
 |---|---|---|
 | COORDINATOR | judgement, decomposition, all Git writes | n/a — never delegated |
-| AUDIT_PRIMARY | fresh, blind, same-family closure audit | **`confirmed`** — 9 real closure audits, every material finding reproduced, 0 false positives |
+| AUDIT_PRIMARY | fresh, blind, same-family closure audit | **`confirmed`** — 11 real closure audits, every material finding reproduced, 0 false positives |
 | AUDIT_CROSS | fresh, blind, cross-vendor closure audit | **`confirmed`** — 2 real closure audits, 17 findings, 0 false positives |
 | IMPL_SUBSTANTIVE | multi-file, weaker-oracle implementation | `provisional` — claude-cli, 2 RP2 dispatches, none on the Pilot Run |
 | IMPL_ROUTINE | familiar, bounded, strongly-tested implementation | `provisional` — claude-cli, 1 bounded repair |

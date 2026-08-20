@@ -549,6 +549,86 @@ def test_a_tool_given_a_ref_git_cannot_resolve_prints_no_traceback(tmp_path):
     assert "REFUSED" in result.stdout, result.stdout + result.stderr
 
 
+def test_no_tool_cli_ever_prints_a_traceback_for_an_input_it_refuses(tmp_path):
+    """Every CLI, actually EXECUTED, against inputs designed to be refused.
+
+    The structural check below greps the `__main__` block for the wrapper. An
+    independent audit showed that is vacuous with respect to the guarantee it
+    names: two tools contained the wrapper and still printed tracebacks, because
+    the exceptions they raised were not in the hierarchy the wrapper catches and
+    because only five of seventeen CLIs were ever executed anywhere in the suite.
+
+    So this runs all of them, as subprocesses, and asserts the invariant that
+    actually matters: **a traceback never reaches the caller.** It does not need
+    to know each tool's refusal vocabulary — every argv below is either refused,
+    rejected by argparse, or handled, and none of those may traceback.
+    """
+    import subprocess
+
+    malformed = tmp_path / "PROJECT.yaml"
+    malformed.write_text(
+        "project:\n  name: x\n  repo_path: /nowhere/at/all\n"
+        "requires:\n  a_key_nothing_checks: true\n"
+    )
+    unreadable_context = tmp_path / "context.yaml"
+    unreadable_context.write_text(
+        "project:\n  name: x\n"
+        "project_context:\n  context_id: C1\n  reference_path: /x\n  control_revision: 12\n"
+    )
+    scalar_pack = tmp_path / "scalar.yaml"
+    scalar_pack.write_text("project:\n  name: x\npack: 2.2.0\n")
+    unquoted_version = tmp_path / "unquoted.yaml"
+    unquoted_version.write_text(
+        "project:\n  name: x\npack:\n  root_path: /x\n  version_adopted: 3\n"
+        "  sha_adopted: aaaa\n  tree_digest_sha256: bbbb\n  state_adopted: QUALIFIED_AND_FROZEN\n"
+    )
+    empty = tmp_path / "not-a-repo"
+    empty.mkdir()
+    missing = tmp_path / "does-not-exist"
+
+    argv_forms = [
+        ["--project", str(malformed)],
+        ["--project", str(unreadable_context)],
+        ["--project", str(scalar_pack)],
+        ["--project", str(unquoted_version)],
+        [str(malformed)],
+        [str(scalar_pack)],
+        [str(unquoted_version)],
+        [str(unreadable_context)],
+        [str(missing)],
+        [str(empty), "no-such-ref"],
+        [str(empty)],
+    ]
+
+    tracebacks = []
+    refusals = 0
+    for path in sorted(ROOT.glob("tools/*.py")):
+        source = path.read_text(encoding="utf-8")
+        if 'if __name__ == "__main__":' not in source:
+            continue
+        for argv in argv_forms:
+            result = subprocess.run(
+                [sys.executable, str(path), *argv],
+                capture_output=True, text=True, cwd=str(tmp_path), timeout=120,
+            )
+            if "Traceback (most recent call last)" in result.stderr:
+                first = [
+                    line for line in result.stderr.strip().splitlines()
+                    if line and not line.startswith(" ")
+                ]
+                tracebacks.append(f"tools/{path.name} {' '.join(argv[:2])}: {first[-1][:70]}")
+            if "REFUSED" in result.stdout or "REFUSED" in result.stderr:
+                refusals += 1
+
+    assert not tracebacks, "these printed a traceback instead of a refusal:\n  " + "\n  ".join(
+        sorted(set(tracebacks))
+    )
+    assert refusals >= 5, (
+        f"only {refusals} invocations reached a stated refusal; this test is not exercising "
+        "the refusal path it exists to check"
+    )
+
+
 # --- a CLI must run the module, not a second copy of it -----------------------
 
 def test_every_cli_entry_runs_the_canonical_module():
@@ -596,6 +676,47 @@ def test_a_cli_and_an_import_agree_about_a_type_that_crosses_a_sibling_boundary(
     assert "Traceback" not in result.stderr, result.stderr
     assert "UNVERIFIABLE" in result.stdout, result.stdout + result.stderr
     assert result.returncode != 0
+
+
+def test_the_baseline_figure_this_release_quotes_is_the_baselines_own():
+    """A release comparing itself to its predecessor must quote the
+    predecessor, not itself.
+
+    The manifest pasted **this** release's percentage onto the baseline's line
+    count, so the two read as identical on a budget where held prose had in fact
+    grown. An independent audit caught it; the existing guard could not, because
+    its regex takes the FIRST `(N% over)` on the line and never reaches the
+    restated one. Read from the frozen commit rather than from anywhere a
+    later edit can reach.
+    """
+    import json
+    import re
+    import subprocess
+
+    baseline = json.loads(
+        subprocess.run(
+            ["git", "show", f"{QUALIFIED_BASELINE}:PACK_MANIFEST.json"],
+            cwd=str(ROOT), capture_output=True, text=True, check=True,
+        ).stdout
+    )
+    recorded = next(
+        entry for entry in baseline["known_limitations"] if entry.startswith("held prose ")
+    )
+    lines = re.search(r"held prose (\d+) lines", recorded).group(1)
+    percent = re.search(r"\(([\d.]+)% over", recorded).group(1)
+
+    manifest = json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    quoting = next(
+        entry for entry in manifest["known_limitations"] if entry.startswith("held prose ")
+    )
+    stated = re.search(rf"2\.1\.1 was {lines} \(([\d.]+)% over\)", quoting)
+    assert stated, (
+        f"this release does not quote the baseline's own figure ({lines} lines, {percent}% over)"
+    )
+    assert stated.group(1) == percent, (
+        f"this release says the baseline was {stated.group(1)}% over; the baseline's own "
+        f"manifest records {percent}%"
+    )
 
 
 # --- qualification is not self-tests --------------------------------------

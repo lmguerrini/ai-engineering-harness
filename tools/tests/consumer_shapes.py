@@ -40,6 +40,16 @@ validation_profiles:
     when: "every task gate"
 hitl_selections:
   release: "human"
+private_terms:
+  project_terms: ["ProjectCodename"]
+  project_patterns: ["\\bProject-?Codename\\b"]
+  identity_only_terms: []
+workspace_classification:
+  generated: ["build/*", "dist/*"]
+  content_exempt: [".gitignore", "docs/figures/*.png"]
+publication:
+  release_ref: "main"
+  publishable: ["src/**", "README.md"]
 """
 
 #: The minimum every shape needs to be a project at all.
@@ -134,6 +144,13 @@ SHAPES: dict[str, tuple[str, str]] = {
         "the same declaration, satisfied. Proves the requirement is a real condition "
         "and not an unconditional refusal",
         _HEADER + _FULL_PIN + _REQUIRES_CONTEXT + _CONTEXT_FULL + UNKNOWN_BLOCKS,
+    ),
+    "full_pin_that_does_not_verify": (
+        "a pin with every field present, pointing at a root that holds a DIFFERENT release. "
+        "The state a real consumer is in whenever somebody checks a branch out in the "
+        "directory it pinned, and the one path in the readiness checker that no test "
+        "constrained: a mutation making the pin always verify survived the whole suite green",
+        _HEADER + _FULL_PIN + UNKNOWN_BLOCKS,
     ),
     "pin_to_an_unqualified_release": (
         "a pin that verifies perfectly against a root in state IN_PROGRESS. The root IS "
