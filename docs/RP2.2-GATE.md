@@ -590,3 +590,34 @@ Both auditors independently reproduced the contaminated-oracle failure this
 release documents, one of them generating thousands of fictional divergences
 before isolating it — which is the clearest confirmation that the warning is
 worth carrying.
+
+### State after round 4
+
+Every blocker and major above is closed, and this is where the audit budget
+ends: four closure rounds were authorised and four ran. **No round returned
+READY**, and no auditor has seen the state that closing round 4 produced. That
+is the single most important thing a release authority should know about this
+candidate, and it is why the packet leads with it rather than burying it here.
+
+Because round 4's central finding was *repairs with no oracle*, every repair in
+the closing batch was mutation-tested before it was committed rather than after:
+
+| Mutation | Result |
+|---|---|
+| put the resolved `!` back in first position inside a character class | killed |
+| re-spell a class of exactly `{!}` as `[!]`, which matches nothing | killed |
+| let two disagreeing file counts in a manifest resolve by preference | killed |
+| let the digest writer leave the superseded count key behind | killed |
+| state an invented audit count in the derived routing view | killed |
+
+The differential grid was widened to carry the bracket-escape forms that
+exposed the first two, which moved `BASELINE_DIVERGENCES` — the figure and the
+grid it is measured on fail together, by construction, which is the repair that
+came out of getting that number wrong three times.
+
+What remains unpinned is stated rather than solved: **prose claims about this
+release's own history are checked by a reader, not by a test.** Two guards
+exist — no document may state a divergence figure, and every count in the
+routing view must match the log — but they cover two specific recurring lies,
+not the general case. A sentence in the packet that misdescribes what an audit
+found would ship green today. The manifest's `known_limitations` says so.

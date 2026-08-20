@@ -8,10 +8,11 @@ project may adopt. Moving it there is a human act and was not performed.
 auditors on distinct lenses — and **every round returned NOT READY**. Every
 *material* finding was reproduced by the coordinator before it counted, and
 repaired; a few were artefacts of auditing a moving branch, and the gate record
-says which. Each round then found more, including in the repairs themselves. Round 1's repair **regressed
-the commit gate against the qualified 2.1.1 baseline**, which two independent
-auditors caught. `docs/RP2.2-GATE.md` records each round, what was right, and
-what the coordinator got wrong.
+says which. Each round then found more, including in the repairs
+themselves — repairs **regressed the commit gate against the qualified 2.1.1
+baseline** five separate times, in five distinct classes, each caught by an
+audit or by an adversarial probe written after one. `docs/RP2.2-GATE.md` records
+each round, what was right, and what the coordinator got wrong.
 
 That history is the most decision-relevant thing about this candidate, and it
 cuts both ways.
@@ -146,9 +147,18 @@ adapter. None is a blocker for a project adopting this release.
 
 ## Known limitations
 
-- **No audit round has returned READY.** Three rounds each returned NOT READY;
-  the last round's findings are repaired and unaudited. A fourth round is the
-  obvious next step and was not run before handing this over.
+- **No audit round has returned READY.** Four rounds each returned NOT READY;
+  the last round's findings are repaired and unaudited. Four closure cycles were
+  the authorised budget and four ran, so a fifth round — not a smaller step — is
+  what remains, and it is the release authority's call rather than a step that
+  was skipped.
+- **Prose claims about this release's own history are not checked by anything.**
+  Two guards cover the two lies that actually recurred: no document may state a
+  divergence figure, and every count in the derived routing view must match the
+  observation log. A sentence elsewhere in this packet that misdescribed an
+  audit would ship green. Four rounds' evidence says that is the likeliest
+  remaining defect in this candidate, and it is the reason the gate record
+  exists in the shape it does.
 - **Repairs regressed the commit gate against 2.1.1 more than once** — a trailer
   escaping behind extra whitespace, a second prefix, a non-ASCII token, an
   invisible character, and a Unicode space after a bullet marker. Each was found
