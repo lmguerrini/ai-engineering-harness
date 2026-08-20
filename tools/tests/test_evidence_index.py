@@ -293,3 +293,63 @@ def test_a_fully_supported_certification_states_what_it_checked(evidence):
     assert certification.problems(directory) == []
     assert certification.state() == CERTIFIED
     assert "every waiver is bound to this candidate" in certification.render(directory)
+
+
+# --- the record a project actually writes -------------------------------------
+
+
+def _record(**overrides):
+    document = {
+        "candidate": {"base_sha": "a" * 40, "head_sha": "b" * 40, "tree_digest": "c" * 64},
+        "kind": CERTIFICATION_VERIFICATION,
+        "results": [{"checker": "suite", "command": "python3 -m pytest -q", "exit_status": 0}],
+    }
+    document.update(overrides)
+    return document
+
+
+def test_a_record_reads_into_a_certification():
+    from evidence_index import certification_from
+
+    assert certification_from(_record()).state() == CERTIFIED
+
+
+def test_the_derived_view_is_a_pure_function_of_the_record():
+    """Re-reading an unchanged record gives an unchanged answer; nobody edits a
+    verdict, they edit the facts."""
+    from evidence_index import certification_from
+
+    first, second = certification_from(_record()), certification_from(_record())
+    assert first.state() == second.state()
+    assert first.problems() == second.problems()
+
+
+def test_a_record_cannot_declare_itself_passed():
+    """There is no field for it. A non-zero status reads through."""
+    from evidence_index import certification_from
+
+    document = _record(results=[
+        {"checker": "suite", "command": "c", "exit_status": 1, "passed": True}
+    ])
+    assert certification_from(document).state() == OPEN
+
+
+def test_a_record_missing_a_required_result_field_is_refused():
+    from evidence_index import certification_from
+
+    with pytest.raises(EvidenceError):
+        certification_from(_record(results=[{"checker": "suite", "command": "c"}]))
+
+
+def test_a_record_with_no_candidate_is_refused():
+    from evidence_index import certification_from
+
+    with pytest.raises(EvidenceError):
+        certification_from({"results": []})
+
+
+def test_a_waiver_in_a_record_must_carry_the_candidate_it_binds_to():
+    from evidence_index import certification_from
+
+    with pytest.raises(EvidenceError):
+        certification_from(_record(waivers=[{"finding_id": "F1", "reason": "r", "authority": "a"}]))

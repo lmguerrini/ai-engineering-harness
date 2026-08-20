@@ -70,6 +70,7 @@ __all__ = [
     "Waiver",
     "EvidenceEntry",
     "Certification",
+    "certification_from",
     "index_bijection",
     "verify_reference",
 ]
@@ -377,3 +378,103 @@ class Certification:
         if state == CERTIFIED and not problems:
             lines.append("  every checker result is raw and every waiver is bound to this candidate")
         return "\n".join(lines)
+
+
+def certification_from(document: dict) -> Certification:
+    """Build a certification from a project-local facts record.
+
+    The record is **append-only project-local facts**; this is the deterministic
+    derived view over them. Nothing here decides anything: it reads what was
+    recorded and reports what that supports, so re-running it on an unchanged
+    record gives an unchanged answer, and on a changed one gives a changed
+    answer without anybody editing a verdict.
+    """
+    if not isinstance(document, dict):
+        raise EvidenceError("a certification record must be an object")
+
+    candidate = document.get("candidate")
+    if not isinstance(candidate, dict):
+        raise EvidenceError("the record must carry a `candidate` object")
+    identity = CandidateIdentity(
+        base_sha=candidate.get("base_sha", ""),
+        head_sha=candidate.get("head_sha", ""),
+        tree_digest=candidate.get("tree_digest", ""),
+    )
+
+    results = []
+    for position, raw in enumerate(document.get("results") or [], start=1):
+        if not isinstance(raw, dict):
+            raise EvidenceError(f"results[{position}] is not an object")
+        missing = [key for key in ("checker", "command", "exit_status") if key not in raw]
+        if missing:
+            raise EvidenceError(f"results[{position}] is missing {', '.join(missing)}")
+        results.append(CheckerResult(
+            checker=raw["checker"], command=raw["command"], exit_status=raw["exit_status"],
+            completeness=raw.get("completeness", COMPLETE),
+            report_reference=raw.get("report_reference"),
+        ))
+
+    waivers = []
+    for position, raw in enumerate(document.get("waivers") or [], start=1):
+        if not isinstance(raw, dict) or not isinstance(raw.get("bound_to"), dict):
+            raise EvidenceError(f"waivers[{position}] must carry a `bound_to` candidate identity")
+        bound = raw["bound_to"]
+        waivers.append(Waiver(
+            finding_id=raw.get("finding_id", ""), reason=raw.get("reason", ""),
+            authority=raw.get("authority", ""),
+            bound_to=CandidateIdentity(
+                base_sha=bound.get("base_sha", ""), head_sha=bound.get("head_sha", ""),
+                tree_digest=bound.get("tree_digest", ""),
+            ),
+        ))
+
+    entries = []
+    for position, raw in enumerate(document.get("entries") or [], start=1):
+        if not isinstance(raw, dict):
+            raise EvidenceError(f"entries[{position}] is not an object")
+        entries.append(EvidenceEntry(
+            reference=raw.get("reference", ""), description=raw.get("description", ""),
+            retention=raw.get("retention", "RELEASE"),
+        ))
+
+    return Certification(
+        candidate=identity,
+        kind=document.get("kind", CERTIFICATION_VERIFICATION),
+        results=tuple(results), waivers=tuple(waivers), entries=tuple(entries),
+        open_findings=tuple(document.get("open_findings") or ()),
+        reopened_by=tuple(document.get("reopened_by") or ()),
+    )
+
+
+def _cli(argv: list[str]) -> int:
+    """Read a project-local certification record; print what it supports."""
+    import argparse
+    import json as _json
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog="evidence_index.py",
+        description="Report what a project's recorded evidence supports for one exact candidate.",
+    )
+    parser.add_argument("record", help="path to the project-local certification record (JSON)")
+    parser.add_argument("--evidence-dir", help="verify cited references and the index bijection")
+    args = parser.parse_args(argv)
+
+    try:
+        certification = certification_from(_json.loads(Path(args.record).read_text(encoding="utf-8")))
+    except (OSError, ValueError, EvidenceError) as exc:
+        print(f"the certification record could not be read: {exc}", file=sys.stderr)
+        return 2
+
+    print(certification.render(args.evidence_dir))
+    # A non-zero exit is the raw fact. There is deliberately no flag that turns
+    # it into a zero.
+    return 0 if certification.state() == CERTIFIED and not certification.problems(
+        args.evidence_dir
+    ) else 1
+
+
+if __name__ == "__main__":
+    import sys
+
+    raise SystemExit(_cli(sys.argv[1:]))
