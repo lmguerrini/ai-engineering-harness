@@ -320,3 +320,52 @@ def assert_unchanged(
             "exists, so it cannot be interpreted — this is a stop, not a refresh"
         ]
     return []
+
+
+def _cli(argv: list[str]) -> int:
+    """Verify the Project Context a contract declares, or observe a digest."""
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog="project_context.py",
+        description="Verify a declared Project Context. Reads its identity, never its contents.",
+    )
+    parser.add_argument("--project", help="path to PROJECT.yaml")
+    parser.add_argument(
+        "--observe", metavar="PATH",
+        help="print the current digest of a context directory; this is not a verification",
+    )
+    args = parser.parse_args(argv)
+
+    if args.observe:
+        digest, count = tree_digest(args.observe)
+        print(
+            "OBSERVATION ONLY — what this directory contains now, not a statement that it is "
+            "the revision anyone declared.",
+            file=sys.stderr,
+        )
+        print(f"{digest}  {count} file(s)  {args.observe}")
+        return 0
+
+    if not args.project:
+        parser.error("one of --project or --observe is required")
+
+    import project_contract
+
+    try:
+        contract = project_contract.ProjectContract.load(args.project)
+        declaration = declaration_from((contract.raw or {}).get("project_context"))
+    except (ContextError, project_contract.ContractError) as exc:
+        print(f"the Project Context declaration could not be read: {exc}", file=sys.stderr)
+        return 2
+
+    report = verify(declaration)
+    print(report.render())
+    return 0 if report.clean else 1
+
+
+if __name__ == "__main__":
+    import sys
+
+    raise SystemExit(_cli(sys.argv[1:]))

@@ -155,6 +155,14 @@ project_context:
   #   STALE               located and readable, and not what the declaration describes
   #   UNVERIFIABLE        declared and CANNOT BE FOUND — a stop, and not the same as NOT_PRESENT
   #
+  # Verify at capability open, and observe a digest deliberately:
+  #
+  #   python3 <pack_root>/tools/project_context.py --project PROJECT.yaml
+  #   python3 <pack_root>/tools/project_context.py --observe <reference_path>
+  #
+  # `--observe` prints an OBSERVATION, not a verification. Nothing updates a
+  # declared digest automatically.
+  #
   # NO SILENT MUTATION DURING A CAPABILITY. The digest is taken at capability
   # open and recomputed at close. A context that changed in between makes that
   # capability's evidence UNINTERPRETABLE — it was produced against a semantic
