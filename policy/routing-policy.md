@@ -23,7 +23,11 @@ one because it is plausible.
    the brief fits ≤~60% of the worker's context window; the oracle is strong
    enough or independent review is added; the write-probe preflight passed
    (`skills/core/worker-contract.md`); no independence conflict; capacity is
-   observed-or-honestly-unknown, never invented.
+   observed-or-honestly-unknown, never invented. For the Claude backend a
+   documented reading is available (`tools/resource_observation.py`,
+   `policy/execution-boundaries.md`); everywhere else capacity stays `UNKNOWN`
+   until a documented surface proves it, and a human-read figure is timestamped
+   advisory evidence rather than a current observation.
 2. **Cheapest eligible** for work that is familiar, bounded, strongly-tested,
    and reversible.
 3. **Recorded deliberation**, three lines in PROGRESS.md, when a trigger

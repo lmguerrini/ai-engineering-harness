@@ -91,6 +91,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── observations.jsonl      append-only routing evidence — the record
     │   ├── routing-table.md        derived view, regenerated from it, never patched
     │   ├── auditor-strategy.md     audit depth and capacity economics
+    │   ├── execution-boundaries.md what a harness is, and what it is not
     │   ├── routing-policy.md       role → configuration
     │   ├── hitl-matrix.md          the 17-row blocking taxonomy
     │   ├── BUDGETS.md              frozen counters and bureaucracy budgets
