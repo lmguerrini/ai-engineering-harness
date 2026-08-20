@@ -68,6 +68,14 @@ kept outside the tree. They become real checks the moment the two commands above
 have been run once and their output written down somewhere this repository
 cannot reach — which is what a release announcement is for.
 
+**The clone acquires an `origin` pointing back at the pack root** — every local
+clone does, and this one was made and checked, not assumed. That is a remote on
+a repository whose release model says it has none (D5), so the scratch clone is
+for reading and running, never for pushing from. Delete it when the check is
+done, or `git remote remove origin` first. Stated because the procedure above is
+the one this document tells you to run, and it leaves you holding something the
+pack root deliberately does not have.
+
 **The clone is the point, not a convenience.** `<pack_root>` is the directory
 Consumer-A pins, and checking this branch out there is exactly what broke its
 pin — the finding below, and D18. A release is verified at a root nobody works
