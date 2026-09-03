@@ -105,6 +105,11 @@ class Panel:
     #: and then everything else — and panels in the order they were written do
     #: not answer them in that order.
     group: str = "detail"
+    #: A panel whose lines are a VOCABULARY rather than findings. The state
+    #: legend marks the current state urgently, correctly, and hoisting that into
+    #: the attention strip restates the headline in different words — noise in
+    #: the one place that must not have any.
+    legend: bool = False
 
     def say(self, text: str, tone: str = Tone.PLAIN, label: str = "", depth: int = 0) -> None:
         self.lines.append(Line(text, tone, label, depth))
@@ -153,9 +158,17 @@ class Projection:
         second place to find them rather than the only one.
         """
         urgent = (Tone.BAD, Tone.WARN, Tone.UNKNOWN)
+        #: What the header already says, in the words it says it in. The state
+        #: appeared three times in the strip — as the coordinator's `state`, as
+        #: the legend's current entry, and as the headline above it.
+        said_already = {"state"}
         found = []
         for panel in self.panels:
+            if panel.legend:
+                continue
             for line in panel.rows():
+                if line.label in said_already:
+                    continue
                 if line.tone in urgent:
                     found.append(Line(f"{panel.title} — "
                                       + (f"{line.label}: " if line.label else "") + line.text,
@@ -363,7 +376,7 @@ def _states_panel(record, report) -> Panel:
     """
     import continuation
 
-    panel = Panel("the states this reading can report", group="now")
+    panel = Panel("the states this reading can report", group="now", legend=True)
     if report is None:
         panel.unknown.append("no derived state, so none of the vocabulary applies")
         return panel
