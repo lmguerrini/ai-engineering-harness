@@ -161,3 +161,51 @@ than record it.
 
 The state is `IN_PROGRESS` and that is what the command above must pass. A
 project may only adopt `QUALIFIED_AND_FROZEN`.
+
+## The freeze, prepared and not performed
+
+Moving the state is the founder's act — HITL row 2, and this session stops
+short of it deliberately. What follows is the procedure derived from what the
+2.2.0 freeze actually did, so the decision is a decision and not also a
+research task.
+
+**1. State the release identity identically on every surface that carries it.**
+The 2.2.0 freeze touched exactly five files, and the reason it touched five is
+that a release whose manifest says one thing and whose README says another has
+no identity at all:
+
+    PACK_MANIFEST.json          state, tree_digest_sha256, supersedes, the
+                                adoption note
+    README.md                   the verification command and the state it names
+    CHANGELOG.md                the release line
+    docs/RP2.3-GATE.md          the closure record's own statement of state
+    docs/RP2.3-RELEASE-PACKET.md   this file
+
+**2. Recompute the digest over the frozen tree, and verify it twice.** Once with
+the shipped verifier and once with an independent implementation of the framing
+algorithm — the pack ships both, and the second exists because a digest checked
+only by the code that produced it is a checksum of itself:
+
+    python3 tools/pack_pin.py . --write
+    python3 -m pytest tools/tests/test_release_integrity.py -q
+
+**3. Commit, on the branch, with no tag and no remote.** The commit gate runs
+against the pack's own published vocabulary:
+
+    python3 tools/commit_gate.py --default-terms . <message-file>
+
+**4. Give the release a root nobody works in**, and only then list it:
+
+    cp -R <this worktree> <harness>/releases/runtime-pack-2.3.0
+    # then add the entry to releases/RELEASE_INDEX.json
+
+The order matters and the index says why: **only releases with a root nobody
+works in are listed.** 2.1.1 is deliberately absent from that index because it
+lives in the checkout the next version is developed in — the D18 defect this
+release detects and does not fix, because fixing it moves a live project's pin
+and that is the founder's call too.
+
+**5. Nothing adopts automatically.** A project pins by root path, version, full
+forty-character revision, tree digest and state, and adopts at its own next
+capability boundary. `consumer-c-v1` stays on 2.2.0 until it decides otherwise, and
+a project that never moves is correctly pinned rather than out of date.
