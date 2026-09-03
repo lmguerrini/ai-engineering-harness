@@ -8,6 +8,7 @@ cannot poll.
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -293,7 +294,7 @@ def test_a_consumed_completion_is_superseded_rather_than_reported_again(tmp_path
     # against a path that now exists.
     # Reconstructed, not re-declared: the sentinel exists by now, and that is
     # exactly the state a saved record is reloaded into.
-    consumed = continuation.Wait(**{**done.as_dict(), "consumed": True})
+    consumed = Wait(**{**done.as_dict(), "consumed": True})
     record = _record(waits=(consumed,))
     report = continuation.derive(record, relative_to=tmp_path)
     assert report.superseded == ("done",)
@@ -357,3 +358,60 @@ def test_the_cli_exit_status_separates_owed_from_blocked_from_unestablished(tmp_
         Blocker(kind="human", detail="the freeze decision", hitl_row=2),
     )), path)
     assert continuation._cli([str(path)]) == 3
+
+
+# --- a completion condition that was already satisfied -------------------------------
+
+
+def test_an_exit_file_wait_cannot_complete_on_a_character_device():
+    """The finding, from a blind cross-vendor reader: a wait pointed at
+    `/dev/null` derived a finished result for a worker that never existed.
+
+    `Wait.declare` already refused this, and that check is right where it is —
+    but it is reachable only by the caller who declares, and the auditor built
+    the record directly. So the OBSERVATION asks again. A sentinel a job writes
+    on exit is a regular file; a character device is furniture.
+    """
+    record = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(),
+        waits=(Wait(job_id="imaginary-worker", kind=WaitKind.EXIT_FILE,
+                                 path="/dev/null", expects="the worker result",
+                                 not_beyond_seconds=3600, declared_at=continuation.now()),),
+    )
+    report = continuation.derive(record, now=continuation.now())
+    assert report.state == State.RECOVERY_REQUIRED
+    assert "not a regular file" in " ".join(o.how for o in report.observations)
+
+
+def test_an_exit_file_older_than_its_own_wait_is_not_that_job_s_result(tmp_path):
+    """The general form of the same hole: any pre-existing readable path. A file
+    last written BEFORE the coordinator began waiting for it did not come from
+    the job being waited on, whatever it contains — so the wait is unresolved,
+    not complete, and the job may still be running."""
+    stale = tmp_path / "exit.status"
+    stale.write_text("0")
+    os.utime(stale, (1, 1))
+
+    record = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(),
+        waits=(Wait(job_id="j", kind=WaitKind.EXIT_FILE,
+                                 path=str(stale), expects="the worker result",
+                                 not_beyond_seconds=3600, declared_at=continuation.now()),),
+    )
+    report = continuation.derive(record, now=continuation.now())
+    assert report.state == State.RECOVERY_REQUIRED
+    assert "before this wait was declared" in " ".join(o.how for o in report.observations)
+
+
+def test_a_sentinel_the_job_actually_wrote_still_completes_the_wait(tmp_path):
+    """The bound on the two checks above: the honest path is unchanged, which is
+    what stops a fail-closed repair from becoming a refusal to ever finish."""
+    sentinel = tmp_path / "exit.status"
+    wait = Wait(job_id="j", kind=WaitKind.EXIT_FILE,
+                             path=str(sentinel), expects="the worker result",
+                             not_beyond_seconds=3600, declared_at=continuation.now())
+    sentinel.write_text("0")
+
+    record = ContinuationRecord(capability="cap", updated_at=continuation.now(), waits=(wait,))
+    report = continuation.derive(record, now=continuation.now())
+    assert report.state == State.COMPLETED_NOT_CONSUMED

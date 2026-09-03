@@ -376,6 +376,13 @@ class WaitObservation:
         return self.finished is None
 
 
+def _mtime(target: Path) -> "datetime | None":
+    try:
+        return datetime.fromtimestamp(target.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return None
+
+
 def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
     if wait.kind == WaitKind.HUMAN:
         return WaitObservation(wait.job_id, None, "a person resolves this; no machine can observe it")
@@ -389,16 +396,49 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
         target = relative_to / target
 
     if wait.kind in (WaitKind.EXIT_FILE, WaitKind.PATH_EXISTS):
-        if target.exists():
-            detail = ""
-            if wait.kind == WaitKind.EXIT_FILE:
-                try:
-                    detail = f", status {target.read_text(encoding='utf-8').strip()[:16]}"
-                except OSError as exc:
-                    return WaitObservation(wait.job_id, None,
-                                           f"{target} exists and cannot be read: {exc}")
-            return WaitObservation(wait.job_id, True, f"{target} exists{detail}")
-        return WaitObservation(wait.job_id, False, f"{target} has not appeared")
+        if not target.exists():
+            return WaitObservation(wait.job_id, False, f"{target} has not appeared")
+
+        # `Wait.declare` refuses a path that already exists, and that is the
+        # right check at the right moment — but it is only reachable by the
+        # caller who declares, and the auditor who pointed a wait at `/dev/null`
+        # built the record directly. So the OBSERVATION asks the same question
+        # again, in the two forms that survive a reload of a legitimate record.
+        #
+        # First: a sentinel a job writes on exit is a regular file. A character
+        # device, a socket or a fifo is ambient furniture that was there before
+        # the job and will be there after it.
+        if wait.kind == WaitKind.EXIT_FILE and not target.is_file():
+            return WaitObservation(
+                wait.job_id, None,
+                f"{target} is not a regular file, so it is not a sentinel any job wrote; a "
+                f"wait cannot complete on something that was already there",
+            )
+        # Second: it must not predate its own wait. A path written before the
+        # coordinator began waiting for it did not come from the job being
+        # waited on, whatever it contains.
+        declared, wrote = _moment(wait.declared_at), _mtime(target)
+        if declared is None or wrote is None:
+            return WaitObservation(
+                wait.job_id, None,
+                f"{target} exists and cannot be dated against this wait's declaration, so "
+                f"whether the job wrote it is unknown",
+            )
+        if wrote < declared:
+            return WaitObservation(
+                wait.job_id, None,
+                f"{target} was last written before this wait was declared, so it is not this "
+                f"job's result; the job may still be running",
+            )
+
+        detail = ""
+        if wait.kind == WaitKind.EXIT_FILE:
+            try:
+                detail = f", status {target.read_text(encoding='utf-8').strip()[:16]}"
+            except OSError as exc:
+                return WaitObservation(wait.job_id, None,
+                                       f"{target} exists and cannot be read: {exc}")
+        return WaitObservation(wait.job_id, True, f"{target} exists{detail}")
 
     contract = task_output.OutputContract(
         task_id=wait.task_id, output_root=target,

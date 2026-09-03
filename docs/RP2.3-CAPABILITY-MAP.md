@@ -134,5 +134,10 @@ discarded finding is evidence about the oracle.
 | RP3-29 | a hand-written waiter matches its own command line | `until ! pgrep -qf "codex exec"` — `pgrep` returned the waiter's own pid, so it could not terminate even after the worker exited. RP3-13 recurring, in a shell one-liner that bypassed the mechanism that refuses it |
 | RP3-30 | a blocker with no stated scope silences work it has nothing to do with | one human decision on two stalled processes reported a whole capability BLOCKED_ON_HUMAN while five authorised items sat undone |
 | RP3-31 | no continuation record existed for the coordinator's own run | the mechanism shipped in this candidate and its primary intended caller never wrote one, so nothing could derive a state |
+| RP3-32 | a rewrite mapping cleared a citation by naming any reachable commit | the successor being reachable is a test every reachable commit passes, so the mapping was accepting its own assertion as its evidence |
+| RP3-33 | `check_reachability(mapping=...)` took an abbreviated revision `load_mapping` refuses | a validating loader beside an unvalidated keyword is a validated path, and callers take the other one |
+| RP3-34 | a wait completed on `/dev/null` for a worker that never existed | the declaration-time refusal was right and unreachable: the record was built directly, so the observation had to ask again |
+| RP3-35 | a wait completed on any pre-existing regular file | a path last written before the wait was declared did not come from the job being waited on |
+| RP3-36 | a close gate accepted evidence gathered from a different tree | six of one audit's eight findings were about a snapshot two repair rounds old, and nothing in the gate could tell |
 
 *(appended as each capability reproduces its own)*

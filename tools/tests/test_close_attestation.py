@@ -260,3 +260,35 @@ def test_one_declared_profile_may_not_have_two_outcomes():
 def test_the_examined_count_is_the_number_of_profiles_the_contract_declared():
     attestation = attest("c", DECLARED, {name: _passed(name) for name in DECLARED}, **CANDIDATE)
     assert attestation.examined.counts == {"declared profiles": len(DECLARED)}
+
+
+# --- evidence is about one tree ------------------------------------------------------
+
+
+def _clean(revision="a" * 40, digest="b" * 64):
+    return close_attestation.attest(
+        "cap", ("focused",), {"focused": ProfileOutcome("focused", ProfileState.PASSED,
+                                                        exit_status=0)},
+        head_revision=revision, tree_digest=digest)
+
+
+def test_evidence_gathered_from_another_tree_does_not_close_this_one():
+    """The finding, and it is the reason this release re-executed six audit
+    findings to discover they were about a snapshot two repair rounds old.
+
+    The costly direction is the opposite one: an audit of an OLD tree reading as
+    clean for a NEW one, which is a green gate over an unexamined tree.
+    """
+    problems = close_attestation.close_gate(_clean(), against=("c" * 40, "b" * 64))
+    assert len(problems) == 1
+    assert "DIFFERENT TREE" in problems[0]
+
+    assert close_attestation.close_gate(_clean(), against=("a" * 40, "d" * 64))
+    assert close_attestation.close_gate(_clean(), against=("a" * 40, "b" * 64)) == []
+
+
+def test_the_tree_check_is_opt_in_and_says_so_by_passing_without_it():
+    """Bounded deliberately: a caller with no identity to compare against is not
+    silently told its evidence is fine — it is told nothing, which is the honest
+    answer to a question it did not ask."""
+    assert close_attestation.close_gate(_clean()) == []

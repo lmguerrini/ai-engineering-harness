@@ -105,16 +105,30 @@ class CitationState:
     #: record reported *every cited commit is reachable or anchored*. Found by
     #: an independent auditor running the prune.
     DESTROYED = "DESTROYED"
-    #: Git does not recognise it, and the rewrite mapping does — under a new
-    #: identity that a ref reaches. The citation is stale, not lost.
+    #: Git does not recognise it, the rewrite mapping does — under a new
+    #: identity that a ref reaches — **and a verified bundle still holds the
+    #: original**, so the claim that the two are the same work is checkable
+    #: against the preserved commit rather than believed. The citation is stale,
+    #: not lost.
     REMAPPED = "REMAPPED"
+    #: A mapping names a reachable successor and NOTHING CORROBORATES THE CLAIM.
+    #:
+    #: An auditor handed this checker `{orphan: some_unrelated_commit}` and the
+    #: orphan reported non-blocking: the mapping is an assertion, the successor
+    #: is any reachable commit, and a checker that accepts an assertion as its
+    #: own evidence is asking the caller for the answer. Blocking, because the
+    #: original may be genuinely gone while the record reads as settled — and
+    #: because adjudicating a rewrite is a human act in this release, not a
+    #: derived one.
+    REMAPPED_UNVERIFIED = "REMAPPED_UNVERIFIED"
     #: Git could not be asked. Never read as any of the above.
     UNKNOWN = "UNKNOWN"
 
-    ALL = (REACHABLE, UNREACHABLE, ANCHORED, NOT_A_COMMIT, DESTROYED, REMAPPED, UNKNOWN)
+    ALL = (REACHABLE, UNREACHABLE, ANCHORED, NOT_A_COMMIT, DESTROYED, REMAPPED,
+           REMAPPED_UNVERIFIED, UNKNOWN)
     #: The states that stop a closure. `DESTROYED` blocks the hardest of the
     #: three, and is the one a reader most needs to see.
-    BLOCKING = (UNREACHABLE, DESTROYED, UNKNOWN)
+    BLOCKING = (UNREACHABLE, DESTROYED, REMAPPED_UNVERIFIED, UNKNOWN)
 
 
 @dataclass(frozen=True)
@@ -265,7 +279,17 @@ def check_reachability(
     """
     report = ReachabilityReport(records_read=len(records))
     reachable = _reachable_set(repository)
+    # Held to the shape `load_mapping` enforces, whoever built it. A validating
+    # loader beside a constructor that accepts anything is not a validated type;
+    # it is a validated path, and callers take the other one.
     mapping = dict(mapping or {})
+    for old, new in mapping.items():
+        if not (_FULL.match(str(old)) and _FULL.match(str(new))):
+            raise PreconditionError(
+                "a revision mapping holds full forty-character revisions on both sides; an "
+                "abbreviation is what makes a mapping ambiguous exactly when it matters",
+                entry=f"{old} -> {new}",
+            )
 
     verified_bundles: list[Path] = []
     for bundle in bundles:
@@ -312,6 +336,38 @@ def _successor(full: str | None, token: str, mapping: Mapping[str, str]) -> str 
     return None
 
 
+def _held_by(repository, bundles, revision: str) -> Path | None:
+    """The first verified bundle that holds this commit, or None."""
+    for bundle in bundles:
+        if _bundle_contains(repository, bundle, revision):
+            return bundle
+    return None
+
+
+def _remap(token: str, where: str, successor: str, holder: "Path | None") -> Citation:
+    """A mapping's claim, and whether anything but the mapping supports it.
+
+    The successor being reachable says a commit of that name exists. It does not
+    say it is *this* commit's rewritten form — every reachable commit satisfies
+    that test equally. The only evidence in reach that distinguishes the two is
+    the preserved original: with it a reader can compare, and without it the
+    remap rests on the assertion that was handed in.
+    """
+    if holder is not None:
+        return Citation(token, CitationState.REMAPPED, where,
+                        f"a rewrite gave this commit a new identity, a ref reaches it, and the "
+                        f"verified bundle {holder.name} still holds the original to compare against",
+                        maps_to=successor)
+    return Citation(
+        token, CitationState.REMAPPED_UNVERIFIED, where,
+        "the mapping names a successor a ref reaches, and NOTHING HERE CORROBORATES that the "
+        "successor is this commit's rewritten form — a mapping is the caller's assertion, and "
+        "any reachable commit passes this test. Anchor the original in a verified bundle, or "
+        "record the rewrite as a human decision",
+        maps_to=successor,
+    )
+
+
 def _classify(repository, token, where, reachable, mapping, bundles) -> Citation:
     if reachable is None:
         return Citation(token, CitationState.UNKNOWN, where,
@@ -326,9 +382,7 @@ def _classify(repository, token, where, reachable, mapping, bundles) -> Citation
         # after a rewrite every old identity looks exactly like this.
         full = _successor(None, token, mapping)
         if full and full in reachable:
-            return Citation(token, CitationState.REMAPPED, where,
-                            "a rewrite gave this commit a new identity and a ref reaches it",
-                            maps_to=full)
+            return _remap(token, where, full, _held_by(repository, bundles, token))
         if full:
             return Citation(token, CitationState.UNREACHABLE, where,
                             "the mapping names a successor and no ref reaches it either",
@@ -367,15 +421,13 @@ def _classify(repository, token, where, reachable, mapping, bundles) -> Citation
     # only for tokens Git cannot resolve would therefore miss every citation a
     # rewrite in this repository invalidated, which is the whole population.
     successor = _successor(full, token, mapping)
+    holder = _held_by(repository, bundles, full)
     if successor and successor in reachable:
-        return Citation(token, CitationState.REMAPPED, where,
-                        "a rewrite gave this commit a new identity and a ref reaches it",
-                        maps_to=successor)
+        return _remap(token, where, successor, holder)
 
-    for bundle in bundles:
-        if _bundle_contains(repository, bundle, full):
-            return Citation(token, CitationState.ANCHORED, where,
-                            f"held by the verified bundle {bundle.name}")
+    if holder is not None:
+        return Citation(token, CitationState.ANCHORED, where,
+                        f"held by the verified bundle {holder.name}")
     return Citation(
         token, CitationState.UNREACHABLE, where,
         "the object exists and no ref reaches it; it survives only while a reflog keeps it, "

@@ -1195,3 +1195,54 @@ to close, one field over.
 argument-form loop named its variable `text`, shadowing `_run`'s own `text`
 parameter, and turned every binary read into a text read. Recorded because the
 difference between that and the findings above is only that a test existed.
+
+## Closure audit — round 3, the blind cross-vendor read
+
+One blind independent-vendor auditor, read-only, falsification-instructed,
+barred from the design and repair documents. **NOT READY: five blockers, three
+majors.** Every finding re-executed here before anything was touched.
+
+### Six of the eight were already repaired, and the report could not say so
+
+The auditor read a snapshot taken before rounds 1 and 2 landed. Re-executed
+against the candidate: the NaN capacity pool refuses, the NaN progress reading
+refuses, `Occurrence.key` already carries `location`, the `Attestation`
+constructor already refuses an empty declared set, `probe` refuses both
+`update-ref` and `archive --remote`, and a completion marker beside an
+interrupted chunk already classifies `UNKNOWN` and refuses to resume. Two
+findings were real.
+
+**The stale-snapshot problem is the release finding here, not an inconvenience.**
+The report never stated which revision it read, so nothing but re-execution
+could distinguish a live defect from a repaired one — six times, one at a time.
+The harmless direction is the one that happened. The other direction is a clean
+audit of an old tree reading as clean for a new one, which is a green gate over
+a tree nobody examined. `close_gate(..., against=(revision, digest))` now
+refuses evidence recorded about a different tree, and **an audit brief states
+the revision and digest the auditor read**.
+
+### A rewrite mapping was accepting its own assertion as evidence
+
+`{orphan: any_reachable_commit}` cleared the orphan and did not block. Reachable
+is a test every reachable commit passes equally, so it distinguished nothing —
+and the citation read as settled while the original was genuinely gone. The
+successor claim is now corroborated by the preserved original in a verified
+bundle or it is `REMAPPED_UNVERIFIED` and blocking, naming the two things that
+would settle it. Adjudicating a rewrite is a human act in this release; the
+checker's job is to say what it cannot establish.
+
+### A wait completed on `/dev/null`
+
+`Wait.declare` already refused a completion condition satisfied before the job
+starts — and that check is in the right place for the right reason, since a
+constructor invariant makes a legitimate saved record unloadable after its job
+finishes. But `declare` is reachable only by the caller who declares, and the
+auditor built the record directly. **A check nothing forces you through is a
+check on the honest path.** So the observation asks again, in the two forms that
+survive a reload: a sentinel is a regular file, and it does not predate its own
+wait. A file last written before the coordinator began waiting for it did not
+come from the job being waited on, whatever it contains.
+
+The bound is a test of its own: a sentinel the job actually wrote still
+completes the wait, which is what keeps a fail-closed repair from becoming a
+refusal to ever finish.

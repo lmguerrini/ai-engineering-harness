@@ -333,13 +333,43 @@ def re_derive(premise: Premise, *, cwd: str | Path = ".") -> PremiseOutcome:
 
 
 def close_gate(
-    attestation: Attestation, premises: list[PremiseOutcome] | tuple[PremiseOutcome, ...] = ()
+    attestation: Attestation,
+    premises: list[PremiseOutcome] | tuple[PremiseOutcome, ...] = (),
+    *,
+    against: tuple[str, str] | None = None,
 ) -> list[str]:
-    """Every reason this capability does not close. Empty is the clean answer."""
+    """Every reason this capability does not close. Empty is the clean answer.
+
+    ``against`` is ``(head_revision, tree_digest)`` — the identity of the tree
+    being closed. Supply it and evidence gathered about a DIFFERENT tree stops
+    the close.
+
+    It exists because a blind cross-vendor audit of this release returned eight
+    findings and six of them were already repaired: the auditor had read a
+    snapshot taken before two repair rounds, and its report never said which
+    revision it read, so nothing could tell. Six hours of independent reading
+    produced two usable findings and six that had to be re-executed one at a
+    time to discover they were about a tree that no longer existed.
+
+    An audit is evidence about one tree. Which tree is part of the finding, and
+    a gate that does not ask cannot tell stale evidence from current evidence —
+    in either direction. The dangerous direction is not the false alarm above:
+    it is an audit of an OLD tree reading as clean for a new one.
+    """
     problems = [str(outcome) for outcome in attestation.blocking]
     problems.extend(
         str(outcome) for outcome in premises if outcome.reproduced is not True
     )
+    if against is not None:
+        revision, digest = against
+        for name, recorded, current in (("revision", attestation.head_revision, revision),
+                                        ("tree digest", attestation.tree_digest, digest)):
+            if recorded != current:
+                problems.append(
+                    f"THIS EVIDENCE IS ABOUT A DIFFERENT TREE: it records {name} "
+                    f"{recorded!r} and the tree being closed is {current!r}. A finding is about "
+                    f"the tree it was gathered from; re-run the evidence against this one"
+                )
     return problems
 
 

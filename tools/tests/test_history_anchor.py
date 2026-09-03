@@ -155,18 +155,63 @@ def _mapping_file(tmp_path, pairs):
 def test_a_rewritten_citation_resolves_through_the_mapping(repo, tmp_path):
     """The reason this ships with the reachability check rather than after it:
     a rewrite invalidates every commit-shaped token in every record at once, so
-    a check shipped alone fails closed on a corpus, not on a defect."""
+    a check shipped alone fails closed on a corpus, not on a defect.
+
+    Non-blocking here because the original is anchored: the mapping says where
+    the work went, and the bundle is what makes that claim checkable rather than
+    merely asserted. Without the bundle the same call blocks — the test below.
+    """
     directory, shas = repo
+    bundle = tmp_path / "original.bundle"
+    _git(directory, "update-ref", "refs/anchors/mid", shas[1])
+    _git(directory, "bundle", "create", str(bundle), "refs/anchors/mid")
+    _git(directory, "update-ref", "-d", "refs/anchors/mid")
     rewritten = _orphan_the_middle_commit(directory, shas)
     mapping = history_anchor.load_mapping(_mapping_file(tmp_path, {shas[1]: rewritten}))
 
     report = history_anchor.check_reachability(
-        directory, {"CLOSURE.md": f"closed at {shas[1]}"}, mapping=mapping)
+        directory, {"CLOSURE.md": f"closed at {shas[1]}"},
+        mapping=mapping, bundles=[bundle])
 
     assert report.blocking == []
     citation = report.citations[0]
     assert citation.state == CitationState.REMAPPED
     assert citation.maps_to == rewritten
+
+
+def test_a_mapping_alone_cannot_clear_a_citation_it_merely_asserts(repo, tmp_path):
+    """The finding, from a blind cross-vendor reader: `{orphan: base}` — a
+    mapping naming an UNRELATED reachable commit — cleared the orphan.
+
+    Every reachable commit passes "the successor is reachable" equally, so that
+    test distinguishes nothing. The mapping is the caller's assertion, and a
+    checker that accepts the caller's assertion as its own evidence has asked
+    the caller for the answer. Blocking now, and it names the two things that
+    would settle it.
+    """
+    directory, shas = repo
+    _orphan_the_middle_commit(directory, shas)
+    unrelated = _git(directory, "rev-parse", "HEAD").strip()
+    mapping = history_anchor.load_mapping(_mapping_file(tmp_path, {shas[1]: unrelated}))
+
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {shas[1]}"}, mapping=mapping)
+
+    citation = report.citations[0]
+    assert citation.state == CitationState.REMAPPED_UNVERIFIED
+    assert citation in report.blocking
+    assert citation.maps_to == unrelated
+    assert "CORROBORATES" in citation.detail
+
+
+def test_an_in_memory_mapping_is_held_to_the_shape_the_loader_enforces(repo):
+    """`load_mapping` refuses an abbreviated revision; the keyword argument beside
+    it accepted one. A validated loader next to an unvalidated constructor is a
+    validated PATH, and callers take the other one."""
+    directory, shas = repo
+    with pytest.raises(PreconditionError):
+        history_anchor.check_reachability(
+            directory, {"CLOSURE.md": "x"}, mapping={shas[1][:8]: shas[0]})
 
 
 def test_a_mapping_whose_successor_is_also_unreachable_still_blocks(repo, tmp_path):
