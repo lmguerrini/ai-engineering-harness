@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1526
+    in-release (skills/core/*.md + policy/*.md)   1533
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2549   27.5% over the ~2,000
+    total against a ~2,000 target                 2556   27.8% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -419,3 +419,58 @@ was unchanged and the "survivor" was an instrument defect rather than a gap in
 the oracle. Rewritten as a genuine defect, it died. **A mutation that does not
 change behaviour proves nothing about the test that fails to notice it**, which
 is this release's own subject arriving in its own mutation harness.
+
+### C7 — Capacity-aware pre-dispatch gate
+
+Eight workers, two waves, one window — the coordinator's own. Two came back
+complete, three partial, three with nothing, and **eighty-one records were
+lost**. The rule that produced the wave was not carelessness: it was a recorded
+routing rule, *default to the worker*, correct every previous time because the
+pools had always been independent. It had never stated that precondition,
+because the precondition had never been false. Weekly capacity was never the
+binding constraint; the rolling session window was, and six of eight died on it.
+
+**This is a gate, and the distinction is load-bearing.** It answers about one
+proposed dispatch at a time. It holds no queue, has no dispatch verb, and never
+decides what to run next — a queue that later drains is a scheduler however it
+is described, and the frozen record forbids one. A structural test asserts the
+module has acquired no such verb, so a later convenience cannot quietly add one.
+
+**Authority is checked before any arithmetic, because no amount of capacity
+makes rerouting a decision acceptable.** A dispatch that does not state its
+authority class is refused at construction — this was blocker S5-02 against the
+input evidence, where the rule *authority attaches to the TASK, not the ROUTE*
+was asserted with no field on a task to hang it on, so its own rehearsal could
+only have passed on a hand-labelled fixture. A task carrying a semantic or
+product decision goes to the executor class it was classed for and nowhere else,
+and a reroute of one is refused rather than preferred against. Wait-versus-spend
+is `policy/hitl-matrix.md` row 15 and is provided as a **named refusal** so a
+caller reaching for it finds the row instead of an answer.
+
+**No universal reserve exists here and none will.** A number that fits one
+provider's window is wrong for another's, and a wrong one fails in both
+directions: too low reproduces the loss, too high strands capacity that had no
+other use. Three reserves are declared by the project — coordinator,
+result-consumption, repair-and-audit — because they are spent at three different
+moments, and a partial declaration makes the total `UNKNOWN` rather than
+smaller. Silently lowering a floor is worse than not having one.
+
+**`UNKNOWN` is the ordinary case and it is neither zero nor a refusal.** One of
+the two providers in the evidence base had no machine-readable capacity surface
+at all. An unmeasurable window earns **serial dispatch** — one at a time, no
+fan-out — and a second concurrent dispatch on it is refused. It does not
+deadlock: a gate that refused everything whenever telemetry was absent is a gate
+a coordinator routes around, which is worse than no gate. Every quantity that
+could not be established is named in the decision, so a reader can see which
+parts of the arithmetic were done.
+
+**Negative return is a refusal.** A dispatch whose result could not be read and
+verified before the window is exhausted is refused however cheap it is to
+produce: work nobody can consume is work nobody did.
+
+**Not dispatched and dispatched-and-lost stay separate.** Three of the eight
+were the second, and a record that cannot tell them apart cannot learn from
+either.
+
+**Mutation-checked, ten for ten**, including the two that matter most: rerouting
+a task that carries authority, and turning the unknown case into a deadlock.

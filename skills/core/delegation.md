@@ -51,6 +51,13 @@ Before any fan-out, state three numbers and record them:
 *   **the runway** — whether the remaining window plausibly covers the estimate,
     with margin.
 
+Gate each one before issuing it (`tools/capacity.py`): a **refusal**, never a
+queue that later drains. A task states its authority class first — one carrying a
+semantic or product decision goes where it was classed to go whatever else is
+still answering — then the arithmetic runs where the numbers exist, and where
+they do not, `UNKNOWN` earns serial dispatch rather than an invented figure or a
+deadlock. Wait-versus-spend stays row 15.
+
 Then declare bounded concurrency and bounded spawn depth. **Target maximum safe
 parallelism, never maximum possible parallelism.** A standing configuration that
 makes fan-out the default is off unless a human has opted in, for a bounded

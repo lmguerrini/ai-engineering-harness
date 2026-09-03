@@ -115,5 +115,7 @@ discarded finding is evidence about the oracle.
 | RP3-11 | a coordinator's declared wait is prose, so it cannot have a transition | four distinct situations — finished, capacity-blocked, waiting on a live job, idle with authorised work — produce one identical observable, and the decisive instance declared its wait correctly and still went silent for 2h 21m after the job exited |
 | RP3-12 | liveness read from one signal produces the mirror-image error of reading it from process existence | a hung run at 0.05s of processor time over 31 minutes, and a HEALTHY run silent on its log for over four minutes while processor time climbed — one detector cannot tell them apart, and the action a stall invites destroys work |
 | RP3-13 | a waiter that matches on a pattern matches itself | one worker acquired three waiters whose patterns matched each other's command lines, so none could terminate while any sibling lived; four notifications fired after the job had exited |
+| RP3-14 | routing has no capacity model, and a recorded rule was valid only under a precondition it never stated | eight workers in two waves on the coordinator's own rolling window: two complete, three partial, three nothing, 81 records lost. Weekly capacity was never the binding constraint |
+| RP3-15 | the rule that authority attaches to the task had no field on a task to attach to | its own rehearsal could only pass on a hand-labelled fixture |
 
 *(appended as each capability reproduces its own)*

@@ -9,6 +9,24 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Capacity — a refusal before a dispatch, never a queue that dispatches
+
+- **`tools/capacity.py`** gates one proposed dispatch at a time against one
+  pool. No queue, no dispatch verb, and a structural test asserting it never
+  acquires one.
+- **A dispatch states its authority class before anything else is considered.**
+  A task carrying a semantic or product decision goes to the executor class it
+  was classed for and nowhere else, whatever is still answering. Wait-versus-
+  spend is row 15 and is offered as a named refusal rather than an answer.
+- **No universal reserve.** The project declares three — coordinator,
+  result-consumption, repair-and-audit — and a partial declaration makes the
+  total `UNKNOWN` rather than smaller.
+- **`UNKNOWN` earns serial dispatch, not a deadlock and not a guess.** A second
+  concurrent dispatch on an unmeasurable window is refused; every unestablished
+  quantity is named in the decision.
+- **A result that could not be read before exhaustion is negative return** and
+  is refused. `NOT_DISPATCHED` and `DISPATCHED_AND_LOST` are distinct outcomes.
+
 ### Adapter and routing identity — the program, not only the files
 
 - **An adapter may declare the executable it drives**, how to ask its version,
