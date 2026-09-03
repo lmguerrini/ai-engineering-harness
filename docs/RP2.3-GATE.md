@@ -1982,3 +1982,56 @@ them. A disclosed gap is not the same as no gap, and it was being described as
 if it were.
 
 Five mutants over these repairs, all killed.
+
+## The final evidence-closure check, and the two things it found in the evidence
+
+*Do not assume completeness from counts alone.* The check was run as a
+cross-reference rather than as a reading: every verified reproduction in the
+capability map traced against the closure matrix, the recurrence-class map and
+the gate record; every mechanism's disposition parsed against the authorised
+vocabulary; every oracle named in an `ALREADY_COVERED` row executed.
+
+It found two defects **in the evidence artifacts themselves**, which is the only
+place a check like this can find anything.
+
+### Sixteen mechanism identifiers named two mechanisms each
+
+The matrix had grown in two places. `M-08` through `M-25` existed already, and
+eighteen rows added across rounds 4 to 9 reused exactly those numbers for
+different mechanisms — so `M-12` meant both *an object with two names is
+examined under one* and *formal conformance certifies unreadable public
+history*, and a citation to either was ambiguous.
+
+**A closure matrix whose identifiers do not identify is not a matrix**, and this
+is the release's central evidence artifact. The added rows are `M-30` to `M-47`
+now; 67 rows, 67 unique identifiers. The one prose citation of a colliding
+number — `M-17` in this document — was checked and refers to the older row it
+always meant.
+
+### Six rows claimed coverage and two of them named nothing
+
+The authorised vocabulary is PREVENTED, DETECTED_AND_BLOCKED,
+SAFELY_RECOVERABLE, **ALREADY_COVERED — demonstrated by an existing mechanism
+and a discriminating oracle** — and DEFERRED. The matrix said `COVERED`, and its
+own definition asked for *demonstrated rather than asserted* — but one row read
+only *inherited from 2.2.0; no new evidence in this phase*, and another *inherited
+from 2.2.0 unchanged.*
+
+That is a description of inheritance, not a demonstration. **Coverage claimed
+without an oracle is the assertion this matrix exists to refuse, made by the
+matrix.** Four rows now name the oracle that would go red and it was executed;
+one — contract, classification and sandbox gaps — is `DEFERRED` with the reason
+written out, because no discriminating oracle was demonstrated for it in this
+release and calling it covered would have been the drift.
+
+### The counts, after the correction
+
+    mechanisms                67, with 67 unique identifiers
+    PREVENTED                 38
+    DETECTED_AND_BLOCKED      20
+    SAFELY_RECOVERABLE         3
+    ALREADY_COVERED            5   every one naming an oracle that was run
+    DEFERRED                   1   with its reason, and bounded
+    outside the vocabulary     0
+    reproductions with no closure trace   0   (74 checked)
+    recurrence classes proved against an executing oracle   39 of 39
