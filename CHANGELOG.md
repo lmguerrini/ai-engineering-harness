@@ -9,6 +9,20 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Qualification
+
+- **`docs/RP2.3-RELEASE-PACKET.md`** — what a returning release authority reads
+  first: what the release deliberately does not do, why it is MINOR, and the
+  mutation history, because nine mutants survived their first pass and every one
+  was the same shape.
+- **Held prose is disclosed by composition.** The in-release half is under the
+  ~2,000 target; the total is over because of the two installed adapters, which
+  are counted and cannot be frozen. Two blocks were relocated to `docs/` under
+  the pack's own rule that `policy/` holds what governs and `docs/` holds what
+  happened, and the in-release half was **not** shaved to offset the adapters.
+- The cold-continuation drill was run against this session's own tree: five
+  reads and one Git check reconstruct the position with no conversation.
+
 ### Launch, migration and compatibility
 
 - **A pre-2.1 contract is named as legacy rather than reported as a type

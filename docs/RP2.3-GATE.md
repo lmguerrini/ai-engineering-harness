@@ -59,18 +59,32 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1578
+    in-release (skills/core/*.md + policy/*.md)   1553
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2601   30.0% over the ~2,000
+    total against a ~2,000 target                 2576   28.8% over the ~2,000
 
-**The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
-rule and declined to shave it, on the ground that re-scoping a rule to fit its
-number deletes the disclosure rather than the excess. That reasoning still
-holds and it is not a licence. This session applied *delete before adding* where
-it could — a sentence duplicated word for word inside `auditor-strategy.md` was
-removed rather than left beside its new neighbour — and it did not cover the
-addition. A held-prose pass is owed before qualification, and it is recorded as
-owed rather than described as done.
+**The breach is inherited, and its composition is the part 2.2.0's disclosure
+did not separate.** 1553 lines are in-release and **that half is under the
+~2,000 target**; the 1023 that put the total over are the two installed adapters,
+which this pack did not write, cannot freeze, and counts anyway because they are
+loaded every session. Both figures are stated because `policy/BUDGETS.md` already
+requires both — reporting one number made a breach the pack could act on
+indistinguishable from one it could not.
+
+*Delete before adding* was applied twice and honestly. A sentence duplicated word
+for word inside `auditor-strategy.md` was removed. Then, at C14, two blocks were
+**relocated rather than deleted**, under the split `BUDGETS.md` itself states —
+*`policy/` holds what governs; `docs/` holds what happened*: the routing table's
+account of two grades that were once wrong, and the resource observation's setup
+procedure. Both are read when they are needed rather than held every session, and
+both are in `docs/` unchanged. That recovered 25 lines and does not pretend to
+be more than it is.
+
+**What was not done: the prose was not shaved to fit the number.** 2.2.0 declined
+that on the ground that re-scoping a rule to fit its number deletes the
+disclosure rather than the excess, and cutting the in-release half — already
+under target — to compensate for adapters outside the envelope would be exactly
+that.
 
 ## Capabilities
 
@@ -841,3 +855,29 @@ schema from the launch document, so every new declaration this release adds
 needs nothing there. What it did need was the index: a sentence saying it exists,
 that an entry is a claim rather than an answer, and that a project runs against
 its own pin and never against an index.
+
+### C14 — Rehearsal, qualification and release candidate
+
+**The cold-continuation drill, run against this session's own tree.** Five reads
+and one Git check, using nothing but what is on disk:
+
+    VERSION and PACK_MANIFEST.json      2.3.0, IN_PROGRESS, gate record named
+    the gate record's baseline block    2.2.0 at d70d72f, digest 4bab6b8d
+    the capability map                  14 capabilities planned
+    the gate record's capability heads  13 closed; C14 open
+    the reproduction table              26 defects reproduced before repair
+    git log against the baseline        15 commits, tree clean at each close
+
+A returning coordinator reconstructs the position from those without reading a
+conversation, which is what the drill exists to establish.
+
+**Held prose, relocated rather than shaved.** See *Measured overhead* above: the
+in-release half is under target and the total is over because of the two
+installed adapters, which are counted and cannot be frozen. Two blocks moved to
+`docs/` under the pack's own `policy`/`docs` split.
+
+**`docs/RP2.3-RELEASE-PACKET.md`** is what a returning release authority reads
+first. It leads with what the release deliberately does not do, and with the
+mutation history — because nine of this release's mutants survived their first
+pass and every one was the same shape: **an assertion the code satisfied for a
+reason the test did not name.**
