@@ -71,6 +71,19 @@ the finding count drops and the range stays dirty — and a smaller number reads
 as progress. The scan names how many distinct blobs of an offending path are
 reachable; more than one means rebuild.
 
+## A closure names a commit; a ref is what keeps it
+
+Git keeps an object alive because a ref reaches it and for no other reason, so a
+rebuild, a rebase or a squash can orphan a commit half a dozen records cite
+while every citation goes on looking authoritative. A cited head can be
+unreachable, or absent entirely, while records still cite it, and the window to
+recover it is about a month, ending the instant anyone expires a reflog.
+`tools/history_anchor.py` reads the project's own records and answers per
+citation; an anchor is a ref, or a bundle **that has been verified**, because a
+bundle nobody restored is a file. A rewrite emits an old-to-new revision map and
+the check consults it, or the first rewrite makes every citation in the corpus
+unresolvable at once.
+
 ## Publication is a ref-namespace contract
 
 The history being clean is not the repository being publishable. `git log`,

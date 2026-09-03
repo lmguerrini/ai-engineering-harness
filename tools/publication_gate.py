@@ -95,6 +95,11 @@ _KNOWN_PRIVATE_NAMESPACES = (
     ("refs/heads/worktree-agent-", "an agent worktree branch created inside the repository under review"),
     ("refs/heads/recovery/", "a recovery branch retained through implementation"),
     ("refs/original/", "history-rewrite backup refs"),
+    # A rewrite tool leaves a
+    # namespace nobody records, and the gate that would have caught it ran
+    # before the tool created it.
+    ("refs/rewritten/", "residue a history-rewrite tool left behind"),
+    ("refs/replace/", "object replacement refs, which change what a clone sees"),
     ("refs/remotes/", "remote-tracking refs"),
 )
 

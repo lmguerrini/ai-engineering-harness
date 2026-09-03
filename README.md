@@ -131,6 +131,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── continuation.py         coordinator state derived from artifacts, so silence has a name
     │   ├── progress.py             a disjunction over signals, so a quiet worker is not a dead one
     │   ├── capacity.py             a refusal before a dispatch; never a queue that dispatches
+    │   ├── history_anchor.py       whether anything still keeps a cited commit reachable
     │   ├── task_output.py          bounded durable output, and the four answers before a retry
     │   ├── instrument.py           what a checker must say about itself to be believed
     │   ├── errors.py               the refusal hierarchy; every refusal names its cause

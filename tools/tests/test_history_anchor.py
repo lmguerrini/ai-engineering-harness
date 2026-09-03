@@ -1,0 +1,420 @@
+"""A record citing a commit nothing keeps alive, and the rewrite that hides it.
+
+Rehearsal A1's fixtures: three commits, a record citing all three, a branch
+rebuild that orphans the middle one, an anchor that restores it, and — added
+because a reachability check shipped alone fails closed across a whole corpus
+the first time anybody rewrites anything — a mapping that resolves the citation
+a rewrite invalidated.
+"""
+
+import json
+import subprocess
+
+import pytest
+
+import history_anchor
+from errors import PreconditionError
+from history_anchor import CitationState
+
+
+def _git(repo, *args, **kwargs):
+    return subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True,
+                          check=True, **kwargs).stdout.strip()
+
+
+@pytest.fixture
+def repo(tmp_path):
+    directory = tmp_path / "repo"
+    directory.mkdir()
+    _git(directory, "init", "--quiet", "--initial-branch", "main")
+    _git(directory, "config", "user.name", "Throwaway Tester")
+    _git(directory, "config", "user.email", "tester@example.invalid")
+    _git(directory, "config", "commit.gpgsign", "false")
+    shas = []
+    for index in range(3):
+        (directory / f"{index}.txt").write_text(f"content {index}\n")
+        _git(directory, "add", ".")
+        _git(directory, "commit", "--quiet", "-m", f"commit {index}")
+        shas.append(_git(directory, "rev-parse", "HEAD"))
+    return directory, shas
+
+
+# --- the reachable case, which must not be a finding ---------------------------
+
+
+def test_a_record_citing_reachable_commits_is_clean(repo):
+    directory, shas = repo
+    record = "\n".join(f"closed at {sha}" for sha in shas)
+    report = history_anchor.check_reachability(directory, {"CLOSURE.md": record})
+    assert report.blocking == []
+    assert {c.state for c in report.citations} == {CitationState.REACHABLE}
+    assert "every cited commit is reachable" in report.render()
+
+
+def test_prose_that_happens_to_be_hexadecimal_is_not_a_lost_commit(repo):
+    """A checker that called every unrecognised seven-character word a lost
+    commit would produce a remediation list nobody could act on."""
+    directory, _shas = repo
+    report = history_anchor.check_reachability(
+        directory, {"NOTES.md": "the deadbeef case and the c0ffee00 case"})
+    assert report.blocking == []
+    assert {c.state for c in report.citations} == {CitationState.NOT_A_COMMIT}
+
+
+def test_reading_no_records_at_all_is_not_a_clean_verdict(repo):
+    directory, _shas = repo
+    report = history_anchor.check_reachability(directory, {})
+    assert report.examined.nothing
+    assert "NOTHING EXAMINED" in report.render()
+
+
+# --- the orphaned commit, which is the finding ------------------------------------
+
+
+def _orphan_the_middle_commit(directory, shas):
+    """Rebuild the branch without the middle commit, leaving it unreferenced."""
+    _git(directory, "checkout", "--quiet", "-B", "main", shas[0])
+    (directory / "2.txt").write_text("content 2\n")
+    _git(directory, "add", ".")
+    _git(directory, "commit", "--quiet", "-m", "commit 2 again")
+    return _git(directory, "rev-parse", "HEAD")
+
+
+def test_a_cited_commit_no_ref_reaches_fails_closed_naming_the_record(repo):
+    directory, shas = repo
+    _orphan_the_middle_commit(directory, shas)
+
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"the second capability closed at {shas[1]}"})
+
+    assert len(report.blocking) == 1
+    finding = report.blocking[0]
+    assert finding.state == CitationState.UNREACHABLE
+    assert finding.token == shas[1] and finding.where == "CLOSURE.md"
+    assert "reflog" in finding.detail
+    assert "NOT REACHABLE" in report.render()
+
+
+def test_an_abbreviated_citation_is_resolved_like_a_full_one(repo):
+    directory, shas = repo
+    _orphan_the_middle_commit(directory, shas)
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {shas[1][:10]}"})
+    assert report.blocking and report.blocking[0].state == CitationState.UNREACHABLE
+
+
+# --- the anchor -------------------------------------------------------------------
+
+
+def test_a_verified_bundle_anchor_makes_an_unreachable_commit_durable(repo, tmp_path):
+    """`D-073`'s own precedent, and the only form that is safe where a fence
+    forbids creating refs: a bundle, restored into an isolated repository and
+    read back."""
+    directory, shas = repo
+    bundle = tmp_path / "orphan.bundle"
+    # A bundle carries refs, not bare revisions, so the anchor is created as a
+    # ref, bundled, and the ref then removed — which is the shape a fence that
+    # forbids permanent refs in the repository actually forces.
+    _git(directory, "update-ref", "refs/anchors/mid", shas[1])
+    _git(directory, "bundle", "create", str(bundle), "refs/anchors/mid")
+    _git(directory, "update-ref", "-d", "refs/anchors/mid")
+    _orphan_the_middle_commit(directory, shas)
+
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {shas[1]}"}, bundles=[bundle])
+
+    assert report.blocking == []
+    assert report.citations[0].state == CitationState.ANCHORED
+    assert report.anchors[0].verified
+
+
+def test_a_bundle_that_does_not_verify_anchors_nothing(repo, tmp_path):
+    """A bundle nobody has verified is a file."""
+    directory, shas = repo
+    broken = tmp_path / "broken.bundle"
+    broken.write_bytes(b"not a bundle")
+    _orphan_the_middle_commit(directory, shas)
+
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {shas[1]}"}, bundles=[broken])
+
+    assert report.blocking and report.blocking[0].state == CitationState.UNREACHABLE
+    assert not report.anchors[0].verified
+    assert "NOT VERIFIED" in report.render()
+
+
+# --- the mapping, without which this check fails closed across a corpus ------------
+
+
+def _mapping_file(tmp_path, pairs):
+    path = tmp_path / "map.json"
+    path.write_text(json.dumps({"schema": history_anchor.MAPPING_SCHEMA, "map": pairs}))
+    return path
+
+
+def test_a_rewritten_citation_resolves_through_the_mapping(repo, tmp_path):
+    """The reason this ships with the reachability check rather than after it:
+    a rewrite invalidates every commit-shaped token in every record at once, so
+    a check shipped alone fails closed on a corpus, not on a defect."""
+    directory, shas = repo
+    rewritten = _orphan_the_middle_commit(directory, shas)
+    mapping = history_anchor.load_mapping(_mapping_file(tmp_path, {shas[1]: rewritten}))
+
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {shas[1]}"}, mapping=mapping)
+
+    assert report.blocking == []
+    citation = report.citations[0]
+    assert citation.state == CitationState.REMAPPED
+    assert citation.maps_to == rewritten
+
+
+def test_a_mapping_whose_successor_is_also_unreachable_still_blocks(repo, tmp_path):
+    directory, shas = repo
+    _orphan_the_middle_commit(directory, shas)
+    mapping = history_anchor.load_mapping(_mapping_file(tmp_path, {"a" * 40: "b" * 40}))
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {'a' * 40}"}, mapping=mapping)
+    assert report.blocking and report.blocking[0].maps_to == "b" * 40
+
+
+def test_a_mapping_the_consumer_cannot_read_is_refused_rather_than_skipped(tmp_path):
+    """A reachability check running with a mapping it silently failed to load
+    reports every rewritten citation as lost — a corpus-sized false positive."""
+    broken = tmp_path / "map.json"
+    broken.write_text("{ not json")
+    with pytest.raises(PreconditionError):
+        history_anchor.load_mapping(broken)
+
+    broken.write_text(json.dumps({"map": {}}))
+    with pytest.raises(PreconditionError) as caught:
+        history_anchor.load_mapping(broken)
+    assert history_anchor.MAPPING_SCHEMA in caught.value.render()
+
+
+def test_a_mapping_holding_abbreviations_is_refused(tmp_path):
+    """An abbreviation is what makes a mapping ambiguous exactly when it
+    matters."""
+    path = _mapping_file(tmp_path, {"abc1234": "b" * 40})
+    with pytest.raises(PreconditionError):
+        history_anchor.load_mapping(path)
+
+
+def test_no_mapping_at_all_is_an_empty_one_rather_than_a_refusal():
+    assert history_anchor.load_mapping(None) == {}
+
+
+# --- the invariants a rewrite must not break --------------------------------------
+
+
+def test_a_rewrite_with_no_proven_rollback_is_a_finding(repo):
+    directory, shas = repo
+    findings = history_anchor.verify_rewrite(directory, directory, {}, rollback_proven=False)
+    assert any(f.field == "rollback" for f in findings)
+
+
+def test_a_rewrite_with_no_mapping_is_a_finding(repo):
+    directory, _shas = repo
+    findings = history_anchor.verify_rewrite(directory, directory, {}, rollback_proven=True)
+    assert [f.field for f in findings] == ["mapping"]
+
+
+def test_a_changed_committer_date_is_reported_and_the_field_is_named(repo, tmp_path):
+    """`MUST GO RED` on a rewrite that changes a committer date — and the report
+    must name the field, not merely fail."""
+    directory, shas = repo
+    after = tmp_path / "after"
+    subprocess.run(["git", "clone", "--quiet", str(directory), str(after)],
+                   check=True, capture_output=True)
+    _git(after, "config", "user.name", "Throwaway Tester")
+    _git(after, "config", "user.email", "tester@example.invalid")
+    _git(after, "commit", "--quiet", "--amend", "--no-edit", "--date=2020-01-01T00:00:00Z")
+    new_head = _git(after, "rev-parse", "HEAD")
+
+    findings = history_anchor.verify_rewrite(
+        directory, after, {shas[2]: new_head}, rollback_proven=True)
+
+    named = {f.field for f in findings}
+    assert "author date" in named or "committer date" in named, [str(f) for f in findings]
+    assert all(str(f).startswith(f.field) for f in findings)
+
+
+def test_an_identical_rewrite_breaks_no_invariant(repo):
+    """The other side. A checker that reported findings against an unchanged
+    pair would be refusing correct work."""
+    directory, shas = repo
+    findings = history_anchor.verify_rewrite(
+        directory, directory, {sha: sha for sha in shas}, rollback_proven=True)
+    assert findings == []
+
+
+def test_a_mapping_naming_a_commit_neither_repository_has_is_reported(repo):
+    directory, _shas = repo
+    findings = history_anchor.verify_rewrite(
+        directory, directory, {"a" * 40: "b" * 40}, rollback_proven=True)
+    assert findings and all(f.field == "mapping" for f in findings)
+
+
+def test_this_module_performs_no_rewrite_and_creates_no_ref():
+    """Core detects, classifies and verifies. Executing a rewrite is a human
+    decision, and a module that could perform one would be the authority D23
+    clause 6 withholds."""
+    names = set(dir(history_anchor))
+    for forbidden in ("rewrite", "filter_branch", "create_ref", "prune", "gc", "expire",
+                      "apply_mapping", "remediate"):
+        assert forbidden not in names, f"history_anchor gained {forbidden!r}"
+
+
+# --- the residue a rewrite tool leaves ------------------------------------------------
+
+
+def test_the_publication_gate_names_the_rewrite_residue_namespace():
+    """A history-rewrite tool leaves such refs behind, and `grep` over the
+    entire governance corpus finds no record of them."""
+    import publication_gate
+
+    prefixes = {prefix for prefix, _ in publication_gate._KNOWN_PRIVATE_NAMESPACES}
+    assert "refs/rewritten/" in prefixes
+    assert "refs/replace/" in prefixes
+
+
+# --- four cases the first mutation pass proved were not being reached ------------
+#
+# Each of these existed as an assertion the code satisfied for the wrong reason:
+# the fixture never entered the branch, so breaking the branch changed nothing.
+
+
+def test_a_real_unreachable_commit_whose_successor_is_also_unreachable_blocks(repo, tmp_path):
+    """The earlier version of this test mapped one invented revision to another,
+    so it exercised the not-an-object path and never the one it named."""
+    directory, shas = repo
+    _git(directory, "checkout", "--quiet", "-b", "side", shas[1])
+    (directory / "side.txt").write_text("side\n")
+    _git(directory, "add", ".")
+    _git(directory, "commit", "--quiet", "-m", "a successor that will also be orphaned")
+    successor = _git(directory, "rev-parse", "HEAD")
+    _git(directory, "checkout", "--quiet", "main")
+    _git(directory, "branch", "--quiet", "-D", "side")
+    _orphan_the_middle_commit(directory, shas)
+
+    mapping = history_anchor.load_mapping(_mapping_file(tmp_path, {shas[1]: successor}))
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {shas[1]}"}, mapping=mapping)
+
+    assert report.blocking, "a successor no ref reaches resolves nothing"
+    assert report.blocking[0].state == CitationState.UNREACHABLE
+    assert report.blocking[0].maps_to == successor
+
+
+def test_a_bundle_whose_prerequisite_is_absent_anchors_nothing(repo, tmp_path):
+    """A bundle that lists its head is not a bundle that can be restored.
+
+    `git bundle verify` checks prerequisites, not pack contents — every
+    corruption tried here verified clean — so the only construction that
+    separates the two is a **range** bundle verified where its prerequisite is
+    missing. A shallow clone provides exactly that: it holds the cited commit
+    and not the commit the bundle is relative to.
+
+    Two earlier fixtures failed to reach this guard. One used a file that was
+    not a bundle at all, so every path refused it; one truncated a valid bundle,
+    which verifies clean. **The guard was satisfied for the wrong reason both
+    times**, and only a mutation showed it.
+    """
+    directory, shas = repo
+    _git(directory, "update-ref", "refs/anchors/mid", shas[1])
+    incomplete = tmp_path / "range.bundle"
+    _git(directory, "bundle", "create", str(incomplete), f"{shas[0]}..refs/anchors/mid")
+    _git(directory, "update-ref", "-d", "refs/anchors/mid")
+
+    shallow = tmp_path / "shallow"
+    subprocess.run(["git", "clone", "--quiet", "--depth", "2", f"file://{directory}", str(shallow)],
+                   check=True, capture_output=True)
+    _git(shallow, "config", "user.name", "Throwaway Tester")
+    _git(shallow, "config", "user.email", "tester@example.invalid")
+    # Orphan the cited commit here too: present as an object, reached by nothing.
+    _git(shallow, "checkout", "--quiet", "--orphan", "fresh")
+    _git(shallow, "commit", "--quiet", "--allow-empty", "-m", "a history that reaches nothing")
+    _git(shallow, "branch", "--quiet", "-D", "main")
+    # And the remote-tracking refs, which reach it too. `rev-list --all` means
+    # every ref, and forgetting that is how a "no ref reaches this" fixture
+    # quietly stops reproducing.
+    _git(shallow, "remote", "remove", "origin")
+
+    assert _git(shallow, "cat-file", "-t", shas[1]) == "commit", "the fixture must still hold it"
+    verify = subprocess.run(["git", "bundle", "verify", str(incomplete)], cwd=shallow,
+                            capture_output=True, text=True)
+    heads = subprocess.run(["git", "bundle", "list-heads", str(incomplete)], cwd=shallow,
+                           capture_output=True, text=True)
+    assert verify.returncode != 0 and heads.returncode == 0, (
+        "the fixture must fail verification while still listing its head"
+    )
+
+    report = history_anchor.check_reachability(
+        shallow, {"CLOSURE.md": f"closed at {shas[1]}"}, bundles=[incomplete])
+
+    assert not report.anchors[0].verified
+    assert report.blocking and report.blocking[0].state == CitationState.UNREACHABLE, (
+        "an unverified bundle anchored a commit"
+    )
+
+
+def test_an_abbreviation_matching_two_mapping_entries_resolves_to_neither(repo, tmp_path):
+    """A mapping consulted ambiguously is worse than one not consulted, because
+    it answers."""
+    directory, _shas = repo
+    prefix = "abcdef1"
+    mapping = history_anchor.load_mapping(_mapping_file(tmp_path, {
+        prefix + "0" * 33: "1" * 40,
+        prefix + "1" * 33: "2" * 40,
+    }))
+    # Cited at exactly the shared prefix: an abbreviation is only ambiguous
+    # when it is a prefix of more than one entry, and the first version of this
+    # test cited a LONGER token that prefixed neither, so nothing was ambiguous
+    # and the mutation went unobserved.
+    report = history_anchor.check_reachability(
+        directory, {"NOTES.md": f"see {prefix}"}, mapping=mapping)
+    assert report.citations[0].state == CitationState.NOT_A_COMMIT
+    assert report.citations[0].maps_to is None
+
+
+def test_a_repository_git_cannot_read_is_unknown_and_blocks(tmp_path):
+    """Not prose, and not clean. A checker that read "nobody looked" as "nothing
+    found" is the defect this pack exists to refuse, and the mutation that
+    turned this branch off changed no test until now."""
+    not_a_repository = tmp_path / "plain"
+    not_a_repository.mkdir()
+    report = history_anchor.check_reachability(
+        not_a_repository, {"CLOSURE.md": "closed at " + "a" * 40})
+    assert report.citations[0].state == CitationState.UNKNOWN
+    assert report.blocking, "UNKNOWN blocks; it is not a clean verdict"
+
+
+def test_a_verified_bundle_anchors_only_the_commits_it_actually_carries(repo, tmp_path):
+    """Otherwise one anchor would clear every finding in the corpus."""
+    directory, shas = repo
+    _git(directory, "checkout", "--quiet", "-b", "side", shas[0])
+    (directory / "side.txt").write_text("side\n")
+    _git(directory, "add", ".")
+    _git(directory, "commit", "--quiet", "-m", "an unrelated commit")
+    unrelated = _git(directory, "rev-parse", "HEAD")
+
+    _git(directory, "update-ref", "refs/anchors/mid", shas[1])
+    bundle = tmp_path / "mid-only.bundle"
+    _git(directory, "bundle", "create", str(bundle), "refs/anchors/mid")
+    _git(directory, "update-ref", "-d", "refs/anchors/mid")
+    _git(directory, "checkout", "--quiet", "main")
+    _git(directory, "branch", "--quiet", "-D", "side")
+    _orphan_the_middle_commit(directory, shas)
+
+    report = history_anchor.check_reachability(
+        directory,
+        {"CLOSURE.md": f"the anchored one is {shas[1]} and the other is {unrelated}"},
+        bundles=[bundle],
+    )
+
+    assert report.anchors[0].verified
+    states = {c.token: c.state for c in report.citations}
+    assert states[shas[1]] == CitationState.ANCHORED
+    assert states[unrelated] == CitationState.UNREACHABLE, (
+        "a verified bundle anchored a commit it does not carry"
+    )

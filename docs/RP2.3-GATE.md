@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1533
+    in-release (skills/core/*.md + policy/*.md)   1546
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2556   27.8% over the ~2,000
+    total against a ~2,000 target                 2569   28.4% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -552,3 +552,64 @@ decoration, which is the shape this release spends its time deleting. Its
 neighbour, the emptiness check, *is* reachable but only through the helper's own
 contract rather than through the gate, so it is tested there and the reason is
 written down beside it.
+
+### C9 — History, refs and closure anchors
+
+This is the one evidence defect whose window closes on its own: a rewrite can
+orphan a commit that records cite, and the interval in which it can still be
+recovered is about a month, because `gc.reflogExpireUnreachable` defaults to
+thirty days and an orphaned commit survives only through its reflog. It ends
+the instant anyone expires a reflog, which is sooner and unannounced.
+
+**The mapping ships with the check, not after it.** A rewrite gives every commit
+a new identity, so the moment one happens every commit-shaped token in every
+record stops resolving at once. A reachability check shipped alone would fail
+closed across an entire corpus — not on a defect, but on a rewrite the same
+release exists to make safe. The mapping is a first-class input with a declared
+schema, refused rather than skipped when unreadable, and refused when it holds
+abbreviations, because an ambiguous mapping is worse than none: it answers.
+
+**And the mapping is consulted for a commit Git can still resolve**, which is
+the case that matters and was wrong in the first implementation. After a local
+rewrite the old commit is still an object — Git resolves it perfectly — and
+simply nothing points at it. Consulting the map only for tokens Git cannot
+resolve would have missed every citation a rewrite in that repository
+invalidated, which is the whole population.
+
+**Prose that happens to be hexadecimal is not a lost commit.** A checker that
+called every unrecognised seven-character word a finding would emit a
+remediation list nobody could act on, which is the same failure the publication
+work exists to prevent one layer up.
+
+**A bundle nobody verified is a file**, and an anchor is a verified bundle or a
+ref. Nothing here rewrites history, creates a ref or prunes anything: the
+rewrite invariants exist so an authorised rewrite can be checked rather than
+trusted, and they name the field rather than merely failing. A rewrite with no
+demonstrated rollback is itself a finding, not a parameter with a convenient
+default. `refs/rewritten/*` and `refs/replace/*` are now named private
+namespaces — the former is what a history-rewrite tool leaves behind, and
+nothing in the governance corpus recorded it.
+
+**Six mutants survived the first pass. That is the most useful result in this
+capability**, and every one was the same shape: an assertion the code satisfied
+for a reason the test did not name.
+
+*   A mapped successor that was itself unreachable — the fixture mapped one
+    invented revision to another and exercised the not-an-object path instead.
+*   An unverified bundle anchoring a commit — **two** fixtures failed to reach
+    this. One used a file that was not a bundle, so every path refused it; the
+    other truncated a valid bundle, and `git bundle verify` checks prerequisites
+    rather than pack contents, so every corruption tried verified clean. The
+    construction that works is a range bundle verified in a shallow clone that
+    holds the cited commit and lacks the one the bundle is relative to — and
+    the first attempt at *that* still failed, because deleting the branch left
+    `refs/remotes/origin/main` reaching it and `rev-list --all` means every ref.
+*   An ambiguous abbreviation resolving to the first match — the citation in the
+    fixture was longer than the shared prefix, so nothing was ambiguous.
+*   A repository Git could not read reported as prose rather than as unknown.
+*   A verified bundle anchoring a commit it does not carry, which would let one
+    anchor clear every finding in a corpus.
+
+All six are closed, each by a fixture that enters the branch rather than by
+widening an assertion, and the reason each earlier fixture missed is written
+beside it.

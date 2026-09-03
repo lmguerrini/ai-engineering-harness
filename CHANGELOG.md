@@ -9,6 +9,22 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Closure anchors — whether anything still keeps a cited commit reachable
+
+- **`tools/history_anchor.py`** reads a project's own records and answers per
+  citation: reachable, anchored, remapped, unreachable, not a commit, or
+  unknown. Only unreachable and unknown block. Prose that happens to be
+  hexadecimal is not a lost commit.
+- **An old-to-new revision map ships with the check**, with a declared schema,
+  refused when unreadable or when it holds abbreviations — and consulted for a
+  commit Git can still resolve, which is what a local rewrite actually leaves.
+- **An anchor is a ref or a verified bundle**, and a bundle anchors only the
+  commits it carries.
+- **Rewrite invariants name the field they broke** — author and committer date,
+  identity, tree, order — and a rewrite with no demonstrated rollback is a
+  finding. Nothing here performs a rewrite: that stays a human decision.
+- `refs/rewritten/*` and `refs/replace/*` are named private namespaces.
+
 ### Remote verification — the one check that has to leave the machine
 
 - **The transport widening is scoped to the postcondition, named, and per

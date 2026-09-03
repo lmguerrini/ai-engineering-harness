@@ -121,5 +121,7 @@ discarded finding is evidence about the oracle.
 | RP3-17 | enabling the protocol is not enough, because the ssh command was neutralised by emptying it | with the transport allowed, the read fails `cannot run :` / `unable to fork` — the same non-functional postcondition in different words. The module records this exact lesson for `diff.external` two entries above the key it set to empty |
 | RP3-18 | a failure to read a remote reports only that it failed | a refused transport and a host that does not resolve both arrive as `git invocation failed`, and one is a setting this pack controls |
 | RP3-19 | the non-regression gate reports a compatible addition as a break, and its own message says callers would break | adding a keyword-only parameter with a default to a public function turns the gate red; no call written against the previous signature would fail |
+| RP3-20 | a closure record names a commit and nothing keeps it reachable | a branch rebuild orphans a cited commit; the citation resolves for as long as a reflog keeps it and then stops, with no event to notice |
+| RP3-21 | a reachability check shipped without a revision map fails closed across a whole corpus after the first rewrite | every commit-shaped token stops resolving at once, and the old commit remains resolvable-but-unreachable so a map consulted only on unresolvable tokens misses all of them |
 
 *(appended as each capability reproduces its own)*
