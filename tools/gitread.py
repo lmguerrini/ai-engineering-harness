@@ -405,6 +405,27 @@ def _run(
             verb=verb, transports=", ".join(allow_transports),
             scoped_to=", ".join(sorted(TRANSPORT_VERBS)),
         )
+    # Asked ONCE, before anything runs, and asked of the repository rather than
+    # of this module's own list of tricks. `config --list` is itself read-only
+    # and is invoked through the same guarded path, with the recursion stopped
+    # by the verb: a `config` read does not re-enter this check.
+    # `config` is exempt as well as re-entrant calls: a configuration READ
+    # cannot execute anything, and a caller asking about a broken config is
+    # entitled to the refusal that names the real problem rather than to this
+    # check's opinion about it. Hijacking that refusal turned "your config does
+    # not parse" into a security finding about a repository nobody could read.
+    if not _INSPECTING_CONFIG and verb != "config":
+        executable = program_valued_config(repository, timeout=timeout)
+        if executable:
+            raise IntegrityError(
+                "this repository's own configuration names a program for Git to run, by a key "
+                "this module has NO NAMED CLOSURE FOR. Five separate routes to repository-chosen "
+                "execution were found in four consecutive audit rounds, each where the previous "
+                "repair could not see it, so the check is on the SHAPE of the key rather than on "
+                "the routes anybody has thought of — and an unrecognised one refuses rather than "
+                "waiting to be found",
+                repository=str(repository), keys=", ".join(executable),
+            )
     arguments = (
         (arguments[0], *_NO_EXTERNAL_PROGRAMS, *arguments[1:])
         if verb in EXTERNAL_PROGRAM_VERBS else arguments
@@ -666,6 +687,158 @@ def whitespace_damage(repository: str | Path, *, timeout: float = DEFAULT_TIMEOU
                 ) from exc
             findings.append(reported)
     return "\n".join(item for item in findings if item)
+
+
+#: Config key patterns WHOSE VALUE GIT EXECUTES. `fnmatch` globs, matched
+#: case-insensitively against a repository's own local configuration.
+#:
+#: **This list is not complete and cannot be.** That is the point of it: five
+#: separate routes by which a repository being read chose a program to run were
+#: found in four consecutive audit rounds — `diff.external`, an attribute-
+#: selected diff driver, a `.gitattributes` filter chain, `core.gitProxy`, and
+#: `remote.<name>.uploadpack`. Each was closed where the previous repair could
+#: not see it, and each time the next reader found another. Closing routes one
+#: at a time was losing.
+#:
+#: So the defence stops being an enumeration of routes and becomes an
+#: enumeration of SHAPES. A repository that sets a program-valued key is refused
+#: before anything runs, whether or not this module knows how that key would
+#: have been reached — and the sixth route is refused by a check written before
+#: anybody found it.
+PROGRAM_VALUED_CONFIG = (
+    "core.gitproxy", "core.sshcommand", "core.askpass", "core.editor", "core.pager",
+    "core.fsmonitor", "core.hookspath", "core.alternaterefscommand", "core.externaldiff",
+    "credential.helper", "credential.*.helper",
+    "diff.external", "diff.*.command", "diff.*.textconv",
+    "filter.*.clean", "filter.*.smudge", "filter.*.process",
+    "merge.*.driver", "merge.*.cmd",
+    "remote.*.uploadpack", "remote.*.receivepack", "remote.*.vcs", "remote.*.proxy",
+    "protocol.*.command", "uploadpack.packobjectshook",
+    "sequence.editor", "gpg.program", "gpg.*.program",
+    "trailer.*.command", "interactive.difffilter", "pager.*", "alias.*",
+    "browser.*.cmd", "web.browser", "guitool.*.cmd", "difftool.*.cmd", "mergetool.*.cmd",
+    "sendemail.smtpserver", "ssh.variant", "include.path", "includeif.*.path",
+    "submodule.*.update", "fsmonitor.*",
+)
+
+#: The subset above that a NAMED mechanism in this module already closes, and
+#: the mechanism. A repository is free to set these: the closure is what
+#: protects, not the absence of the key, and refusing to read a repository whose
+#: developer set a pager would be hardening in name and obstruction in fact.
+#:
+#: **Everything else matching a shape above is refused**, and that asymmetry is
+#: the whole design. A key with a closure has been thought about; a key without
+#: one has not, and the sixth execution route will arrive as a key nobody here
+#: has heard of.
+CLOSED_PROGRAM_KEYS = {
+    "core.editor": "neutralised in the standing config",
+    "core.pager": "neutralised in the standing config, and output is captured",
+    "core.askpass": "neutralised in the standing config",
+    "core.sshcommand": "neutralised, and removed only when ssh is deliberately enabled",
+    "core.fsmonitor": "neutralised in the standing config",
+    "core.hookspath": "neutralised to /dev/null",
+    "core.alternaterefscommand": "neutralised in the standing config",
+    "credential.helper": "neutralised in the standing config",
+    "sequence.editor": "neutralised in the standing config",
+    "gpg.program": "neutralised in the standing config",
+    "uploadpack.packobjectshook": "neutralised in the standing config",
+    "core.gitproxy": "unreachable: the git:// protocol is not enablable",
+    "diff.external": "disabled by --no-ext-diff on every verb that accepts it",
+    "remote.*.uploadpack": "overridden by --upload-pack on every transport read",
+    "diff.*.command": "an attribute-selected driver, disabled by --no-ext-diff",
+    "diff.*.textconv": "disabled by --no-textconv, and --textconv is refused as an argument",
+    "filter.*.clean": "reachable only through --filters, which is refused as an argument",
+    "filter.*.smudge": "reachable only through --filters, which is refused as an argument",
+    "filter.*.process": "reachable only through --filters, which is refused as an argument",
+}
+
+
+#: Re-entrancy guard for the config inspection below.
+#:
+#: The inspection runs Git, and every Git run is inspected — so the first
+#: version guarded only on the verb `config`, and its own fallback probe
+#: (`rev-parse --git-dir`, reached whenever the config could not be read) was a
+#: DIFFERENT verb and re-entered. Two test modules that take ten seconds ran for
+#: over six minutes without finishing. A guard on the verb was a guard on one
+#: of the paths the function takes.
+_INSPECTING_CONFIG = False
+
+
+def program_valued_config(
+    repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+) -> list[str]:
+    """Local config keys this repository sets whose value Git would execute.
+
+    Read from the repository's OWN configuration only — the environment's
+    hardening is this module's and is not what is being inspected.
+    """
+    import fnmatch
+
+    global _INSPECTING_CONFIG
+    if _INSPECTING_CONFIG:
+        return []
+    _INSPECTING_CONFIG = True
+    try:
+        return _program_valued_config(repository, fnmatch, timeout)
+    finally:
+        _INSPECTING_CONFIG = False
+
+
+def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
+    try:
+        listing = _run(repository, "config", "--local", "--list", "--name-only", "-z",
+                       timeout=timeout)
+    except GitRefusal as refusal:
+        # A DEADLINE THE CALLER SET IS THE CALLER'S REFUSAL. This inspection runs
+        # inside the caller's timeout, so an impatient caller expired here first
+        # and got a configuration finding where it had asked for, and was owed,
+        # a timeout. The message is this module's own literal, so matching it is
+        # an internal contract rather than a foreign string.
+        if "timed out" in str(refusal):
+            raise
+        # Two remaining failures wear the same exception, and only one of them
+        # is this check's business.
+        #
+        # *The path is not a repository at all* belongs to the command the
+        # caller actually asked for: it produces a `GitRefusal` naming the real
+        # problem, and hijacking it here reported a missing directory as a
+        # configuration finding.
+        #
+        # Asked of the FILESYSTEM and not of Git, because the discriminator has
+        # to work in exactly the case where Git is what is failing. A repository
+        # whose `include.path` points at a shell breaks every config read, and a
+        # git-based discriminator broke with it and returned "not a repository"
+        # — which is the fail-open this branch exists to prevent, restored by
+        # the fix for it.
+        here = Path(repository)
+        looks_like_one = (here / ".git").exists() or (
+            (here / "HEAD").is_file() and (here / "objects").is_dir())
+        if not looks_like_one:
+            return []
+        # *The repository is fine and its configuration is not* is this check's
+        # business, and it FAILS CLOSED — the first version did not, which is
+        # how it was caught. `git config include.path /bin/sh` makes every
+        # subsequent config read fail, so a repository could disable the check
+        # that inspects it by breaking itself, and seven unrecognised
+        # program-valued keys came back as none. A check that cannot read its
+        # subject has not cleared it.
+        raise IntegrityError(
+            "this repository's own configuration could not be read, so whether it names a "
+            "program for Git to run cannot be established. An unreadable configuration is not "
+            "an empty one",
+            repository=str(repository), refusal=str(refusal)[:160],
+        ) from refusal
+    found = []
+    for key in nul_paths(listing.encode() if isinstance(listing, str) else listing):
+        lowered = key.strip().lower()
+        if not lowered:
+            continue
+        if not any(fnmatch.fnmatchcase(lowered, p) for p in PROGRAM_VALUED_CONFIG):
+            continue
+        if any(fnmatch.fnmatchcase(lowered, p) for p in CLOSED_PROGRAM_KEYS):
+            continue
+        found.append(lowered)
+    return sorted(set(found))
 
 
 def annotated_tags(

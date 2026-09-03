@@ -165,5 +165,9 @@ discarded finding is evidence about the oracle.
 | RP3-60 | a verified bundle was read as corroborating a rewrite mapping | a bundle proves preservation and says nothing about identity |
 | RP3-61 | the close gate's tree check was optional | an optional check is a check nobody performs, and the empty problem list is the pass |
 | RP3-62 | a delegation test passed with its subject deleted | it searched source text for a name instead of watching the call |
+| RP3-63 | five execution routes in four rounds, each closed where the last repair could not see | the check was an enumeration of routes and the population was open-ended |
+| RP3-64 | the general check failed open when a repository broke its own configuration | the discriminator needed Git, and Git was what the repository had broken |
+| RP3-65 | the general check re-entered itself and never finished | a guard on the verb was a guard on one of the paths the function takes |
+| RP3-66 | the general check hijacked a timeout and a parse error belonging to the caller | a precondition answering a question the caller did not ask |
 
 *(appended as each capability reproduces its own)*

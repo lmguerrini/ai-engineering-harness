@@ -705,3 +705,105 @@ def test_a_remote_the_repository_configured_cannot_run_its_own_program(tmp_path)
     assert answer.answered
     assert not (reader / "WRITTEN_BY_THE_REMOTE").exists(), \
         "the repository being read chose a program and it ran"
+
+
+# --- the shape of the key, rather than the routes anybody has thought of -------------
+
+
+def _repo_setting(tmp_path, key, value="/bin/sh"):
+    repo = tmp_path / key.replace(".", "-").replace("*", "x")
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", key, value)
+    return repo
+
+
+@pytest.mark.parametrize("key", [
+    "alias.x", "merge.m.driver", "submodule.a.update", "protocol.ext.command",
+    "remote.o.vcs", "trailer.t.command", "interactive.difffilter", "guitool.g.cmd",
+])
+def test_a_program_valued_key_with_no_named_closure_refuses(tmp_path, key):
+    """Five separate routes by which a repository being read chose a program to
+    run were found in four consecutive audit rounds — `diff.external`, an
+    attribute-selected driver, a filter chain, `core.gitProxy`, and
+    `remote.<name>.uploadpack`. Each was closed where the previous repair could
+    not see it, and each time the next reader found another.
+
+    **Closing routes one at a time was losing**, so the check moved to the shape
+    of the key. None of the keys below has a route anybody here has traced; all
+    of them refuse."""
+    repo = _repo_setting(tmp_path, key)
+    assert gitread.program_valued_config(repo) == [key.lower()]
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+
+
+@pytest.mark.parametrize("key", ["core.pager", "core.editor", "diff.external",
+                                 "filter.f.smudge", "credential.helper"])
+def test_a_program_valued_key_this_module_actually_closes_is_allowed(tmp_path, key):
+    """The bound, and it matters more than the test above. Refusing to read a
+    repository because its developer set a pager is hardening in name and
+    obstruction in fact — the closure is what protects, not the absence of the
+    key."""
+    repo = _repo_setting(tmp_path, key)
+    assert gitread.program_valued_config(repo) == []
+    assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
+
+
+def test_a_repository_cannot_hide_a_key_by_breaking_its_own_configuration(tmp_path):
+    """The check FAILS CLOSED, and the first version did not.
+
+    `git config include.path /bin/sh` makes every subsequent config read fail,
+    so a repository could disable the check that inspects it by breaking itself
+    — seven unrecognised program-valued keys came back as none. The
+    discriminator that tells "not a repository" from "unreadable config" asks
+    the FILESYSTEM, because it has to work in exactly the case where Git is what
+    is failing.
+    """
+    repo = _repo_setting(tmp_path, "include.path")
+    with pytest.raises(_IntegrityError):
+        gitread.program_valued_config(repo)
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+
+
+def test_a_path_that_is_not_a_repository_is_still_the_callers_own_refusal(tmp_path):
+    """A missing directory is not a configuration finding, and reporting it as
+    one hid what was actually wrong."""
+    assert gitread.program_valued_config(tmp_path / "nowhere") == []
+
+
+def test_a_configuration_read_is_exempt_because_reading_config_runs_nothing(tmp_path):
+    """A caller asking about a broken config is entitled to the refusal that
+    names the real problem. Hijacking it turned *your config does not parse*
+    into a security finding about a repository nobody could read."""
+    repo = _repo_setting(tmp_path, "include.path")
+    with pytest.raises(GitRefusal):
+        gitread.config_with_origin(str(repo))
+
+
+def test_the_inspection_does_not_re_enter_itself(tmp_path):
+    """The inspection runs Git, and every Git run is inspected. The first guard
+    was on the verb `config` — and the function's own fallback probe was a
+    DIFFERENT verb, so it re-entered: two test modules that take ten seconds ran
+    for over six minutes without finishing."""
+    repo = _repo_setting(tmp_path, "merge.m.driver")
+    import time
+
+    started = time.monotonic()
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    assert time.monotonic() - started < 10, "the inspection is recursing"
+
+
+def test_a_deadline_the_caller_set_is_the_callers_own_refusal(tmp_path):
+    """The inspection runs inside the caller's timeout, so an impatient caller
+    expired inside it and got a configuration finding where it had asked for,
+    and was owed, a timeout."""
+    repo = _repo_setting(tmp_path, "merge.m.driver")
+    # Through `probe`, which converts a refusal into an answer-shaped result:
+    # the point is that it reports COULD NOT ASK, and specifically that the
+    # reason is the deadline rather than this check's opinion of the config.
+    answer = gitread.probe(repo, "status", timeout=1e-9, negative_statuses=())
+    assert not answer.answered
+    assert "timed out" in answer.cause

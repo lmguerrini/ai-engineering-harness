@@ -1773,3 +1773,62 @@ the test still passed. It now runs the projection with the owners' functions
 wrapped and asserts they were called. Sixth appearance in this release of a
 check that passed for a reason it did not state — and the fourth found by
 someone other than its author.
+
+## Closing the class instead of the route
+
+Five separate routes by which **a repository being read chose a program to run**
+were found in four consecutive audit rounds:
+
+| Round | Route | Closed by |
+|---|---|---|
+| 4 | `diff.external` | `--no-ext-diff` |
+| 4 | an attribute-selected `diff.<n>.command` | the same flag, which is why it is a flag and not a config key |
+| 5 | a `.gitattributes` filter chain via `cat-file --filters` | refusing the option |
+| 6 | `core.gitProxy` | the `git://` protocol is no longer enablable |
+| 7 | `remote.<name>.uploadpack` | `--upload-pack` overrides the config |
+
+Each was closed where the previous repair could not see it, and each time the
+next reader found another. **Closing routes one at a time was losing**, and the
+right response to five instances of one class is not a sixth patch.
+
+So the check moved from the routes to the **shape of the key**. A repository's
+own local configuration is read before anything runs, and a key whose value Git
+would execute refuses the read — *unless this module has a NAMED CLOSURE for
+that key*, listed with the mechanism. The asymmetry is the design: a key with a
+closure has been thought about, and a key without one has not. The sixth route
+will arrive as a key nobody here has heard of, and it is refused by a check
+written before anyone found it.
+
+The bound matters as much as the check. `core.pager`, `core.editor`,
+`diff.external`, a filter and `credential.helper` are all program-valued and all
+allowed, because each has a closure. **Refusing to read a repository because its
+developer set a pager is hardening in name and obstruction in fact** — and a
+tool that obstructs gets routed around, which is worse than one that never
+hardened.
+
+### Three defects in the defence, found by writing it
+
+The general check was wrong three times before it was right, and every one is a
+recognisable member of a class this release has already named.
+
+**It failed open.** `git config include.path /bin/sh` makes every subsequent
+config read fail — so a repository could disable the check that inspects it by
+breaking itself, and seven unrecognised program-valued keys came back as none.
+The discriminator that tells *not a repository* from *unreadable config* now
+asks the filesystem, because it has to work in exactly the case where Git is
+what is failing.
+
+**It re-entered itself.** The inspection runs Git and every Git run is
+inspected; the first guard was on the verb `config`, and the function's own
+fallback probe was a different verb. Two test modules that take ten seconds ran
+for over six minutes without finishing. *A guard on the verb was a guard on one
+of the paths the function takes.*
+
+**It hijacked refusals belonging to the caller.** A caller asking about a broken
+config got a security finding instead of *your config does not parse*, and a
+caller with an expired deadline got one instead of a timeout. Both are the same
+mistake: a precondition check that answers a question the caller did not ask.
+
+The cost is about 17 seconds on a 110-second suite — two extra Git processes per
+repository per invocation. Recorded because it is real, and because a check
+whose cost nobody measured is a check somebody eventually disables.

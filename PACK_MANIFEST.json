@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "892d5768b1ed2b6edd1ceafa5f072ec770e62d8a4dc41348b432eee5b2b88d86",
+  "tree_digest_sha256": "7a4db7acd1d03c34bc8904a2cc5f458647ffc40392c4a71895327e9e6ecaaf02",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 1180
+    "passed": 1198
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -49,7 +49,8 @@
     "THE FAILURE-MODE CLOSURE MATRIX IS THE RELEASE'S OWN CLAIM AND IS NOT INDEPENDENTLY AUDITED AS A WHOLE. Each row cites a test or a rehearsal that can be run, and the auditors of round 1 exercised many of them individually, but no auditor has been asked to falsify the matrix as a document. Its five open residues are stated in it rather than in a summary.",
     "THE PACK'S OWN COMPLETE HISTORY HAS 218 UNADJUDICATED OCCURRENCES. The capability that reads it ships in this release and had never been run over this history before. No personal path or real credential is among them — verified directly, and this evolution's own commits introduce none — but individual adjudication has not been performed, and it is the input to a publication decision rather than a substitute for one. Remediating any historical object is a rewrite: HITL rows 2 and 4.",
     "A PATH-BASED WAIT CANNOT NAME A PRODUCER. An unrelated writer satisfies a PATH_EXISTS or EXIT_FILE wait, and no property of a bare filesystem path distinguishes who wrote it. The observation is strengthened as far as a filesystem permits — a regular file that does not predate its own wait — and OUTPUT_ROOT, whose owner marker is now checked on read as well as on write, is the kind that establishes a producer. A test pins both halves.",
-    "THE PROJECTION IS A READER AND HAS NEVER BEEN WATCHED DURING A REAL MULTI-HOUR RUN. Its fields are exercised against fixtures and against this session's own live record, where it correctly reported a stale record and an undeclared audit subject. Whether the information architecture is the right one for someone watching a Consumer-A run for six hours is not established, and cannot be until someone does."
+    "THE PROJECTION IS A READER AND HAS NEVER BEEN WATCHED DURING A REAL MULTI-HOUR RUN. Its fields are exercised against fixtures and against this session's own live record, where it correctly reported a stale record and an undeclared audit subject. Whether the information architecture is the right one for someone watching a Consumer-A run for six hours is not established, and cannot be until someone does.",
+    "THE PROGRAM-VALUED CONFIG LIST IS NOT COMPLETE AND CANNOT BE. It enumerates the shapes of Git config keys whose value is executed; Git may add another, and a key that matches no shape is not inspected. What the design buys is that an unrecognised key MATCHING a shape refuses rather than waiting to be found — the population of routes is open-ended and the population of shapes is smaller and slower-moving, not closed. It also costs two extra Git processes per repository per invocation, about 17 seconds on a 110-second suite."
   ],
   "deferred": {
     "RP2.3 DEFER_WITH_TRIGGER": "see docs/RP2.3-CAPABILITY-MAP.md for each item and the observation that reopens it: the full routing-evidence schema; the clean-clone reproducibility gate; a commit-subject length ceiling; publication readiness beyond the profile declaration; a write-ceiling runtime for delegation scope.",
