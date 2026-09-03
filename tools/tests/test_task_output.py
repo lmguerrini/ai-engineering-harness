@@ -388,3 +388,41 @@ def test_an_absent_or_unreadable_owner_marker_is_not_permission(tmp_path, break_
     assert task_output.classify(beta).state == task_output.RecoveryState.UNKNOWN
     # And not even for the task that really did own it: nothing on disk says so.
     assert task_output.classify(alpha).state == task_output.RecoveryState.UNKNOWN
+
+
+def test_a_symlinked_owner_marker_is_not_this_roots_marker(tmp_path):
+    """`is_file()` follows a symlink, so a link pointing at a marker elsewhere
+    that named `beta` let beta read alpha's finished work — the same defect as
+    the two before it, wearing the one shape the previous check could not see."""
+    root = tmp_path / "out"
+    alpha = task_output.OutputContract("alpha", root, 64, expected_chunks=1)
+    task_output.claim_root(alpha)
+    task_output.materialise(alpha, 0, "done")
+    task_output.complete(alpha, 1)
+
+    marker = root / task_output.OWNER_MARKER
+    marker.unlink()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    planted = elsewhere / task_output.OWNER_MARKER
+    planted.write_text(json.dumps({"task_id": "beta"}))
+    marker.symlink_to(planted)
+
+    beta = task_output.OutputContract("beta", root, 64, expected_chunks=1)
+    assert task_output.classify(beta).state == task_output.RecoveryState.UNKNOWN
+
+
+@pytest.mark.parametrize("body", ["null", "[]", '"alpha"', "42", '{"task_id": null}',
+                                  '{"task_id": []}', '{"task_id": "   "}'])
+def test_a_marker_that_is_not_an_object_naming_a_task_is_unreadable(tmp_path, body):
+    """`.get` on whatever JSON happened to be there: `null` and `[]` each raised
+    a bare AttributeError out of a function whose contract is a four-valued
+    state."""
+    root = tmp_path / "out"
+    contract = task_output.OutputContract("alpha", root, 64, expected_chunks=1)
+    task_output.claim_root(contract)
+    task_output.materialise(contract, 0, "done")
+    task_output.complete(contract, 1)
+    (root / task_output.OWNER_MARKER).write_text(body)
+
+    assert task_output.classify(contract).state == task_output.RecoveryState.UNKNOWN

@@ -77,6 +77,11 @@ _NEUTRALISED_CONFIG = {
     "core.hooksPath": "/dev/null",
     "core.attributesFile": "/dev/null",
     "core.fsmonitor": "",
+    "core.alternateRefsCommand": "",
+    "credential.helper": "",
+    # Runs a program to obtain a password. Neutralised for the same reason as
+    # every other key in this table.
+    "core.askPass": "",
     # A nested Git process is a second process, and the parent's command line
     # does not reach it. `diff --submodule=diff` ran the SUBMODULE's own
     # `diff.external` straight through the hardening that protects the parent —
@@ -202,7 +207,28 @@ TRANSPORT_VERBS = frozenset({"ls-remote"})
 #: free-form: `protocol.<anything>.allow` would let a caller re-enable a
 #: transport nobody reviewed by spelling it, which is the widening this exists
 #: to avoid.
-ALLOWABLE_TRANSPORTS = ("ssh", "https", "http", "git", "file")
+#: `git` IS DELIBERATELY ABSENT, and this is a security repair rather than a
+#: tidy-up.
+#:
+#: `core.gitProxy` names a program Git runs to open a `git://` connection, and a
+#: blind reader set it in a scratch repository's own config and had it executed
+#: through `ls-remote` with the transport enabled — the fourth route in this
+#: release by which a repository being READ chose what ran, and the only one
+#: that came through the single exception that exists to let one operation cross
+#: a boundary.
+#:
+#: **It cannot be neutralised from the environment.** `core.gitProxy` is
+#: multi-valued: `GIT_CONFIG_KEY_n` appends to the list rather than replacing
+#: it, `git config --get-all` shows both entries, and Git uses the repository's.
+#: Verified, not assumed — setting it to `none` and to the empty string each
+#: left the program running.
+#:
+#: So the closure is that the protocol is not enablable. `git://` is
+#: unauthenticated and unencrypted, nothing in this pack verifies a remote over
+#: it, and a caller that names it now gets the same refusal as one naming a
+#: protocol that does not exist. Narrowing the exception is the repair; there
+#: was no way to keep the protocol and close the hole.
+ALLOWABLE_TRANSPORTS = ("ssh", "https", "http", "file")
 
 
 def _config_environment(allow_transports: tuple[str, ...] = ()) -> dict[str, str]:
@@ -337,6 +363,7 @@ def _run(
             given=" ".join(str(a) for a in arguments[1:]) or "(no arguments)",
             read_only_forms=", ".join(forms),
         )
+    previous = ""
     for argument in arguments[1:]:
         # NOT named `text`: that is this function's own parameter deciding
         # whether the read is decoded, and shadowing it turned every binary read
@@ -349,13 +376,19 @@ def _run(
                 "this option makes an otherwise read-only command write to the filesystem",
                 verb=verb, option=option_text,
             )
-        if any(option_text == form or option_text.startswith(form + "=")
-               for form in CODE_ENABLING_OPTIONS):
+        # Both spellings. Git accepts `--submodule=diff` and `--submodule diff`,
+        # and the first version of this check knew only the first — named by a
+        # blind reader as its next probe before its own provider cut it off.
+        # `previous` carries the option this argument might be the value of.
+        if (any(option_text == form or option_text.startswith(form + "=")
+                for form in CODE_ENABLING_OPTIONS)
+                or f"{previous}={option_text}" in CODE_ENABLING_OPTIONS):
             raise IntegrityError(
                 "this option lets the repository being read choose a program to run, and a "
                 "read-only interface that executes the subject's code is not read-only",
                 verb=verb, option=option_text,
             )
+        previous = option_text
     if verb == "bundle":
         subcommand = arguments[1] if len(arguments) > 1 else ""
         if subcommand not in BUNDLE_SUBCOMMANDS:

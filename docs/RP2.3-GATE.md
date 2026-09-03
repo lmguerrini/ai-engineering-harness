@@ -1537,3 +1537,61 @@ so far: three clean cross-vendor runs since the stdin cause was found.
 **SemVer stays with the founder.** A defect that can only be closed
 incompatibly is implemented, recorded as MAJOR-shaped under D11/D24, and stopped
 at a scoped HITL rather than renumbered.
+
+## Round 6 — the reading its own provider stopped, and what was recovered from it
+
+The sixth blind cross-vendor delta re-audit **was terminated mid-run by the
+provider's content filter** and wrote a zero-byte report. Its stderr held 342KB
+of durable partial output, and five real findings were recovered from it before
+anything was retried — which is the recovery contract this release ships,
+applied to the release's own audit.
+
+**Four reproduced from the log, and one was the probe it announced in the last
+sentence it wrote.**
+
+### `core.gitProxy`, and the first repair in this release that could not harden the key
+
+A program named in a scratch repository's own config, executed through
+`ls-remote` with a transport enabled. **The fourth route in this release by
+which a repository being read chose what ran — and the only one that came
+through the single exception that exists to let one operation cross a
+boundary.**
+
+It cannot be neutralised from the environment. `core.gitProxy` is multi-valued:
+`GIT_CONFIG_KEY_n` appends to the list rather than replacing it, `git config
+--get-all` shows both entries, and Git uses the repository's. Setting it to
+`none` and to the empty string were each tried and each left the program
+running. **Verified, not reasoned about** — the reasoning would have been wrong
+and the first patch written for this finding was exactly that wrong patch.
+
+So the closure is that `git://` is no longer enablable. It is unauthenticated
+and unencrypted, nothing here verifies a remote over it, and `core.gitProxy`
+applies to no other protocol. Narrowing the exception is the repair; there was
+no version of this that kept the protocol and closed the hole. A test asserts
+the remaining four transports still work, because a repair that closed all of
+them would pass the first test and break the postcondition the exception exists
+for.
+
+### `--submodule diff`, written with a space
+
+Git accepts both spellings and the refusal knew one. This was the auditor's
+announced next probe, written in the last sentence before it was cut off.
+
+### A symlinked owner marker
+
+`is_file()` follows a link, so a marker pointing elsewhere and naming `beta` let
+beta read alpha's finished work. **Third appearance of one defect** — the owner
+check has now been wrong when the marker was unread, when it was absent, and
+when it was a link. Each repair closed the shapes visible from where it stood.
+
+### And a marker holding `null` or `[]`
+
+`.get` on whatever JSON happened to be there, raising a bare `AttributeError`
+out of a function whose contract is a four-valued state.
+
+### The routing fact
+
+The termination was the provider's content filter, not a capacity limit or a
+hang, and it is recorded as an `environmental_failure` row. It charges no
+budget. **Row 12 was not reached**: the run produced recoverable findings, and
+the same-family fallback the founder authorised was not needed.

@@ -425,7 +425,11 @@ def classify(contract: OutputContract) -> RecoveryReport:
     # disk that a person resolves, and `resume_plan` already refuses to act on
     # UNKNOWN, so this cannot become a retry.
     marker = root / OWNER_MARKER
-    if not marker.is_file():
+    # A SYMLINK IS NOT THIS ROOT'S MARKER. `is_file()` follows one, so a link
+    # pointing at a marker elsewhere that named `beta` let beta read alpha's
+    # finished work — the same defect as before, wearing the one shape the
+    # previous repair's check could not see. Found by a blind reader.
+    if marker.is_symlink() or not marker.is_file():
         # ABSENT IS NOT PERMISSION. The first repair asked the marker only when
         # there was one, so deleting it — or replacing it with a directory —
         # restored the defect exactly, and a blind reader did both. An
@@ -437,7 +441,16 @@ def classify(contract: OutputContract) -> RecoveryReport:
         )
     if True:
         try:
-            recorded = json.loads(marker.read_text(encoding="utf-8")).get("task_id")
+            # `.get` on whatever JSON happens to hold: `null` and `[]` each
+            # raised a bare AttributeError out of a function whose contract is
+            # a four-valued state. A marker is an object with a task id, and
+            # anything else is a marker nobody can read.
+            document = json.loads(marker.read_text(encoding="utf-8"))
+            if not isinstance(document, dict):
+                raise ValueError(f"the marker holds {type(document).__name__}, not an object")
+            recorded = document.get("task_id")
+            if not isinstance(recorded, str) or not recorded.strip():
+                raise ValueError(f"the marker names {recorded!r} as its task")
         except (OSError, ValueError) as exc:
             return RecoveryReport(
                 task_id=contract.task_id, state=RecoveryState.UNKNOWN,

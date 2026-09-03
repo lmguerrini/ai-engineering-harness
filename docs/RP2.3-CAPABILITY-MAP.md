@@ -149,5 +149,11 @@ discarded finding is evidence about the oracle.
 | RP3-44 | a non-finite stall horizon produced STALLED and RUNNING | the signals were guarded a round earlier and the figure they are compared against was not |
 | RP3-45 | a capacity reading with no `observed_at` gated a dispatch | the class docstring said the timestamp mattered as much as the figure |
 | RP3-46 | two digest tests compared a pure function with itself | replaced by the content-addressing property they were standing in for |
+| RP3-47 | `cat-file --filters` ran the repository's own filter chain | the second hardening closed the routes visible from where it stood |
+| RP3-48 | `diff --submodule=diff` ran the submodule's configured program | a nested Git process never sees the parent's command line |
+| RP3-49 | `core.gitProxy` ran a program through the one enabled transport | the key is multi-valued, so environment config appends to it and cannot replace it |
+| RP3-50 | a symlinked owner marker let one task read another's finished work | `is_file()` follows a link, which is the one shape the previous two owner repairs could not see |
+| RP3-51 | an owner marker holding `null` raised an AttributeError | a four-valued contract returned a traceback |
+| RP3-52 | an audit was killed by its provider and wrote a zero-byte report | its stderr held five real findings, recovered before any retry |
 
 *(appended as each capability reproduces its own)*

@@ -612,3 +612,47 @@ def test_a_repository_with_no_commits_has_no_names_rather_than_an_error(tmp_path
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
     assert gitread.every_name_in_history(repo, "HEAD") == []
+
+
+def test_the_git_protocol_cannot_be_enabled_because_its_proxy_cannot_be_disabled(tmp_path):
+    """The fourth execution route, and the only one that came through the single
+    exception that exists to let one operation cross a boundary.
+
+    `core.gitProxy` names a program Git runs to open a `git://` connection. It
+    **cannot be neutralised from the environment** — the key is multi-valued, so
+    `GIT_CONFIG_KEY_n` appends rather than replaces and Git uses the
+    repository's entry. Setting it to `none` and to the empty string were each
+    tried and each left the program running, which is why the repair narrows the
+    exception instead of hardening the key.
+    """
+    repo = tmp_path / "proxied"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    proxy = tmp_path / "proxy"
+    proxy.write_text(f"#!/bin/sh\nprintf executed > {tmp_path / 'PROXY_RAN'}\nexit 1\n")
+    proxy.chmod(0o700)
+    _git(repo, "config", "core.gitProxy", str(proxy))
+
+    assert "git" not in gitread.ALLOWABLE_TRANSPORTS
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "ls-remote", "git://example.invalid/nope",
+                      allow_transports=("git",))
+    assert not (tmp_path / "PROXY_RAN").exists()
+
+
+def test_narrowing_the_exception_did_not_close_the_transports_it_exists_for():
+    """The bound. The exception exists because one postcondition has to read a
+    real remote, and a repair that closed every protocol would pass the test
+    above and break that."""
+    assert set(gitread.ALLOWABLE_TRANSPORTS) == {"ssh", "https", "http", "file"}
+
+
+def test_an_option_and_its_value_written_apart_are_still_that_option(tmp_path):
+    """Git accepts `--submodule=diff` and `--submodule diff`. The first version
+    of the refusal knew only the first spelling — named by a blind reader as its
+    next probe, in the last thing it wrote before its own provider stopped it."""
+    repo, _ = _repo_that_runs_a_program(tmp_path, "diff.external")
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "diff", "--submodule", "diff", "HEAD", negative_statuses=())
+    # And the word `diff` as an ordinary argument is still an ordinary argument.
+    assert gitread.probe(repo, "diff", "--stat", "HEAD", negative_statuses=()).ok
