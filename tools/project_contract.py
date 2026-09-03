@@ -51,10 +51,16 @@ __all__ = [
     "ProjectContract",
     "parse_yaml_subset",
     "DEFAULT_TERMS_RELATIVE",
+    "PUBLICATION_INTENTS",
 ]
 
 #: Where the pack's own default vocabulary lives, relative to the pack root.
 DEFAULT_TERMS_RELATIVE = "policy/private-terms.default.json"
+
+#: What a project says it is for. `internal` is a first-class answer, not an
+#: omission: a project that will never be published should not be walked through
+#: publication ceremony because Core can perform it.
+PUBLICATION_INTENTS = ("internal", "public")
 
 _COMMENT = re.compile(r"(?:^|\s)#.*$")
 _KEY = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_.\-]*)\s*:(?:\s+(?P<value>.*))?$")
@@ -615,6 +621,17 @@ class ProjectContract:
     #: no semantic authority to consult. Parsed here so a malformed declaration
     #: fails when every other block does, rather than at first use.
     project_context: object | None = None
+    #: `internal` or `public`. Decides which PRESENTATION obligations apply and
+    #: nothing else: the universal public-safety invariants hold either way,
+    #: because private is an access control rather than a property of the
+    #: content and access controls change. `None` means the project did not say.
+    publication_intent: str | None = None
+    #: Per validation profile, the environment it is claimed to run in:
+    #: `public_clone`, `developer_machine`, or a name the project defines. A
+    #: profile measured only where its larger sibling is already satisfied names
+    #: the smaller of two constraints, which is how a limitation came to be
+    #: recorded against the wrong environment.
+    reproducible_by: tuple[tuple[str, str], ...] = ()
     #: Where the default vocabulary was actually read from, and whether that was
     #: the canonical location. A checker reading a stale copy of its own rule
     #: manufactures findings as readily as a weak one misses them, and the
@@ -650,6 +667,28 @@ class ProjectContract:
         publication = raw.get("publication") or {}
         if not isinstance(publication, dict):
             raise ContractError("`publication:` must be a mapping")
+
+        intent = publication.get("intent")
+        if intent is not None and intent not in PUBLICATION_INTENTS:
+            raise ContractError(
+                f"`publication.intent` is {intent!r}; it is one of {', '.join(PUBLICATION_INTENTS)}. "
+                "An intent nothing recognises would decide which obligations apply by accident"
+            )
+        profiles = raw.get("validation_profiles") or {}
+        if not isinstance(profiles, dict):
+            raise ContractError("`validation_profiles:` must be a mapping")
+        reproducible: list[tuple[str, str]] = []
+        for name, block in profiles.items():
+            if not isinstance(block, dict):
+                continue
+            environment = block.get("reproducible_by")
+            if environment is None:
+                continue
+            if not isinstance(environment, str) or not environment.strip():
+                raise ContractError(
+                    f"`validation_profiles.{name}.reproducible_by` must name an environment"
+                )
+            reproducible.append((str(name), environment.strip()))
 
         declared_default = terms_block.get("default_set")
         defaults, default_terms_source = _load_default_terms(declared_default, contract_path, pack_root)
@@ -705,6 +744,8 @@ class ProjectContract:
             adapters=_load_adapters(raw),
             project_context=_load_project_context(raw),
             default_terms_source=default_terms_source,
+            publication_intent=intent,
+            reproducible_by=tuple(reproducible),
         )
 
     def repository(self, override: str | None = None) -> str:

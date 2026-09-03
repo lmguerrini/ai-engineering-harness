@@ -9,6 +9,27 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Complete-history public safety, and a profile that keeps internal work out of ceremony
+
+- **`tools/publication_history.py`** asks the question no shipped invocation
+  asked: is the **complete reachable history** public-safe at the **strict**
+  tier. Every ref, not the default branch. A term committed and then deleted
+  survives in a blob every tip-shaped scan misses.
+- **Detection ships with adjudication or not at all.** A remediation list is
+  refused while any occurrence is unadjudicated, and an occurrence explicitly
+  marked undecided blocks exactly as an absent one does.
+- **Adjudication is per occurrence and the per-term form is unexpressible.** A
+  classification without a reason is refused, and `by_finding` makes a mixed
+  verdict legible.
+- **The report says it is a finding list, not a remediation list**, and names
+  rows 2 and 4. Nothing here remediates anything.
+- **`publication.intent`**: `internal` is a first-class answer and an internal
+  project is not walked through publication ceremony. The universal safety
+  invariants are not profile-scoped, and an undeclared intent cannot switch them
+  off.
+- **`validation_profiles.<name>.reproducible_by`** declares the environment a
+  profile is claimed to run in.
+
 ### The pack can check its own history with the rules it publishes
 
 - **`commit_gate.py --default-terms <pack_root>`** applies the pack's own

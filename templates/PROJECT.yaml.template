@@ -244,6 +244,13 @@ validation_profiles:
   focused:
     command:
     typical_wall_clock_seconds:
+    # Where this profile is claimed to run. `public_clone` means a fresh clone
+    # in a fresh directory with every private root unset, on a machine that has
+    # never built the project — not the development tree with one variable
+    # changed, which is the defect rather than the test. A profile measured only
+    # inside an environment that already satisfies it names the smaller of two
+    # constraints.
+    #   reproducible_by: developer_machine
   integration:
     command:
     typical_wall_clock_seconds:
@@ -301,6 +308,19 @@ publication:
   # history is not a publishable repository: `refs/notes/*` is invisible to
   # git log, status, ls-files, diff and show.
   publishable_refs: ["refs/heads/*", "refs/tags/*"]
+
+  # `internal` or `public`. This decides which PRESENTATION obligations apply
+  # and NOTHING ELSE. Every universal public-safety invariant holds either way,
+  # because private is an access control rather than a property of the content:
+  # one click makes a repository public, that click has no gate in front of it,
+  # and by then the history is already on somebody else's infrastructure.
+  #
+  # Declaring `internal` is a first-class answer. A project that will never be
+  # published should not be walked through publication ceremony because the pack
+  # is capable of performing it. Omitting the key imposes no presentation
+  # obligation and removes no safety one.
+  #
+  #   intent: internal
 
   # THE PUSH FORM IS NOT PROJECT-CONFIGURABLE. It is fixed by the pack, in
   # `tools/publication_gate.py` as `SUPPORTED_PUSH_FORM`, and stated once:

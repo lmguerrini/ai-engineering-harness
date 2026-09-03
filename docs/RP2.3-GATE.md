@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1546
+    in-release (skills/core/*.md + policy/*.md)   1562
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2569   28.4% over the ~2,000
+    total against a ~2,000 target                 2585   29.2% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -645,3 +645,59 @@ Two things follow, and neither is "be more careful":
     with its digest. **The pack can now check its own history with the rules it
     publishes**, which it could not before, and the ad-hoc script is deleted
     rather than corrected.
+
+### C10 — Complete-history public safety and the publication profile
+
+Two scans shipped and both were correct. The staged one is strict over what is
+about to be committed; the range one is tiered over what a push would send.
+**Neither combined the strict tier with the complete reachable history**, and
+the gap is not academic: a term committed and then deleted survives in a blob
+that the working tree, the index, `ls-files` and every tip-shaped scan all miss.
+It was measured by driving the scanner directly, because no command existed to
+run it.
+
+**Both halves ship or neither does.** The measured scan produced 147 findings,
+of which **four were genuine and one hundred and six were ordinary English** —
+and among the rest were `.gitignore` entries whose removal would make the
+repository less safe. Emitting that count as a remediation list manufactures
+pressure to rewrite history in order to remove nothing, and a rewrite is the
+irreversible operation this whole area exists to keep behind a person. So a
+remediation list is **refused while any occurrence is unadjudicated**, and an
+occurrence explicitly marked undecided blocks exactly as an absent one does:
+somebody looked at the list, and looking is not deciding.
+
+**Adjudication is per occurrence, and the per-term form is unexpressible rather
+than discouraged.** A word private in one file is ordinary English in the next,
+which is the common case; one project applied a class per term and had to
+correct it. An adjudication is keyed by the occurrence triple, so a per-term
+verdict cannot be written down, and `by_finding` makes the split legible so a
+reader can see that a finding was judged nine times rather than once. A
+classification without a reason is refused: a count without reasons is what this
+stage exists to replace.
+
+**The report says it is a finding list and not a remediation list**, in its own
+output, and names rows 2 and 4. The scan enumerates every ref rather than the
+default branch, because a blob reachable only from a tag or a stale branch is as
+published as any other once the repository is.
+
+**Decision A, implemented as a split rather than as a preference.** Universal
+public-safety invariants hold for every project — private is an access control
+rather than a property of the content, one click makes a repository public, and
+that click has no gate in front of it. Reproducibility and presentation are
+**profile-scoped**: a project declares `publication.intent`, `internal` is a
+first-class answer, and an internal project is not walked through publication
+ceremony because the pack is capable of performing it. The asymmetry is
+asserted in both directions, and the direction that matters is that an
+**undeclared** intent imposes no presentation obligation and removes no safety
+one.
+
+Each validation profile may declare the environment it is `reproducible_by` —
+`public_clone` meaning a fresh clone in a fresh directory with every private
+root unset, not the development tree with one variable changed, which is the
+defect rather than the test. The field ships; the clean-clone gate that would
+run it needs a runner the project does not control and is deferred with its
+trigger.
+
+**Nine mutants, nine killed** after one repair: an occurrence explicitly
+recorded as undecided was indistinguishable from an absent one in the oracle,
+though not in the code.

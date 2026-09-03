@@ -124,5 +124,6 @@ discarded finding is evidence about the oracle.
 | RP3-20 | a closure record names a commit and nothing keeps it reachable | a branch rebuild orphans a cited commit; the citation resolves for as long as a reflog keeps it and then stops, with no event to notice |
 | RP3-21 | a reachability check shipped without a revision map fails closed across a whole corpus after the first rewrite | every commit-shaped token stops resolving at once, and the old commit remains resolvable-but-unreachable so a map consulted only on unresolvable tokens misses all of them |
 | RP3-22 | the pack cannot check its own commit messages with the vocabulary it publishes | this repository has no project contract, so `--project` has nothing to read and the shipped gate can only check structure — which is why a coordinator wrote a substitute instrument, and the substitute manufactured a finding on `resolves` |
+| RP3-23 | the strict tier and the complete reachable history are never combined by any shipped invocation | a term committed and then deleted survives in a blob that the staged scan, the working tree and `ls-files` all miss, while the range scan that would see it runs at the tier that does not apply the rule |
 
 *(appended as each capability reproduces its own)*

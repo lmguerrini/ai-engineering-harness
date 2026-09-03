@@ -120,6 +120,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── resource_observation.py documented resource truth as routing evidence
     │   ├── evidence_index.py       certification bound to one exact candidate
     │   ├── outgoing_scan.py        leak scan over history, staged content and refs
+    │   ├── publication_history.py  the complete reachable history, strictly, and who adjudicates it
     │   ├── commit_gate.py          one message, or a whole range
     │   ├── project_contract.py     one contract, read by every gate that enforces it
     │   ├── workspace_report.py     classifies every artifact; unknown is blocking

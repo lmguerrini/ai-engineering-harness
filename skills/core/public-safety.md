@@ -65,6 +65,22 @@ bytes**: a capability whose mutation boundary includes an exempt path cannot
 close without an evidence entry saying what actually landed there. Exemptions
 are declared before the files exist and their scope grows silently otherwise.
 
+**Before a first remote, the question is the COMPLETE reachable history at the
+STRICT tier** (`tools/publication_history.py`), and it is a question no shipped
+invocation used to ask: the staged scan is strict over what is about to be
+committed, the range scan is tiered over what a push would send, and neither
+combines the two. A project can be public-safe by construction, pass every gate,
+and still reach its first push with private material in a blob no tree carries.
+**Detection alone makes matters worse** — 147 findings, 4 genuine, 106 ordinary
+English, and `.gitignore` entries whose removal would make the repository less
+safe — so a remediation list is refused while any occurrence is unadjudicated,
+and adjudication is per occurrence, never per term.
+
+Reproducibility and presentation are **profile-scoped**: a project declares
+`publication.intent`, and an internal one is not walked through publication
+ceremony. The safety invariants above are not profile-scoped and an undeclared
+intent cannot switch them off.
+
 **A blob finding is repaired by rebuilding the branch, not by amending.**
 Amending moves only the tip, so when the same term is also in an earlier commit
 the finding count drops and the range stays dirty — and a smaller number reads
