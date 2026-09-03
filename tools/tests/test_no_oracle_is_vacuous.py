@@ -35,6 +35,13 @@ def _functions(path):
 
 ALL = [pair for path in _modules() for pair in _functions(path)]
 
+#: Parametrised PER MODULE rather than per test. Per test was the first version
+#: and it added some two thousand cases to a suite of fourteen hundred — a
+#: sweep that more than doubles the number the release states about itself is
+#: misrepresenting what the suite is, and the count is a figure this pack
+#: publishes. A module's failure names the function inside it, so nothing is
+#: lost but the arithmetic.
+
 
 def test_the_sweep_actually_reads_the_suite():
     """Its own bound. Every assertion below passes trivially over an empty list,
@@ -43,25 +50,27 @@ def test_the_sweep_actually_reads_the_suite():
     assert len(_modules()) > 20
 
 
-@pytest.mark.parametrize("path,node", ALL, ids=lambda x: getattr(x, "name", ""))
-def test_no_test_compares_a_thing_with_itself(path, node):
+@pytest.mark.parametrize("module", _modules(), ids=lambda p: p.name)
+def test_no_test_compares_a_thing_with_itself(module):
     """`f(x) == f(x)` calls a pure function twice and tests the language. Three
     instances: two digest tautologies found by an independent reader, and one in
     the routing view found by this sweep."""
-    for check in (n for n in ast.walk(node) if isinstance(n, ast.Assert)):
-        if isinstance(check.test, ast.Compare) and len(check.test.comparators) == 1:
-            left = ast.dump(check.test.left)
-            right = ast.dump(check.test.comparators[0])
-            assert left != right, (
-                f"{path.name}::{node.name} compares an expression with itself at line "
-                f"{check.lineno}")
+    for path, node in _functions(module):
+        for check in (n for n in ast.walk(node) if isinstance(n, ast.Assert)):
+            if isinstance(check.test, ast.Compare) and len(check.test.comparators) == 1:
+                left = ast.dump(check.test.left)
+                right = ast.dump(check.test.comparators[0])
+                assert left != right, (
+                    f"{path.name}::{node.name} compares an expression with itself at line "
+                    f"{check.lineno}")
 
 
-@pytest.mark.parametrize("path,node", ALL, ids=lambda x: getattr(x, "name", ""))
-def test_no_test_asserts_a_constant(path, node):
-    for check in (n for n in ast.walk(node) if isinstance(n, ast.Assert)):
-        assert not (isinstance(check.test, ast.Constant) and check.test.value), (
-            f"{path.name}::{node.name} asserts a literal at line {check.lineno}")
+@pytest.mark.parametrize("module", _modules(), ids=lambda p: p.name)
+def test_no_test_asserts_a_constant(module):
+    for path, node in _functions(module):
+        for check in (n for n in ast.walk(node) if isinstance(n, ast.Assert)):
+            assert not (isinstance(check.test, ast.Constant) and check.test.value), (
+                f"{path.name}::{node.name} asserts a literal at line {check.lineno}")
 
 
 def test_every_parametrised_test_collected_at_least_one_case():
