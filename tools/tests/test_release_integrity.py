@@ -34,6 +34,39 @@ import pack_pin
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _release_doc_prefix() -> str:
+    """`RP2.3` for a release whose manifest names `docs/RP2.3-GATE.md`.
+
+    Derived, never typed. Three guards below scoped themselves to a literal
+    `docs/RP2.2-*.md`, and the moment a decision was appended for the next
+    release one of them demanded that a **superseded release's own gate record**
+    be edited to satisfy a rule invented after it was written — the one move
+    this pack's policy forbids outright. Its sibling guard already exempted
+    prior releases for exactly that reason, so the two disagreed about whose
+    documents they were checking.
+
+    The manifest already declares the gate record, and a checker that read the
+    declaration could not have disagreed with it. So this reads it.
+    """
+    import json
+
+    gate = json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))["gate_record"]
+    stem = Path(gate).stem
+    assert "-" in stem, f"the gate record {gate!r} does not carry a release prefix"
+    return stem.split("-", 1)[0]
+
+
+def _owned_release_docs() -> tuple[str, ...]:
+    """The `docs/` glob for the release under construction, and only it."""
+    return (f"docs/{_release_doc_prefix()}-*.md",)
+
+
+def _current_gate_record() -> Path:
+    import json
+
+    return ROOT / json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))["gate_record"]
+
+
 @pytest.fixture(scope="module")
 def manifest():
     return json.loads((ROOT / pack_pin.MANIFEST_NAME).read_text(encoding="utf-8"))
@@ -429,7 +462,7 @@ def test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it():
 #: The frozen release this candidate must not regress against. Not read from a
 #: document — the digest and state of that revision are what `pack_pin` checks,
 #: and this is the same revision by name.
-QUALIFIED_BASELINE = "4495e61850c08027e47eac6d0db84b4b3380e300"
+QUALIFIED_BASELINE = "d70d72fbcadb98cb8a2979f9c63ed84e595662e8"
 
 
 def test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline():
@@ -722,13 +755,18 @@ def test_the_baseline_figure_this_release_quotes_is_the_baselines_own():
     quoting = next(
         entry for entry in manifest["known_limitations"] if entry.startswith("held prose ")
     )
-    stated = re.search(rf"2\.1\.1 was {lines} \(([\d.]+)% over\)", quoting)
+    baseline_version = subprocess.run(
+        ["git", "show", f"{QUALIFIED_BASELINE}:VERSION"],
+        cwd=str(ROOT), capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    stated = re.search(rf"{re.escape(baseline_version)} was {lines} \(([\d.]+)% over\)", quoting)
     assert stated, (
-        f"this release does not quote the baseline's own figure ({lines} lines, {percent}% over)"
+        f"this release does not quote the baseline's own figure "
+        f"({baseline_version}: {lines} lines, {percent}% over)"
     )
     assert stated.group(1) == percent, (
-        f"this release says the baseline was {stated.group(1)}% over; the baseline's own "
-        f"manifest records {percent}%"
+        f"this release says {baseline_version} was {stated.group(1)}% over; that release's "
+        f"own manifest records {percent}%"
     )
 
 
@@ -752,12 +790,19 @@ def test_every_pointer_at_the_decision_layer_reaches_the_last_decision():
     #: `D<n>` followed by any dash and `D<m>` — the shape a range takes here.
     ranges = re.compile(r"\bD(\d+)\s*[-\u2010-\u2015]\s*D(\d+)\b")
     offenders = []
-    for pattern in ("README.md", "docs/RP2.2-*.md", "PACK_MANIFEST.json", "CHANGELOG.md"):
+    scanned = 0
+    for pattern in ("README.md", *_owned_release_docs(), "PACK_MANIFEST.json", "CHANGELOG.md"):
         for path in sorted(ROOT.glob(pattern)):
             if not path.is_file():
                 continue
             name = str(path.relative_to(ROOT))
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            scanned += 1
+            body = path.read_text(encoding="utf-8")
+            # A previous release's entry is history and is left as written; the
+            # rule applies to the entry this release is adding.
+            if name == "CHANGELOG.md":
+                body = _current_changelog_section(body)
+            for number, line in enumerate(body.splitlines(), 1):
                 # A range describing a CLOSED historical set — "D1-D13 are
                 # unchanged" — is not a pointer at the decision layer and must
                 # not be dragged forward every time a decision is added. The
@@ -769,6 +814,7 @@ def test_every_pointer_at_the_decision_layer_reaches_the_last_decision():
                     if int(high) != last:
                         offenders.append(f"{name}:{number}: D{low}-D{high}, but the file ends at D{last}")
 
+    assert scanned >= 3, f"only {scanned} documents scanned; the globs are not matching"
     assert not offenders, (
         "these point at a decision range that stops short of the last decision: "
         + "; ".join(offenders)
@@ -805,7 +851,7 @@ def test_no_document_restates_a_count_of_things_the_repository_can_count():
     #: releases are historical evidence: their counts were true when written and
     #: rewriting them to satisfy a rule invented afterwards is the one thing
     #: this pack's own policy forbids.
-    owned = ("docs/RP2.2-*.md", "README.md", "CHANGELOG.md", "policy/*.md",
+    owned = (*_owned_release_docs(), "README.md", "CHANGELOG.md", "policy/*.md",
              "templates/*.md", "skills/core/*.md")
     #: A count of something FROZEN cannot drift, so it is not this rule's
     #: business. The exemption is by the words that make the line say so, which
@@ -941,7 +987,7 @@ def test_the_held_prose_figure_the_gate_record_states_is_the_measured_one():
     import re
 
     measured = _held_prose_lines()
-    gate = (ROOT / "docs" / "RP2.2-GATE.md").read_text(encoding="utf-8")
+    gate = _current_gate_record().read_text(encoding="utf-8")
     stated = re.search(r"in-release \(skills/core/\*\.md \+ policy/\*\.md\)\s+([\d,]+)", gate)
     assert stated, "the gate record states no in-release held-prose figure"
     assert int(stated.group(1).replace(",", "")) == measured, (
@@ -1209,7 +1255,7 @@ def test_the_gate_record_qualification_figures_are_measured(manifest):
     import re
     import subprocess
 
-    gate = (ROOT / "docs" / "RP2.2-GATE.md").read_text(encoding="utf-8")
+    gate = _current_gate_record().read_text(encoding="utf-8")
 
     # The suite count must NOT be restated here. Adding a test changes it, and a
     # figure this document's own edit invalidates is one it must not carry — the
@@ -1253,8 +1299,13 @@ def test_the_release_packet_and_the_manifest_agree_on_the_prose_breach():
     manifest_percentage = re.search(r"\(([\d.]+)% over", limitations)
     assert manifest_percentage, "the manifest states no held-prose percentage"
 
-    for name in ("docs/RP2.2-GATE.md", "docs/RP2.2-RELEASE-PACKET.md"):
-        text = (ROOT / name).read_text(encoding="utf-8")
+    prefix = _release_doc_prefix()
+    surfaces = [_current_gate_record(), ROOT / "docs" / f"{prefix}-RELEASE-PACKET.md"]
+    present = [path for path in surfaces if path.is_file()]
+    assert _current_gate_record() in present, "the gate record the manifest names does not exist"
+    for path in present:
+        name = str(path.relative_to(ROOT))
+        text = path.read_text(encoding="utf-8")
         stated = set(re.findall(r"([\d.]+)% over the ~2,000|([\d.]+)% over, recorded", text))
         for pair in stated:
             value = pair[0] or pair[1]

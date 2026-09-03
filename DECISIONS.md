@@ -542,3 +542,118 @@ none, because the project believes it is enforced.
 
 **Reverses on:** nothing. The alternative was tried by omission — absence read as
 clean for every project, including products whose correctness depended on it.
+
+---
+
+## D23 — the founder architecture decision for RP2.3 (RP2.3)
+
+Recorded at the opening of the RP2.3 evolution session, before implementation,
+against a baseline verified on every axis it declares — by the shipped
+`pack_pin.py` and again by an independent re-implementation of the digest
+framing. **Additive**: D1–D22 are unchanged and no prior gate or decision record
+was rewritten.
+
+The release exists to prevent a set of failure classes measured on a real
+project after 2.2.0 froze. It is not a rebuild of the stateful architecture D1
+rejected, and every clause below exists to keep it from becoming one.
+
+1.  **2.2.0 is the qualified semantic and non-regression floor.** No capability
+    it holds may be lost except by replacement with a demonstrated semantic
+    superset.
+2.  **D1 and D14 remain normative.** No component may both hold authoritative
+    state and adjudicate it, and the coordinator remains the semantic
+    decision-maker.
+3.  **Publication obligations are profile-scoped.** Core may carry universal
+    public-safety invariants where they are justified; reproducibility and
+    public-presentation requirements are opt-in. A project that is internal is
+    not walked through publication ceremony because Core can perform it.
+4.  **No autonomous restart of a coordinator in this release.** Durable
+    continuation state, completion detection, a wake-needed signal, recovery
+    packets and liveness projections are all in scope. Creating or waking a
+    coordinator session is not. A mechanism may report that a coordinator is
+    needed; it may not become one, and it may not cross a human-authority
+    boundary. Deferred as an Evolution Candidate whose trigger is a qualified
+    first-party session primitive plus an explicit governance rule authorising
+    its use — neither exists today.
+5.  **Coordinator headroom is mandatory as a concept and carries no universal
+    number.** The model represents rolling windows, longer windows where
+    observable, reset horizons, shared versus independent pool identity, active
+    workers, estimated remaining cost, result-consumption cost and a repair and
+    audit reserve. Where capacity cannot be known safely, `UNKNOWN` is
+    first-class and dispatch becomes conservative rather than precise.
+    **Continuation safety outranks quota utilisation and parallelism.** No
+    percentage is invented, and no provider is graded by name.
+6.  **Core is never given generic authority to rewrite history.** It may detect
+    candidates, classify them, prepare a remediation package, compute a plan,
+    verify preconditions, verify chronology, tree, date and identity
+    invariants, require rollback evidence, emit an old-to-new revision mapping
+    and verify postconditions. Executing a rewrite stays a human decision
+    (`policy/hitl-matrix.md` rows 2 and 4). A public-safety check is never
+    weakened to avoid remediation.
+7.  **A diagnostic projection is in scope, and it is a projection.** It stores
+    no governance truth, authorises nothing, adjudicates nothing, performs no
+    transition, is reconstructible from durable state alone, and reports stale
+    or unknown data as such. **A disagreement between the projection and the
+    record is a defect in the projection, always.** So is a disagreement
+    between the durable state machine and the record: the machine is
+    machine-written and machine-transitioned, and that makes it downstream of
+    the record rather than a second copy of it.
+8.  **Two corollaries keep clause 7 from being decorative.** No governed action
+    may be taken whose only premise is a state value, and every transition must
+    be reconstructible from a durable artifact — a job's exit, its log, its
+    checkpoint. A machine-produced premise sitting under a human ruling is the
+    error class nothing downstream questions.
+
+**Evidence.** A reconciliation package from a real project, verified here
+rather than accepted, by re-executing the integrity checks it carries. That
+package is design and evidence input.
+It is not authority, and nothing here is adopted because a document assumed it.
+
+**Reverses on:** an explicit human decision. Primary evidence appearing to
+require the reversal of clause 1 is a stop condition, not an implementation
+choice.
+
+---
+
+## D24 — a close obligation a project cannot fail to satisfy is mandatory; one that needs new project capability is declared (RP2.3)
+
+The release adds two obligations at capability closure: a **generated close
+attestation** that enumerates the declared validation profiles and reports which
+actually ran, and a **re-derivation of the measurement a human decision rests
+on**. Both close real, measured holes — two capabilities closed green over red
+gates, and one human ruling was taken on a figure that was wrong by more than a
+year. Both also change what closing requires, which under D11 is the difference
+between a MINOR and a MAJOR release.
+
+The question is not how large the change is. It is whether a project that adopts
+the release can be left unable to close.
+
+**Decided.**
+
+*   **Generating the attestation is mandatory, because no adopting project can
+    fail to do it.** It is derived from the `validation_profiles` the contract
+    already declares, so the generator always has its input, and a profile that
+    was never run is enumerated and reported `UNRUN` rather than omitted.
+    Omission is what has to be impossible: a step nobody ran is otherwise
+    indistinguishable afterwards from a step that passed.
+*   **Refusing to close on an `UNRUN` profile is the project's declared policy,
+    and it defaults to refusing.** A project that needs to close over a profile
+    it cannot run says so, in its contract, once, where a reader can see it —
+    rather than by the attestation quietly not mentioning it.
+*   **Re-derivation of a decision premise is declared**, and required for a
+    human decision record wherever it is declared. A project that declares none
+    is clean; a project that declares it and cannot re-derive is a stop.
+*   The release is therefore **backward-compatible and MINOR**. Nothing an
+    adopting project cannot satisfy is imposed on it, and the guarantee that
+    matters — *which gates ran is no longer answered by the party that ran
+    them* — is unconditional.
+
+This is D22's rule applied one layer up: a requirement governs absence, the
+project declares it, and Core does not decide which products carry which
+obligations. **The human decision this records is the mandatory-versus-declared
+fork, taken at the session freeze; the version number follows from it rather
+than the other way round.**
+
+**Reverses on:** an adopting project demonstrating that it can produce an
+attestation that omits a declared profile — which would mean the generator, not
+this rule, is wrong.

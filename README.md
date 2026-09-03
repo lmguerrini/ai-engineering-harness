@@ -1,4 +1,4 @@
-# Runtime Pack 2.2.0
+# Runtime Pack 2.3.0
 
 A coordinator-governance layer for AI-delegated engineering: durable structured
 context, Skills, and a small stateless toolbelt — no deterministic software
@@ -10,22 +10,22 @@ every audit round while its stateless checkers survived every one
 
 | | |
 |---|---|
-| Version | **2.2.0** — `VERSION` is the single machine-readable authority |
-| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) — frozen by human authority; adoptable at a project's next capability boundary |
-| Gate record | `docs/RP2.2-GATE.md` |
+| Version | **2.3.0** — `VERSION` is the single machine-readable authority |
+| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate. **No project may adopt it**; only `QUALIFIED_AND_FROZEN` is adoptable, and moving this release there is a human decision |
+| Gate record | `docs/RP2.3-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
 Verify a checkout — run it, do not read it:
 
 ```bash
-python3 tools/pack_pin.py . --version 2.2.0 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
+python3 tools/pack_pin.py . --version 2.3.0 --sha <full 40-char revision> \
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
 ```
 
 `--state` is the state this checkout actually declares. **A project may only
-adopt `QUALIFIED_AND_FROZEN`**, which is what this release now declares, so the
-command above is the one a consumer runs unchanged. Passing any other state
-against this checkout fails — correctly.
+adopt `QUALIFIED_AND_FROZEN`**, and this checkout declares `IN_PROGRESS`, so the
+command above verifies the candidate and does **not** make it adoptable. Passing
+any other state against this checkout fails — correctly.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a
@@ -91,7 +91,7 @@ Derived from the tracked tree, not maintained by hand
     ├── VERSION                     the single machine-readable version authority
     ├── PACK_MANIFEST.json          release identity: state, digest, test count, gate
     ├── CHANGELOG.md                per-version record, including errata
-    ├── DECISIONS.md                pack-level decisions D1–D22, append-only
+    ├── DECISIONS.md                pack-level decisions D1–D24, append-only
     ├── skills/core/                13 public-safe skills, roles only, no vendor names
     ├── policy/                     private operational policy
     │   ├── observations.jsonl      append-only routing evidence — the record
@@ -131,11 +131,12 @@ Derived from the tracked tree, not maintained by hand
     │   ├── errors.py               the refusal hierarchy; every refusal names its cause
     │   └── tests/                  the suite; `python3 -m pytest tools/tests/ -q`
     └── docs/                       what happened: gate records, findings, probes
-        ├── RP2.2-GATE.md           this release's gate
+        ├── RP2.3-GATE.md           this release's gate
+        ├── RP2.3-ARCHITECTURE.md   what the layering picture gains, and why it is not an authority
+        ├── RP2.3-CAPABILITY-MAP.md the plan, and every reproduction behind it
+        ├── RP2.2-GATE.md           the previous release's gate
         ├── RP2.2-ARCHITECTURE.md   the authority layers, and what is not one
-        ├── RP2.2-CAPABILITY-MAP.md the plan, and every reproduction behind it
-        ├── RP2.2-RELEASE-PACKET.md what a returning release authority reads first
-        ├── RP2.1.1-GATE.md         the previous release's gate
+        ├── RP2.2-RELEASE-PACKET.md what a returning release authority read first
         ├── …                       prior gate records, left as written
         └── acceptance/             drills and injection results
 

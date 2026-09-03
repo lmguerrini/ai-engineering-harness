@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.3.0 — durable execution, liveness, capacity truth and complete-history safety
+
+A **MINOR** release (`DECISIONS.md` D11 and D24): new backward-compatible
+capability, plus enforcement of guarantees earlier versions already promised.
+**State `IN_PROGRESS` — no project may adopt this candidate.** Every defect
+below was reproduced by execution against the frozen 2.2.0 baseline before it
+was repaired, and every repaired guarantee carries an oracle that fails against
+the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
+
+### Architecture and session governance
+
+- **`DECISIONS.md` D23** records the founder architecture decision this release
+  rests on: 2.2.0 is the non-regression floor; publication obligations are
+  profile-scoped; no autonomous restart of a coordinator; coordinator headroom
+  is mandatory as a concept and carries no universal number; Core never gains
+  generic authority to rewrite history; and the diagnostic projection is a
+  projection, with the two corollaries that keep that from being decorative.
+- **`DECISIONS.md` D24** decides the version class before the version is cut. An
+  obligation an adopting project cannot fail to satisfy is mandatory; one that
+  needs new project capability is declared. Generating a close attestation is
+  therefore mandatory — its input is the contract's own declared profiles — while
+  refusing to close over an unrun profile is the project's declared policy,
+  defaulting to refusal.
+- **A guard demanded that a superseded release's own gate record be rewritten**,
+  and was found by the ordinary act of appending a decision. Two guards
+  disagreed about whose documents they were checking: one exempted prior
+  releases in terms, the other scanned a typed literal naming one. Both now
+  derive their document set from the gate record the manifest declares, both
+  scope the changelog to the entry the release is adding, and both refuse to
+  pass having scanned nothing.
+
 ## 2.2.0 — adapter integrity, tooling integrity, and truth about execution
 
 A **MINOR** release (`DECISIONS.md` D11): new backward-compatible capability,

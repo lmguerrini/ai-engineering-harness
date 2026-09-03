@@ -1,0 +1,108 @@
+# RP2.3 — capability map and dependency order
+
+The evolution session's working plan. Written before implementation, from the
+mechanisms rather than from the summary that recommends them, and updated only
+by appending.
+
+Baseline: `2.2.0` at `d70d72fbcadb98cb8a2979f9c63ed84e595662e8`, state
+`QUALIFIED_AND_FROZEN`, tree digest
+`4bab6b8d505735f164e928e36eca674835f38478d5d5f334d740fa41c49c5a24`, verified with
+the shipped `pack_pin.py` and again with an independent re-implementation of
+`sha256-framed-v1` written from the algorithm description rather than by
+importing the module under test. The suite passes at that frozen revision; the
+count is the baseline manifest's `tests.passed` and is not restated here.
+
+## Scope classes
+
+`MUST_THIS_RELEASE` — a measured failure class that destroys work, closes a
+window on its own, or lets an incorrect claim reach a human. Anything the above
+need in order to be safely usable.
+
+`SHOULD_THIS_RELEASE` — small, strongly evidenced supersets whose implementation
+and qualification cost is low.
+
+`DEFER_WITH_TRIGGER` — everything whose return is not clearly positive in this
+session. Each carries the observation that reopens it.
+
+## Capabilities, in dependency order
+
+| # | Capability | Class | Depends on |
+|---|---|---|---|
+| C1 | Architecture record and session governance | MUST | — |
+| C2 | Checker hygiene: the instrument before the measurement | MUST | C1 |
+| C3 | Durable worker output, bounds and recovery | MUST | C2 |
+| C4 | Coordinator continuation and liveness state | MUST | C3 |
+| C5 | Progress, stall and waiter lifecycle | MUST | C4 |
+| C6 | Adapter and routing identity | MUST | C2 |
+| C7 | Capacity-aware pre-dispatch gate | MUST | C5, C6 |
+| C8 | Remote verification across a real transport | MUST | C2 |
+| C9 | History, refs and closure anchors | MUST | C8 |
+| C10 | Complete-history public safety and the publication profile | MUST | C9 |
+| C11 | Evidence and close correctness | MUST | C2 |
+| C12 | The diagnostic projection | SHOULD | C4, C5, C7 |
+| C13 | Launch, migration and compatibility | MUST | C3–C11 |
+| C14 | Rehearsal, qualification and release candidate | MUST | all |
+
+**C2 comes second, and the ordering is the point.** The rehearsal obligations
+this release must satisfy are unconditional about it: *every rehearsal's own
+tooling is subject to the checker-hygiene rules*. Building the instruments after
+the measurements they validate is how a release qualifies itself with a stale
+copy of its own rule — measured three times in one phase, in both directions.
+
+**C3 before C4** because a state machine's transitions must be reconstructible
+from durable artifacts, and C3 is what makes those artifacts exist.
+**C6 before C7** because a capacity gate that cannot say which pool a dispatch
+draws on cannot distinguish the failure it exists to prevent.
+**C9 before C10** because the publication gate's candidate list is a list of
+historical objects, and remediating one is a rewrite: the invariants have to
+exist in the same release as anything that produces the list.
+
+## The two orderings that are not preferences
+
+1.  **Detection without adjudication makes matters worse.** A complete-history
+    scan produced 147 findings of which 4 were genuine and 106 were ordinary
+    English, and one flagged entry was material whose removal would make the
+    repository *less* safe. A gate emitting a raw count as a remediation list
+    manufactures pressure to rewrite history to remove nothing. C10 ships both
+    halves or neither.
+2.  **A projection over a state nothing transitions displays a stale value
+    confidently.** The decisive recorded instance would have shown
+    `WAITING_ON_JOB` for two hours and twenty-one minutes and been wrong. C12
+    is downstream of C4 and C5, and that is why it sits where it does.
+
+## Removed from scope, deliberately
+
+*   **Autonomous termination of a stalled worker.** The only destructive
+    autonomous action in the candidate set. A false positive is *measured* — a
+    healthy worker produced no log output for over four minutes while its CPU
+    time climbed — and the destructive half of a detector is not carried by the
+    evidence that earns the detecting half. C5 classifies; ending a worker stays
+    a coordinator action under `policy/hitl-matrix.md` row 4.
+*   **An observer that restarts a coordinator.** D23 clause 4. The requirement is
+    evidenced by three human restarts totalling more than six hours; the
+    mechanism needs a session-creation primitive that was established not to
+    exist on the inspected surface. Recorded as an Evolution Candidate with its
+    trigger, not designed here.
+
+## Deferred with a trigger
+
+| deferred | trigger that reopens it |
+|---|---|
+| the full routing-evidence schema | *its own* caution applies: a schema fixed before enough projects have expressed the need fixes the wrong fields. C6 ships pool identity, qualification basis and the additive rule. Reopens when a second project's routing records cannot be compared for a reason the shipped fields cause |
+| the clean-clone reproducibility gate | it needs a runner the project does not control. C10 ships the per-profile declaration. Reopens when a project has an external runner and a declared public profile |
+| a commit-subject length ceiling | measured on both sides: a ceiling met by damaging the artifact is not measuring what it claims. Reopens when a project adopts one and can show the calibration |
+| publication readiness beyond the profile declaration | safety and readability are different questions and readability must not borrow safety's urgency. Reopens on a second measured trigger |
+| a write-ceiling runtime for delegation scope | C3's task-owned output root covers the measured case. Reopens when a scope ceiling is exceeded in a way the output root does not catch |
+
+## Reproduced before repair
+
+Every entry is reproduced by execution against the frozen baseline before any
+repair is written, and recorded here as it is done. Reproductions that turn out
+to be artefacts of the harness rather than the code are recorded too, because a
+discarded finding is evidence about the oracle.
+
+| ID | Defect | Reproduction |
+|---|---|---|
+| RP3-1 | an adapter pin verifies the files an adapter is made of, and reports success while the executable those files drive is a different version from the qualified one | live at this baseline: the qualified executable version and the installed one differ, and `adapter_pin.py` reports every declared adapter verified |
+
+*(appended as each capability reproduces its own)*

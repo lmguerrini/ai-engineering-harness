@@ -86,13 +86,16 @@ A recorded human decision may raise the repair and audit counters for a single
 than delivering a capability against a pinned one, and it carries no consuming
 project whose guarantees a longer repair loop could weaken.
 
-The RP2.2 evolution session was authorised at:
+Authorised sessions, each recorded in the gate record of the version it cut:
 
-| Counter | Session bound |
-|---|---|
-| Repair attempts per reproduced root cause | 12 |
-| Repair rounds per capability | 8 |
-| Closure / requalification cycles per capability | 4 |
+| Counter | RP2.2 | RP2.3 |
+|---|---|---|
+| Repair attempts per reproduced root cause | 12 | 12 |
+| Repair rounds per capability | 8 | 8 |
+| Closure / requalification cycles per capability | 4 | 4 |
+
+RP2.3 repeats RP2.2's numbers rather than raising them: RP2.2 did not exhaust
+them, and a ceiling nobody reaches records nothing.
 
 Two rules survive the raise, because they are what makes the counters mean
 anything:

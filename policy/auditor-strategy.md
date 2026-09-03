@@ -38,9 +38,7 @@ whose expected information gain clearly justifies the capacity cost.
 **Grades live in `policy/routing-table.md` and are not restated here.** That
 file is regenerated wholesale from `policy/observations.jsonl`; a grade copied
 into a second file goes stale silently, and this one did — it still read "both
-audit roles are `unprobed`" after the Pilot Run moved both to `confirmed`. A
-rule stated in two places drifts, and the one that is wrong is whichever the
-current reader is not looking at.
+audit roles are `unprobed`" after the Pilot Run moved both to `confirmed`.
 
 ## The observation behind the scarce-capacity rule
 
@@ -61,3 +59,15 @@ budgeted.
 
 A repository-wide audit and a focused one are different economic objects. The
 same configuration may be eligible for the second and not the first.
+
+## The named fallback when the cross-vendor channel is unavailable
+
+**Session-scoped, RP2.3, human pre-authorisation.** Row 12 blocks when a
+mandatory cross-vendor audit cannot run, and the fallback a machine may execute
+is one a human has already named. For this evolution session the named fallback
+is **a second blind same-family auditor on a distinct lens**, dispatched only
+after the cross-vendor channel has been attempted and has refused or is
+unavailable. It is recorded as *not cross-vendor* in the gate record and carried
+into the release's known limitations: a same-family second opinion is a second
+sample, not a second perspective, and the disclosure is what makes the
+substitution honest rather than silent. Per session; it does not carry forward.
