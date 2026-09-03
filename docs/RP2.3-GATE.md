@@ -613,3 +613,35 @@ for a reason the test did not name.
 All six are closed, each by a fixture that enters the branch rather than by
 widening an assertion, and the reason each earlier fixture missed is written
 beside it.
+
+### The coordinator's own instrument was the wrong one
+
+Recorded because it is this release's own subject, occurring in this release's
+own workflow, and because a gate record that only reports what the code got
+wrong is not the record this pack asks for.
+
+Every commit message on this branch was validated twice: once by the shipped
+`commit_gate`, and once by a short script the coordinator wrote to apply the
+default vocabulary — because **this repository has no project contract**, so
+`--project` had nothing to read and the shipped path could only check structure.
+On the ninth commit the script reported a private term. The shipped scanner,
+given the same message and the same vocabulary, reported it clean.
+
+The message was fine. The term was `sol`, an identity-tier worker name, and the
+script found it inside the word *resolves* — because it matched with `in` while
+the scanner this pack ships **word-bounds a bare term**, deliberately and for a
+measured reason. *The instrument was not the one that runs.* That is `M-17`
+exactly, in the coordinator's own tooling, which the evidence base already
+warned is the least reviewed tooling there is.
+
+Two things follow, and neither is "be more careful":
+
+*   Every commit on this branch is re-validated with the shipped scanner and the
+    full published vocabulary. All of them conform.
+*   The reason the script existed is a real gap, so it is closed rather than
+    worked around. `commit_gate.py --default-terms <pack_root>` applies the
+    pack's own published vocabulary to a repository that has no contract,
+    resolved through `instrument.read_rule` from the declared root and reported
+    with its digest. **The pack can now check its own history with the rules it
+    publishes**, which it could not before, and the ad-hoc script is deleted
+    rather than corrected.

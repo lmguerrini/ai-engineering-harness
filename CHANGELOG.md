@@ -9,6 +9,17 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### The pack can check its own history with the rules it publishes
+
+- **`commit_gate.py --default-terms <pack_root>`** applies the pack's own
+  default vocabulary to a repository with no project contract — this repository
+  being the case that mattered. Resolved through the canonical rule path and
+  reported with its digest.
+- Found by a coordinator error: a hand-written substring check reported a
+  private term inside the word *resolves*, while the shipped scanner
+  word-bounds a bare term and reported the same message clean. The instrument
+  was not the one that runs, and the reason a substitute existed is now closed.
+
 ### Closure anchors — whether anything still keeps a cited commit reachable
 
 - **`tools/history_anchor.py`** reads a project's own records and answers per

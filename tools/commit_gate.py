@@ -35,6 +35,7 @@ from __future__ import annotations
 import re
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from errors import CommitContractError, IntegrityError
 
@@ -631,6 +632,7 @@ def _term_set_from_args(args: object) -> TermSet:
     apply 0 of 59 rules and report `clean`.
     """
     project = getattr(args, "project", None)
+    pack_root = getattr(args, "default_terms", None)
     terms: list[str] = []
     patterns: list[str] = []
     identity_terms: list[str] = []
@@ -646,6 +648,29 @@ def _term_set_from_args(args: object) -> TermSet:
         patterns.extend(contract.project_patterns)
         identity_terms.extend(contract.default_identity_terms)
         identity_patterns.extend(contract.default_identity_patterns)
+
+    if pack_root:
+        # The pack's own default vocabulary, for a repository that has no
+        # project contract — the pack's own being the case that mattered. Its
+        # commits could otherwise be checked only structurally, or against a
+        # term set somebody assembled by hand for the occasion, which is the
+        # shape `instrument.read_rule` exists to refuse. Read through that
+        # function, from the declared root, so the rule this applies is the
+        # one the release ships rather than a copy of it.
+        import json as _json
+
+        from instrument import read_rule
+        from project_contract import DEFAULT_TERMS_RELATIVE
+
+        root = Path(pack_root)
+        content, source = read_rule([root / DEFAULT_TERMS_RELATIVE],
+                                    canonical_root=root, what="default term set")
+        defaults = _json.loads(content.decode("utf-8"))
+        terms.extend(defaults.get("terms") or ())
+        patterns.extend(defaults.get("patterns") or ())
+        identity_terms.extend(defaults.get("identity_terms") or ())
+        identity_patterns.extend(defaults.get("identity_patterns") or ())
+        setattr(args, "_rule_source", source)
 
     terms.extend(getattr(args, "term", None) or [])
     patterns.extend(getattr(args, "pattern", None) or [])
@@ -672,6 +697,8 @@ def _cli(argv: list[str]) -> int:
     )
     parser.add_argument("file", nargs="?", help="path to the message file; stdin if omitted")
     parser.add_argument("--project", help="path to PROJECT.yaml; supplies the declared vocabulary")
+    parser.add_argument("--default-terms", metavar="PACK_ROOT",
+                        help="apply the pack's own default vocabulary, for a repository with no contract")
     parser.add_argument("--term", action="append", default=[], help="a declared private term (repeatable, additive)")
     parser.add_argument("--pattern", action="append", default=[], help="a declared private regex pattern (repeatable, additive)")
     parser.add_argument("--range", metavar="REF", help="validate every commit message reachable in a range")
@@ -685,7 +712,9 @@ def _cli(argv: list[str]) -> int:
         print(f"CONTRACT UNREADABLE {exc}")
         return 2  # distinct from 1: could-not-check is not a clean verdict
 
-    print(f"vocabulary: {term_set.summary()}")
+    source = getattr(args, "_rule_source", None)
+    print(f"vocabulary: {term_set.summary()}"
+          + (f"; read from {source.summary()}" if source is not None else ""))
 
     if args.range:
         repository = args.repo

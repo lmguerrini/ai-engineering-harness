@@ -636,3 +636,82 @@ def test_ordinary_text_is_not_refused_as_invisible():
     for subject in ["fix: café menu update", "docs: 日本語のタイトル",
                     "feat: naïve — em dash and “curly quotes”", "chore: ∑ and ≤"]:
         assert "INVISIBLE_CHARACTER" not in _codes(subject + BODY), subject
+
+
+# --- the pack's own vocabulary, for a repository with no contract ---------------
+#
+# Found by a coordinator error rather than by design: a hand-written substring
+# check reported a private term in a commit message, and the shipped scanner —
+# which word-bounds a bare term — reported the same message clean. The message
+# was fine; the instrument was not the one that ships. The reason the ad-hoc
+# check existed at all is that this repository has no project contract, so its
+# own commits could be checked structurally or not at all.
+
+import json as _json
+
+import pytest as _pytest
+
+import commit_gate as _commit_gate
+from errors import GateRefusal as _GateRefusal
+
+
+class _Args:
+    def __init__(self, **fields):
+        self.project = None
+        self.term = []
+        self.pattern = []
+        self.default_terms = None
+        self.__dict__.update(fields)
+
+
+def _pack(tmp_path, **overrides):
+    root = tmp_path / "pack"
+    (root / "policy").mkdir(parents=True)
+    payload = {"policy_schema": 2, "terms": ["engineering harness"], "identity_terms": ["sol"],
+               "patterns": [], "identity_patterns": [], "optional_patterns": {}}
+    payload.update(overrides)
+    (root / "policy" / "private-terms.default.json").write_text(_json.dumps(payload))
+    return root
+
+
+def test_the_pack_default_vocabulary_can_be_applied_without_a_contract(tmp_path):
+    term_set = _commit_gate._term_set_from_args(_Args(default_terms=str(_pack(tmp_path))))
+    assert "engineering harness" in term_set.terms
+    assert "sol" in term_set.identity_terms
+
+
+def test_a_bare_term_is_word_bounded_and_does_not_match_inside_a_word(tmp_path):
+    """The exact false positive: a naive substring check found `sol` in
+    `resolves`. The shipped scanner does not, and the difference between the
+    two instruments is the whole finding."""
+    term_set = _commit_gate._term_set_from_args(_Args(default_terms=str(_pack(tmp_path))))
+    assert term_set.offenders("resolves") == []
+    assert term_set.offenders("console") == []
+    assert term_set.offenders("sol") == ["sol"]
+
+
+def test_a_multi_word_term_still_matches_where_it_appears(tmp_path):
+    term_set = _commit_gate._term_set_from_args(_Args(default_terms=str(_pack(tmp_path))))
+    assert term_set.offenders("the engineering harness ran") == ["engineering harness"]
+
+
+def test_the_default_vocabulary_is_read_from_the_declared_root_and_reports_its_source(tmp_path):
+    """Through the same resolution every other rule goes through, so a copy in
+    a working directory cannot stand in for the one the release ships."""
+    args = _Args(default_terms=str(_pack(tmp_path)))
+    _commit_gate._term_set_from_args(args)
+    source = getattr(args, "_rule_source")
+    assert source.canonical and len(source.digest) == 64
+
+
+def test_a_pack_root_with_no_default_vocabulary_is_refused_rather_than_emptied(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with _pytest.raises(_GateRefusal):
+        _commit_gate._term_set_from_args(_Args(default_terms=str(empty)))
+
+
+def test_the_pack_defaults_are_additive_to_the_flags_like_everything_else(tmp_path):
+    term_set = _commit_gate._term_set_from_args(
+        _Args(default_terms=str(_pack(tmp_path)), term=["a project term"]))
+    assert "a project term" in term_set.terms and "engineering harness" in term_set.terms
