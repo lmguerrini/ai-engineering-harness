@@ -2468,3 +2468,55 @@ comparison of two serialisations of one reading, and it does **not** establish
 that the page's markup is correct — the projection's own tests do that. The
 helper is deliberately crude and says so, because the moment it becomes a parser
 it is a second implementation of the thing it is checking.
+
+## FUNCTIONALLY_READY_FOR_VISUAL_POLISH
+
+Twelve blind closure audits, every one of which returned NOT READY, and the
+twelfth's repairs closed without changing a release guarantee. The semantics and
+the information architecture are frozen for the visual pass: what a panel means,
+which readings exist, what each state is called and what a checker refuses are
+settled, and a styling pass may not move them.
+
+Every gate re-run mechanically at the frozen candidate: the deterministic suite,
+the release-integrity gates, the commit gate over the whole evolution range, the
+closure matrix's own four guards, every recurrence class, the dashboard's
+required-reading contract, real-consumer compatibility read-only, both prior
+releases' verification, the continuation rehearsal, the complete-history scan
+with nothing unscanned, and the candidate's identity against its own manifest.
+
+### What twelve readings actually cost, and what they bought
+
+Roughly seventy-five findings. **About a quarter of them were defects in the
+previous round's repairs**, and that ratio did not improve as the release
+matured — cycle 12 found two of the coordinator's own tests were not evidence,
+which is the same rate as round 2.
+
+Three patterns account for most of it, and each is worth more than its
+instances:
+
+**A repair written for the path a finding arrived on.** The pid check that did
+not generalise to the write bound; the non-finite guard that took three fields;
+the missing-object rule applied to messages and not to blobs; the projection
+guarded at four fields one at a time. The fix in each case was to stop guarding
+fields and guard the class — and the fix was only ever found by someone else
+supplying the field nobody thought of.
+
+**A check that asks its subject what to check.** Twenty-four verbs asserted
+absent from a list they were never on; a test looping over the constant a mutant
+emptied; a marker matching the page rather than the reading; a selector matching
+no test and reporting green. Eleven instances, four found by readers and seven
+by mutation passes, **none by writing them.**
+
+**Five separate routes by which a repository being read could run a program of
+its choosing**, closed one at a time across four rounds until the check moved to
+the shape of the config key rather than the route.
+
+### What is frozen and what is not
+
+Frozen: the semantics, the state vocabulary, the 49 readings, the panel grouping
+and what each one is for.
+
+Not chosen: any visual identity. Type scale, spacing and grouping were set
+structurally, and colour is functional only — one hue per tone. Twenty-four real
+screenshots exist so that decision can be made by looking rather than by
+imagining.

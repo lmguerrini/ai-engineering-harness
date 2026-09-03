@@ -4,7 +4,7 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "ef74e8200b31525c36dc015e4a7eeb29bdae2b679b8979de105e2d4a9b05bd27",
+  "tree_digest_sha256": "d1bf0b67189c715145a917f5877a15b017188fc6c65859449f6a29c4c23a22c2",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
@@ -57,7 +57,8 @@
     "`_bundle_contains` COMPARES BUNDLE TIPS ONLY, so a commit reachable inside a verified bundle but not named as a head reports UNREACHABLE. Safe direction: it blocks where it should anchor. Proving reachability inside a bundle means unbundling, and this release does not write.",
     "THE ARTIFACT GUARDS COST ABOUT 60 SECONDS OF THE SUITE'S 171. `test_every_oracle_the_matrix_names_selects_at_least_one_test` spawns one pytest collection per matrix row, which spawn one pytest collection per matrix row and per recurrence class. Recorded because a check whose cost nobody measured is a check somebody eventually disables, and because the alternative — trusting that the selectors still match — is what it exists to replace.",
     "A BUNDLE CANNOT ANCHOR ANYTHING IN THIS RELEASE. Establishing that a bundle carries a commit means indexing its pack, which is a write, so a verified bundle whose header names a cited commit yields ANCHOR_UNCONFIRMED and BLOCKS. That is strictly more conservative than 2.2.0's behaviour and it is a real cost: a project that anchors closures in bundles will find those closures blocked until a person adjudicates them. Revisit when a read-only way to enumerate a pack's objects is available, or when the write is authorised for a scratch index.",
-    "AN ORACLE SELECTING A TEST DOES NOT PROVE IT TESTS THE MECHANISM IT IS CITED FOR. The matrix guard establishes that every citation resolves to something that runs, which is strictly weaker than relevance. Relevance is a human judgement and no check here makes it; the citations were chosen by the coordinator and read by nobody else."
+    "AN ORACLE SELECTING A TEST DOES NOT PROVE IT TESTS THE MECHANISM IT IS CITED FOR. The matrix guard establishes that every citation resolves to something that runs, which is strictly weaker than relevance. Relevance is a human judgement and no check here makes it; the citations were chosen by the coordinator and read by nobody else.",
+    "THE INFORMATION ARCHITECTURE IS FROZEN AND NO VISUAL IDENTITY IS CHOSEN. The structural pass set hierarchy, grouping, disclosure and responsive behaviour; colour is functional only, one hue per tone, and no type or palette decision was made for its own sake. The previews exist so that decision can be taken by looking."
   ],
   "deferred": {
     "RP2.3 DEFER_WITH_TRIGGER": "see docs/RP2.3-CAPABILITY-MAP.md for each item and the observation that reopens it: the full routing-evidence schema; the clean-clone reproducibility gate; a commit-subject length ceiling; publication readiness beyond the profile declaration; a write-ceiling runtime for delegation scope.",
