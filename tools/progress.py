@@ -169,6 +169,9 @@ class ProgressReport:
     why: str
     horizon_seconds: float
     elapsed_seconds: float
+    #: How long the run has been without observed progress. This, not the gap
+    #: between the samples, is what the horizon is compared against.
+    flat_for_seconds: float = 0.0
     advanced: tuple[str, ...] = ()
     flat: tuple[str, ...] = ()
     #: Signals present in one sample and not the other. Not evidence either way,
@@ -180,8 +183,9 @@ class ProgressReport:
 
     def render(self) -> str:
         lines = [f"run {self.run_id}: {self.state}", f"  {self.why}"]
-        lines.append(f"  elapsed {self.elapsed_seconds:.0f}s against a declared horizon of "
-                     f"{self.horizon_seconds:.0f}s")
+        lines.append(f"  flat for {self.flat_for_seconds:.0f}s against a declared horizon of "
+                     f"{self.horizon_seconds:.0f}s "
+                     f"({self.elapsed_seconds:.0f}s between the two readings)")
         for label, values in (("advanced", self.advanced), ("flat", self.flat),
                               ("observed in only one sample", self.incomparable),
                               ("WENT BACKWARDS, so the instrument is untrustworthy", self.regressed)):
@@ -199,6 +203,7 @@ def classify(
     later: Sample,
     *,
     horizon_seconds: float,
+    flat_since_seconds: float,
     finished: bool = False,
 ) -> ProgressReport:
     """One of four answers about a run, from two readings of its signals.
@@ -207,6 +212,21 @@ def classify(
     running, however many others were flat. The mirror rule is what makes the
     disjunction honest — a stall needs several independent signals to agree, and
     with fewer than that the answer is `UNKNOWN`.
+
+    **The horizon applies to how long the run has been without progress, not to
+    the gap between the two samples**, and getting that wrong made this module
+    miss the exact incident it was built for. Sampling a run 90 seconds apart
+    against a 900-second horizon returned `RUNNING` for a dispatch that had
+    produced nothing in five hours and thirty-nine minutes — because 90 is less
+    than 900. **A caller that samples periodically could never obtain a stall
+    verdict at all.**
+
+    So `flat_since_seconds` is required and has no default: it is the moment, on
+    the same clock as the samples, at or after which nothing is known to have
+    advanced — the run's start, or the last reading that moved. A caller with
+    only two samples passes the earlier one's time, which reproduces the old
+    arithmetic *visibly*: the report then says "flat for 90s", and a reader can
+    see the claim is about ninety seconds rather than about the run.
     """
     if not isinstance(horizon_seconds, (int, float)) or isinstance(horizon_seconds, bool) or horizon_seconds <= 0:
         raise PreconditionError(
@@ -219,6 +239,19 @@ def classify(
     if elapsed < 0:
         raise IntegrityError("the later sample is earlier than the earlier one",
                              run_id=run_id, elapsed=elapsed)
+    if (not isinstance(flat_since_seconds, (int, float)) or isinstance(flat_since_seconds, bool)
+            or not math.isfinite(flat_since_seconds)):
+        raise PreconditionError(
+            "a stall verdict is about how long the run has been without progress, so the moment "
+            "it was last known to advance is required. Measuring the horizon against the gap "
+            "between two samples means a caller who polls can never see a stall",
+            run_id=run_id, given=repr(flat_since_seconds),
+        )
+    flat_for = later.at_seconds - float(flat_since_seconds)
+    if flat_for < 0:
+        raise IntegrityError(
+            "the run is recorded as last advancing after the sample that observed it",
+            run_id=run_id, flat_for=flat_for)
 
     common = sorted(set(earlier.signals) & set(later.signals))
     incomparable = tuple(sorted(set(earlier.signals) ^ set(later.signals)))
@@ -231,7 +264,8 @@ def classify(
     regressed = tuple(k for k in common if later.signals[k] < earlier.signals[k])
 
     base = dict(run_id=run_id, horizon_seconds=float(horizon_seconds),
-                elapsed_seconds=float(elapsed), advanced=advanced, flat=flat,
+                elapsed_seconds=float(elapsed), flat_for_seconds=float(flat_for),
+                advanced=advanced, flat=flat,
                 incomparable=incomparable, regressed=regressed)
 
     if finished:
@@ -259,14 +293,15 @@ def classify(
             f"only {common[0]} was observable, and a single flat signal is the measured false "
             f"positive rather than evidence of a stall; observe a second kind before asking again"))
 
-    if elapsed < horizon_seconds:
+    if flat_for < horizon_seconds:
         return ProgressReport(**base, state=ProgressState.RUNNING, why=(
-            f"every observed signal is flat and only {elapsed:.0f}s have passed against a declared "
-            f"horizon of {horizon_seconds:.0f}s; flat is not yet stalled"))
+            f"every observed signal is flat and the run has been without progress for only "
+            f"{flat_for:.0f}s against a declared horizon of {horizon_seconds:.0f}s; flat is not "
+            "yet stalled"))
 
     return ProgressReport(**base, state=ProgressState.STALLED, why=(
-        f"{len(flat)} independently observed signals were all flat across {elapsed:.0f}s, which "
-        f"exceeds the declared horizon"))
+        f"{len(flat)} independently observed signals were all flat, and the run has been without "
+        f"progress for {flat_for:.0f}s, which exceeds the declared horizon"))
 
 
 # --- waiters ---------------------------------------------------------------------
@@ -313,6 +348,28 @@ class Waiter:
                 )
 
 
+def waiter_command(run_id: str, pid: int, *, sentinel: str, poll_seconds: int = 20) -> list[str]:
+    """A wait command that watches a REGISTERED IDENTITY and cannot match itself.
+
+    Provided because the reason a coordinator hand-writes one is that the pack
+    did not ship one, and a hand-written one did exactly what `Waiter` refuses:
+    `until [ -s report ] && ! pgrep -qf "codex exec"` had its own pattern in its
+    own command line, so `pgrep` matched the waiter and the loop could never
+    terminate — **even after the worker exited**. Measured live, in this
+    release's own session.
+
+    This watches a process NUMBER, which nothing else can accidentally be, and a
+    sentinel path. `kill -0` asks whether the number exists without signalling
+    anything, so the wait is an observation and not an act.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        raise IntegrityError("a waiter watches a real process number", run_id=run_id, pid=repr(pid))
+    if not (sentinel or "").strip():
+        raise IntegrityError("a waiter needs the path whose appearance ends it", run_id=run_id)
+    return ["sh", "-c",
+            f'while kill -0 {pid} 2>/dev/null && [ ! -s "{sentinel}" ]; do sleep {poll_seconds}; done']
+
+
 def retire_waiters(waiters: Sequence[Waiter], *, finished_runs: Sequence[str]) -> tuple[Waiter, ...]:
     """Every waiter on a finished run retires, on **any** terminal state.
 
@@ -331,8 +388,8 @@ def retire_waiters(waiters: Sequence[Waiter], *, finished_runs: Sequence[str]) -
 def _cli(argv: list[str]) -> int:
     """Classify a run from two readings of its signals.
 
-    Usage: ``progress.py RUN_ID --horizon SECONDS --earlier AT KIND=VALUE...
-                         --later AT KIND=VALUE...``
+    Usage: ``progress.py RUN_ID --horizon SECONDS --flat-since AT
+                         --earlier AT KIND=VALUE... --later AT KIND=VALUE...``
 
     Exit status follows the answer: ``0`` running or complete, ``1`` stalled,
     ``2`` unknown. Stalled is `1` rather than `0` because it is owed an
@@ -346,7 +403,9 @@ def _cli(argv: list[str]) -> int:
     )
     parser.add_argument("run_id")
     parser.add_argument("--horizon", type=float, required=True, metavar="SECONDS",
-                        help="how long every observed signal may stay flat before this is a stall")
+                        help="how long the run may be without progress before this is a stall")
+    parser.add_argument("--flat-since", type=float, required=True, metavar="AT",
+                        help="the time, on the samples' clock, the run was last known to advance")
     parser.add_argument("--earlier", nargs="+", required=True, metavar="AT|KIND=VALUE",
                         help="the earlier reading: a time, then KIND=VALUE pairs")
     parser.add_argument("--later", nargs="+", required=True, metavar="AT|KIND=VALUE")
@@ -371,7 +430,8 @@ def _cli(argv: list[str]) -> int:
         return Sample(at_seconds=at, signals=signals)
 
     report = classify(args.run_id, _sample(args.earlier), _sample(args.later),
-                      horizon_seconds=args.horizon, finished=args.finished)
+                      horizon_seconds=args.horizon, flat_since_seconds=args.flat_since,
+                      finished=args.finished)
     print(report.render())
     if report.state == ProgressState.STALLED:
         return 1

@@ -1027,3 +1027,95 @@ for tests with no reachable assertion found four candidates, three of them sound
 
 Fifteen findings repaired, eight new tests added, and the delta re-audited below.
 No finding was closed by weakening an assertion, and none was deferred.
+
+### C15 — Closing ACTIONABLE_WORK + SILENT_IDLE
+
+**The release produced another instance of the failure class it was closing, and
+that is the most useful thing that happened to it.** A bounded delta re-audit was
+dispatched at 06:33:20 and the coordinator was still waiting at 12:12:43 — **five
+hours and thirty-nine minutes** — on a process that had consumed 0.34 seconds of
+processor time, written zero output bytes, and created no provider rollout at
+all. The 39 bytes of stderr said why: *Reading additional input from stdin...*
+It was backgrounded without closing stdin and never began.
+
+Four distinct mechanism failures, each now a fixture.
+
+**1. There was no continuation record.** `tools/continuation.py` shipped in this
+candidate and the coordinator never wrote one for its own run, so nothing could
+derive a state — there was no declaration to derive from. *A mechanism with no
+caller is not implemented*, and this release wrote that sentence twice while
+doing it. The session now maintains one, and deriving it reported the
+coordinator's own position as `SILENT_IDLE` — correctly, and immediately.
+
+**2. A declared wait had no deadline, so it could never end.** Even with a
+record, the derived state of a wait on a live process is
+`WAITING_ON_IDENTIFIED_JOB`, and a live process satisfies a liveness question
+*forever*. The model could **name** silence and could not **end** it. A wait now
+declares `not_beyond_seconds`, an observable wait without one is unwritable, and
+past the deadline the state is `RECOVERY_REQUIRED` **whatever the process is
+doing** — the deadline is a statement about the coordinator's patience, not
+about the worker. That single field is what makes the condition terminate.
+
+Its ordering is deliberate in both directions: **before** the running branch,
+because a live stalled process would otherwise report a legitimate wait forever;
+**after** the unconsumed branch, because a job that finished past its deadline
+has left a result and taking it up *is* the recovery.
+
+**3. The stall classifier could not see the stall.** It compared its horizon
+against the interval between the two samples rather than against how long the
+run had been flat. Sampled 90 seconds apart against a 900-second horizon, it
+returned `RUNNING` for a run dead for five hours — **and a caller who polls
+could never have obtained a stall verdict at all.** The instrument built to
+detect this incident did not detect this incident. `flat_since_seconds` is now
+required with no default, and the report states both durations so the old
+arithmetic would be visible rather than silent.
+
+**4. The waiter could not terminate.** `until [ -s report ] && ! pgrep -qf
+"codex exec"` — and `pgrep -f "codex exec"` matched the waiter's own command
+line, so the loop could never exit *even after the worker did*. That is RP3-13,
+which this release refuses at construction in `progress.Waiter`, recurring in a
+shell one-liner that never went through it. The reason a coordinator hand-writes
+a waiter is that the pack did not ship one, so it now does:
+`progress.waiter_command` watches a registered process number with `kill -0` and
+contains no pattern for anything to match.
+
+**And a fifth, found while writing the record.** A blocker with no stated scope
+silenced work it had nothing to do with: one human decision about two stalled
+processes reported the whole capability `BLOCKED_ON_HUMAN` while five authorised
+items sat undone. From outside, a blocker that stops unrelated work is
+indistinguishable from a coordinator that has stopped. A blocker now says what
+it blocks; unscoped still blocks everything, because that is the safe default
+for one nobody has thought about.
+
+**Duplicate workers.** A wait names the **obligation** it discharges, and two
+live waits on one obligation are `RECOVERY_REQUIRED` rather than a race —
+whichever answers second is work nobody asked for. Retiring a wait frees the
+obligation, and retiring is not deleting: the record still says what happened,
+which is how the replacement dispatch is provably not a duplicate.
+
+### How the incident was handled, and the boundary that was not crossed
+
+Classified from durable evidence **before anything was touched**: three
+independently observed signals flat, no provider rollout where a previous run
+had a complete one — the recorded `EC-CC-90 RECURRENCE 2` signature. **No
+durable output existed to recover**, verified rather than assumed.
+
+**The worker was not terminated.** Autonomous termination is out of scope for
+this release, and the frozen recovery contract gates a coordinator's own
+termination on seven preconditions with the default posture *escalate, never
+terminate*. Two are absent: no durable checkpoint verified to exist, and no
+task-owned output root. Precondition 7 requires a durable human-visible
+escalation whenever any precondition is absent, and
+`rp2.3-session/INCIDENT-2026-09-03-silent-idle.md` is it. **The exact limitation
+is reported rather than crossed:** ending processes 2775/2776 is a human
+decision under row 4.
+
+The **waiter** was retired, and it is a different object — the coordinator's own
+broken instrument, holding no output and provably unable to complete. Retiring
+it through the harness that started it is supervisory control over a tool, not
+termination of work.
+
+**Mutation-checked, eight for eight** — plus two mutations that taught nothing
+because they were near-equivalent, which is the second and third time that has
+happened this session and is worth recording as a property of the harness rather
+than of the code.

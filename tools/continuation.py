@@ -54,6 +54,7 @@ finished and its result is unconsumed, never what to do about it.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -147,6 +148,24 @@ class Wait:
     job_id: str
     kind: str
     expects: str
+    #: **What this wait discharges.** Two un-retired waits naming the same
+    #: obligation are a duplicate dispatch, and the state model refuses rather
+    #: than letting two workers race to satisfy one requirement. Defaults to the
+    #: job id, so a caller that does not distinguish them gets one-per-job.
+    obligation: str = ""
+    #: **The longest the coordinator will remain in this wait.** Required for
+    #: every observable kind, and this is the field that makes indefinite
+    #: silence impossible rather than merely nameable.
+    #:
+    #: Measured live: a dispatched worker sat for five hours and thirty-nine
+    #: minutes with 0.34 seconds of processor time, no output and no provider
+    #: rollout, while the coordinator waited. The state model of the moment
+    #: could say `WAITING_ON_IDENTIFIED_JOB` and could say it forever, because a
+    #: live process satisfies a liveness question indefinitely. A wait past its
+    #: deadline is `RECOVERY_REQUIRED` **whatever the process is doing** — the
+    #: deadline is a statement about the coordinator's patience, not about the
+    #: worker, and it is the only thing that terminates the state.
+    not_beyond_seconds: float | None = None
     pid: int | None = None
     path: str | None = None
     task_id: str | None = None
@@ -155,6 +174,26 @@ class Wait:
     #: Set once the coordinator has taken the result up. An unconsumed
     #: completion is the state this whole module exists to name.
     consumed: bool = False
+    #: Set when a wait has been recovered from and must no longer be considered.
+    #: A retired wait does not hold its obligation, so a replacement dispatch is
+    #: not a duplicate.
+    retired: bool = False
+
+    def expired_at(self, now: str) -> bool:
+        """Whether the coordinator's declared patience has run out.
+
+        Compared on the clock the caller supplies rather than on wall time, so
+        the answer is deterministic and a rehearsal can reach it without
+        waiting.
+        """
+        if self.not_beyond_seconds is None or not self.declared_at:
+            return False
+        try:
+            started = datetime.fromisoformat(self.declared_at)
+            current = datetime.fromisoformat(now)
+        except (TypeError, ValueError):
+            return False
+        return (current - started).total_seconds() > float(self.not_beyond_seconds)
 
     def __post_init__(self) -> None:
         if not _ID.fullmatch(self.job_id or ""):
@@ -168,6 +207,20 @@ class Wait:
                 "answer is the shape that decayed into silence",
                 job_id=self.job_id,
             )
+        object.__setattr__(self, "obligation", (self.obligation or self.job_id).strip())
+        if not (self.declared_at or "").strip():
+            object.__setattr__(self, "declared_at", now())
+        if self.kind in WaitKind.OBSERVABLE:
+            bound = self.not_beyond_seconds
+            if (not isinstance(bound, (int, float)) or isinstance(bound, bool)
+                    or not math.isfinite(bound) or bound <= 0):
+                raise PreconditionError(
+                    "an observable wait declares how long the coordinator will remain in it. "
+                    "Without a deadline a live process satisfies the wait forever, which is how "
+                    "a dispatch that never started held a coordinator for five hours and "
+                    "thirty-nine minutes",
+                    job_id=self.job_id, declared=repr(bound),
+                )
         required = {
             WaitKind.PROCESS: ("pid",),
             WaitKind.EXIT_FILE: ("path",),
@@ -230,6 +283,15 @@ class Blocker:
     #: may be unknown, and unknown is recorded rather than estimated.
     pool_id: str | None = None
     resets_at: str | None = None
+    #: **What this blocker actually blocks.** Empty means everything, which is
+    #: the safe default for a blocker whose scope nobody stated.
+    #:
+    #: Scoped because an unscoped one is another way into silent idling: a human
+    #: decision outstanding on one stalled process reported the whole capability
+    #: `BLOCKED_ON_HUMAN` while five authorised items sat undone. A blocker that
+    #: stops work it has nothing to do with is indistinguishable, from outside,
+    #: from a coordinator that has stopped.
+    blocks: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.kind not in ("human", "capacity"):
@@ -360,12 +422,17 @@ class LivenessReport:
     #: A completed wait already marked consumed, still declared. Harmless, and
     #: worth retiring so a stale quorum cannot report `RUNNING` indefinitely.
     superseded: tuple[str, ...] = ()
+    #: Waits past the deadline their declaration carried. The state that makes
+    #: indefinite silence impossible.
+    expired: tuple[str, ...] = ()
+    #: Obligations held by more than one live wait.
+    duplicated: tuple[str, ...] = ()
     actionable: tuple[str, ...] = ()
     blockers: tuple[str, ...] = ()
 
     @property
     def wake_required(self) -> bool:
-        return bool(self.unconsumed) or self.state in (
+        return bool(self.unconsumed) or bool(self.expired) or self.state in (
             State.RECOVERY_REQUIRED, State.SILENT_IDLE,
         )
 
@@ -380,7 +447,10 @@ class LivenessReport:
         for observation in self.observations:
             mark = "finished" if observation.finished else ("UNOBSERVABLE" if observation.unobservable else "running")
             lines.append(f"  job {observation.job_id}: {mark} — {observation.how}")
-        for label, values in (("unconsumed", self.unconsumed), ("cannot be observed", self.unobservable),
+        for label, values in (("unconsumed", self.unconsumed),
+                              ("cannot be observed", self.unobservable),
+                              ("PAST THE DECLARED DEADLINE", self.expired),
+                              ("obligation held twice", self.duplicated),
                               ("superseded, retire it", self.superseded)):
             if values:
                 lines.append(f"  {label}: {', '.join(values)}")
@@ -391,7 +461,9 @@ class LivenessReport:
         return "\n".join(lines)
 
 
-def derive(record: ContinuationRecord, *, relative_to: str | Path = ".") -> LivenessReport:
+def derive(
+    record: ContinuationRecord, *, relative_to: str | Path = ".", now: str | None = None
+) -> LivenessReport:
     """The current state, computed from the declaration and the artifacts.
 
     Order matters and is not arbitrary. Anything that cannot be established
@@ -402,8 +474,25 @@ def derive(record: ContinuationRecord, *, relative_to: str | Path = ".") -> Live
     stayed invisible.
     """
     base = Path(relative_to)
-    observations = tuple(_observe(wait, relative_to=base) for wait in record.waits)
-    by_id = {wait.job_id: wait for wait in record.waits}
+    moment = now or _now()
+    #: A retired wait is out of the picture entirely: it holds no obligation and
+    #: is not observed. Recovery retires; it does not delete, so the record
+    #: still says what happened.
+    live = tuple(w for w in record.waits if not w.retired)
+    observations = tuple(_observe(wait, relative_to=base) for wait in live)
+    by_id = {wait.job_id: wait for wait in live}
+
+    #: Two live waits on one obligation are two workers racing to satisfy one
+    #: requirement, and whichever answers second is work nobody asked for.
+    holders: dict[str, list[str]] = {}
+    for wait in live:
+        holders.setdefault(wait.obligation, []).append(wait.job_id)
+    duplicated = {ob: jobs for ob, jobs in holders.items() if len(jobs) > 1}
+
+    #: Past its declared deadline, whatever the process is doing. A live process
+    #: satisfies a liveness question forever, which is how a dispatch that never
+    #: started held a coordinator for five hours and thirty-nine minutes.
+    expired = tuple(w.job_id for w in live if w.expired_at(moment))
 
     unobservable = tuple(
         o.job_id for o in observations
@@ -413,21 +502,40 @@ def derive(record: ContinuationRecord, *, relative_to: str | Path = ".") -> Live
     unconsumed = tuple(o.job_id for o in finished if not by_id[o.job_id].consumed)
     superseded = tuple(o.job_id for o in finished if by_id[o.job_id].consumed)
     running = tuple(o.job_id for o in observations if o.finished is False)
-    human_waits = tuple(w.job_id for w in record.waits if w.kind == WaitKind.HUMAN)
+    human_waits = tuple(w.job_id for w in live if w.kind == WaitKind.HUMAN)
 
-    human = [b for b in record.blockers if b.kind == "human"]
-    capacity = [b for b in record.blockers if b.kind == "capacity"]
+    def _stops_the_outstanding_work(blocker: Blocker) -> bool:
+        if not blocker.blocks:
+            return True
+        return any(item in blocker.blocks for item in record.actionable) or not record.actionable
+
+    human = [b for b in record.blockers if b.kind == "human" and _stops_the_outstanding_work(b)]
+    capacity = [b for b in record.blockers
+                if b.kind == "capacity" and _stops_the_outstanding_work(b)]
+    #: Recorded and reported whatever their scope, because a blocker nobody can
+    #: see is a blocker nobody resolves.
+    scoped_away = [b for b in record.blockers if not _stops_the_outstanding_work(b)]
     blocker_lines = tuple(
         f"{b.kind}: {b.detail}" + (f" (row {b.hitl_row})" if b.hitl_row else "")
         + (f" (pool {b.pool_id})" if b.pool_id else "")
+        + (" — SCOPED, and it does not stop the outstanding work"
+           if b in scoped_away else "")
         for b in record.blockers
     )
 
     common = dict(
         capability=record.capability, observations=observations, unconsumed=unconsumed,
-        unobservable=unobservable, superseded=superseded,
+        unobservable=unobservable, superseded=superseded, expired=expired,
+        duplicated=tuple(sorted(duplicated)),
         actionable=tuple(record.actionable), blockers=blocker_lines,
     )
+
+    if duplicated:
+        return LivenessReport(**common, state=State.RECOVERY_REQUIRED, why=(
+            "two live waits hold the same obligation — "
+            + "; ".join(f"{ob}: {', '.join(jobs)}" for ob, jobs in sorted(duplicated.items()))
+            + ". Whichever answers second is work nobody asked for, and retiring one is a "
+              "decision rather than a race"))
 
     if unobservable:
         return LivenessReport(**common, state=State.RECOVERY_REQUIRED, why=(
@@ -438,6 +546,19 @@ def derive(record: ContinuationRecord, *, relative_to: str | Path = ".") -> Live
         return LivenessReport(**common, state=State.COMPLETED_NOT_CONSUMED, why=(
             f"{len(unconsumed)} job(s) finished and nothing has taken the result up; this is the "
             "edge four of five recorded recurrences were"))
+
+    if expired:
+        # BEFORE the running branch, deliberately. A stalled process is alive, so
+        # a liveness question about it answers WAITING_ON_IDENTIFIED_JOB forever —
+        # which is precisely the state that held for five hours and thirty-nine
+        # minutes. AFTER the unconsumed branch, equally deliberately: a job that
+        # finished past its deadline has left a result, and taking it up is the
+        # recovery. Expiry is the answer when there is nothing to take up.
+        return LivenessReport(**common, state=State.RECOVERY_REQUIRED, why=(
+            f"{len(expired)} wait(s) are past the deadline the coordinator declared for them "
+            f"({', '.join(expired)}). This is true whatever the job is doing: a live process "
+            "satisfies a liveness question forever, so the deadline is what ends the wait. "
+            "Classify from the artifacts and recover before retrying anything"))
 
     if running:
         return LivenessReport(**common, state=State.WAITING_ON_IDENTIFIED_JOB, why=(
@@ -508,6 +629,11 @@ def load(path: str | Path) -> ContinuationRecord:
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+#: Internal alias so `derive` can default its clock without shadowing the
+#: parameter a caller supplies.
+_now = now
 
 
 def _cli(argv: list[str]) -> int:

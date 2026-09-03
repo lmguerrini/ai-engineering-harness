@@ -38,7 +38,7 @@ def _declare_wait_then_finish(tmp_path, job_id="regen", name="exit-status"):
     """
     sentinel = tmp_path / name
     wait = Wait.declare(job_id=job_id, kind=WaitKind.EXIT_FILE, path=str(sentinel),
-                        expects="the regenerated records, in the output root")
+                        expects="the regenerated records, in the output root", not_beyond_seconds=1800)
     process = subprocess.Popen([
         sys.executable, "-c",
         f"import pathlib; pathlib.Path({str(sentinel)!r}).write_text('0')",
@@ -77,7 +77,7 @@ def test_a_running_job_is_not_reported_as_finished(tmp_path):
     try:
         record = _record(waits=(
             Wait(job_id="slow", kind=WaitKind.PROCESS, pid=process.pid,
-                 expects="a long analysis"),
+                 expects="a long analysis", not_beyond_seconds=1800),
         ))
         report = continuation.derive(record, relative_to=tmp_path)
         assert report.state == State.WAITING_ON_IDENTIFIED_JOB
@@ -93,7 +93,7 @@ def test_a_process_wait_reports_that_a_reused_number_would_look_the_same(tmp_pat
     process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     try:
         record = _record(waits=(Wait(job_id="j", kind=WaitKind.PROCESS, pid=process.pid,
-                                     expects="anything"),))
+                                     expects="anything", not_beyond_seconds=1800),))
         assert "reused number" in continuation.derive(record, relative_to=tmp_path).render()
     finally:
         process.kill()
@@ -118,7 +118,7 @@ def test_a_saved_record_round_trips_and_derives_the_same_answer(tmp_path):
     record = _record(
         actionable=("write the gate record",),
         waits=(Wait(job_id="j1", kind=WaitKind.PATH_EXISTS, path="never-appears",
-                    expects="a report"),),
+                    expects="a report", not_beyond_seconds=1800),),
     )
     path = continuation.save(record, tmp_path / "CONTINUATION.json")
     reloaded = continuation.load(path)
@@ -155,13 +155,13 @@ def test_a_wait_with_no_observable_condition_is_refused_at_declaration():
     for kind, missing in ((WaitKind.PROCESS, {}), (WaitKind.EXIT_FILE, {}),
                           (WaitKind.OUTPUT_ROOT, {"path": "/tmp/x"})):
         with pytest.raises(PreconditionError) as caught:
-            Wait(job_id="j", kind=kind, expects="a result", **missing)
+            Wait(job_id="j", kind=kind, expects="a result", **missing, not_beyond_seconds=1800)
         assert "sentence cannot have a transition" in caught.value.render()
 
 
 def test_a_wait_that_does_not_say_what_it_expects_is_refused():
     with pytest.raises(PreconditionError):
-        Wait(job_id="j", kind=WaitKind.PATH_EXISTS, path="p", expects="  ")
+        Wait(job_id="j", kind=WaitKind.PATH_EXISTS, path="p", expects="  ", not_beyond_seconds=1800)
 
 
 def test_an_output_root_that_cannot_be_classified_needs_recovery_not_patience(tmp_path):
@@ -176,7 +176,7 @@ def test_an_output_root_that_cannot_be_classified_needs_recovery_not_patience(tm
 
     record = _record(waits=(
         Wait(job_id="batch", kind=WaitKind.OUTPUT_ROOT, path=str(contract.output_root),
-             task_id="batch", max_bytes_per_write=64, expects="the records"),
+             task_id="batch", max_bytes_per_write=64, expects="the records", not_beyond_seconds=1800),
     ))
     report = continuation.derive(record, relative_to=tmp_path)
     assert report.state == State.RECOVERY_REQUIRED
@@ -189,7 +189,7 @@ def test_an_unreadable_exit_file_is_unobservable_rather_than_finished(tmp_path):
     not a status anyone can read."""
     directory = tmp_path / "status-is-a-directory"
     record = _record(waits=(
-        Wait(job_id="j", kind=WaitKind.EXIT_FILE, path=str(directory), expects="a status"),
+        Wait(job_id="j", kind=WaitKind.EXIT_FILE, path=str(directory), expects="a status", not_beyond_seconds=1800),
     ))
     directory.mkdir()
     assert continuation.derive(record, relative_to=tmp_path).state == State.RECOVERY_REQUIRED
@@ -203,17 +203,17 @@ def test_a_wait_whose_condition_is_already_satisfied_is_refused_at_declaration(t
     existing.write_text("0")
     for kind in (WaitKind.EXIT_FILE, WaitKind.PATH_EXISTS):
         with pytest.raises(PreconditionError) as caught:
-            Wait.declare(job_id="j", kind=kind, path=str(existing), expects="a result")
+            Wait.declare(job_id="j", kind=kind, path=str(existing), expects="a result", not_beyond_seconds=1800)
         assert "already satisfied" in caught.value.render()
 
     with pytest.raises(PreconditionError):
-        Wait.declare(job_id="j", kind=WaitKind.EXIT_FILE, path="/dev/null", expects="a result")
+        Wait.declare(job_id="j", kind=WaitKind.EXIT_FILE, path="/dev/null", expects="a result", not_beyond_seconds=1800)
 
     # And reconstruction is a different act: a record saved before the job
     # finished must reload after it finished. A check in the constructor made
     # that record unloadable, which is worse than the defect it closed.
     assert Wait(job_id="j", kind=WaitKind.EXIT_FILE, path=str(existing),
-                expects="a result").path == str(existing)
+                expects="a result", not_beyond_seconds=1800).path == str(existing)
 
 
 # --- blocked, which is neither progress nor a defect ------------------------------------
@@ -262,7 +262,7 @@ def test_an_unconsumed_completion_is_not_buried_under_another_running_job(tmp_pa
     try:
         record = _record(waits=(
             done,
-            Wait(job_id="still-going", kind=WaitKind.PROCESS, pid=running.pid, expects="another"),
+            Wait(job_id="still-going", kind=WaitKind.PROCESS, pid=running.pid, expects="another", not_beyond_seconds=1800),
         ))
         report = continuation.derive(record, relative_to=tmp_path)
         assert report.state == State.COMPLETED_NOT_CONSUMED
@@ -277,7 +277,7 @@ def test_something_that_cannot_be_established_outranks_everything_else(tmp_path)
     refuse, so it is reported before any answer that could be acted on."""
     done, _sentinel = _declare_wait_then_finish(tmp_path, job_id="done")
     lost = Wait(job_id="lost", kind=WaitKind.EXIT_FILE,
-                path=str(tmp_path / "never-a-file"), expects="another")
+                path=str(tmp_path / "never-a-file"), expects="another", not_beyond_seconds=1800)
     (tmp_path / "never-a-file").mkdir()
     record = _record(waits=(done, lost))
     assert continuation.derive(record, relative_to=tmp_path).state == State.RECOVERY_REQUIRED
@@ -327,7 +327,7 @@ def test_a_malformed_record_is_refused_with_its_path(tmp_path):
 
 def test_an_unknown_wait_kind_names_the_kinds_that_exist():
     with pytest.raises(IntegrityError) as caught:
-        Wait(job_id="j", kind="vibes", expects="something")
+        Wait(job_id="j", kind="vibes", expects="something", not_beyond_seconds=1800)
     assert "process" in caught.value.render() and "human" in caught.value.render()
 
 
@@ -345,7 +345,7 @@ def test_the_cli_exit_status_separates_owed_from_blocked_from_unestablished(tmp_
     assert State.SILENT_IDLE in capsys.readouterr().out
 
     unobservable = Wait(job_id="j", kind=WaitKind.EXIT_FILE,
-                        path=str(tmp_path / "becomes-a-directory"), expects="a status")
+                        path=str(tmp_path / "becomes-a-directory"), expects="a status", not_beyond_seconds=1800)
     (tmp_path / "becomes-a-directory").mkdir()
     continuation.save(_record(waits=(unobservable,)), path)
     assert continuation._cli([str(path)]) == 2, (

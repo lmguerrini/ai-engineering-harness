@@ -42,6 +42,7 @@ session. Each carries the observation that reopens it.
 | C12 | The diagnostic projection | SHOULD | C4, C5, C7 |  *(shipped on human decision; see the gate record)*
 | C13 | Launch, migration and compatibility | MUST | C3–C11 |
 | C14 | Rehearsal, qualification and release candidate | MUST | all |
+| C15 | Closing ACTIONABLE_WORK + SILENT_IDLE | MUST | C4, C5, C12 |
 
 **C2 comes second, and the ordering is the point.** The rehearsal obligations
 this release must satisfy are unconditional about it: *every rehearsal's own
@@ -128,5 +129,10 @@ discarded finding is evidence about the oracle.
 | RP3-24 | a closure record's gate block is prose, so a profile nobody ran is indistinguishable from one that passed | two capabilities closed green over red gates, and nothing compared the sentence to a run |
 | RP3-25 | a measurement inside a human decision record is never re-checked, and nothing downstream questions a ruling | one ruling was taken on a figure a later commit falsified, and the decision went on standing |
 | RP3-26 | a live project's contract is written to the pre-2.1 schema, unreadable by every tool since, and told only that its type is wrong | `private_terms:` as a list refuses with a message about a mapping; nothing names the schema generation or the migration, and the refusal is identical at the frozen 2.2.0 baseline |
+| RP3-27 | a declared wait has no deadline, so a live process satisfies it forever | measured LIVE during this session: a dispatched auditor held the coordinator 5h39m with 0.34s of processor time, no output and no provider rollout, and the state model could say WAITING_ON_IDENTIFIED_JOB indefinitely |
+| RP3-28 | the stall classifier compares its horizon against the gap between two samples, not against how long the run has been flat | the same incident, sampled 90s apart against a 900s horizon, classified RUNNING — a caller who polls can never obtain a stall verdict |
+| RP3-29 | a hand-written waiter matches its own command line | `until ! pgrep -qf "codex exec"` — `pgrep` returned the waiter's own pid, so it could not terminate even after the worker exited. RP3-13 recurring, in a shell one-liner that bypassed the mechanism that refuses it |
+| RP3-30 | a blocker with no stated scope silences work it has nothing to do with | one human decision on two stalled processes reported a whole capability BLOCKED_ON_HUMAN while five authorised items sat undone |
+| RP3-31 | no continuation record existed for the coordinator's own run | the mechanism shipped in this candidate and its primary intended caller never wrote one, so nothing could derive a state |
 
 *(appended as each capability reproduces its own)*

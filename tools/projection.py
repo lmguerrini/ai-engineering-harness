@@ -152,6 +152,8 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
         panel.lines.append(f"job {observation.job_id}: {mark} — {observation.how}")
     for label, values in (("unconsumed results", report.unconsumed),
                           ("waits nobody can observe", report.unobservable),
+                          ("PAST THE DECLARED DEADLINE", report.expired),
+                          ("obligations held by more than one wait", report.duplicated),
                           ("superseded waits, retire them", report.superseded),
                           ("blocked", report.blockers)):
         if values:

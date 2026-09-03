@@ -183,7 +183,7 @@ def test_output_roots_are_classified_by_the_module_that_owns_the_question(projec
         ContinuationRecord(
             capability="CAP-EXAMPLE", updated_at=continuation.now(),
             waits=(Wait(job_id="batch", kind=WaitKind.OUTPUT_ROOT, path=str(contract.output_root),
-                        task_id="batch", max_bytes_per_write=64, expects="records"),),
+                        task_id="batch", max_bytes_per_write=64, expects="records", not_beyond_seconds=1800),),
         ),
         project_root / "CONTINUATION.json",
     )

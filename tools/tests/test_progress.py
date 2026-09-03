@@ -25,7 +25,7 @@ def test_a_run_that_existed_for_thirty_one_minutes_and_did_nothing_is_stalled():
         "hung",
         _sample(0, cpu_seconds=0.05, log_bytes=0, provider_rollout=0),
         _sample(1850, cpu_seconds=0.05, log_bytes=0, provider_rollout=0),
-        horizon_seconds=900,
+        horizon_seconds=900, flat_since_seconds=0,
     )
     assert report.state == ProgressState.STALLED
     assert set(report.flat) == {"cpu_seconds", "log_bytes", "provider_rollout"}
@@ -40,7 +40,7 @@ def test_a_healthy_run_silent_on_its_log_is_not_stalled():
         "healthy",
         _sample(0, cpu_seconds=3.81, log_bytes=22452),
         _sample(260, cpu_seconds=4.14, log_bytes=22452),
-        horizon_seconds=120,
+        horizon_seconds=120, flat_since_seconds=0,
     )
     assert report.state == ProgressState.RUNNING
     assert report.advanced == ("cpu_seconds",)
@@ -56,7 +56,7 @@ def test_any_single_advancing_signal_is_enough_however_many_are_flat():
         signals_after[advancing] = 2.0
         report = progress.classify(
             "one-mover", Sample(0, signals_before), Sample(10_000, signals_after),
-            horizon_seconds=1,
+            horizon_seconds=1, flat_since_seconds=0,
         )
         assert report.state == ProgressState.RUNNING, advancing
         assert report.advanced == (advancing,)
@@ -70,7 +70,7 @@ def test_one_flat_signal_is_never_a_stall_however_long_it_stays_flat():
     measured false positive rather than evidence."""
     report = progress.classify(
         "log-only", _sample(0, log_bytes=100), _sample(100_000, log_bytes=100),
-        horizon_seconds=1,
+        horizon_seconds=1, flat_since_seconds=0,
     )
     assert report.state == ProgressState.UNKNOWN
     assert "single flat signal" in report.why
@@ -82,7 +82,7 @@ def test_two_agreeing_flat_signals_past_the_horizon_are_a_stall():
     could never say anything, which is a different way of being useless."""
     report = progress.classify(
         "two-flat", _sample(0, log_bytes=1, cpu_seconds=1),
-        _sample(1000, log_bytes=1, cpu_seconds=1), horizon_seconds=100,
+        _sample(1000, log_bytes=1, cpu_seconds=1), horizon_seconds=100, flat_since_seconds=0,
     )
     assert report.state == ProgressState.STALLED
 
@@ -90,7 +90,7 @@ def test_two_agreeing_flat_signals_past_the_horizon_are_a_stall():
 def test_flat_inside_the_horizon_is_still_running():
     report = progress.classify(
         "young", _sample(0, log_bytes=1, cpu_seconds=1),
-        _sample(30, log_bytes=1, cpu_seconds=1), horizon_seconds=900,
+        _sample(30, log_bytes=1, cpu_seconds=1), horizon_seconds=900, flat_since_seconds=0,
     )
     assert report.state == ProgressState.RUNNING
     assert "not yet stalled" in report.why
@@ -107,7 +107,7 @@ def test_signals_observed_in_only_one_sample_are_named_and_never_called_flat():
     checked only the verdict would pass while the report lied."""
     report = progress.classify(
         "partial", _sample(0, log_bytes=1, cpu_seconds=1),
-        _sample(1000, log_bytes=1), horizon_seconds=100,
+        _sample(1000, log_bytes=1), horizon_seconds=100, flat_since_seconds=0,
     )
     assert report.incomparable == ("cpu_seconds",)
     assert "cpu_seconds" not in report.flat and "cpu_seconds" not in report.advanced
@@ -123,7 +123,7 @@ def test_a_stall_report_never_claims_an_uncompared_signal_was_flat():
         "three-signals",
         _sample(0, log_bytes=1, cpu_seconds=1, provider_rollout=5),
         _sample(1000, log_bytes=1, cpu_seconds=1),
-        horizon_seconds=100,
+        horizon_seconds=100, flat_since_seconds=0,
     )
     assert report.state == ProgressState.STALLED
     assert set(report.flat) == {"log_bytes", "cpu_seconds"}
@@ -134,7 +134,8 @@ def test_a_stall_report_never_claims_an_uncompared_signal_was_flat():
 
 
 def test_nothing_observed_in_both_samples_is_unknown_rather_than_stalled():
-    report = progress.classify("blind", _sample(0), _sample(9999), horizon_seconds=1)
+    report = progress.classify("blind", _sample(0), _sample(9999), horizon_seconds=1,
+                              flat_since_seconds=0)
     assert report.state == ProgressState.UNKNOWN
     assert "read nothing is not a result" in report.why
 
@@ -142,7 +143,8 @@ def test_nothing_observed_in_both_samples_is_unknown_rather_than_stalled():
 def test_a_finished_run_is_complete_whatever_its_signals_did():
     report = progress.classify(
         "done", _sample(0, log_bytes=1, cpu_seconds=1),
-        _sample(9999, log_bytes=1, cpu_seconds=1), horizon_seconds=1, finished=True,
+        _sample(9999, log_bytes=1, cpu_seconds=1), horizon_seconds=1, flat_since_seconds=0,
+        finished=True,
     )
     assert report.state == ProgressState.COMPLETE
 
@@ -156,13 +158,13 @@ def test_a_horizon_nobody_declared_is_refused_rather_than_defaulted():
     for bad in (0, -1, None, "600"):
         with pytest.raises(PreconditionError):
             progress.classify("r", _sample(0, log_bytes=1, cpu_seconds=1),
-                              _sample(1, log_bytes=1, cpu_seconds=1), horizon_seconds=bad)
+                              _sample(1, log_bytes=1, cpu_seconds=1), horizon_seconds=bad, flat_since_seconds=0)
 
 
 def test_the_report_states_the_horizon_it_was_measured_against():
     report = progress.classify(
         "r", _sample(0, log_bytes=1, cpu_seconds=1), _sample(1000, log_bytes=1, cpu_seconds=1),
-        horizon_seconds=333,
+        horizon_seconds=333, flat_since_seconds=0,
     )
     assert "333" in report.render()
 
@@ -172,7 +174,7 @@ def test_a_stall_says_in_its_own_output_that_it_is_not_an_instruction():
     positive is measured, and it sits on a numbered human row."""
     report = progress.classify(
         "r", _sample(0, log_bytes=1, cpu_seconds=1), _sample(1000, log_bytes=1, cpu_seconds=1),
-        horizon_seconds=10,
+        horizon_seconds=10, flat_since_seconds=0,
     )
     assert "row 4" in report.render()
     assert "not an instruction" in report.render()
@@ -188,7 +190,7 @@ def test_a_signal_this_module_does_not_know_is_refused():
 def test_a_later_sample_that_is_earlier_is_refused():
     with pytest.raises(IntegrityError):
         progress.classify("r", _sample(100, log_bytes=1), _sample(0, log_bytes=1),
-                          horizon_seconds=10)
+                          horizon_seconds=10, flat_since_seconds=0)
 
 
 # --- waiters ---------------------------------------------------------------------------
@@ -252,15 +254,18 @@ def test_retiring_is_idempotent_and_leaves_an_already_retired_waiter_alone():
 
 
 def test_the_cli_exit_status_separates_stalled_from_unknown(capsys):
-    stalled = progress._cli(["r", "--horizon", "10", "--earlier", "0", "log_bytes=1",
+    stalled = progress._cli(["r", "--horizon", "10", "--flat-since", "0",
+                             "--earlier", "0", "log_bytes=1",
                              "cpu_seconds=1", "--later", "100", "log_bytes=1", "cpu_seconds=1"])
     assert stalled == 1 and ProgressState.STALLED in capsys.readouterr().out
 
-    unknown = progress._cli(["r", "--horizon", "10", "--earlier", "0", "log_bytes=1",
+    unknown = progress._cli(["r", "--horizon", "10", "--flat-since", "0",
+                             "--earlier", "0", "log_bytes=1",
                              "--later", "100", "log_bytes=1"])
     assert unknown == 2 and ProgressState.UNKNOWN in capsys.readouterr().out
 
-    running = progress._cli(["r", "--horizon", "10", "--earlier", "0", "log_bytes=1",
+    running = progress._cli(["r", "--horizon", "10", "--flat-since", "0",
+                             "--earlier", "0", "log_bytes=1",
                              "cpu_seconds=1", "--later", "100", "log_bytes=1", "cpu_seconds=9"])
     assert running == 0 and ProgressState.RUNNING in capsys.readouterr().out
 
@@ -286,9 +291,101 @@ def test_a_monotonic_signal_that_went_backwards_is_a_broken_instrument_not_a_qui
     measurement cannot be trusted."""
     report = progress.classify(
         "rotated", _sample(0, log_bytes=22000, cpu_seconds=4.0),
-        _sample(9999, log_bytes=12, cpu_seconds=4.0), horizon_seconds=1,
+        _sample(9999, log_bytes=12, cpu_seconds=4.0), horizon_seconds=1, flat_since_seconds=0,
     )
     assert report.state == ProgressState.UNKNOWN
     assert report.regressed == ("log_bytes",)
     assert "log_bytes" not in report.flat
     assert "went backwards" in report.render()
+
+
+# --- the horizon is about the run, not about the sampling interval --------------
+#
+# THE LIVE INCIDENT. A dispatched auditor sat for 5h39m with 0.34 seconds of
+# processor time, no output bytes and no provider rollout, while the coordinator
+# waited. Sampled 90 seconds apart against a 900-second horizon, this module
+# returned RUNNING — because 90 is less than 900. The instrument built to detect
+# that incident did not detect that incident.
+
+
+def test_the_live_incident_is_classified_stalled(tmp_path):
+    """Reproduced from the durable evidence: three flat signals, a run that has
+    been without progress for five hours and thirty-nine minutes, sampled ninety
+    seconds apart."""
+    report = progress.classify(
+        "rp23-delta-audit",
+        _sample(20393.0, log_bytes=39.0, cpu_seconds=0.43, provider_rollout=0.0),
+        _sample(20483.0, log_bytes=39.0, cpu_seconds=0.43, provider_rollout=0.0),
+        horizon_seconds=900, flat_since_seconds=0.0,
+    )
+    assert report.state == ProgressState.STALLED
+    assert report.flat_for_seconds == 20483.0
+    assert "20483s" in report.render() and "900s" in report.render()
+
+
+def test_a_short_sampling_interval_cannot_hide_a_long_stall():
+    """The general form. Whatever gap the caller samples at, the verdict is
+    about the run — otherwise a poller can never see a stall at all."""
+    for gap in (1, 5, 30, 90, 300):
+        report = progress.classify(
+            "poller", _sample(100000.0, log_bytes=1, cpu_seconds=1),
+            _sample(100000.0 + gap, log_bytes=1, cpu_seconds=1),
+            horizon_seconds=900, flat_since_seconds=0.0,
+        )
+        assert report.state == ProgressState.STALLED, gap
+
+
+def test_the_report_states_both_durations_so_the_old_misuse_would_be_visible():
+    """A caller with only two samples passes the earlier one's time, which
+    reproduces the old arithmetic — and the report then says "flat for 90s", so
+    a reader can see the claim is about ninety seconds rather than the run."""
+    report = progress.classify(
+        "narrow", _sample(20393.0, log_bytes=1, cpu_seconds=1),
+        _sample(20483.0, log_bytes=1, cpu_seconds=1),
+        horizon_seconds=900, flat_since_seconds=20393.0,
+    )
+    assert report.state == ProgressState.RUNNING
+    assert "flat for 90s" in report.render()
+    assert "90s between the two readings" in report.render()
+
+
+def test_the_moment_the_run_last_advanced_is_required_and_has_no_default():
+    with pytest.raises(TypeError):
+        progress.classify("r", _sample(0, log_bytes=1, cpu_seconds=1),
+                          _sample(1, log_bytes=1, cpu_seconds=1), horizon_seconds=10)
+    for bad in (None, "0", float("nan")):
+        with pytest.raises((PreconditionError, IntegrityError)):
+            progress.classify("r", _sample(0, log_bytes=1, cpu_seconds=1),
+                              _sample(1, log_bytes=1, cpu_seconds=1),
+                              horizon_seconds=10, flat_since_seconds=bad)
+
+
+def test_a_run_recorded_as_advancing_after_it_was_observed_is_refused():
+    with pytest.raises(IntegrityError):
+        progress.classify("r", _sample(0, log_bytes=1, cpu_seconds=1),
+                          _sample(10, log_bytes=1, cpu_seconds=1),
+                          horizon_seconds=1, flat_since_seconds=99)
+
+
+def test_the_shipped_waiter_command_watches_a_number_and_cannot_match_itself():
+    """The reason a coordinator hand-writes a waiter is that the pack did not
+    ship one — and the hand-written one matched itself, so it could never
+    terminate even after its worker exited. Measured live."""
+    command = progress.waiter_command("delta-audit", 2776, sentinel="/private/tmp/report.md")
+    joined = " ".join(command)
+    assert "kill -0 2776" in joined
+    assert "pgrep" not in joined, "a pattern matches whatever looks like it, including the watcher"
+    assert "/private/tmp/report.md" in joined
+
+    # The decisive property: the waiter's own command line does not contain
+    # anything that would make it look like the thing it waits on.
+    assert "2776" in joined
+    assert joined.count("kill -0") == 1
+
+
+def test_a_waiter_command_needs_a_real_process_number_and_a_sentinel():
+    for bad in (0, -1, True, "2776", None):
+        with pytest.raises(IntegrityError):
+            progress.waiter_command("r", bad, sentinel="/tmp/x")
+    with pytest.raises(IntegrityError):
+        progress.waiter_command("r", 1, sentinel="   ")
