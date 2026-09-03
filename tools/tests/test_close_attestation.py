@@ -315,3 +315,24 @@ def test_a_caller_with_no_identity_must_say_so_rather_than_omit_it():
     assert close_attestation.close_gate(
         _clean(), against=close_attestation.UNSTATED) == []
     assert close_attestation.close_gate(_clean(), against=("a" * 40, "b" * 64)) == []
+
+
+def test_a_premise_whose_command_failed_did_not_produce_a_measurement():
+    """The comparison read stdout and ignored the exit status, so
+    `print(42); raise SystemExit(1)` reported the premise as still reproducing
+    and closed the gate. A failed measurement reported as a confirmed one is the
+    exact inversion this module exists to prevent."""
+    import sys as _sys
+
+    premise = close_attestation.Premise(
+        decision="a decision", measured="42",
+        command=(_sys.executable, "-c", "print(42); raise SystemExit(1)"))
+    outcome = close_attestation.re_derive(premise)
+    assert outcome.reproduced is None
+    assert "exited 1" in outcome.detail
+    assert close_attestation.close_gate(
+        _clean(), [outcome], against=close_attestation.UNSTATED) != []
+
+    ok = close_attestation.re_derive(close_attestation.Premise(
+        decision="a decision", measured="42", command=(_sys.executable, "-c", "print(42)")))
+    assert ok.reproduced is True

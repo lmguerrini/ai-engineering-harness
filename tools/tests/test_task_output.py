@@ -517,3 +517,34 @@ def test_a_hard_linked_chunk_is_a_second_name_for_another_tasks_file(tmp_path):
         task_output.resume_plan(report)
     # And alpha, now that its bytes are in two places, is UNKNOWN as well.
     assert task_output.classify(alpha).state == task_output.RecoveryState.UNKNOWN
+
+
+def test_a_completion_marker_naming_another_task_does_not_complete_this_one(tmp_path):
+    """The owner marker was checked and the COMPLETION marker was not, so a root
+    whose `COMPLETE.json` named another task reported that task's completion as
+    this one's. Fifth shape of one defect."""
+    root = tmp_path / "beta"
+    beta = task_output.OutputContract("beta", root, 64, expected_chunks=1)
+    task_output.claim_root(beta)
+    task_output.materialise(beta, 0, "beta's own bytes")
+    (root / task_output.COMPLETION_MARKER).write_text(
+        json.dumps({"task_id": "alpha", "chunk_count": 1}))
+
+    report = task_output.classify(beta)
+    assert report.state == task_output.RecoveryState.UNKNOWN
+    assert "'alpha'" in report.why
+
+
+def test_a_symlinked_completion_marker_declares_nothing_about_this_root(tmp_path):
+    alpha = task_output.OutputContract("alpha", tmp_path / "alpha", 64, expected_chunks=1)
+    task_output.claim_root(alpha)
+    task_output.materialise(alpha, 0, "x")
+    task_output.complete(alpha, 1)
+
+    beta = task_output.OutputContract("beta", tmp_path / "beta", 64, expected_chunks=1)
+    task_output.claim_root(beta)
+    task_output.materialise(beta, 0, "y")
+    (beta.output_root / task_output.COMPLETION_MARKER).symlink_to(
+        alpha.output_root / task_output.COMPLETION_MARKER)
+
+    assert task_output.classify(beta).state == task_output.RecoveryState.UNKNOWN

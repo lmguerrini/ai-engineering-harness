@@ -618,3 +618,26 @@ def test_a_write_bound_of_zero_or_less_is_a_state_not_a_refusal_from_another_lay
     except PreconditionError:
         return
     assert continuation.derive(record).state == State.RECOVERY_REQUIRED
+
+
+@pytest.mark.parametrize("body", [
+    {"waits": [{"job_id": "w", "kind": "path_exists", "expects": "e", "path": 1,
+                "not_beyond_seconds": 60, "declared_at": "2026-01-01T00:00:00+00:00"}]},
+    {"budgets": "x"},
+    {"evidence": "x"},
+    {"blockers": [{"kind": "human", "detail": 1}]},
+    {"blockers": [{"kind": 7, "detail": "d"}]},
+    {"waits": [{"job_id": "w", "kind": "process", "expects": 5, "pid": 1,
+                "not_beyond_seconds": 60, "declared_at": "2026-01-01T00:00:00+00:00"}]},
+])
+def test_a_saved_field_of_the_wrong_type_is_a_named_refusal_at_the_boundary(tmp_path, body):
+    """A saved record is untrusted input in every field, not only the numeric
+    ones. An independent reader put an integer in three: `path` reached `Path()`
+    and raised TypeError, a blocker's `detail` reached `.strip()` and raised
+    AttributeError, `budgets` reached `dict()` and raised a bare ValueError
+    about a dictionary update sequence."""
+    document = {"capability": "cap", "updated_at": continuation.now(), **body}
+    path = tmp_path / "C.json"
+    path.write_text(json.dumps(document))
+    with pytest.raises(PreconditionError):
+        continuation.load(path)

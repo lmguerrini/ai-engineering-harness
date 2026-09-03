@@ -767,6 +767,32 @@ def save(record: ContinuationRecord, path: str | Path) -> Path:
     return target
 
 
+def _a_string(value, field_name: str, *, allow_empty: bool = True) -> str:
+    """A string, or a named refusal. Used on every text field a record carries.
+
+    An independent reader put an integer in three of them: `path` reached
+    `Path()` and raised `TypeError`, a blocker's `detail` reached `.strip()` and
+    raised `AttributeError`. Both are exceptions where the contract is a state.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise PreconditionError(f"`{field_name}` is text", found=repr(value)[:60])
+    if not allow_empty and not value.strip():
+        raise PreconditionError(f"`{field_name}` is not empty")
+    return value
+
+
+def _a_mapping(value, field_name: str) -> dict:
+    """An object, or a named refusal. `budgets: "x"` reached `dict()` and raised
+    a bare `ValueError` about a dictionary update sequence."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise PreconditionError(f"`{field_name}` is an object", found=repr(value)[:60])
+    return dict(value)
+
+
 def _only_strings(values, field_name: str) -> list[str]:
     """A list of strings, or a refusal naming what was there instead."""
     if values is None:
@@ -781,6 +807,20 @@ def _only_strings(values, field_name: str) -> list[str]:
                 found=repr(value)[:60],
             )
     return list(values)
+
+
+def _checked_wait(entry) -> dict:
+    """A saved wait's text fields, checked before anything reaches them."""
+    if not isinstance(entry, dict):
+        raise PreconditionError("a saved wait is an object", found=repr(entry)[:60])
+    checked = dict(entry)
+    for name in ("job_id", "kind", "expects", "obligation", "path", "task_id",
+                 "subject_revision", "subject_digest", "executor", "declared_at", "retry_reason",
+                 "routing_qualification"):
+        if name in checked:
+            checked[name] = _a_string(checked[name], f"wait {name}") or (
+                None if name in ("path", "task_id") else "")
+    return checked
 
 
 def load(path: str | Path) -> ContinuationRecord:
@@ -805,20 +845,25 @@ def load(path: str | Path) -> ContinuationRecord:
             # is an exception where the contract is a state. Found by a blind
             # reader.
             actionable=tuple(_only_strings(raw.get("actionable"), "actionable")),
-            waits=tuple(Wait(**entry) for entry in raw.get("waits") or ()),
+            waits=tuple(Wait(**_checked_wait(entry)) for entry in raw.get("waits") or ()),
             # `blocks` is a tuple on the way out and JSON has only arrays, so
             # without this it comes back a list — the record survives the
             # boundary with a different type than it crossed with. Found by
             # asserting field-by-field equality across a round trip rather than
             # by checking the fields somebody remembered to check.
             blockers=tuple(
-                Blocker(**{**entry, "blocks": tuple(_only_strings(entry.get("blocks"), "blocks"))})
+                Blocker(**{**entry,
+                           "kind": _a_string(entry.get("kind"), "blocker kind", allow_empty=False),
+                           "detail": _a_string(entry.get("detail"), "blocker detail"),
+                           "pool_id": _a_string(entry.get("pool_id"), "blocker pool_id") or None,
+                           "resets_at": _a_string(entry.get("resets_at"), "blocker resets_at") or None,
+                           "blocks": tuple(_only_strings(entry.get("blocks"), "blocks"))})
                 for entry in raw.get("blockers") or ()
             ),
             terminal=bool(raw.get("terminal", False)),
             record_path=raw.get("record_path", ""),
-            budgets=dict(raw.get("budgets") or {}),
-            evidence=dict(raw.get("evidence") or {}),
+            budgets=_a_mapping(raw.get("budgets"), "budgets"),
+            evidence=_a_mapping(raw.get("evidence"), "evidence"),
         )
     except (KeyError, TypeError) as exc:
         raise PreconditionError("the continuation record is malformed",

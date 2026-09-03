@@ -251,8 +251,11 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
             panel.unknown.append(
                 f"{observation.job_id} does not state the revision it is about, so evidence it "
                 f"returns cannot be matched to a tree")
-        panel.say(_progress_line(wait, observation), Tone.MUTED, label="last progress", depth=1)
-        deadline = _deadline_line(wait)
+        panel.say(_guarded(_progress_line, wait, observation,
+                           default=f"{UNKNOWN} — could not be dated"),
+                  Tone.MUTED, label="last progress", depth=1)
+        deadline = _guarded(_deadline_line, wait,
+                            default=f"{UNKNOWN} — this wait's deadline could not be read")
         panel.say(deadline,
                   Tone.BAD if "EXPIRED" in deadline else
                   (Tone.MUTED if "no deadline" in deadline else Tone.PLAIN), depth=1)
@@ -599,7 +602,7 @@ def project(
     contract_panel, _contract = _contract_panel(base / contract)
     liveness_panel, record = _liveness_panel(record_path)
     return Projection(
-        headline=_headline(record),
+        headline=_guarded(_headline, record, default=f"{UNKNOWN} — the headline could not be derived"),
         panels=[
             _pack_panel(Path(__file__).resolve().parent.parent),
             contract_panel,
@@ -699,12 +702,18 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection") 
                    f"panels, and an absence is never rendered as a resting state.</div>")
     out.append("</header><main>")
     for panel in view.panels:
-        chip = (f"<span class='chip {panel.summary_tone}'>{_escape(panel.summary)}</span>"
+        # The tone is a CLASS NAME and is validated as one rather than escaped
+        # as text: `Panel(summary_tone="x' onclick='…")` put an event attribute
+        # into the page, because escaping covers content and this was markup.
+        # Anything not in the vocabulary renders as plain.
+        tone = panel.summary_tone if panel.summary_tone in Tone.ALL else Tone.PLAIN
+        chip = (f"<span class='chip {tone}'>{_escape(panel.summary)}</span>"
                 if panel.summary else "")
         out.append(f"<section><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>")
         for line in panel.rows():
             key = f"<span class=k>{_escape(line.label)}</span>" if line.label else ""
-            out.append(f"<li class='{line.tone} d{min(line.depth, 2)}'>{key}"
+            safe_tone = line.tone if line.tone in Tone.ALL else Tone.PLAIN
+            out.append(f"<li class='{safe_tone} d{min(line.depth, 2)}'>{key}"
                        f"<span class=v>{_escape(line.text)}</span></li>")
         for item in panel.unknown:
             out.append(f"<li class='unknown d0'><span class=k>{UNKNOWN}</span>"
@@ -731,6 +740,21 @@ def _verdict_tone(headline: str) -> str:
         S.WAITING_ON_IDENTIFIED_JOB: Tone.PLAIN, S.ACTIONABLE_WORK_READY: Tone.PLAIN,
         S.TERMINAL: Tone.GOOD, UNKNOWN: Tone.UNKNOWN,
     }.get(first, Tone.UNKNOWN)
+
+
+def _guarded(work, *args, default):
+    """Run a panel's own work, or report that it could not be done.
+
+    **A projection may not raise.** `derive()` returns `RECOVERY_REQUIRED` for a
+    record with an unreadable deadline, and this module then raised `ValueError`
+    reaching the same field for its own display — so the view of a broken record
+    was no view at all, which is the one state a reader most needs to see. Found
+    by an independent reader.
+    """
+    try:
+        return work(*args)
+    except Exception as exc:
+        return f"{default}: {type(exc).__name__}: {exc}"[:400]
 
 
 def _report_or_none(record, record_path: Path):

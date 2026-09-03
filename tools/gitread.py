@@ -895,8 +895,19 @@ def commit_messages(
             break
         header = raw[at:newline].decode("utf-8", "surrogateescape").split()
         at = newline + 1
+        if len(header) == 2 and header[1] == "missing":
+            # `<sha> missing` — Git's documented answer for an object it cannot
+            # produce. Dropping it silently let a caller certify a COMPLETE
+            # history scan over commits nobody read, which is the whole claim.
+            # An object `rev-list` named and `cat-file` cannot produce is a hole,
+            # and a hole refuses.
+            raise IntegrityError(
+                "this repository named a commit its object store cannot produce, so the history "
+                "cannot be read completely. A scan that skipped it would report clean about "
+                "something nobody read",
+                repository=str(repository), object=header[0],
+            )
         if len(header) != 3 or header[1] != "commit":
-            # `<sha> missing` has two fields and no body to skip.
             continue
         size = int(header[2])
         body = raw[at:at + size]
@@ -904,7 +915,16 @@ def commit_messages(
         # A commit object is headers, one blank line, then the message. Split
         # once on the FIRST blank line: a message may contain blank lines of its
         # own, and the header block may not.
-        _, _, message = body.partition(b"\n\n")
+        separator, _, message = body.partition(b"\n\n")
+        if separator == body:
+            # No blank line: this is not a commit object's shape, and calling its
+            # message empty is a guess. An independent reader wrote one with
+            # `hash-object --literally`.
+            raise IntegrityError(
+                "an object typed `commit` has a header block, a blank line and a message; this "
+                "one has no blank line, so its message cannot be read rather than being empty",
+                repository=str(repository), object=header[0],
+            )
         found.append((header[0], message.decode("utf-8", "surrogateescape")))
     return found
 

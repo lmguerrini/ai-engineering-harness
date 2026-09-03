@@ -76,9 +76,15 @@ MAPPING_SCHEMA = "old-to-new-revision-map-v1"
 #: Seven is Git's own shortest unambiguous abbreviation in practice, and forty
 #: is a full object name. Below seven the false-positive rate over ordinary
 #: prose stops being worth the reading.
-_TOKEN = re.compile(r"(?<![0-9a-zA-Z])(?P<sha>[0-9a-f]{7,40})(?![0-9a-zA-Z])")
+#: 7 to 64, because Git's object format may be SHA-256 and then a full name is
+#: 64 characters. The pattern stopped at 40, so in a SHA-256 repository **every
+#: citation was invisible and the report read `citations: 0, blocking: 0`** —
+#: clean, about a corpus nobody looked at. Found by an independent reader who
+#: built one. The dangerous direction, and the reason this is a repair rather
+#: than a portability nicety.
+_TOKEN = re.compile(r"(?<![0-9a-zA-Z])(?P<sha>[0-9a-f]{7,64})(?![0-9a-zA-Z])")
 
-_FULL = re.compile(r"^[0-9a-f]{40}$")
+_FULL = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 class CitationState:
@@ -329,7 +335,7 @@ def _successor(full: str | None, token: str, mapping: Mapping[str, str]) -> str 
     for key in (full, token):
         if key and key in mapping:
             return mapping[key]
-    if len(token) < 40:
+    if not _FULL.match(token):
         candidates = {new for old, new in mapping.items() if old.startswith(token)}
         if len(candidates) == 1:
             return candidates.pop()
@@ -400,7 +406,7 @@ def _classify(repository, token, where, reachable, mapping, bundles) -> Citation
             return Citation(token, CitationState.UNREACHABLE, where,
                             "the mapping names a successor and no ref reaches it either",
                             maps_to=full)
-        if len(token) == 40:
+        if _FULL.match(token):
             # Git resolved no COMMIT for it — but it may still be a blob, a tree
             # or a tag object the repository holds perfectly well, and saying
             # "GONE FROM THIS REPOSITORY" about one of those is false. Asked

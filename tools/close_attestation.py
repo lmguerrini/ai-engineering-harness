@@ -322,6 +322,17 @@ def re_derive(premise: Premise, *, cwd: str | Path = ".") -> PremiseOutcome:
                                    capture_output=True, text=True, timeout=120)
     except Exception as exc:
         return PremiseOutcome(premise, None, detail=f"{type(exc).__name__}: {exc}")
+    if result.returncode != 0:
+        # A COMMAND THAT FAILED DID NOT PRODUCE A MEASUREMENT. The comparison
+        # read stdout and ignored the exit status, so `print(42); raise
+        # SystemExit(1)` reported the premise as still reproducing and closed the
+        # gate — a failed measurement reported as a confirmed one, which is the
+        # exact inversion this module exists to prevent. Found by an independent
+        # reader.
+        return PremiseOutcome(
+            premise, None,
+            detail=f"the command exited {result.returncode}, so it produced no measurement: "
+                   f"{(result.stderr or '').strip()[:160]}")
     observed = (result.stdout or "").strip()
     # Compared EXACTLY, not as a substring. `"10" in "100"` is true, so a
     # measurement that drifted from ten to a hundred reported as still

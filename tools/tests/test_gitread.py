@@ -901,3 +901,39 @@ def test_a_commit_message_is_read_by_its_byte_count_and_not_by_a_delimiter(tmp_p
     bodies = dict(gitread.commit_messages(repo, "HEAD"))
     assert "" in bodies.values(), "an empty message is empty, not a newline"
     assert "first\n" in bodies.values()
+
+
+def test_an_object_the_store_cannot_produce_is_a_hole_and_not_an_absence(tmp_path, monkeypatch):
+    """Git's documented `<sha> missing` batch record was dropped silently, so a
+    caller could certify a COMPLETE history scan over commits nobody read — and
+    that is the whole claim the word *complete* makes."""
+    real = gitread._run
+
+    def missing(repo, *args, **kw):
+        if args[0] == "rev-list":
+            return "a" * 40 + "\n"
+        if args[0] == "cat-file":
+            return ("a" * 40 + " missing\n").encode()
+        return real(repo, *args, **kw)
+
+    monkeypatch.setattr(gitread, "_run", missing)
+    with pytest.raises(_IntegrityError):
+        gitread.commit_messages(tmp_path, "HEAD")
+
+
+def test_an_object_typed_commit_with_no_message_separator_is_refused(tmp_path, monkeypatch):
+    """Calling its message empty is a guess about an object that is not shaped
+    like a commit."""
+    real = gitread._run
+    body = b"tree " + b"0" * 40
+
+    def malformed(repo, *args, **kw):
+        if args[0] == "rev-list":
+            return "b" * 40 + "\n"
+        if args[0] == "cat-file":
+            return ("b" * 40 + f" commit {len(body)}\n").encode() + body + b"\n"
+        return real(repo, *args, **kw)
+
+    monkeypatch.setattr(gitread, "_run", malformed)
+    with pytest.raises(_IntegrityError):
+        gitread.commit_messages(tmp_path, "HEAD")

@@ -178,5 +178,13 @@ discarded finding is evidence about the oracle.
 | RP3-73 | a write bound of zero escaped as a refusal from a lower layer | zero is an integer, so the type check passed it on |
 | RP3-74 | a hard-linked chunk read as this task's completed work | the symlink repair closed the shape it could see |
 | RP3-75 | a confident dispatch with the cost of reading the result unknown | the reserve exists for the result and the term was skipped |
+| RP3-76 | a premise whose command failed reported as reproducing | stdout was read and the exit status was not |
+| RP3-77 | a complete-history scan certified over commits the store could not produce | Git's `missing` record was dropped silently |
+| RP3-78 | a SHA-256 repository reported zero citations and zero blocking | the token pattern stopped at forty characters |
+| RP3-79 | the projection raised on the record it most needed to render | a view that cannot show a broken record is no view |
+| RP3-80 | a tone was free text and became an event attribute | escaping covers content and a class name is markup |
+| RP3-81 | text fields of a saved record reached the code that consumes them unchecked | untrusted input is untrusted in every field |
+| RP3-82 | a completion marker naming another task completed this one | the fifth shape of one ownership defect |
+| RP3-83 | a page-completeness test ignored titles, labels and the headline | it checked the part of the view it had thought of |
 
 *(appended as each capability reproduces its own)*

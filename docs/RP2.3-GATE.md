@@ -2126,3 +2126,93 @@ chunks beside it), and the non-finite guard was wrong three times (signals, then
 the horizon, then the moment a sample was taken). Each is closed at the boundary
 now; each took more than one attempt to get there, and the pattern is the
 release's most reliable predictor of where the next defect will be.
+
+## Cycle 10 — the last authorised reading
+
+Nine properties did not hold, plus two tests that could not fail for their
+claim. Every one reproduced before repair. **Two of the nine invert the meaning
+of evidence**, and they are the reason this cycle was worth its cost.
+
+### A failed measurement reported as a confirmed one
+
+`re_derive` ran a premise's command, read its stdout and **ignored the exit
+status**, so `print(42); raise SystemExit(1)` reported the premise as still
+reproducing and closed the gate. A command that failed did not produce a
+measurement. This is the exact inversion the module exists to prevent, in the
+module that exists to prevent it.
+
+### A complete history scan certified over commits nobody read
+
+`cat-file --batch` answers `<sha> missing` for an object it cannot produce, and
+the reader **dropped that record silently** — so a repository naming a commit
+its object store cannot produce scanned clean. The word in the module's name is
+*complete*. An object `rev-list` names and `cat-file` cannot produce is a hole,
+and a hole refuses now. An object typed `commit` with no blank line is refused
+too, rather than having its message called empty.
+
+### A SHA-256 repository scanned clean
+
+The citation pattern matched 7 to 40 hexadecimal characters. In a repository
+using Git's SHA-256 object format a full name is 64, so **every citation was
+invisible** and the report read *0 citations, 0 blocking*. Clean, about a corpus
+nobody looked at — the dangerous direction, and a repair rather than a
+portability nicety.
+
+### The projection could not render the record it most needed to
+
+`derive()` returns `RECOVERY_REQUIRED` for a wait whose deadline is unreadable,
+and the projection then raised `ValueError` reaching the same field for its own
+display. **The view of a broken record was no view at all**, which is the one
+state a reader most needs to see. Every panel's own work is now guarded and
+reports what it could not do.
+
+And a tone was free text: `Panel(summary_tone="x' onclick='…")` put an event
+attribute into the page. Escaping covers content; this was markup. A tone is a
+class name and is validated as one.
+
+### A saved record is untrusted in every field, not only the numeric ones
+
+An integer in `path` reached `Path()` and raised `TypeError`; one in a blocker's
+`detail` reached `.strip()`; `budgets: "x"` reached `dict()` and raised a bare
+`ValueError` about a dictionary update sequence. Text fields are checked at the
+boundary now, and the refusal is named.
+
+### And a fifth shape of the ownership defect
+
+The owner marker was checked and the **completion** marker was not, so a root
+whose `COMPLETE.json` named another task reported that task's completion as its
+own. Fifth shape: unread, absent, linked, the chunks beside it, and now the
+completion marker.
+
+### What cycle 10 found that is NOT closed
+
+**An APFS clone (`cp -c`) defeats the link-count check.** The reader put alpha's
+bytes into beta's root with `st_nlink == 1` on both, and beta classified as
+complete. This is not closable from the filesystem: a clone is byte-identical
+with an independent link count, and nothing on disk distinguishes it from bytes
+beta wrote. The completion-marker check above closes the marker-shaped version;
+the clone-shaped one is a **declared limitation**, and the honest statement is
+that the ownership guarantee rests on the owner and completion markers rather
+than on the bytes.
+
+**The link-count check has a false positive**: a task that hard-links its own
+product into its own root reports `UNKNOWN`. Conservative, wrong in the safe
+direction, and recorded.
+
+**`_bundle_contains` compares bundle tips only**, so a commit reachable within a
+bundle but not named as a head reports `UNREACHABLE`. Also the safe direction —
+it blocks where it should anchor — and recorded rather than repaired, because
+proving reachability inside a bundle means unbundling and this release does not
+write.
+
+### The two tests that could not fail
+
+*The page shows what the text view shows* checked `Line.text` and the unknown
+strings only; the reader built a page containing nothing else and it passed,
+with every title, every label and the headline missing. And the delegation test
+used a fixture with no output root, so `task_output.classify` was never called
+and the test could not have noticed if the projection stopped delegating to it.
+Both repaired. **Tenth and eleventh instances in this release**, and the count
+is the finding.
+
+Eight mutants over these repairs, all killed.

@@ -114,6 +114,23 @@ def test_the_module_derives_nothing_of_its_own(project_root):
     import continuation as _c
     import task_output as _t
 
+    # A FIXTURE THAT REACHES BOTH OWNERS. The first version used a project with
+    # no output-root wait, so `task_output.classify` was never called and the
+    # test could not have noticed if the projection had stopped delegating to
+    # it — an independent reader replaced that function with one that raises and
+    # the test still passed.
+    root = project_root / "worker-output"
+    contract = _t.OutputContract("survey", root, max_bytes_per_write=64)
+    _t.claim_root(contract)
+    _t.materialise(contract, 0, "a finding")
+    _continuation.save(_continuation.ContinuationRecord(
+        capability="C1", updated_at=_continuation.now(),
+        waits=(_continuation.Wait(job_id="survey", kind=_continuation.WaitKind.OUTPUT_ROOT,
+                                  path=str(root), task_id="survey", max_bytes_per_write=64,
+                                  expects="the survey", not_beyond_seconds=3600,
+                                  declared_at=_continuation.now()),)),
+        project_root / "CONTINUATION.json")
+
     called = []
     real_derive, real_classify = _c.derive, _t.classify
     _c.derive = lambda *a, **k: (called.append("continuation.derive"), real_derive(*a, **k))[1]
@@ -124,6 +141,7 @@ def test_the_module_derives_nothing_of_its_own(project_root):
         _c.derive, _t.classify = real_derive, real_classify
 
     assert "continuation.derive" in called, "the owner of coordinator state was never asked"
+    assert "task_output.classify" in called, "the owner of output recovery was never asked"
 
     source = (
         __import__("pathlib").Path(projection.__file__).read_text(encoding="utf-8"))
@@ -462,9 +480,18 @@ def test_every_line_the_text_view_shows_the_page_shows_too(tmp_path):
             budgets={"cycles": {"used": 6, "ceiling": 8}}, evidence={"suite": "412 passing"})
     view = projection.project(tmp_path)
     page = projection.render_html(view)
+    # LABELS, TITLES AND THE HEADLINE TOO. The first version checked `Line.text`
+    # and the unknown strings only — an independent reader built a page holding
+    # nothing but those and it passed, with every panel title, every label and
+    # the headline missing. A test for *the page shows what the text view shows*
+    # that ignores most of what the text view shows is a test for something else.
+    assert projection._escape(view.headline) in page
     for panel in view.panels:
+        assert projection._escape(panel.title) in page, f"the page dropped the title {panel.title!r}"
         for line in panel.rows():
             assert projection._escape(line.text) in page, f"the page dropped {line.text!r}"
+            if line.label:
+                assert projection._escape(line.label) in page, f"the page dropped {line.label!r}"
         for item in panel.unknown:
             assert projection._escape(item) in page, f"the page dropped an UNKNOWN: {item!r}"
 
@@ -598,3 +625,30 @@ def test_the_pack_says_its_revision_is_not_in_the_tree_rather_than_omitting_it(t
     made a reader wonder whether it was missing or unknowable."""
     out = projection.project(tmp_path).render()
     assert "not in the tree" in out and "git rev-parse HEAD" in out
+
+
+def test_a_record_the_deriver_can_read_and_the_view_cannot_still_renders(tmp_path):
+    """`derive()` returns RECOVERY_REQUIRED for a wait whose deadline is
+    unreadable, and this module then raised `ValueError` reaching the same field
+    for its own display — so the view of a broken record was no view at all,
+    which is the one state a reader most needs to see."""
+    import json as _json
+
+    (tmp_path / "CONTINUATION.json").write_text(_json.dumps({
+        "capability": "cap", "updated_at": _continuation.now(),
+        "waits": [{"job_id": "human", "kind": "human", "expects": "a decision",
+                   "not_beyond_seconds": "not-a-number",
+                   "declared_at": _continuation.now()}]}))
+    out = projection.project(tmp_path).render()
+    assert "RECOVERY_REQUIRED" in out
+    assert projection.render_html(projection.project(tmp_path)).endswith("</html>")
+
+
+def test_a_tone_is_a_class_name_and_not_free_text(tmp_path):
+    """`Panel(summary_tone="x' onclick='…")` put an event attribute into the
+    page: escaping covers content, and this was markup. Anything outside the
+    vocabulary renders as plain."""
+    panel = projection.Panel("t", summary="s", summary_tone="x' onclick='alert(1)")
+    page = projection.render_html(projection.Projection(panels=[panel]))
+    assert "onclick" not in page
+    assert "class='chip plain'" in page

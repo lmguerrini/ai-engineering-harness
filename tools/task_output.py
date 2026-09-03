@@ -533,10 +533,27 @@ def classify(contract: OutputContract) -> RecoveryReport:
     claimed: int | None = None
     marker_unreadable = False
     marker = root / COMPLETION_MARKER
+    if marker.is_symlink():
+        return RecoveryReport(
+            task_id=contract.task_id, state=RecoveryState.UNKNOWN,
+            why=f"{COMPLETION_MARKER} is a symbolic link, so what it declares is not this root's",
+        )
     if marker.is_file():
         try:
-            claimed = int(json.loads(marker.read_text(encoding="utf-8"))["chunk_count"])
-        except (OSError, ValueError, KeyError, TypeError):
+            document = json.loads(marker.read_text(encoding="utf-8"))
+            # WHOSE COMPLETION THIS IS. The owner marker was checked and the
+            # COMPLETION marker was not, so a root whose `COMPLETE.json` named
+            # another task reported that task's completion as this one's — found
+            # by an independent reader, and the fifth shape of one defect.
+            declared = document.get("task_id")
+            if declared is not None and declared != contract.task_id:
+                return RecoveryReport(
+                    task_id=contract.task_id, state=RecoveryState.UNKNOWN,
+                    why=f"{COMPLETION_MARKER} declares the completion of {declared!r} and this "
+                        f"contract is for {contract.task_id!r}",
+                )
+            claimed = int(document["chunk_count"])
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
             # Present and unreadable. Recorded as its own fact rather than as a
             # negative count in a field labelled `chunk_count`: a sentinel in a
             # field a reader will treat as a number is the shape this pack

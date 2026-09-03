@@ -33,7 +33,14 @@ def _pool(**overrides):
     # a fixture that had to restate the timestamp in twenty places would push
     # every test to omit it — which is how the field went unenforced in the
     # first place. Its absence is proven refused by its own test below.
-    fields = dict(pool_id="p1", observed_at="2026-09-03T12:00:00Z")
+    # DATED NOW, not at a literal moment. A fixed timestamp aged past the point
+    # where the gate reports the reading's age as an unknown, and every test
+    # that expected clean arithmetic started failing an hour after it was
+    # written — which is the same class as the fixtures whose synthetic clock
+    # was compared against the real one.
+    import datetime as _dt
+    fields = dict(pool_id="p1",
+                  observed_at=_dt.datetime.now(_dt.timezone.utc).isoformat())
     fields.update(overrides)
     return Pool(**fields)
 
@@ -401,3 +408,28 @@ def test_an_unknown_consumption_cost_cannot_produce_a_confident_dispatch():
         Reserve(coordinator=10, result_consumption=0, repair_and_audit=0))
     assert known.verdict == Verdict.DISPATCH
     assert not known.unknowns
+
+
+def test_the_age_of_a_reading_is_an_unknown_rather_than_something_nobody_asked():
+    """The class docstring says the moment a reading was taken matters as much as
+    the figure, and `gate` never looked at it: a reading from 2020 produced a
+    confident DISPATCH with no unknowns. Found by an independent reader quoting
+    the docstring back.
+
+    The age is REPORTED, not judged. A window that refills weekly and one that
+    refills per minute disagree about what an hour means, and this module does
+    not know which it is looking at — so it states the age and refuses to invent
+    a threshold, the same refusal it makes about the stall horizon."""
+    ancient = capacity.Pool(pool_id="p1", kind=capacity.PoolKind.INDEPENDENT,
+                            remaining=100, observed_at="2020-01-01T00:00:00Z")
+    decision = capacity.gate(_dispatch(estimated_cost=1, result_consumption_cost=1),
+                             ancient, Reserve(coordinator=1, result_consumption=1,
+                                              repair_and_audit=1))
+    assert decision.verdict == Verdict.DISPATCH_SERIALLY
+    assert any("old" in u for u in decision.unknowns)
+
+    fresh = capacity.gate(_dispatch(estimated_cost=1, result_consumption_cost=1),
+                          _pool(remaining=100, kind=capacity.PoolKind.INDEPENDENT),
+                          Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))
+    assert fresh.verdict == Verdict.DISPATCH
+    assert not fresh.unknowns

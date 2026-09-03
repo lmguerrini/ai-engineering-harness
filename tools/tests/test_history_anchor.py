@@ -576,3 +576,30 @@ def test_a_bundle_proves_preservation_and_never_the_mapping(repo, tmp_path):
     assert citation.state == CitationState.ANCHORED
     assert "ASSERTS" in citation.detail
     assert "not identity" in citation.detail
+
+
+def test_a_sha256_repository_is_read_rather_than_reported_clean(tmp_path):
+    """The token pattern stopped at 40 characters, so in a SHA-256 repository
+    **every citation was invisible** and the report read `citations: 0,
+    blocking: 0` — clean, about a corpus nobody looked at. Found by an
+    independent reader who built one.
+
+    The dangerous direction, and the reason this is a repair rather than a
+    portability nicety."""
+    repo = tmp_path / "sha256"
+    repo.mkdir()
+    made = subprocess.run(["git", "init", "-q", "--object-format=sha256", "-b", "main"],
+                          cwd=repo, capture_output=True, text=True)
+    if made.returncode != 0:
+        pytest.skip("this Git does not build SHA-256 repositories")
+    _git(repo, "config", "user.name", "T")
+    _git(repo, "config", "user.email", "t@example.invalid")
+    (repo / "f").write_text("x")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    assert len(head) == 64
+
+    report = history_anchor.check_reachability(repo, {"CLOSURE.md": f"closed at {head}"})
+    assert report.citations, "a 64-character object name is a citation"
+    assert report.citations[0].state == CitationState.REACHABLE

@@ -78,6 +78,21 @@ __all__ = [
 UNKNOWN = "UNKNOWN"
 
 
+#: Beyond this, the age of a reading is reported as an unknown rather than
+#: ignored. NOT a judgement that the reading is wrong — a window that refills
+#: weekly and one that refills per-minute disagree about an hour, and this
+#: module does not know which it is looking at. It is the point past which
+#: silence about the age would itself be a claim.
+_STALE_READING_SECONDS = 3600.0
+
+
+def _age_seconds(observed_at) -> "float | None":
+    moment = _moment(observed_at) if isinstance(observed_at, str) and observed_at else None
+    if moment is None:
+        return None
+    return (datetime.now(timezone.utc) - moment).total_seconds()
+
+
 def _moment(text: str) -> "datetime | None":
     """An ISO-8601 instant, or None. Naive input is read as UTC."""
     try:
@@ -383,6 +398,13 @@ def gate(dispatch: Dispatch, pool: Pool, reserve: Reserve) -> Decision:
     then the conservative posture where it cannot. Nothing here queues, retries
     or chooses what to run next.
     """
+    # HOW OLD THE READING IS, surfaced as an unknown rather than aged against a
+    # built-in ceiling. The class docstring says the moment matters as much as
+    # the figure and `gate` never looked at it: a reading from 2020 produced a
+    # confident DISPATCH with no unknowns. What "too old" means depends on the
+    # window and the provider, so this module states the age and refuses to
+    # invent a threshold — which is the same refusal it makes about the horizon
+    # in `progress`.
     if dispatch.pool_id != pool.pool_id:
         raise IntegrityError(
             "this dispatch was measured against a different pool than the one it names",
@@ -390,6 +412,9 @@ def gate(dispatch: Dispatch, pool: Pool, reserve: Reserve) -> Decision:
         )
 
     unknowns = []
+    age = _age_seconds(pool.observed_at)
+    if age is not None and age > _STALE_READING_SECONDS:
+        unknowns.append(f"whether a reading {age / 3600:.0f}h old still describes this window")
     if not pool.known:
         unknowns.append(f"how much of pool {pool.pool_id} remains")
     if pool.kind == PoolKind.UNKNOWN:
