@@ -155,5 +155,7 @@ discarded finding is evidence about the oracle.
 | RP3-50 | a symlinked owner marker let one task read another's finished work | `is_file()` follows a link, which is the one shape the previous two owner repairs could not see |
 | RP3-51 | an owner marker holding `null` raised an AttributeError | a four-valued contract returned a traceback |
 | RP3-52 | an audit was killed by its provider and wrote a zero-byte report | its stderr held five real findings, recovered before any retry |
+| RP3-53 | a record field added to the dataclass alone was dropped by save and load | the boundary the record exists to survive enumerates its fields twice |
+| RP3-54 | the projection could not show whose tree an audit was about | a dashboard cannot render what the authoritative record does not carry, and the repair belongs in the record |
 
 *(appended as each capability reproduces its own)*

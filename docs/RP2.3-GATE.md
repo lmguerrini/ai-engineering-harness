@@ -1595,3 +1595,52 @@ The termination was the provider's content filter, not a capacity limit or a
 hang, and it is recorded as an `environmental_failure` row. It charges no
 budget. **Row 12 was not reached**: the run produced recoverable findings, and
 the same-family fallback the founder authorised was not needed.
+
+## The projection, refined — and the two things it immediately said about me
+
+The evidence base refused a dashboard and the refusal still stands in
+`tools/projection.py`'s own docstring. What changed is the ordering: coordinator
+state is derived rather than stored, so there is no stale value here to render
+confidently. The refinement is about **what a human watching a long run needs to
+answer without reading files**, and every field is delegated or declared —
+nothing is computed here and nothing is guessed.
+
+What it now shows, where the data exists: a headline naming the state in a
+sentence; the pack's own identity and whether it is adoptable; each job's
+executor, obligation, **subject revision and digest**, declaration time,
+deadline and time remaining; budgets used against their ceilings with who raised
+them; standing evidence (candidate, suite, gates, latest audit, closure);
+whether a blocker is scoped and what remains runnable behind it; the exact next
+authorised action; and **how old the record is**.
+
+Two of those needed the record to carry more than it did. A dashboard cannot
+show what the authoritative state does not hold, and the right repair for a
+missing field is to add it to the record, never to infer it in the view:
+`Wait` gained `subject_revision`, `subject_digest` and `executor`;
+`ContinuationRecord` gained `budgets` and `evidence`. **Both new record fields
+were dropped on the first save**, because `as_dict` and `load` enumerate their
+fields and a field added to the dataclass alone survives neither — caught by
+round-tripping them before they were used once, which is the whole reason to
+round-trip a new field before using it.
+
+### What it said about this session, unprompted
+
+Pointed at this evolution's own record, the refined view reported that the
+record was **50 minutes stale** and that the outstanding wait **did not state
+the revision it was about**. Both were true, both were mine, and neither would
+have been visible in the previous version. A dashboard whose first act is to
+find two defects in its author's record-keeping is behaving correctly.
+
+### Falsified, not admired
+
+Fourteen adverse cases: a record hours old, a record moments old (the bound — a
+warning that is always on is not a warning), an unreadable timestamp, malformed
+JSON, an absent record, a wait with and without a declared subject, an expired
+deadline, an undeclared budget, a declared one, a scoped blocker with unrelated
+work still runnable, a finished job nobody read, `SILENT_IDLE`, and a
+write-nothing check hashing the whole tree around a fully-populated render.
+
+One of those tests failed for the wrong reason on first writing — a substring
+test over the whole render matched a timestamp — and is now scoped to the panel
+it is about. **Fifth appearance in this release of a check that passed for a
+reason it did not state.**

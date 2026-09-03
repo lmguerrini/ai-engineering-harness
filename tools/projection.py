@@ -73,13 +73,23 @@ class Projection:
     def unknowns(self) -> list[str]:
         return [item for panel in self.panels for item in panel.unknown]
 
+    #: The one line a reader glancing at a long run needs, and the reason the
+    #: panels below it are detail rather than a search. Delegated, never
+    #: decided here: the words come from the state `continuation` derived.
+    headline: str = ""
+
     def render(self) -> str:
         header = [
             "RUNTIME PACK — PROJECTION",
             "  read-only. Rebuilt from durable state on every invocation, and it stores nothing.",
             "  Where this and the governance record disagree, THIS is the defect.",
-            "",
         ]
+        if self.headline:
+            header += ["", f"  {self.headline}"]
+        if self.unknowns:
+            header += [f"  {len(self.unknowns)} thing(s) could not be read — listed in their panels,",
+                       "  and an absence is never rendered as a resting state."]
+        header.append("")
         return "\n".join(header + [panel.render() for panel in self.panels])
 
 
@@ -146,10 +156,31 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
         panel.lines.append("  COORDINATOR_WAKE_REQUIRED")
     if report.is_defect:
         panel.lines.append("  ^ this state is a DEFECT, not a resting place")
+    by_id = {wait.job_id: wait for wait in record.waits}
     for observation in report.observations:
-        mark = ("finished" if observation.finished
-                else (UNKNOWN if observation.unobservable else "running"))
+        mark = ("COMPLETE" if observation.finished
+                else (UNKNOWN if observation.unobservable else "RUNNING"))
         panel.lines.append(f"job {observation.job_id}: {mark} — {observation.how}")
+        wait = by_id.get(observation.job_id)
+        if wait is None:
+            continue
+        panel.lines.append(f"    expects: {wait.expects}")
+        if wait.obligation and wait.obligation != wait.job_id:
+            panel.lines.append(f"    obligation: {wait.obligation}")
+        if wait.executor:
+            panel.lines.append(f"    executor: {wait.executor}")
+        # The subject's identity, because evidence is about ONE tree and a
+        # reader who cannot see which one cannot tell current evidence from
+        # evidence two repair rounds old. That is not hypothetical here.
+        if wait.subject_revision or wait.subject_digest:
+            panel.lines.append(
+                f"    subject: {wait.subject_revision[:12] or UNKNOWN}"
+                f" / {wait.subject_digest[:16] or UNKNOWN}")
+        elif wait.kind != continuation.WaitKind.HUMAN:
+            panel.unknown.append(
+                f"{observation.job_id} does not state the revision it is about, so evidence it "
+                f"returns cannot be matched to a tree")
+        panel.lines.append(f"    {_deadline_line(wait)}")
     for label, values in (("unconsumed results", report.unconsumed),
                           ("waits nobody can observe", report.unobservable),
                           ("PAST THE DECLARED DEADLINE", report.expired),
@@ -161,7 +192,115 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
     if report.actionable:
         panel.lines.append(f"authorised and outstanding: {len(report.actionable)} item(s)")
         panel.lines.extend(f"  - {item}" for item in report.actionable)
+    # THE NEXT AUTHORISED ACTION, said last so it is the line nearest the eye.
+    # It is the record's own first outstanding item, not a choice made here.
+    unblocked = [i for i in report.actionable
+                 if i not in {n for b in record.blockers for n in b.blocks}]
+    if unblocked:
+        panel.lines.append(f"NEXT AUTHORISED ACTION: {unblocked[0]}")
+    elif report.state in (continuation.State.WAITING_ON_IDENTIFIED_JOB,):
+        panel.lines.append("NEXT AUTHORISED ACTION: wait — see the deadline above")
+    elif report.blockers:
+        panel.lines.append("NEXT AUTHORISED ACTION: none; every outstanding item is blocked")
     return panel, record
+
+
+def _deadline_line(wait) -> str:
+    """When this wait was declared, when it expires, and how far through it is."""
+    import continuation
+
+    if wait.not_beyond_seconds is None:
+        return "no deadline (a person resolves this; patience is not the question)"
+    declared = continuation._moment(wait.declared_at) if wait.declared_at else None
+    if declared is None:
+        return (f"deadline {wait.not_beyond_seconds:.0f}s after a declaration time that cannot be "
+                f"read — TREATED AS EXPIRED")
+    from datetime import datetime, timezone
+
+    age = (datetime.now(timezone.utc) - declared).total_seconds()
+    remaining = float(wait.not_beyond_seconds) - age
+    state = f"{remaining / 60:.0f} min left" if remaining > 0 else f"EXPIRED {-remaining / 60:.0f} min ago"
+    return (f"declared {age / 60:.0f} min ago, deadline {float(wait.not_beyond_seconds) / 60:.0f} "
+            f"min — {state}")
+
+
+def _budget_panel(record) -> Panel:
+    panel = Panel("budgets and standing evidence")
+    if record is None:
+        panel.unknown.append("no continuation record, so no budget position is declared")
+        return panel
+    if not record.budgets:
+        panel.unknown.append(
+            "the record declares no budgets. NOT the same as none spent — an untracked counter is "
+            "unknown, and zero-used is a claim nobody made")
+    for counter, position in sorted(record.budgets.items()):
+        used, ceiling = position.get("used"), position.get("ceiling")
+        left = (ceiling - used) if isinstance(used, int) and isinstance(ceiling, int) else UNKNOWN
+        line = f"{counter}: {used}/{ceiling} used, {left} remaining"
+        if position.get("authorised_by"):
+            line += f"  (raised by {position['authorised_by']})"
+        panel.lines.append(line)
+    if not record.evidence:
+        panel.unknown.append(
+            "the record declares no standing evidence — suite, gates, latest audit verdict and "
+            "closure position are not readable from here")
+    for name in ("candidate", "suite", "gates", "latest_audit", "closure"):
+        if name in record.evidence:
+            panel.lines.append(f"{name}: {record.evidence[name]}")
+    for name, value in sorted(record.evidence.items()):
+        if name not in ("candidate", "suite", "gates", "latest_audit", "closure"):
+            panel.lines.append(f"{name}: {value}")
+    return panel
+
+
+def _freshness_panel(record, record_path: Path) -> Panel:
+    """How old the reading is. A projection of a stale record is a stale
+    projection, and the objection this whole module was built against was
+    exactly that — so the age of the record is rendered rather than assumed
+    small."""
+    panel = Panel("freshness of this reading")
+    if record is None:
+        panel.unknown.append("no record, so nothing to date")
+        return panel
+    import continuation
+    from datetime import datetime, timezone
+
+    written = continuation._moment(record.updated_at) if record.updated_at else None
+    if written is None:
+        panel.unknown.append(
+            f"the record's own timestamp {record.updated_at!r} cannot be read, so how old this "
+            f"reading is cannot be established")
+        return panel
+    age = (datetime.now(timezone.utc) - written).total_seconds()
+    panel.lines.append(f"record written {age / 60:.0f} min ago ({record.updated_at})")
+    panel.lines.append(f"read from {record_path}")
+    if age > 3600:
+        panel.lines.append(
+            "  STALE: this record has not been rewritten in over an hour. Every state above is "
+            "derived from artifacts and so is current, but the OBLIGATIONS are as the coordinator "
+            "last wrote them and may no longer be what it is doing")
+    return panel
+
+
+def _pack_panel(here: Path) -> Panel:
+    """The identity of the pack this projection is part of — not the project's
+    pin, which is the panel above, but what is actually running."""
+    panel = Panel("the pack this projection ships in")
+    manifest = here / "PACK_MANIFEST.json"
+    if not manifest.is_file():
+        panel.unknown.append(f"no manifest at {manifest}")
+        return panel
+    try:
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        panel.unknown.append(f"the manifest could not be read: {exc}")
+        return panel
+    panel.lines.append(f"version {document.get('version', UNKNOWN)}  "
+                       f"state {document.get('state', UNKNOWN)}")
+    panel.lines.append(f"digest {str(document.get('tree_digest_sha256', UNKNOWN))[:16]}…")
+    if document.get("state") != "QUALIFIED_AND_FROZEN":
+        panel.lines.append("  NOT ADOPTABLE: only QUALIFIED_AND_FROZEN may be pinned by a project")
+    return panel
 
 
 def _output_panel(record, base: Path) -> Panel:
@@ -262,14 +401,52 @@ def project(
     absence is reported as unknown, never rendered as a resting state.
     """
     base = Path(project_root)
+    record_path = base / continuation_record
     contract_panel, _contract = _contract_panel(base / contract)
-    liveness_panel, record = _liveness_panel(base / continuation_record)
-    return Projection(panels=[
-        contract_panel,
-        liveness_panel,
-        _output_panel(record, base),
-        _capacity_panel(base / capacity_observation),
-    ])
+    liveness_panel, record = _liveness_panel(record_path)
+    return Projection(
+        headline=_headline(record),
+        panels=[
+            _pack_panel(Path(__file__).resolve().parent.parent),
+            contract_panel,
+            liveness_panel,
+            _output_panel(record, base),
+            _budget_panel(record),
+            _capacity_panel(base / capacity_observation),
+            _freshness_panel(record, record_path),
+        ],
+    )
+
+
+def _headline(record) -> str:
+    """One line: is useful progress occurring, and if not, what is in the way.
+
+    **Delegated, never decided here.** The words come from the state
+    `continuation` derived; this chooses which sentence to put at the top and
+    nothing else. A projection that reached its own verdict would be a second
+    opinion about the thing it is a reading of.
+    """
+    if record is None:
+        return ("UNKNOWN — no continuation record. This is not 'nothing to do': it is 'the "
+                "coordinator's position cannot be read'.")
+    try:
+        import continuation
+
+        report = continuation.derive(record, relative_to=Path(record.record_path or ".").parent)
+    except Exception as exc:
+        return f"UNKNOWN — the record could not be derived: {exc}"
+    S = continuation.State
+    sentences = {
+        S.WAITING_ON_IDENTIFIED_JOB: "WAITING — a named job is running and its deadline is below.",
+        S.COMPLETED_NOT_CONSUMED: "A RESULT IS WAITING TO BE READ. The job finished; nobody has consumed it.",
+        S.RECOVERY_REQUIRED: "RECOVERY REQUIRED — something is wrong with the record or a job, detail below.",
+        S.BLOCKED_ON_HUMAN: "BLOCKED ON A PERSON — see exactly what it blocks below.",
+        S.BLOCKED_ON_CAPACITY: "BLOCKED ON CAPACITY — no window is available for the outstanding work.",
+        S.SILENT_IDLE: "SILENT_IDLE — THERE IS WORK TO DO AND NOTHING IS OUTSTANDING. This is the defect this release exists to close, not a resting state.",
+        S.ACTIONABLE_WORK_READY: "WORK IS READY and the coordinator is expected to be doing it.",
+        S.TERMINAL: "TERMINAL — nothing is outstanding and nothing is authorised.",
+    }
+    return f"{report.state}: {sentences.get(report.state, 'see below')}"
 
 
 def _cli(argv: list[str]) -> int:

@@ -57,7 +57,7 @@ import json
 import math
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 import task_output
@@ -170,6 +170,14 @@ class Wait:
     path: str | None = None
     task_id: str | None = None
     max_bytes_per_write: int | None = None
+    #: WHAT this job is about, when that is a tree. An audit is evidence about
+    #: one revision, and a reader who cannot see which one cannot tell current
+    #: evidence from evidence two repair rounds old — which happened here, and
+    #: cost six findings' worth of re-execution to discover.
+    subject_revision: str = ""
+    subject_digest: str = ""
+    #: The executor, for a reader deciding whether a route is behaving.
+    executor: str = ""
     declared_at: str = ""
     #: Set once the coordinator has taken the result up. An unconsumed
     #: completion is the state this whole module exists to name.
@@ -329,6 +337,16 @@ class ContinuationRecord:
     #: Where the authoritative governance record lives, so a reader who
     #: disbelieves this file knows what to read instead.
     record_path: str = ""
+    #: Ceilings and what has been spent against them, as
+    #: ``{"counter": {"used": n, "ceiling": m, "authorised_by": "..."}}``.
+    #: Optional and empty by default: a coordinator that does not track budgets
+    #: reads as UNKNOWN rather than as zero spent, because zero is a claim.
+    budgets: dict = field(default_factory=dict)
+    #: Standing status a reader needs and cannot derive from this file —
+    #: ``{"suite": ..., "gates": ..., "latest_audit": ..., "closure": ...,
+    #: "candidate": ...}``. Free-form strings, deliberately: this module does
+    #: not adjudicate them and must not appear to.
+    evidence: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -339,6 +357,12 @@ class ContinuationRecord:
             "blockers": [blocker.__dict__ for blocker in self.blockers],
             "terminal": self.terminal,
             "record_path": self.record_path,
+            # Enumerated here AND in `load`, which is the whole hazard of this
+            # shape: a field added to the dataclass and to neither is silently
+            # dropped at the boundary this record exists to survive. Caught by
+            # round-tripping the two added above before they were used once.
+            "budgets": self.budgets,
+            "evidence": self.evidence,
         }
 
 
@@ -726,6 +750,8 @@ def load(path: str | Path) -> ContinuationRecord:
             blockers=tuple(Blocker(**entry) for entry in raw.get("blockers") or ()),
             terminal=bool(raw.get("terminal", False)),
             record_path=raw.get("record_path", ""),
+            budgets=dict(raw.get("budgets") or {}),
+            evidence=dict(raw.get("evidence") or {}),
         )
     except (KeyError, TypeError) as exc:
         raise PreconditionError("the continuation record is malformed",
