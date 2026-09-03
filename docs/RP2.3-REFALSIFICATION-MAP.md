@@ -15,8 +15,15 @@ vacuous-pass shape this release has now found six times in its own tests. A
 selector that matches no test is a passing command and an empty claim, and the
 run counts every row's tests for exactly that reason.
 
-Re-run in full after the last repair: **39 rows, 39 passing, 0 selecting
-nothing.**
+**The check is mechanical now.** `policy/recurrence-classes.json` is this
+table's machine-readable twin and `tools/tests/test_recurrence_classes.py` runs
+it: every class must select at least one real test, and a test asserts the two
+copies of the list hold the same classes so the prose and the data cannot drift.
+
+That the selected tests *pass* is established by the suite, which runs them.
+Asserting it here as well took the suite from under three minutes to over six,
+and made two classes fail whenever the release pin was mid-edit — a check nobody
+can afford to run is a check somebody turns off.
 
 | Recurrence class | Oracle |
 |---|---|

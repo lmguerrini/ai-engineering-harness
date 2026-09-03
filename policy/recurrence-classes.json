@@ -1,0 +1,335 @@
+{
+  "policy_schema": "recurrence-classes-v1",
+  "description": "The recurrence classes this release was required to re-falsify, each with the selector that runs its oracle. Derived from docs/RP2.3-REFALSIFICATION-MAP.md and kept beside it so the check is mechanical: the map is the prose and this is what a test can execute. It exists because the classes were previously proved by running a script by hand — which is how three of the selectors came to match no test at all and report green by selecting nothing.",
+  "classes": [
+    {
+      "class": "ACTIONABLE_WORK + SILENT_IDLE",
+      "files": [
+        "test_silent_idle_closure.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "summary emitted while authorised work exists",
+      "files": [
+        "test_continuation.py"
+      ],
+      "keyword": "idle or ready_rather"
+    },
+    {
+      "class": "completed worker/auditor result not consumed",
+      "files": [
+        "test_continuation.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "stale / orphaned / superseded waiter",
+      "files": [
+        "test_progress.py"
+      ],
+      "keyword": "waiter or retire"
+    },
+    {
+      "class": "stale / orphaned / superseded worker",
+      "files": [
+        "test_silent_idle_closure.py"
+      ],
+      "keyword": "two_live_waits or retiring_the_first"
+    },
+    {
+      "class": "false RUNNING from process existence",
+      "files": [
+        "test_progress.py"
+      ],
+      "keyword": "flat or single"
+    },
+    {
+      "class": "false RUNNING from measuring the sample interval",
+      "files": [
+        "test_progress.py"
+      ],
+      "keyword": "horizon or flat_since"
+    },
+    {
+      "class": "wait without a bounded deadline",
+      "files": [
+        "test_silent_idle_closure.py"
+      ],
+      "keyword": "deadline or expiry or unbounded"
+    },
+    {
+      "class": "waiter whose condition can never wake the coordinator",
+      "files": [
+        "test_progress.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "context exhaustion / compaction / fresh session",
+      "files": [
+        "test_continuation_rehearsal.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "durable state losing capability/wait/result/budget/blocker/identity/next action",
+      "files": [
+        "test_continuation_rehearsal.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "scoped HITL blocking unrelated authorised work",
+      "files": [
+        "test_silent_idle_closure.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "provider quota / reset / capacity exhaustion",
+      "files": [
+        "test_capacity.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "telemetry UNKNOWN converted into guessed capacity",
+      "files": [
+        "test_capacity.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "insufficient coordinator / result / audit reserve",
+      "files": [
+        "test_capacity.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "duplicate dispatch, duplicate retry",
+      "files": [
+        "test_silent_idle_closure.py"
+      ],
+      "keyword": "two_live_waits or second_worker"
+    },
+    {
+      "class": "partial durable output ignored before retry",
+      "files": [
+        "test_task_output.py"
+      ],
+      "keyword": "partial or resume"
+    },
+    {
+      "class": "atomic output failure before materialisation",
+      "files": [
+        "test_task_output.py"
+      ],
+      "keyword": "atomic or part or rename"
+    },
+    {
+      "class": "task result consumed by the wrong task",
+      "files": [
+        "test_task_output.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "completed-but-not-consumed output",
+      "files": [
+        "test_continuation.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "gate failure hidden by a pipeline or lost exit code",
+      "files": [
+        "test_commit_gate.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "oracle satisfied for a reason other than its claim",
+      "files": [
+        "test_pack_pin.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "vacuous mutation test / test iterating the mutated constant",
+      "files": [
+        "test_gitread.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "self-derived golden, stale verifier",
+      "files": [
+        "test_release_integrity.py"
+      ],
+      "keyword": "independent or measured or states or held_prose"
+    },
+    {
+      "class": "audit evidence about revision A accepted for revision B",
+      "files": [
+        "test_close_attestation.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "transcribed counts drifting from computable facts",
+      "files": [
+        "test_release_integrity.py"
+      ],
+      "keyword": "count or routing or measured"
+    },
+    {
+      "class": "substring-based semantic comparison",
+      "files": [
+        "test_close_attestation.py"
+      ],
+      "keyword": "exact or premise"
+    },
+    {
+      "class": "non-finite values bypassing guards",
+      "files": [
+        "test_capacity.py"
+      ],
+      "keyword": "finite or horizon or measurable"
+    },
+    {
+      "class": "constructor bypassing the loader's validation",
+      "files": [
+        "test_history_anchor.py"
+      ],
+      "keyword": "shape or loader or declared"
+    },
+    {
+      "class": "project contract / schema drift",
+      "files": [
+        "test_project_contract.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "real-consumer incompatibility",
+      "files": [
+        "test_consumer_compatibility.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "adapter executable drift",
+      "files": [
+        "test_adapter_pin.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "backend / model qualification drift",
+      "files": [
+        "test_backend_contract.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "read-only Git acquiring write authority",
+      "files": [
+        "test_gitread.py"
+      ],
+      "keyword": "write or verb or byte_identical"
+    },
+    {
+      "class": "read-only Git executing repository-configured programs",
+      "files": [
+        "test_gitread.py"
+      ],
+      "keyword": "program or filter or submodule or proxy or closure"
+    },
+    {
+      "class": "a repository disabling the check that inspects it",
+      "files": [
+        "test_gitread.py"
+      ],
+      "keyword": "breaking_its_own or re_enter"
+    },
+    {
+      "class": "read-only operation gaining network authority",
+      "files": [
+        "test_gitread.py"
+      ],
+      "keyword": "transport or remote"
+    },
+    {
+      "class": "scanner skipping unreadable objects",
+      "files": [
+        "test_publication_history.py"
+      ],
+      "keyword": "scanned or incomplete"
+    },
+    {
+      "class": "shared object/path enumeration incomplete",
+      "files": [
+        "test_publication_history.py"
+      ],
+      "keyword": "sharing or alias or exempt or history_too"
+    },
+    {
+      "class": "current-tree safety mistaken for complete-history safety",
+      "files": [
+        "test_publication_history.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "publication ceremony leaking into private projects",
+      "files": [
+        "test_publication_history.py"
+      ],
+      "keyword": "obligation or profile"
+    },
+    {
+      "class": "disclosure broader than reproducible evidence",
+      "files": [
+        "test_publication_history.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "anchor green after evidence is destroyed",
+      "files": [
+        "test_history_anchor.py"
+      ],
+      "keyword": "destroy or prune"
+    },
+    {
+      "class": "closure anchor unreachable",
+      "files": [
+        "test_history_anchor.py"
+      ],
+      "keyword": "anchor or bundle"
+    },
+    {
+      "class": "remote verification weakened by hardening",
+      "files": [
+        "test_gitread.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "stale refs / rewrite refs creating false publication state",
+      "files": [
+        "test_publication_gate.py"
+      ],
+      "keyword": null
+    },
+    {
+      "class": "projection becoming authority",
+      "files": [
+        "test_projection.py"
+      ],
+      "keyword": null
+    }
+  ]
+}
