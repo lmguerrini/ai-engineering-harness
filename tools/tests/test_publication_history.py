@@ -374,3 +374,32 @@ def test_two_paths_sharing_a_blob_are_both_examined(repo):
     locations = sorted((o.location, o.path) for o in report.occurrences)
     assert ("path", "z-needleprivate.txt") in locations
     assert ("blob", "a.txt") in locations
+
+
+def test_one_exemption_cannot_cover_a_name_nobody_exempted(repo):
+    """Identical bytes at an exempt path and an unexempt one reported CLEAN: the
+    exemption was decided from the single arbitrary name `rev-list --objects`
+    prints. **An object is exempt only if every name it has is exempt.** The
+    tree walk already knew every name; the content scan was still trusting one."""
+    (repo / "a-exempt.txt").write_text("needleprivate\n")
+    (repo / "z-unexempt.txt").write_text("needleprivate\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "one blob, one exempt name and one not")
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))),
+        content_exempt_paths=("a-exempt.txt",))
+    assert [o.location for o in report.occurrences], "a partial exemption exempts nothing"
+
+
+def test_an_exemption_covering_every_name_still_exempts(repo):
+    """The bound: a repair that made exemptions never apply would pass the test
+    above and break the feature."""
+    (repo / "a-exempt.txt").write_text("needleprivate\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "one blob, one exempt name")
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))),
+        content_exempt_paths=("a-exempt.txt",))
+    assert [o for o in report.occurrences if o.location == "blob"] == []

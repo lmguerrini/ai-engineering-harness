@@ -244,8 +244,12 @@ def scan_complete_history(
     #: findings after they were made, and this one stops the second being made.
     seen_objects: set[str] = set()
     seen_paths: set[tuple[str, str]] = set()
+    #: Every name each object ever had. An object's CONTENT exemption is decided
+    #: from all of them together, below.
+    names_of: dict[str, set[str]] = {}
     for name in names:
         for sha, path in gitread.every_name_in_history(repository, name):
+            names_of.setdefault(sha, set()).add(path)
             if (sha, path) in seen_paths:
                 continue
             seen_paths.add((sha, path))
@@ -258,13 +262,24 @@ def scan_complete_history(
                 continue
             seen_objects.add(sha)
             report.objects_examined += 1
-            if outgoing_scan.pathmatch.matches_any(path, list(content_exempt_paths)):
-                # Scoped, never skipped: a declared exemption removes the
-                # project's own vocabulary from this object's findings and
-                # leaves every universal rule in force.
-                exempt = True
-            else:
-                exempt = False
+            # AN OBJECT IS EXEMPT ONLY IF EVERY NAME IT HAS IS EXEMPT.
+            #
+            # The exemption was decided from `path` — the single arbitrary name
+            # `rev-list --objects` happens to print — so identical bytes at an
+            # exempt `a-exempt.txt` and an unexempt `z-unexempt.txt` reported
+            # CLEAN. One declared exemption suppressed a name nobody exempted,
+            # and a blind reader built exactly that repository. The tree walk
+            # above already knows every name; the content scan was still
+            # trusting one of them.
+            #
+            # Scoped, never skipped: a declared exemption removes the project's
+            # own vocabulary from this object's findings and leaves every
+            # universal rule in force.
+            every_name = names_of.get(sha) or ({path} if path else set())
+            exempt = bool(every_name) and all(
+                outgoing_scan.pathmatch.matches_any(candidate, list(content_exempt_paths))
+                for candidate in every_name
+            )
             try:
                 if gitread.object_type(repository, sha) != "blob":
                     continue

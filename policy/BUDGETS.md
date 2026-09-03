@@ -92,10 +92,20 @@ Authorised sessions, each recorded in the gate record of the version it cut:
 |---|---|---|
 | Repair attempts per reproduced root cause | 12 | 12 |
 | Repair rounds per capability | 8 | 8 |
-| Closure / requalification cycles per capability | 4 | 4 |
+| Closure / requalification cycles per capability | 4 | 4, raised to 8 mid-session |
 
-RP2.3 repeats RP2.2's numbers rather than raising them: RP2.2 did not exhaust
-them, and a ceiling nobody reaches records nothing.
+RP2.3 repeated RP2.2's numbers rather than raising them, because RP2.2 did not
+exhaust them and a ceiling nobody reaches records nothing. **Then RP2.3 reached
+one.** The closure ceiling was raised to 8 part-way through, by recorded human
+decision, after the fifth blind reading found that four of the fourth reading's
+repairs were themselves defective — see `docs/RP2.3-GATE.md`. The raise is
+spendable only to close a verified release-blocking defect or to delta-audit a
+repair that changed a guarantee, never for reassurance, and it left the repair
+counters alone.
+
+That is the ceiling doing its job rather than failing: it stopped the loop and
+put the decision to a person, which is what a number nobody can raise silently
+is for.
 
 Two rules survive the raise, because they are what makes the counters mean
 anything:

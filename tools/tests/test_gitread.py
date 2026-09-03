@@ -531,7 +531,11 @@ def test_the_diff_family_still_reads_after_the_hardening(tmp_path):
     """The bound: a repair that made every diff refuse would pass the three
     tests above and break the pack."""
     repo, _ = _repo_that_runs_a_program(tmp_path, "diff.external")
-    assert gitread.probe(repo, "diff", "--stat", "HEAD", negative_statuses=()).answered
+    # `ok`, not `answered`. A Git parse failure caused by the injected flags
+    # produces `answered=True, ok=False`, so asserting `answered` passes through
+    # exactly the breakage this test exists to catch — said by a blind reader
+    # about the first version of this line.
+    assert gitread.probe(repo, "diff", "--stat", "HEAD", negative_statuses=()).ok
     assert gitread.probe(repo, "log", "--oneline", "-1", negative_statuses=()).ok
     assert gitread.probe(repo, "show", "--stat", "HEAD", negative_statuses=()).ok
 
@@ -550,3 +554,61 @@ def test_two_paths_sharing_one_blob_are_two_names(tmp_path):
     names = gitread.every_name_in_history(repo, "HEAD")
     assert sorted(path for _sha, path in names) == ["a.txt", "b.txt"]
     assert len({sha for sha, _path in names}) == 1, "one blob, deliberately"
+
+
+def test_a_smudge_filter_the_attributes_select_cannot_run(tmp_path):
+    """`cat-file --filters` applies the repository's own `.gitattributes` filter
+    chain, which is a third way for the subject to name a program — after
+    `diff.external` and the attribute-selected diff driver, both closed one
+    round earlier. Found by a blind reader ON the repair for those two."""
+    repo = tmp_path / "filtered"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    writer = repo / "smudge.sh"
+    writer.write_text(f"#!/bin/sh\ntouch {repo / 'FILTER_RAN'}\ncat\n")
+    writer.chmod(0o755)
+    _git(repo, "config", "filter.evil.smudge", str(writer))
+    (repo / ".gitattributes").write_text("* filter=evil\n")
+    (repo / "f.txt").write_text("x")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "cat-file", "--filters", "HEAD:f.txt", negative_statuses=())
+    assert not (repo / "FILTER_RAN").exists()
+
+
+def test_a_submodules_own_configuration_cannot_run_through_the_parent(tmp_path):
+    """The escape the first hardening did not close, and the reason it did not:
+    **a nested Git process is a second process**, and the parent's command line
+    never reaches it. `diff --submodule=diff` ran the SUBMODULE's `diff.external`
+    straight through flags that protect only the parent."""
+    sub, sup = tmp_path / "sub", tmp_path / "sup"
+    sub.mkdir(); sup.mkdir()
+    _git(sub, "init", "-q", "-b", "main")
+    (sub / "s").write_text("1")
+    _git(sub, "add", "-A")
+    _git(sub, "commit", "-qm", "s1")
+    _git(sup, "init", "-q", "-b", "main")
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "sub")
+    _git(sup, "add", "-A")
+    _git(sup, "commit", "-qm", "add sub")
+    writer = tmp_path / "w.sh"
+    writer.write_text(f"#!/bin/sh\ntouch {tmp_path / 'SUBMODULE_DIFF_RAN'}\n")
+    writer.chmod(0o755)
+    _git(sup / "sub", "config", "diff.external", str(writer))
+    (sup / "sub" / "s").write_text("2")
+
+    with pytest.raises(_IntegrityError):
+        gitread.probe(sup, "diff", "--submodule=diff", negative_statuses=())
+    assert not (tmp_path / "SUBMODULE_DIFF_RAN").exists()
+
+
+def test_a_repository_with_no_commits_has_no_names_rather_than_an_error(tmp_path):
+    """An empty history's name set is empty, which is an answer. `rev-list HEAD`
+    exits non-zero on one, and the refusal reached callers who had asked a
+    question with a correct empty answer."""
+    repo = tmp_path / "empty"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    assert gitread.every_name_in_history(repo, "HEAD") == []

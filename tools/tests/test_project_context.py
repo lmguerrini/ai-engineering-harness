@@ -73,7 +73,13 @@ def test_the_digest_is_of_the_content_and_not_of_the_filesystem(context):
         os.utime(path, (0, 0))
     assert tree_digest(context) == before, "the digest moved without the content moving"
 
-    files[0].write_bytes(files[0].read_bytes() + b"x")
+    # SAME LENGTH: a digest that framed only the length would survive an
+    # append and fail this.
+    original = files[0].read_bytes()
+    flipped = bytearray(original)
+    flipped[0] ^= 0x20
+    files[0].write_bytes(bytes(flipped))
+    assert len(bytes(flipped)) == len(original)
     assert tree_digest(context) != before, "the digest held while the content moved"
 
 

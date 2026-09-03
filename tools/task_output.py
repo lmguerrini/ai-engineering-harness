@@ -425,7 +425,17 @@ def classify(contract: OutputContract) -> RecoveryReport:
     # disk that a person resolves, and `resume_plan` already refuses to act on
     # UNKNOWN, so this cannot become a retry.
     marker = root / OWNER_MARKER
-    if marker.is_file():
+    if not marker.is_file():
+        # ABSENT IS NOT PERMISSION. The first repair asked the marker only when
+        # there was one, so deleting it — or replacing it with a directory —
+        # restored the defect exactly, and a blind reader did both. An
+        # unclaimed root's owner is unknown, and unknown is the answer.
+        return RecoveryReport(
+            task_id=contract.task_id, state=RecoveryState.UNKNOWN,
+            why=(f"this root carries no readable {OWNER_MARKER}, so whose work it holds cannot "
+                 f"be established; an output root is claimed before it is written to"),
+        )
+    if True:
         try:
             recorded = json.loads(marker.read_text(encoding="utf-8")).get("task_id")
         except (OSError, ValueError) as exc:

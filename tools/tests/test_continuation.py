@@ -493,3 +493,26 @@ def test_a_path_wait_says_that_it_cannot_name_a_producer(tmp_path):
                     not_beyond_seconds=60, declared_at=continuation.now()),),
     )
     assert continuation.derive(intruder, relative_to=tmp_path).state == State.RECOVERY_REQUIRED
+
+
+@pytest.mark.parametrize("pid", [1.5, float("inf"), float("nan"), True, "1.5", "x"])
+def test_a_process_id_must_be_a_whole_number_not_merely_convertible(pid):
+    """`int()` was the whole check, and it converts rather than validates. `1.5`
+    became process 1 — init, always alive, so the wait reported a running job
+    forever — and infinity raised a bare OverflowError. Both found by a blind
+    reader ON the repair for the string case."""
+    record = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(),
+        waits=(Wait(job_id="j", kind=WaitKind.PROCESS, expects="a worker",
+                    not_beyond_seconds=60, pid=pid, declared_at=continuation.now()),),
+    )
+    assert continuation.derive(record).state == State.RECOVERY_REQUIRED
+
+
+def test_a_real_process_id_still_observes_the_process():
+    record = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(),
+        waits=(Wait(job_id="j", kind=WaitKind.PROCESS, expects="a worker",
+                    not_beyond_seconds=60, pid=os.getpid(), declared_at=continuation.now()),),
+    )
+    assert continuation.derive(record).state == State.WAITING_ON_IDENTIFIED_JOB

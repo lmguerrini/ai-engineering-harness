@@ -1451,3 +1451,89 @@ The options are named literally now, and the mutant dies.
 
 Worth stating plainly: the survivor was found by running the mutation pass, not
 by writing the test. Every one of these tests was written believing it worked.
+
+## Closure audit — round 5, the delta re-audit of round 4's repairs
+
+One blind cross-vendor auditor against the repairs, stating the revision and
+digest it read. **NOT READY: seven findings, and four of them were defects in
+the repairs it was sent to check.** Six reproduced exactly; the seventh was a
+correct criticism of an oracle's strength rather than a reproducible defect.
+
+### Two more ways the subject's own code runs
+
+The round-4 hardening closed `diff.external` and the attribute-selected diff
+driver. It did not close `cat-file --filters`, which applies the repository's
+`.gitattributes` filter chain, and it did not close `diff --submodule=diff` —
+**because a nested Git process is a second process, and the parent's command
+line never reaches it.** The submodule's own `diff.external` ran straight
+through flags that protect only the parent.
+
+Three rounds of the same idea, each closing the instances visible from where the
+last one stood. The refusal set now covers `--filters`, `--submodule=diff` and
+`--recurse-submodules`, and `submodule.recurse=false` joins the neutralised
+config — two answers to *will this recurse* rather than one, because the cost of
+the wrong answer is running somebody else's program.
+
+### Absent is not permission
+
+The owner-marker check asked the marker *when there was one*. Deleting it
+restored the defect exactly, and the auditor deleted it and then replaced it
+with a directory. A root with no readable marker has an unknown owner, and
+unknown is the answer — for the task that really did own it as well, because
+nothing on disk says so any more.
+
+### `int()` converts; it does not validate
+
+`pid=1.5` became process 1 — init, always alive, so the wait reported a running
+job forever. `pid=inf` raised a bare `OverflowError`. Both found on the repair
+for the string case one round earlier. A process id is a whole number, and
+anything that merely converts to one is not one.
+
+### An exemption covered a name nobody exempted
+
+Identical bytes at an exempt path and an unexempt one reported **clean**: the
+content exemption was decided from the single arbitrary name `rev-list
+--objects` prints. The tree walk added one round earlier already knew every
+name, and the content scan was still trusting one of them. An object is exempt
+only if every name it has is exempt.
+
+### And the oracle that replaced a tautology was still too weak
+
+The content-addressing tests appended bytes, which changes the framed length —
+so a digest that framed the length and never hashed the content would still have
+passed. **The auditor removed `digest.update(content)` and said so.** Both
+oracles now flip one byte in place, and both kill that mutant on their own.
+
+The same report also noted that `test_the_diff_family_still_reads_after_the_
+hardening` asserted `answered` rather than `ok`, and a Git parse failure caused
+by the injected flags produces `answered=True, ok=False` — the test passed
+through exactly the breakage it existed to catch.
+
+## Human authorizations for the unattended window, 2026-09-03
+
+Granted in one consolidated pre-flight. Recorded here because
+`policy/BUDGETS.md` says a session authorisation is recorded in the gate record
+of the version it cut.
+
+**Closure / requalification cycles raised from 4 to 8 per capability**, spendable
+only to close a verified release-blocking defect or to delta-audit repairs that
+changed a guarantee — never for reassurance. Repair attempts (12) and repair
+rounds (8) unchanged; the three-consecutive-failures rule still ends any single
+hypothesis. Requested because round 5 found four defects in round 4's repairs
+and the most-audited capability had reached 4 of 4.
+
+**Row 4, exercised once and only for two process ids.** Processes 2775 and 2776
+were ended after 7h50m at 0.42s and 0.11s of processor time. Both were
+classified `FAILED_BEFORE_USEFUL_OUTPUT` with no durable output to recover, and
+their subject revision could no longer close any gate. **The pack still ships no
+termination verb**: `M-03e` is unchanged, and the next stalled worker is
+escalated rather than ended.
+
+**Row 12 fallback named:** if the cross-vendor route becomes unavailable the
+final audit may be a fresh blind same-family context — *recorded in the gate as
+same-family rather than cross-vendor*. Disclosure is the condition. Not needed
+so far: three clean cross-vendor runs since the stdin cause was found.
+
+**SemVer stays with the founder.** A defect that can only be closed
+incompatibly is implemented, recorded as MAJOR-shaped under D11/D24, and stopped
+at a scoped HITL rather than renumbered.

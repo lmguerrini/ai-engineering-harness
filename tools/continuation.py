@@ -395,8 +395,18 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
         # contract is a named state, so the caller learned nothing and the
         # record could not even be reported as broken.
         try:
+            # `int()` was the whole check, and it is a converter rather than a
+            # validator: `1.5` became process 1 — init, always alive, so the
+            # wait reported a running job forever — and infinity raised a bare
+            # `OverflowError`. Both found by a blind reader on the repair for
+            # the string case. A process id is a whole number, and anything
+            # that merely converts to one is not a process id.
+            if isinstance(wait.pid, bool) or not (
+                    isinstance(wait.pid, int)
+                    or (isinstance(wait.pid, str) and wait.pid.strip().lstrip("+-").isdigit())):
+                raise ValueError(repr(wait.pid))
             pid = int(wait.pid)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return WaitObservation(
                 wait.job_id, None,
                 f"this wait names {wait.pid!r} as a process id and that is not one, so nothing "

@@ -308,7 +308,7 @@ def test_the_cli_exit_status_separates_permitted_refused_and_human(capsys):
     # traceback: a command line that cannot use its input has to say so.
     undated = [a for a in base if a not in ("--observed-at", "2026-09-03T12:00:00Z")]
     assert capacity._cli(undated + ["--remaining", "100"]) == 2
-    assert "when it was taken" in capsys.readouterr().out
+    assert "when it was taken" in capsys.readouterr().out.lower()
 
 
 def test_the_window_kind_vocabulary_covers_rolling_and_longer_windows():
@@ -363,3 +363,17 @@ def test_a_numeric_reading_states_when_it_was_taken():
     assert dated.remaining == 100
     # UNKNOWN needs no timestamp: it is already the answer for not knowing.
     assert capacity.Pool(pool_id="p", kind=capacity.PoolKind.INDEPENDENT).remaining == capacity.UNKNOWN
+
+
+@pytest.mark.parametrize("moment", ["not-a-time", 1, "", "  ", None])
+def test_the_moment_a_reading_was_taken_has_to_be_readable(moment):
+    """The first version tested for a non-empty string, so `--observed-at
+    not-a-time` dispatched and an integer raised a bare AttributeError. A
+    required field nobody can read is a required field in name only."""
+    with pytest.raises(IntegrityError):
+        capacity.Pool(pool_id="p", remaining=100, kind=capacity.PoolKind.INDEPENDENT,
+                      observed_at=moment)
+
+    for good in ("2026-09-03T12:00:00Z", "2026-09-03T12:00:00+02:00", "2026-09-03T12:00:00"):
+        assert capacity.Pool(pool_id="p", remaining=100, kind=capacity.PoolKind.INDEPENDENT,
+                             observed_at=good).remaining == 100

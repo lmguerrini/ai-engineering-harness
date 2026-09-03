@@ -77,6 +77,14 @@ _NEUTRALISED_CONFIG = {
     "core.hooksPath": "/dev/null",
     "core.attributesFile": "/dev/null",
     "core.fsmonitor": "",
+    # A nested Git process is a second process, and the parent's command line
+    # does not reach it. `diff --submodule=diff` ran the SUBMODULE's own
+    # `diff.external` straight through the hardening that protects the parent —
+    # found by a blind reader after the first hardening landed. The option is
+    # refused and recursion is turned off in config, because two answers to
+    # "will this recurse" are better than one when the cost of the wrong answer
+    # is running somebody else's program.
+    "submodule.recurse": "false",
     "core.sshCommand": "",
     "core.editor": "",
     "core.pager": "",
@@ -180,7 +188,8 @@ _NO_EXTERNAL_PROGRAMS = ("--no-ext-diff", "--no-textconv")
 #: The options through which a caller undoes the line above. Refused, because an
 #: argument that re-enables repository-controlled execution is a write verb
 #: wearing a read's name.
-CODE_ENABLING_OPTIONS = ("--ext-diff", "--textconv")
+CODE_ENABLING_OPTIONS = ("--ext-diff", "--textconv", "--filters",
+                         "--submodule=diff", "--recurse-submodules")
 
 #: Verbs that may cross a network boundary, and the only ones for which
 #: `allow_transports` means anything. `archive --remote` is a second network
@@ -340,7 +349,8 @@ def _run(
                 "this option makes an otherwise read-only command write to the filesystem",
                 verb=verb, option=option_text,
             )
-        if option_text in CODE_ENABLING_OPTIONS:
+        if any(option_text == form or option_text.startswith(form + "=")
+               for form in CODE_ENABLING_OPTIONS):
             raise IntegrityError(
                 "this option lets the repository being read choose a program to run, and a "
                 "read-only interface that executes the subject's code is not read-only",
@@ -633,7 +643,17 @@ def every_name_in_history(
     than the object walk and correct, and only names are collected here — the
     content scan still reads each blob once.
     """
-    commits = _run(repository, "rev-list", ref, timeout=timeout).split()
+    try:
+        commits = _run(repository, "rev-list", ref, timeout=timeout).split()
+    except GitRefusal:
+        # A repository with no commits has no names, which is an answer and not
+        # a failure. `rev-list HEAD` on one exits non-zero, and the refusal
+        # reached callers who had asked a question with a correct empty answer.
+        try:
+            _run(repository, "rev-parse", "--verify", f"{ref}^{{commit}}", timeout=timeout)
+        except GitRefusal:
+            return []
+        raise
     found: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for commit in commits:

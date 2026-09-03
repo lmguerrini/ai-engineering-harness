@@ -116,7 +116,14 @@ def test_the_digest_is_of_the_content_and_not_of_the_filesystem(pack):
     os.utime(target, (0, 0))
     assert pack_pin.tree_digest(pack) == before, "the digest moved without the content moving"
 
-    target.write_bytes(content + b"# one byte more\n")
+    # SAME LENGTH, deliberately. Appending bytes changes the framed length, so
+    # a digest that framed the length and never hashed the content would still
+    # pass — a blind reader removed `digest.update(content)` and said so. One
+    # byte flipped in place is the change only a content hash can see.
+    flipped = bytearray(content)
+    flipped[0] ^= 0x20
+    target.write_bytes(bytes(flipped))
+    assert len(bytes(flipped)) == len(content)
     assert pack_pin.tree_digest(pack) != before, "the digest held while the content moved"
 
 

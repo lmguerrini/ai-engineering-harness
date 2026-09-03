@@ -54,6 +54,7 @@ learn anything from either, so the outcome vocabulary keeps them separate and
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -75,6 +76,15 @@ __all__ = [
 
 #: Not a number, not zero, and never estimated into one.
 UNKNOWN = "UNKNOWN"
+
+
+def _moment(text: str) -> "datetime | None":
+    """An ISO-8601 instant, or None. Naive input is read as UTC."""
+    try:
+        parsed = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 class PoolKind:
@@ -216,13 +226,22 @@ class Pool:
         #
         # `UNKNOWN` needs no timestamp: it is already the answer this module
         # gives when it does not know, and dating it would suggest otherwise.
-        if self.remaining != UNKNOWN and not (self.observed_at or "").strip():
-            raise IntegrityError(
-                "a numeric capacity reading states when it was taken. A reading is evidence "
-                "about a moment, and one with no moment cannot be aged, compared or "
-                "distinguished from a guess",
-                pool_id=self.pool_id, remaining=repr(self.remaining),
-            )
+        if self.remaining != UNKNOWN:
+            # NOT MERELY NON-BLANK. The first version tested for a non-empty
+            # string, so `--observed-at not-a-time` dispatched and an integer
+            # raised a bare `AttributeError` — a required field nobody can read
+            # is a required field in name only, which is what a blind reader
+            # said about it.
+            moment = self.observed_at if isinstance(self.observed_at, str) else None
+            parsed = _moment(moment) if moment else None
+            if parsed is None:
+                raise IntegrityError(
+                    "a numeric capacity reading states WHEN it was taken, as a timestamp that can "
+                    "be read. A reading is evidence about a moment, and one whose moment cannot "
+                    "be parsed can be neither aged nor compared",
+                    pool_id=self.pool_id, remaining=repr(self.remaining),
+                    observed_at=repr(self.observed_at),
+                )
     @property
     def known(self) -> bool:
         return self.remaining != UNKNOWN

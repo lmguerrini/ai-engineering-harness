@@ -365,3 +365,26 @@ def test_an_unreadable_owner_marker_is_unknown_rather_than_ignored(tmp_path):
     (root / task_output.OWNER_MARKER).write_text("{not json")
 
     assert task_output.classify(contract).state == task_output.RecoveryState.UNKNOWN
+
+
+@pytest.mark.parametrize("break_it", ["delete", "replace with a directory"])
+def test_an_absent_or_unreadable_owner_marker_is_not_permission(tmp_path, break_it):
+    """The first owner repair asked the marker only when there WAS one, so
+    deleting it restored the defect exactly — and a blind reader deleted it and
+    then replaced it with a directory. **Absent is not permission.** An
+    unclaimed root's owner is unknown, and unknown is the answer."""
+    root = tmp_path / "out"
+    alpha = task_output.OutputContract("alpha", root, 64, expected_chunks=1)
+    task_output.claim_root(alpha)
+    task_output.materialise(alpha, 0, "done")
+    task_output.complete(alpha, 1)
+
+    marker = root / task_output.OWNER_MARKER
+    marker.unlink()
+    if break_it == "replace with a directory":
+        marker.mkdir()
+
+    beta = task_output.OutputContract("beta", root, 64, expected_chunks=1)
+    assert task_output.classify(beta).state == task_output.RecoveryState.UNKNOWN
+    # And not even for the task that really did own it: nothing on disk says so.
+    assert task_output.classify(alpha).state == task_output.RecoveryState.UNKNOWN
