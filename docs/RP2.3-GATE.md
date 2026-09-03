@@ -2362,3 +2362,38 @@ Four mutants over cycle 11's repairs. **Three survived on the first run** — th
 root-symlink check, the budget guard and the integrity-error propagation each
 had a repair and no regression behind it, which is precisely the state a
 mutation pass exists to find. All three have oracles now and all four die.
+
+## Every hand-run artifact is a test now
+
+Three of this release's central evidence artifacts were established by running
+something and writing the answer down: the dashboard's completeness figure, the
+recurrence-class sweep, and the closure matrix's own consistency. All three
+produced a wrong number at least once, and each time the number was wrong in the
+same way — it was true when it was measured and stale when it was read.
+
+| artifact | the contract | the check |
+|---|---|---|
+| 49 dashboard readings | `policy/dashboard-readings.json` | `test_dashboard_contract.py` renders four states and asserts every marker appears in both renderers |
+| 47 recurrence classes | `policy/recurrence-classes.json` | `test_recurrence_classes.py` asserts every class selects a real test, and that the prose and the data hold the same list |
+| 80 matrix mechanisms | `docs/RP2.3-FAILURE-MODE-CLOSURE.md` | four guards: unique identifiers, four columns, an authorised disposition, and every named oracle selecting at least one real test |
+
+Each guard was then broken deliberately and each died: a duplicated identifier, a
+row with a column removed, an invented disposition, an oracle pointed at nothing,
+and a required reading deleted from the projection.
+
+### What the recurrence check cost before it was right
+
+The first version ran every class's oracle as well as selecting it. That took
+the suite from under three minutes to over six, **and made two classes fail
+whenever the release pin was mid-edit** — their selectors named a whole module
+including its identity-drift tests, so the check failed for a reason unrelated
+to the property it names, which is the anti-test the file exists to catch.
+
+That the selected tests pass is established by the suite, which runs them.
+Asserting it twice bought nothing and cost three minutes. **A check nobody can
+afford to run is a check somebody turns off**, and the two selectors are
+narrowed to the tests that actually discriminate their class.
+
+The suite's size is in `PACK_MANIFEST.json` and its runtime is whatever
+`pytest` prints; neither is restated here, because a count written into prose is
+the thing these three guards were built to stop.
