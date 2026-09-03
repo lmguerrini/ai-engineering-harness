@@ -121,6 +121,26 @@ adapters:
   #   declares:  capability-auditor          # the name: the file must declare — a path is a locator, not an identity
   #   note:      "read-only reviewer; must not declare an isolation mode"
   #
+  # A DIGEST DESCRIBES THE FILES; IT SAYS NOTHING ABOUT THE PROGRAM THEY DRIVE.
+  # The two drift independently, and one did: an adapter's definition files
+  # matched exactly while the installed executable was a version ahead of the
+  # qualified one, and the report said every adapter was verified. A note beside
+  # the declaration recorded the qualified version in prose, and nothing
+  # compared that sentence to the path. Declare the program instead, and the
+  # verifier asks it:
+  #
+  # - id:                 codex-worker
+  #   locator:            ~/.claude/skills/codex-worker/SKILL.md
+  #   digest:             <64-character lowercase sha256>
+  #   executable:         codex                 # the program these files drive
+  #   version_command:    codex --version       # how to ask it, run inside a declared blast radius
+  #   qualified_version:  0.148.0               # matched as a substring of the output
+  #
+  # All three together or none: a version nothing knows how to obtain is a
+  # requirement the project believes is enforced and nothing checks. Where the
+  # three are absent the report says so — `0 executable(s)` — rather than
+  # letting a count of files read as a statement about running things.
+  #
   # `required: false` permits the adapter to be ABSENT. It does NOT permit it to
   # be different: a declared adapter that is present and does not match its
   # digest blocks either way. Unreadable blocks too — that is a failure to look,

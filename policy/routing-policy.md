@@ -34,6 +34,13 @@ one because it is plausible.
    fires: weak oracle, public-contract/security/concurrency/migration surface,
    high ambiguity, scarce quota, or escalation after a prior failure.
 
+Every observation records `pool_id` — which capacity window it drew on — and
+`qualification_basis`, `field` or `synthetic`. A benchmark is **prior** evidence:
+field outcomes narrow or downgrade it, a synthetic pass never overrides a
+contradictory field one, and a grade whose observations are all benchmarks is
+annotated so nobody reads it as a track record. An observation that says neither
+is counted as neither.
+
 **Whenever more than one candidate was eligible, record at least one
 not-chosen candidate and the reason** in PROGRESS.md — without this the
 evidence base can only confirm existing preferences.

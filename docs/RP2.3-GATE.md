@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1519
+    in-release (skills/core/*.md + policy/*.md)   1526
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2542   27.1% over the ~2,000
+    total against a ~2,000 target                 2549   27.5% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -368,3 +368,54 @@ an observation that was never made. The oracle now asserts against the `flat`
 set and against the rendered line, not only against the verdict. **A test that
 checks only the verdict passes while the report lies**, and that is this
 release's own subject arriving in its own test.
+
+### C6 — Adapter and routing identity
+
+**RP3-1, and it was live at this release's baseline rather than reconstructed.**
+An adapter's four definition files matched their declared digests exactly. The
+report read `adapters verified: 4 of 4`. The program one of those adapters
+drives was a version ahead of the version the project had qualified against, and
+the only record of the qualified version was a sentence in a note beside the
+declaration saying it had been "verified installed at bootstrap" — which nothing
+compared to the path.
+
+**A digest describes the files; it says nothing about the binary that reads
+them.** The two drift independently. So a declaration may now name the
+`executable`, the `version_command` and the `qualified_version`, and the
+verifier **asks the program** rather than reading a sentence: a property check
+where there had been a shape check. The launch goes through the declared blast
+radius from C2, so an adapter cannot cause an arbitrary program to run by
+naming one in its version command.
+
+**All three fields or none.** A version nothing knows how to obtain is a
+requirement the project believes is enforced and nothing checks, which D22
+refuses rather than ignores.
+
+**The headline now says what it verified.** `4 file(s), 0 executable(s)`, and
+the adapters whose executables were never declared are named. `4 of 4` over four
+definition files reads as a statement about four running things and was not one.
+Demonstrated on the live installation: with the executable declared, the drift
+is reported with both versions and refuses to close.
+
+**Routing observations carry `pool_id` and `qualification_basis`.** A pool is a
+fact about capacity and never about capability, so it travels with a grade and
+does not change it; the capacity gate needs it and the grade must not. The basis
+is three-valued and not two: `field`, `synthetic`, and **unlabelled**. Every
+observation in the existing log predates the field, and reading that silence as
+`field` would promote every benchmark in it while reading it as `synthetic`
+would relabel thirteen real closure audits as a benchmark. An unrecognised basis
+is refused rather than folded into a known one — the rule the outcome field
+already learned, for the same reason.
+
+**A counting error was caught by its own test.** The basis counters were added
+to the same bucket as the outcomes, and the observation count behind every grade
+is `sum(bucket.values())` — so every grade briefly claimed twice the evidence it
+had. Repaired by summing the outcome keys explicitly, and pinned by a test that
+asserts the parts equal the whole.
+
+**Nine mutants, nine killed — and one that taught something else.** A mutation
+written as `return None or (...)` is a no-op: `None or X` is `X`, so the module
+was unchanged and the "survivor" was an instrument defect rather than a gap in
+the oracle. Rewritten as a genuine defect, it died. **A mutation that does not
+change behaviour proves nothing about the test that fails to notice it**, which
+is this release's own subject arriving in its own mutation harness.

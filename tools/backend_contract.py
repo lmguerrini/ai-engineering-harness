@@ -147,6 +147,26 @@ class TaskClassGrade:
     validated: int = 0
     contradicted: int = 0
     environmental: int = 0
+    #: How the observations behind this grade were obtained. Three counters and
+    #: not two: an observation recorded before this field existed says nothing
+    #: about how it was obtained, and reading that silence as either answer
+    #: would relabel the whole existing log. A synthetic qualification is
+    #: **prior** evidence — field evidence narrows or downgrades it — so a
+    #: reader who cannot tell the two apart reads a benchmark as a track record.
+    field_observations: int = 0
+    synthetic_observations: int = 0
+    basis_unknown: int = 0
+    @property
+    def synthetic_only(self) -> bool:
+        """Every observation declared itself a benchmark, and none is unlabelled."""
+        return (self.synthetic_observations > 0
+                and self.field_observations == 0
+                and self.basis_unknown == 0)
+
+    #: Which capacity pools the observations were drawn from. Carried, never
+    #: used for grading — a pool is a fact about capacity and says nothing
+    #: about capability — and `UNKNOWN` where an observation did not say.
+    pools: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.grade not in QUALIFICATION_GRADES:
@@ -274,13 +294,32 @@ def grades_from_observations(source: str | Path) -> dict[tuple[str, str], TaskCl
     `unprobed`.
     """
     counts: dict[tuple[str, str], dict[str, int]] = {}
+    pools: dict[tuple[str, str], set[str]] = {}
     for line in Path(source).read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
         identity = parse_configuration(row.get("configuration", ""))
         key = (identity.family, row.get("task_class", UNKNOWN))
-        bucket = counts.setdefault(key, {"validated": 0, "contradicted": 0, "environmental": 0})
+        bucket = counts.setdefault(
+            key, {"validated": 0, "contradicted": 0, "environmental": 0,
+                  "field": 0, "synthetic": 0, "basis_unknown": 0})
+        pools.setdefault(key, set()).add(row.get("pool_id") or UNKNOWN)
+
+        basis = row.get("qualification_basis")
+        if basis is None:
+            # Not defaulted to either. An observation recorded before this field
+            # existed says nothing about how it was obtained, and reading that
+            # silence as "field" would promote every benchmark in the log.
+            basis = UNKNOWN
+        elif basis not in ("field", "synthetic"):
+            raise BackendContractError(
+                f"observation records qualification_basis {basis!r}. Known: field, synthetic. "
+                "An unrecognised basis must not be counted as either — the same rule the "
+                "outcome field learned, for the same reason"
+            )
+        bucket[{"field": "field", "synthetic": "synthetic", UNKNOWN: "basis_unknown"}[basis]] += 1
+
         outcome = row.get("outcome")
         if outcome == "validated":
             bucket["validated"] += 1
@@ -303,7 +342,10 @@ def grades_from_observations(source: str | Path) -> dict[tuple[str, str], TaskCl
 
     graded: dict[tuple[str, str], TaskClassGrade] = {}
     for (family, task_class), bucket in counts.items():
-        total = sum(bucket.values())
+        # The outcome keys only. `field` counts how an observation was OBTAINED
+        # and is not an outcome; summing the whole bucket would have inflated
+        # every observation count by the number of field dispatches.
+        total = bucket["validated"] + bucket["contradicted"] + bucket["environmental"]
         if bucket["contradicted"]:
             grade = "contradicted"
         elif bucket["validated"] >= 2:
@@ -319,6 +361,10 @@ def grades_from_observations(source: str | Path) -> dict[tuple[str, str], TaskCl
             validated=bucket["validated"],
             contradicted=bucket["contradicted"],
             environmental=bucket["environmental"],
+            field_observations=bucket["field"],
+            synthetic_observations=bucket["synthetic"],
+            basis_unknown=bucket["basis_unknown"],
+            pools=tuple(sorted(pools.get((family, task_class), {UNKNOWN}))),
         )
     return graded
 

@@ -72,7 +72,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from errors import IntegrityError
+import instrument
+from errors import IntegrityError, PreconditionError
 
 __all__ = [
     "DIGEST_ALGORITHM",
@@ -96,7 +97,19 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 #: harness dispatches on. Read only when a declaration asks for it.
 _NAME_KEY = re.compile(r"(?m)^name:[ \t]*(?P<name>\S.*?)[ \t]*$")
 
-_KNOWN_FIELDS = frozenset({"id", "locator", "digest", "required", "declares", "note"})
+_KNOWN_FIELDS = frozenset({
+    "id", "locator", "digest", "required", "declares", "note",
+    # RP2.3. A digest describes the FILE an adapter is made of; these describe
+    # the EXECUTABLE those files drive, which is a different object and was
+    # drifting unnoticed while this module reported every adapter verified.
+    "executable", "version_command", "qualified_version",
+})
+
+#: Fields that only mean anything together. A version this module was never
+#: told how to obtain is a requirement nothing checks, which D22 refuses rather
+#: than ignores: a requirement silently unread is worse than none, because the
+#: project believes it is enforced.
+_EXECUTABLE_FIELDS = ("executable", "version_command", "qualified_version")
 
 
 def file_digest(path: str | Path) -> str:
@@ -122,6 +135,28 @@ class AdapterDeclaration:
     required: bool = True
     declares: str | None = None
     note: str | None = None
+    #: The program these files drive. A digest over a definition file says
+    #: nothing about the binary that reads it, and the two drift independently:
+    #: live at this release's baseline, one adapter's installed executable was a
+    #: version ahead of the qualified one while this module reported it verified.
+    executable: str | None = None
+    #: How to ask that program its version. Run through the declared blast
+    #: radius, so an adapter cannot quietly cause an arbitrary launch.
+    version_command: tuple[str, ...] | None = None
+    #: The version the project qualified against. Compared as a substring of
+    #: the command's output, because version banners carry more than a number
+    #: and pinning the whole banner would fail on a cosmetic change.
+    qualified_version: str | None = None
+
+    def __post_init__(self) -> None:
+        declared = [name for name in _EXECUTABLE_FIELDS if getattr(self, name) is not None]
+        if declared and len(declared) != len(_EXECUTABLE_FIELDS):
+            raise PreconditionError(
+                "an executable qualification needs all three of executable, version_command and "
+                "qualified_version; a version nothing knows how to obtain is a requirement the "
+                "project believes is enforced and nothing checks",
+                adapter=self.id, declared=", ".join(declared),
+            )
 
     def resolved(self, *, home: str | Path | None = None) -> Path:
         """The locator as an absolute path, with `~` expanded.
@@ -158,6 +193,12 @@ class AdapterReport:
     findings: list[AdapterFinding] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     verified: list[str] = field(default_factory=list)
+    #: Adapters whose executable version was checked against the declared one.
+    executables_verified: list[str] = field(default_factory=list)
+    #: Adapters that declared no executable, so nothing about the program they
+    #: drive was established. Reported, because "4 of 4" over four files read
+    #: as a statement about four running things and was not one.
+    executables_undeclared: list[str] = field(default_factory=list)
 
     @property
     def clean(self) -> bool:
@@ -165,16 +206,22 @@ class AdapterReport:
         return not any(finding.blocking for finding in self.findings)
 
     def render(self) -> str:
+        # The headline states WHAT was verified. Saying "4 of 4" over four
+        # definition files read as a statement about the four things that run,
+        # and one of those was a version ahead of the qualified one at the time.
+        scope = f"{len(self.verified)} file(s), {len(self.executables_verified)} executable(s)"
         if self.clean and not self.findings:
-            head = f"adapters verified: {len(self.verified)} of {len(self.verified)}"
+            head = f"adapters verified: {scope}"
         elif self.clean:
-            head = (
-                f"adapters verified: {len(self.verified)}; "
-                f"{len(self.findings)} permitted absence(s)"
-            )
+            head = f"adapters verified: {scope}; {len(self.findings)} permitted absence(s)"
         else:
             head = "adapters NOT VERIFIED"
         lines = [head]
+        if self.executables_undeclared:
+            lines.append(
+                "  executable NOT verified (none declared): "
+                + ", ".join(self.executables_undeclared)
+            )
         for finding in self.findings:
             marker = "  " if finding.blocking else "  (permitted) "
             lines.append(f"{marker}{finding}")
@@ -246,6 +293,29 @@ def declarations_from(value: object) -> tuple[AdapterDeclaration, ...]:
         if note is not None and not isinstance(note, str):
             raise IntegrityError(f"{where}.note must be a string", id=identifier)
 
+        executable = entry.get("executable")
+        if executable is not None and (not isinstance(executable, str) or not executable.strip()):
+            raise IntegrityError(f"{where}.executable must be a program name", id=identifier)
+
+        version_command = entry.get("version_command")
+        if version_command is not None:
+            if isinstance(version_command, str):
+                # A single string is the common shape and is read as one word
+                # per space. Anything needing a quoted argument writes a list.
+                version_command = version_command.split()
+            if (not isinstance(version_command, list) or not version_command
+                    or not all(isinstance(word, str) and word for word in version_command)):
+                raise IntegrityError(
+                    f"{where}.version_command must be a command, as a string or a list of words",
+                    id=identifier, found=repr(entry.get("version_command")),
+                )
+            version_command = tuple(version_command)
+
+        qualified_version = entry.get("qualified_version")
+        if qualified_version is not None and (
+                not isinstance(qualified_version, str) or not qualified_version.strip()):
+            raise IntegrityError(f"{where}.qualified_version must be a version string", id=identifier)
+
         out.append(
             AdapterDeclaration(
                 id=identifier,
@@ -254,6 +324,9 @@ def declarations_from(value: object) -> tuple[AdapterDeclaration, ...]:
                 required=required,
                 declares=declares,
                 note=note,
+                executable=executable.strip() if executable else None,
+                version_command=version_command,
+                qualified_version=qualified_version.strip() if qualified_version else None,
             )
         )
     return tuple(out)
@@ -332,9 +405,55 @@ def verify(
                 )
                 continue
 
+        if declaration.executable is None:
+            report.executables_undeclared.append(declaration.id)
+        else:
+            problem = _executable_problem(declaration)
+            if problem is not None:
+                report.findings.append(AdapterFinding(declaration.id, problem))
+                continue
+            report.executables_verified.append(declaration.id)
+
         report.verified.append(declaration.id)
 
     return report
+
+
+def _executable_problem(declaration: AdapterDeclaration) -> str | None:
+    """Whether the program this adapter drives is the qualified one.
+
+    A **property** check rather than a shape one: the version is obtained by
+    asking the program, not by reading a sentence in a note beside it. One such
+    note said a particular version was "verified installed at bootstrap" while a
+    later one was on the path, and nothing compared them.
+    """
+    radius = instrument.BlastRadius(
+        launches=(declaration.executable,),
+        because=(
+            f"the {declaration.id} adapter declares that it drives {declaration.executable}, and "
+            "the only way to learn a program's version is to ask it"
+        ),
+    )
+    try:
+        result = instrument.launch(
+            list(declaration.version_command), radius=radius,
+            capture_output=True, text=True, timeout=30,
+        )
+    except Exception as exc:  # OSError, timeout, and the refusal above
+        return (
+            f"declares executable {declaration.executable!r} and its version command could not "
+            f"be run ({type(exc).__name__}: {exc}); an executable nobody could ask about is not "
+            "an executable that matched"
+        )
+    output = f"{result.stdout}\n{result.stderr}"
+    if declaration.qualified_version in output:
+        return None
+    observed = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    return (
+        f"drives {declaration.executable!r} at {observed!r}, and the project qualified against "
+        f"{declaration.qualified_version!r}. The definition files match; the program they drive "
+        "does not, and a digest over a file says nothing about the binary that reads it"
+    )
 
 
 def verify_contract(contract: object, *, home: str | Path | None = None) -> AdapterReport:

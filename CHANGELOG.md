@@ -9,6 +9,24 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Adapter and routing identity — the program, not only the files
+
+- **An adapter may declare the executable it drives**, how to ask its version,
+  and the version the project qualified against; `adapter_pin` runs the command
+  through a declared blast radius and compares. A digest describes the files and
+  says nothing about the binary that reads them, and at this release's baseline
+  the two had drifted while every gate passed.
+- **All three fields together or none.** A version nothing knows how to obtain
+  is a requirement nothing checks.
+- **The report states what it verified** — `N file(s), M executable(s)` — and
+  names the adapters whose executables were never declared. `4 of 4` over four
+  definition files read as a statement about four running things.
+- **Routing observations carry `pool_id` and `qualification_basis`.** A pool
+  travels with a grade and never changes it. The basis is `field`, `synthetic`,
+  or unlabelled, and an unrecognised value is refused rather than folded into a
+  known one; a grade whose observations are all benchmarks is annotated so it
+  cannot be read as a track record.
+
 ### Progress and stalls — a disjunction, because one signal kills healthy workers
 
 - **`tools/progress.py`**: `RUNNING`, `STALLED`, `COMPLETE`, `UNKNOWN` from two

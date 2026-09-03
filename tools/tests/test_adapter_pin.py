@@ -14,6 +14,7 @@ looked at adapters at all.
 
 import pytest
 
+import adapter_pin
 from adapter_pin import (
     AdapterDeclaration,
     declarations_from,
@@ -226,3 +227,122 @@ def test_verification_does_not_touch_the_adapter_on_disk(home):
     before = path.read_bytes(), path.stat().st_mode
     verify(_declare("0" * 64), home=home)
     assert (path.read_bytes(), path.stat().st_mode) == before
+
+
+# --- the executable behind the files ------------------------------------------
+#
+# RP3-1, live at this release's baseline: one adapter's definition files matched
+# their digests exactly while the program they drive was a version ahead of the
+# qualified one, and this module reported every adapter verified. The note
+# beside the declaration said the qualified version was "verified installed at
+# bootstrap"; nothing compared that sentence to the path.
+
+import sys as _sys
+
+from errors import PreconditionError as _PreconditionError
+
+
+def _declaration(tmp_path, **overrides):
+    path = tmp_path / "adapter.md"
+    path.write_text("name: an-adapter\n", encoding="utf-8")
+    fields = dict(
+        id="an-adapter", locator=str(path),
+        digest=adapter_pin.file_digest(path),
+    )
+    fields.update(overrides)
+    return adapter_pin.AdapterDeclaration(**fields)
+
+
+def test_a_report_says_what_it_verified_rather_than_how_many_of_them(tmp_path):
+    """`4 of 4` over four definition files read as a statement about four
+    running things, and one of those was drifting."""
+    report = adapter_pin.verify([_declaration(tmp_path)])
+    assert report.clean
+    rendered = report.render()
+    assert "4 of 4" not in rendered
+    assert "1 file(s), 0 executable(s)" in rendered
+    assert "executable NOT verified (none declared): an-adapter" in rendered
+
+
+def test_a_matching_executable_version_is_verified_and_counted(tmp_path):
+    declaration = _declaration(
+        tmp_path, executable=_sys.executable,
+        version_command=(_sys.executable, "-c", "print('the-qualified-version')"),
+        qualified_version="the-qualified-version",
+    )
+    report = adapter_pin.verify([declaration])
+    assert report.clean
+    assert report.executables_verified == ["an-adapter"]
+    assert "1 file(s), 1 executable(s)" in report.render()
+
+
+def test_a_drifted_executable_blocks_even_though_every_file_matches(tmp_path):
+    """The reproduced defect, as an oracle. The digests are correct; the binary
+    is not the one that was qualified."""
+    declaration = _declaration(
+        tmp_path, executable=_sys.executable,
+        version_command=(_sys.executable, "-c", "print('cli 0.149.0')"),
+        qualified_version="0.148.0",
+    )
+    report = adapter_pin.verify([declaration])
+    assert not report.clean
+    problem = str(report.findings[0])
+    assert "0.149.0" in problem and "0.148.0" in problem
+    assert "digest over a file says nothing about the binary" in problem
+
+
+def test_a_version_command_that_cannot_run_blocks_rather_than_passes(tmp_path):
+    """Nobody could ask, so nothing was established. An executable that could
+    not be interrogated is not an executable that matched."""
+    declaration = _declaration(
+        tmp_path, executable="no-such-program-anywhere",
+        version_command=("no-such-program-anywhere", "--version"),
+        qualified_version="1.0",
+    )
+    report = adapter_pin.verify([declaration])
+    assert not report.clean
+    assert "could not be run" in str(report.findings[0])
+
+
+def test_a_version_command_naming_a_program_the_radius_does_not_is_refused(tmp_path):
+    """The launch goes through the declared blast radius, so an adapter cannot
+    quietly cause an arbitrary program to run."""
+    declaration = _declaration(
+        tmp_path, executable="codex",
+        version_command=("open", "-a", "Safari"),
+        qualified_version="1.0",
+    )
+    report = adapter_pin.verify([declaration])
+    assert not report.clean
+    assert "could not be run" in str(report.findings[0])
+
+
+def test_half_an_executable_qualification_is_refused_rather_than_ignored(tmp_path):
+    """A version nothing knows how to obtain is a requirement the project
+    believes is enforced and nothing checks."""
+    with pytest.raises(_PreconditionError):
+        _declaration(tmp_path, qualified_version="0.148.0")
+    with pytest.raises(_PreconditionError):
+        _declaration(tmp_path, executable="codex", qualified_version="0.148.0")
+
+
+def test_the_three_fields_parse_from_a_declaration_block(tmp_path):
+    path = tmp_path / "adapter.md"
+    path.write_text("name: an-adapter\n", encoding="utf-8")
+    declarations = adapter_pin.declarations_from([{
+        "id": "an-adapter", "locator": str(path), "digest": adapter_pin.file_digest(path),
+        "executable": "codex", "version_command": "codex --version",
+        "qualified_version": "0.148.0",
+    }])
+    assert declarations[0].version_command == ("codex", "--version")
+    assert declarations[0].qualified_version == "0.148.0"
+
+
+def test_a_version_command_that_is_not_a_command_is_refused(tmp_path):
+    path = tmp_path / "adapter.md"
+    path.write_text("name: a\n", encoding="utf-8")
+    base = {"id": "a", "locator": str(path), "digest": adapter_pin.file_digest(path),
+            "executable": "codex", "qualified_version": "1"}
+    for bad in ([], "", 7, ["codex", 3]):
+        with pytest.raises(IntegrityError):
+            adapter_pin.declarations_from([{**base, "version_command": bad}])

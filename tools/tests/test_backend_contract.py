@@ -299,3 +299,94 @@ def test_every_recognised_outcome_is_counted(tmp_path, outcome, bucket):
     log.write_text(json.dumps({"configuration": "family=x", "task_class": "t", "outcome": outcome}) + "\n")
     grade = grades_from_observations(log)[("x", "t")]
     assert getattr(grade, bucket) == 1
+
+
+# --- how an observation was obtained, and which pool it came from --------------
+#
+# A synthetic qualification is PRIOR evidence: field evidence narrows or
+# downgrades it, and a synthetic pass never overrides a contradictory field
+# outcome. A reader who cannot tell a benchmark from a track record will read
+# one as the other, so the basis travels with the grade.
+
+
+def _log(tmp_path, rows):
+    import json as _json
+    path = tmp_path / "observations.jsonl"
+    path.write_text("\n".join(_json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return path
+
+
+def _row(**overrides):
+    row = {"configuration": "family=some-cli model=m build=b effort=e isolation=none network=none",
+           "task_class": "review", "outcome": "validated"}
+    row.update(overrides)
+    return row
+
+
+def test_a_grade_from_benchmarks_alone_is_annotated_as_such(tmp_path):
+    path = _log(tmp_path, [_row(qualification_basis="synthetic"),
+                           _row(qualification_basis="synthetic")])
+    grade = grades_from_observations(path)[("some-cli", "review")]
+    assert grade.grade == "confirmed"
+    assert grade.synthetic_only
+    assert grade.synthetic_observations == 2 and grade.field_observations == 0
+
+
+def test_one_real_dispatch_stops_a_grade_reading_as_a_benchmark(tmp_path):
+    path = _log(tmp_path, [_row(qualification_basis="synthetic"),
+                           _row(qualification_basis="field")])
+    grade = grades_from_observations(path)[("some-cli", "review")]
+    assert not grade.synthetic_only
+    assert grade.field_observations == 1
+
+
+def test_an_observation_that_never_said_is_neither_and_is_counted_as_neither(tmp_path):
+    """The whole existing log predates the field. Reading its silence as
+    `field` would promote every benchmark in it; reading it as `synthetic`
+    would relabel thirteen real closure audits as a benchmark. It is counted
+    as unknown, and `synthetic_only` is then false."""
+    path = _log(tmp_path, [_row(), _row(qualification_basis="synthetic")])
+    grade = grades_from_observations(path)[("some-cli", "review")]
+    assert grade.basis_unknown == 1
+    assert not grade.synthetic_only
+
+
+def test_a_benchmark_pass_never_outweighs_a_real_contradiction(tmp_path):
+    path = _log(tmp_path, [_row(qualification_basis="synthetic"),
+                           _row(qualification_basis="synthetic"),
+                           _row(qualification_basis="field", outcome="contradicted")])
+    assert grades_from_observations(path)[("some-cli", "review")].grade == "contradicted"
+
+
+def test_an_unrecognised_basis_is_refused_rather_than_counted_as_something(tmp_path):
+    """The rule the outcome field already learned: an unrecognised value
+    silently folded into a known one is adverse evidence overwritten."""
+    path = _log(tmp_path, [_row(qualification_basis="Synthetic")])
+    with pytest.raises(BackendContractError) as caught:
+        grades_from_observations(path)
+    assert "field, synthetic" in str(caught.value)
+
+
+def test_the_basis_counters_do_not_inflate_the_observation_count(tmp_path):
+    """How an observation was obtained is not an outcome. Summing the two
+    together would have doubled every count behind every grade."""
+    path = _log(tmp_path, [_row(qualification_basis="field"),
+                           _row(qualification_basis="field")])
+    grade = grades_from_observations(path)[("some-cli", "review")]
+    assert grade.observations == 2
+    assert grade.validated + grade.contradicted + grade.environmental == grade.observations
+
+
+def test_the_pool_an_observation_came_from_is_carried_and_never_graded_on(tmp_path):
+    """A pool is a fact about capacity and says nothing about capability, so it
+    travels with the grade and does not change it."""
+    path = _log(tmp_path, [_row(pool_id="shared-with-the-parent"),
+                           _row(pool_id="independent")])
+    grade = grades_from_observations(path)[("some-cli", "review")]
+    assert grade.pools == ("independent", "shared-with-the-parent")
+    assert grade.grade == "confirmed"
+
+
+def test_an_observation_with_no_pool_records_that_it_did_not_say(tmp_path):
+    grade = grades_from_observations(_log(tmp_path, [_row()]))[("some-cli", "review")]
+    assert grade.pools == ("UNKNOWN",)
