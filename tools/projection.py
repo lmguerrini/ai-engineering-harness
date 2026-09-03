@@ -663,6 +663,10 @@ white-space:nowrap}
 ul{list-style:none;margin:0;padding:6px 0}
 li{padding:3px 14px;display:flex;gap:8px;flex-wrap:wrap;word-break:break-word}
 li .k{color:var(--dim);flex:0 0 auto}
+/* The value shares the label's line and wraps inside its own column. Without
+   this a long value wrapped BELOW its key, and the key read as having no
+   value at all -- found by rendering, not by reading. */
+li .v{flex:1 1 14rem;min-width:0}
 li .k::after{content:":"}
 li.d1{padding-left:32px}li.d2{padding-left:50px}
 li.good .v{color:var(--good)}li.warn .v{color:var(--warn)}li.bad .v{color:var(--bad);font-weight:600}
