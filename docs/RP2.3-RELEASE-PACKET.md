@@ -112,30 +112,54 @@ published vocabulary — is closed rather than worked around.
     informatively, and repairing it is that project's to do.
 *   **The 2.2.0 and 2.1.1 releases are untouched.** Both still verify.
 
-## What four independent readings cost, and what they say about the fifth
+## What eight independent readings cost, and what they say about the ninth
 
-Four blind closure audits, each against an immutable snapshot, each barred from
-the design documents, each instructed to falsify. **All four returned NOT
-READY**, and the arithmetic is the most decision-relevant fact in this packet:
+Eight blind closure audits, each against an immutable snapshot, each barred from
+the design documents, each instructed to falsify. **All eight returned NOT
+READY**, and the arithmetic is the most decision-relevant fact in this packet.
 
-| Round | Reader | Findings | Of which were defects IN THE PREVIOUS ROUND'S REPAIRS |
+| Round | Reader | Findings | Of which were defects in the PREVIOUS round's repairs |
 |---|---|---|---|
 | 1 | blind, same family | 15 | — |
 | 2 | blind delta re-audit | 5 blockers + 6 decorative tests | **3 of 5** |
 | 3 | blind, cross-vendor | 8 | 0 — but 6 were about a snapshot two rounds old |
-| 4 | blind cross-vendor, release authority | 6 blockers + 4 others | 1 (the blocker-union defect, one level up from round 2's) |
+| 4 | cross-vendor, release authority | 6 blockers + 4 others | 1 |
+| 5 | cross-vendor delta re-audit | 7 | **4 of 7** |
+| 6 | cross-vendor — **killed by its provider mid-run** | 5, recovered from its stderr | 3 of 5 |
+| 7 | cross-vendor property read | 8 + a vacuous test | 2 |
+| 8 | cross-vendor, final | *see the gate record* | — |
 
-**A repair has been roughly as likely to contain a defect as the code it
-repaired.** That is not an argument for a fifth round; it is the reason the
-release records that its own final repairs are unaudited by construction, and
-the reason a reader should treat "all findings closed" as a statement about what
-was looked for rather than about what is there.
+**A repair has been about as likely to carry a defect as the code it repaired.**
+Thirteen of roughly fifty findings were defects in the previous round's repairs.
+That is not an argument for a ninth round; it is the reason this release records
+that its own final repairs are unaudited by construction, and the reason a
+reader should treat *all findings closed* as a statement about what was looked
+for.
 
-Round 3 is the instructive one. Six of its eight findings were already repaired,
-and its report could not say so because it never stated which revision it read.
-The wasted direction was harmless. The other direction — a clean audit of an old
-tree reading as clean for a new one — is a green gate over a tree nobody
-examined, and `close_gate(..., against=(revision, digest))` now refuses it.
+Two patterns are worth more than the count.
+
+**Five separate routes by which a repository being read could run a program of
+its choosing**, found in rounds 4, 5, 6 and 7 — each closed where the previous
+repair could not see it. Round 7's response was not a sixth patch but a check on
+the *shape* of the config key, so the sixth route refuses without anyone having
+traced it. Whether that holds is the single most load-bearing question left, and
+round 8 was pointed at it.
+
+**Six tests that passed for reasons they did not state**, four found by someone
+other than their author and two by mutation passes over 25 guards. One searched
+source text and survived its subject being deleted; one looped over the very
+constant a mutant emptied; two compared a pure function with itself. The lesson
+this release would offer another project is not *write more tests* — it is that
+a test nobody has tried to break is a claim, not evidence.
+
+### Round 3, which cost the most for the least
+
+Six of its eight findings were already repaired and its report could not say so,
+because it never stated which revision it read. The wasted direction was
+harmless. The other direction — a clean audit of an old tree reading as clean
+for a new one — is a green gate over a tree nobody examined, and
+`close_gate(..., against=(revision, digest))` now refuses it. Every brief since
+has opened with the revision and digest the reader actually read.
 
 ## The finding that most deserves a decision
 
