@@ -332,11 +332,17 @@ def re_derive(premise: Premise, *, cwd: str | Path = ".") -> PremiseOutcome:
         premise, premise.measured.strip() == observed, observed=observed[:200])
 
 
+#: Passed as `against` by a caller that genuinely cannot name the tree. Explicit
+#: on purpose: the gap is then in the caller's code where a reader can see it,
+#: rather than in an argument nobody passed.
+UNSTATED = "IDENTITY-UNSTATED"
+
+
 def close_gate(
     attestation: Attestation,
     premises: list[PremiseOutcome] | tuple[PremiseOutcome, ...] = (),
     *,
-    against: tuple[str, str] | None = None,
+    against: tuple[str, str] | None | str = None,
 ) -> list[str]:
     """Every reason this capability does not close. Empty is the clean answer.
 
@@ -360,7 +366,20 @@ def close_gate(
     problems.extend(
         str(outcome) for outcome in premises if outcome.reproduced is not True
     )
-    if against is not None:
+    # REQUIRED, after a blind reader observed that an optional identity check is
+    # a check nobody performs: the unconditional claim was *evidence about one
+    # tree does not close another*, and the default did exactly that.
+    #
+    # `UNSTATED` exists so a caller with genuinely no identity to compare must
+    # SAY so rather than reach it by omission. That is the difference between a
+    # disclosed gap and a silent one.
+    if against is None:
+        problems.append(
+            "THIS GATE WAS NOT TOLD WHICH TREE IT IS CLOSING, so it cannot tell current evidence "
+            "from evidence gathered before the last repair. Pass `against=(revision, digest)`, or "
+            f"`against={UNSTATED!r}` to record that the identity is genuinely unavailable"
+        )
+    elif against != UNSTATED:
         revision, digest = against
         for name, recorded, current in (("revision", attestation.head_revision, revision),
                                         ("tree digest", attestation.tree_digest, digest)):

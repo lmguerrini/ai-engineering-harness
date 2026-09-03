@@ -409,6 +409,18 @@ def _run(
         (arguments[0], *_NO_EXTERNAL_PROGRAMS, *arguments[1:])
         if verb in EXTERNAL_PROGRAM_VERBS else arguments
     )
+    if verb in TRANSPORT_VERBS:
+        # `remote.<name>.uploadpack` names a program Git runs on the far side —
+        # and with a `file://` remote the far side is this machine, so a
+        # repository being read chose a program AND it ran with the reader's own
+        # permissions. It wrote into the reader. **Fifth execution route in this
+        # release**, found by a blind reader inside the one transport exception.
+        #
+        # No config key closes it: the setting is per-remote and remote names
+        # cannot be enumerated in advance. The command-line form OVERRIDES the
+        # config, which was verified rather than assumed — with the flag the
+        # program does not run, without it it does.
+        arguments = (arguments[0], "--upload-pack=git-upload-pack", *arguments[1:])
     command = ("git", *arguments)
     environment = _environment(env_overlay, allow_transports)
     # In text mode, decode with `surrogateescape`. A path is a byte string on
@@ -656,6 +668,28 @@ def whitespace_damage(repository: str | Path, *, timeout: float = DEFAULT_TIMEOU
     return "\n".join(item for item in findings if item)
 
 
+def annotated_tags(
+    repository: str | Path,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[tuple[str, str]]:
+    """``(sha, type)`` for every annotated tag object this repository holds.
+
+    A lightweight tag is a ref pointing straight at a commit and carries no
+    message; an annotated tag is an OBJECT with a body somebody wrote, and that
+    body is published with the repository. It is not reachable through the
+    blob walk, which is why a tag message naming a private term scanned clean.
+    """
+    output = _run(repository, "for-each-ref", "--format=%(objecttype) %(objectname)",
+                  "refs/tags/", timeout=timeout)
+    found: list[tuple[str, str]] = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "tag":
+            found.append((parts[1], parts[0]))
+    return found
+
+
 def every_name_in_history(
     repository: str | Path,
     ref: str,
@@ -679,12 +713,19 @@ def every_name_in_history(
     try:
         commits = _run(repository, "rev-list", ref, timeout=timeout).split()
     except GitRefusal:
-        # A repository with no commits has no names, which is an answer and not
-        # a failure. `rev-list HEAD` on one exits non-zero, and the refusal
-        # reached callers who had asked a question with a correct empty answer.
-        try:
-            _run(repository, "rev-parse", "--verify", f"{ref}^{{commit}}", timeout=timeout)
-        except GitRefusal:
+        # A repository with no commits has no names, and that is an answer
+        # rather than a failure: `rev-list HEAD` exits non-zero on one, and the
+        # refusal reached callers who had asked a question with a correct empty
+        # answer.
+        #
+        # THE QUESTION IS ABOUT THE REPOSITORY, NOT ABOUT THE REF. The first
+        # version asked whether `ref` resolved — which is false both for an
+        # empty repository and for a ref that simply does not exist, so *this
+        # branch is not here* became *this history has no names*. A mutation
+        # pass caught it: deleting the `raise` changed nothing, because nothing
+        # ever reached it.
+        empty = _run(repository, "rev-list", "--all", "--count", timeout=timeout).strip()
+        if empty == "0":
             return []
         raise
     found: list[tuple[str, str]] = []

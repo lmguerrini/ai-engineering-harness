@@ -403,3 +403,22 @@ def test_an_exemption_covering_every_name_still_exempts(repo):
         repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))),
         content_exempt_paths=("a-exempt.txt",))
     assert [o for o in report.occurrences if o.location == "blob"] == []
+
+
+def test_a_branch_name_and_a_tag_message_are_history_too(repo):
+    """The scan read paths and blobs and nothing else, so a branch named after a
+    private term and an annotated tag whose message held one both reported
+    CLEAN. A branch name is published with the repository, and so is a tag's
+    message — built by a blind reader, and the first thing out of the door on a
+    push."""
+    (repo / "README").write_text("ordinary\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+    _git(repo, "branch", "needleprivate")
+    _git(repo, "tag", "-a", "v1", "-m", "needleprivate")
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))))
+    locations = {o.location for o in report.occurrences}
+    assert "ref" in locations, "a branch name is published"
+    assert "tag" in locations, "an annotated tag's message is published"

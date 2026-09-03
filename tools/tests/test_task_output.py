@@ -367,6 +367,30 @@ def test_an_unreadable_owner_marker_is_unknown_rather_than_ignored(tmp_path):
     assert task_output.classify(contract).state == task_output.RecoveryState.UNKNOWN
 
 
+@pytest.mark.parametrize("body,expected", [
+    ('{"task_id": "beta"}', "owned by"),
+    ('{"task_id": null}', "cannot be read"),
+    ('{"task_id": []}', "cannot be read"),
+    ('{"task_id": "   "}', "cannot be read"),
+])
+def test_an_unreadable_task_id_is_a_different_answer_from_the_wrong_one(tmp_path, body, expected):
+    """The guard on the task id's TYPE survived a mutant until this test existed,
+    because deleting it left the state unchanged — both paths reach UNKNOWN. The
+    difference it makes is the reason, and the reason is what a person acts on:
+    *this root belongs to another task* is a routing mistake, *this marker
+    cannot be read* is a broken artifact. Same state, different repair."""
+    root = tmp_path / "out"
+    contract = task_output.OutputContract("alpha", root, 64, expected_chunks=1)
+    task_output.claim_root(contract)
+    task_output.materialise(contract, 0, "done")
+    task_output.complete(contract, 1)
+    (root / task_output.OWNER_MARKER).write_text(body)
+
+    report = task_output.classify(contract)
+    assert report.state == task_output.RecoveryState.UNKNOWN
+    assert expected in report.why
+
+
 @pytest.mark.parametrize("break_it", ["delete", "replace with a directory"])
 def test_an_absent_or_unreadable_owner_marker_is_not_permission(tmp_path, break_it):
     """The first owner repair asked the marker only when there WAS one, so
@@ -426,3 +450,29 @@ def test_a_marker_that_is_not_an_object_naming_a_task_is_unreadable(tmp_path, bo
     (root / task_output.OWNER_MARKER).write_text(body)
 
     assert task_output.classify(contract).state == task_output.RecoveryState.UNKNOWN
+
+
+def test_a_chunk_directory_that_is_a_link_holds_nobody_this_root_can_vouch_for(tmp_path):
+    """The owner marker is checked and then the chunks are read from wherever
+    the directory points. A blind reader claimed `beta`, replaced its `chunks`
+    with a link to `alpha`'s, wrote a valid completion marker, and read alpha's
+    finished work back as beta's.
+
+    Fourth appearance of one defect: the ownership question has been wrong for
+    the marker unread, absent, linked, and now for the chunks beside it."""
+    import shutil
+
+    alpha = task_output.OutputContract("alpha", tmp_path / "alpha", 64, expected_chunks=1)
+    task_output.claim_root(alpha)
+    task_output.materialise(alpha, 0, "done")
+    task_output.complete(alpha, 1)
+
+    beta = task_output.OutputContract("beta", tmp_path / "beta", 64, expected_chunks=1)
+    task_output.claim_root(beta)
+    shutil.rmtree(beta.chunk_root)
+    beta.chunk_root.symlink_to(alpha.chunk_root)
+    task_output.complete(beta, 1)
+
+    report = task_output.classify(beta)
+    assert report.state == task_output.RecoveryState.UNKNOWN
+    assert "symbolic link" in report.why

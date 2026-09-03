@@ -516,3 +516,53 @@ def test_a_real_process_id_still_observes_the_process():
                     not_beyond_seconds=60, pid=os.getpid(), declared_at=continuation.now()),),
     )
     assert continuation.derive(record).state == State.WAITING_ON_IDENTIFIED_JOB
+
+
+def test_every_field_of_a_record_survives_being_written_and_read_back(tmp_path):
+    """`as_dict` and `load` each enumerate their fields, so a field added to the
+    dataclass and to neither is silently dropped at exactly the boundary this
+    record exists to survive. Both fields added for the projection were dropped
+    on their first save, and this test survived a mutant that deleted one of
+    them from `as_dict` until it was written.
+
+    Asserted over the field list rather than over a hand-written set, so the
+    next field added is covered by this test on the day it is added."""
+    import dataclasses
+
+    record = ContinuationRecord(
+        capability="C1", updated_at=continuation.now(),
+        actionable=("do the thing",),
+        waits=(Wait(job_id="j", kind=WaitKind.HUMAN, expects="a decision",
+                    obligation="ob", subject_revision="a" * 40, subject_digest="b" * 64,
+                    executor="somebody", declared_at=continuation.now()),),
+        blockers=(Blocker(kind="human", detail="d", hitl_row=4, blocks=("do the thing",)),),
+        terminal=False, record_path=str(tmp_path / "C.json"),
+        budgets={"cycles": {"used": 6, "ceiling": 8}},
+        evidence={"suite": "1163 passing"},
+    )
+    path = tmp_path / "C.json"
+    continuation.save(record, path)
+    back = continuation.load(path)
+
+    for f in dataclasses.fields(ContinuationRecord):
+        assert getattr(back, f.name) == getattr(record, f.name), f"{f.name} did not survive"
+    for f in dataclasses.fields(Wait):
+        assert getattr(back.waits[0], f.name) == getattr(record.waits[0], f.name), \
+            f"Wait.{f.name} did not survive"
+
+
+@pytest.mark.parametrize("body", [
+    {"capability": "cap", "updated_at": "2026-01-01T00:00:00Z", "actionable": [[]]},
+    {"capability": "cap", "updated_at": "2026-01-01T00:00:00Z", "actionable": [None]},
+    {"capability": "cap", "updated_at": "2026-01-01T00:00:00Z", "actionable": "not a list"},
+    {"capability": "cap", "updated_at": "2026-01-01T00:00:00Z",
+     "blockers": [{"kind": "human", "detail": "d", "blocks": [{}]}]},
+])
+def test_a_saved_record_that_names_work_that_is_not_a_name_is_refused(tmp_path, body):
+    """A saved record is untrusted input, and `derive` puts these in a set:
+    `"actionable": [[]]` loaded fine and raised `TypeError: unhashable type` out
+    of the derivation — an exception where the contract is a state."""
+    path = tmp_path / "C.json"
+    path.write_text(json.dumps(body))
+    with pytest.raises(PreconditionError):
+        continuation.load(path)

@@ -120,6 +120,21 @@ class AuthorityClass:
 class Verdict:
     DISPATCH = "DISPATCH"
     #: Allowed, and only one at a time on this pool. What `UNKNOWN` earns.
+    #:
+    #: A blind reader called this a violation of the no-evidence rule: the gate
+    #: answers *may dispatch* with five unknowns behind it. **The verdict is
+    #: deliberate and it is kept.** No machine-readable quota surface is the
+    #: ORDINARY case for the providers this pack routes to, and a gate that
+    #: refused every dispatch it could not compute would refuse all of them —
+    #: which is not conservatism, it is unusability, and the coordinator would
+    #: route around it within a day.
+    #:
+    #: What UNKNOWN buys is the most conservative posture that still permits
+    #: work: one at a time, so an unmeasured window cannot be drained in
+    #: parallel, and every unknown named in the decision. The reader's point is
+    #: answered by disclosure rather than by refusal, and `why` now says
+    #: explicitly when NO arithmetic was performed at all — which is a different
+    #: statement from arithmetic that came out favourable.
     DISPATCH_SERIALLY = "DISPATCH_SERIALLY"
     REFUSE = "REFUSE"
     #: The pool is spent. Names the reset horizon, or says it is unknown.
@@ -438,10 +453,20 @@ def gate(dispatch: Dispatch, pool: Pool, reserve: Reserve) -> Decision:
             f"{len(unknowns)} thing(s) about this pool are not established and {pool.active_workers} "
             "dispatch(es) are already running on it. Fanning out on a window nobody can measure is "
             "the exact shape of the measured loss"))
+    nothing_measured = (pool.remaining == UNKNOWN and reserve.total == UNKNOWN
+                        and dispatch.estimated_cost == UNKNOWN)
     return Decision(**common, verdict=Verdict.DISPATCH_SERIALLY, why=(
-        f"{len(unknowns)} thing(s) are not established, so this proceeds one at a time and without "
-        "fan-out. Unknown is not zero and it is not a refusal either: a gate that deadlocked "
-        "whenever telemetry was absent is a gate a coordinator routes around"))
+        (
+            "NO ARITHMETIC WAS PERFORMED. Neither the window, nor the reserve, nor the cost is "
+            "established, so nothing here was computed and nothing came out favourable — this is "
+            "the most conservative posture that still permits work, and it is a posture rather "
+            "than a result. "
+            if nothing_measured else
+            f"{len(unknowns)} thing(s) are not established, so the arithmetic below is partial. "
+        )
+        + "One at a time and no fan-out. Unknown is not zero and it is not a refusal either: a "
+          "gate that deadlocked whenever telemetry was absent is a gate a coordinator routes "
+          "around"))
 
 
 def wait_or_spend(dispatch: Dispatch, pool: Pool) -> Decision:

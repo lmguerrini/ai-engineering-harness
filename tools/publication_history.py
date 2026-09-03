@@ -231,6 +231,28 @@ def scan_complete_history(
     if not names:
         return report
 
+    # A BRANCH NAME IS PUBLISHED, and so is an annotated tag's message. The scan
+    # read paths and blobs and nothing else, so a branch called after a private
+    # term and a tag whose message contained one both reported CLEAN — built by
+    # a blind reader, and the kind of thing that goes out first when a
+    # repository is pushed. Ref names and tag messages are history too.
+    for refname in names:
+        for leak in scanner.scan_name(refname, location="ref", subject=refname):
+            report.occurrences.append(
+                Occurrence(finding=leak.detail, object_sha="", path=refname, location="ref"))
+    for sha, kind in gitread.annotated_tags(repository):
+        try:
+            body = outgoing_scan._decoded(gitread.object_bytes(repository, sha))
+        except Exception as exc:
+            report.skipped.append(f"annotated tag {sha[:12]} could not be read: {exc}")
+            continue
+        if body is None:
+            report.skipped.append(f"annotated tag {sha[:12]} is not decodable as text")
+            continue
+        for leak in scanner.scan(body, location="tag", subject=sha[:12]):
+            report.occurrences.append(
+                Occurrence(finding=leak.detail, object_sha=sha, path="", location="tag"))
+
     #: Content is deduplicated by object, because reading one blob twice finds
     #: the same thing twice. **Paths are deduplicated by path**, because two
     #: paths that happen to share a blob are two different names, and only one

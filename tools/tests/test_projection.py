@@ -103,7 +103,28 @@ def test_the_module_has_no_write_verb(project_root):
 def test_the_module_derives_nothing_of_its_own(project_root):
     """Every answer is delegated. Two derivations of one fact eventually
     disagree, and the disagreement is the thing this ordering exists to make
-    impossible rather than adjudicable."""
+    impossible rather than adjudicable.
+
+    **Asserted by watching the calls happen, not by grepping for their names.**
+    A blind reader deleted `projection.project` outright and this test still
+    passed, because searching source text asks whether a string is present and
+    not whether anything runs. Sixth appearance in this release of a check that
+    passed for a reason it did not state.
+    """
+    import continuation as _c
+    import task_output as _t
+
+    called = []
+    real_derive, real_classify = _c.derive, _t.classify
+    _c.derive = lambda *a, **k: (called.append("continuation.derive"), real_derive(*a, **k))[1]
+    _t.classify = lambda *a, **k: (called.append("task_output.classify"), real_classify(*a, **k))[1]
+    try:
+        projection.project(project_root).render()
+    finally:
+        _c.derive, _t.classify = real_derive, real_classify
+
+    assert "continuation.derive" in called, "the owner of coordinator state was never asked"
+
     source = (
         __import__("pathlib").Path(projection.__file__).read_text(encoding="utf-8"))
     for owner in ("continuation.derive", "task_output.classify", "pack_pin.verify_pin"):

@@ -614,6 +614,28 @@ def test_a_repository_with_no_commits_has_no_names_rather_than_an_error(tmp_path
     assert gitread.every_name_in_history(repo, "HEAD") == []
 
 
+def test_a_real_read_failure_is_still_a_refusal_and_not_an_empty_answer(tmp_path):
+    """The bound on the line above, and it survived a mutant until it was
+    written: `except GitRefusal: return []` turns *this ref does not exist* and
+    *this read failed* into the same answer, and the second one silently reports
+    a repository as having no names.
+
+    A repository WITH commits, asked about a ref that is not there, must refuse
+    — because the empty answer is only correct when there is genuinely nothing
+    to enumerate.
+    """
+    repo = tmp_path / "populated"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "f").write_text("x")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+
+    assert [path for _sha, path in gitread.every_name_in_history(repo, "HEAD")] == ["f"]
+    with pytest.raises(GitRefusal):
+        gitread.every_name_in_history(repo, "refs/heads/no-such-branch")
+
+
 def test_the_git_protocol_cannot_be_enabled_because_its_proxy_cannot_be_disabled(tmp_path):
     """The fourth execution route, and the only one that came through the single
     exception that exists to let one operation cross a boundary.
@@ -656,3 +678,30 @@ def test_an_option_and_its_value_written_apart_are_still_that_option(tmp_path):
         gitread.probe(repo, "diff", "--submodule", "diff", "HEAD", negative_statuses=())
     # And the word `diff` as an ordinary argument is still an ordinary argument.
     assert gitread.probe(repo, "diff", "--stat", "HEAD", negative_statuses=()).ok
+
+
+def test_a_remote_the_repository_configured_cannot_run_its_own_program(tmp_path):
+    """The fifth execution route, and it came through the ONE transport
+    exception. `remote.<name>.uploadpack` names a program Git runs on the far
+    side — and with a `file://` remote the far side is this machine, so the
+    program ran with the reader's own permissions and wrote into the reader.
+
+    No config key closes it: the setting is per-remote and remote names cannot
+    be enumerated. The command-line form overrides the config, verified rather
+    than assumed."""
+    remote, reader = tmp_path / "remote.git", tmp_path / "reader"
+    remote.mkdir(); reader.mkdir()
+    _git(remote, "init", "-q", "--bare")
+    _git(reader, "init", "-q", "-b", "main")
+    hostile = tmp_path / "up.sh"
+    hostile.write_text(
+        f'#!/bin/sh\ntouch {reader / "WRITTEN_BY_THE_REMOTE"}\nexec git-upload-pack "$@"\n')
+    hostile.chmod(0o755)
+    _git(reader, "remote", "add", "origin", f"file://{remote}")
+    _git(reader, "config", "remote.origin.uploadpack", str(hostile))
+
+    answer = gitread.probe(reader, "ls-remote", "origin", negative_statuses=(),
+                           allow_transports=("file",))
+    assert answer.answered
+    assert not (reader / "WRITTEN_BY_THE_REMOTE").exists(), \
+        "the repository being read chose a program and it ran"

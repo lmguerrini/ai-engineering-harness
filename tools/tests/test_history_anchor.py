@@ -157,9 +157,12 @@ def test_a_rewritten_citation_resolves_through_the_mapping(repo, tmp_path):
     a rewrite invalidates every commit-shaped token in every record at once, so
     a check shipped alone fails closed on a corpus, not on a defect.
 
-    Non-blocking here because the original is anchored: the mapping says where
-    the work went, and the bundle is what makes that claim checkable rather than
-    merely asserted. Without the bundle the same call blocks — the test below.
+    Non-blocking here because the original is ANCHORED — and that, not the
+    mapping, is why. An earlier version of this test said the bundle "makes that
+    claim checkable"; it does not, and a blind reader proved it by pointing the
+    mapping at an unrelated commit with the bundle still in place. A bundle
+    proves preservation. The mapping is reported beside it as an assertion.
+    Without the bundle the same call blocks — the test below.
     """
     directory, shas = repo
     bundle = tmp_path / "original.bundle"
@@ -175,8 +178,9 @@ def test_a_rewritten_citation_resolves_through_the_mapping(repo, tmp_path):
 
     assert report.blocking == []
     citation = report.citations[0]
-    assert citation.state == CitationState.REMAPPED
+    assert citation.state == CitationState.ANCHORED
     assert citation.maps_to == rewritten
+    assert "ASSERTS" in citation.detail
 
 
 def test_a_mapping_alone_cannot_clear_a_citation_it_merely_asserts(repo, tmp_path):
@@ -545,3 +549,30 @@ def test_a_full_object_name_the_repository_does_not_hold_is_still_destroyed(repo
     report = history_anchor.check_reachability(
         directory, {"CLOSURE.md": "closed at " + "a1b2c3d4" * 5})
     assert report.blocking and report.blocking[0].state == CitationState.DESTROYED
+
+
+def test_a_bundle_proves_preservation_and_never_the_mapping(repo, tmp_path):
+    """A blind reader kept the original in a verified bundle, pointed the
+    mapping at an UNRELATED reachable commit, and the citation went green as
+    REMAPPED.
+
+    A bundle proves the original is preserved. It says nothing about whether the
+    asserted successor is that commit's rewrite. Preservation is the real
+    remedy, so that is the state, and the mapping is reported beside it as the
+    assertion it is."""
+    directory, shas = repo
+    bundle = tmp_path / "original.bundle"
+    _git(directory, "update-ref", "refs/anchors/mid", shas[1])
+    _git(directory, "bundle", "create", str(bundle), "refs/anchors/mid")
+    _git(directory, "update-ref", "-d", "refs/anchors/mid")
+    _orphan_the_middle_commit(directory, shas)
+    unrelated = _git(directory, "rev-parse", "HEAD").strip()
+    mapping = history_anchor.load_mapping(_mapping_file(tmp_path, {shas[1]: unrelated}))
+
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": f"closed at {shas[1]}"}, mapping=mapping, bundles=[bundle])
+
+    citation = report.citations[0]
+    assert citation.state == CitationState.ANCHORED
+    assert "ASSERTS" in citation.detail
+    assert "not identity" in citation.detail

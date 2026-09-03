@@ -729,6 +729,22 @@ def save(record: ContinuationRecord, path: str | Path) -> Path:
     return target
 
 
+def _only_strings(values, field_name: str) -> list[str]:
+    """A list of strings, or a refusal naming what was there instead."""
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise PreconditionError(f"`{field_name}` is a list of strings",
+                                found=type(values).__name__)
+    for value in values:
+        if not isinstance(value, str):
+            raise PreconditionError(
+                f"`{field_name}` holds strings; this record names work that is not a name",
+                found=repr(value)[:60],
+            )
+    return list(values)
+
+
 def load(path: str | Path) -> ContinuationRecord:
     target = Path(path)
     try:
@@ -745,9 +761,22 @@ def load(path: str | Path) -> ContinuationRecord:
         return ContinuationRecord(
             capability=raw["capability"],
             updated_at=raw.get("updated_at", ""),
-            actionable=tuple(raw.get("actionable") or ()),
+            # Checked, because a saved record is untrusted input and `derive`
+            # puts these in a set: `"actionable": [[]]` loaded fine and then
+            # raised `TypeError: unhashable type` out of the derivation, which
+            # is an exception where the contract is a state. Found by a blind
+            # reader.
+            actionable=tuple(_only_strings(raw.get("actionable"), "actionable")),
             waits=tuple(Wait(**entry) for entry in raw.get("waits") or ()),
-            blockers=tuple(Blocker(**entry) for entry in raw.get("blockers") or ()),
+            # `blocks` is a tuple on the way out and JSON has only arrays, so
+            # without this it comes back a list — the record survives the
+            # boundary with a different type than it crossed with. Found by
+            # asserting field-by-field equality across a round trip rather than
+            # by checking the fields somebody remembered to check.
+            blockers=tuple(
+                Blocker(**{**entry, "blocks": tuple(_only_strings(entry.get("blocks"), "blocks"))})
+                for entry in raw.get("blockers") or ()
+            ),
             terminal=bool(raw.get("terminal", False)),
             record_path=raw.get("record_path", ""),
             budgets=dict(raw.get("budgets") or {}),

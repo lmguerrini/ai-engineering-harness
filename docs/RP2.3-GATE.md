@@ -1693,3 +1693,83 @@ uncompared region; they carry defaults, and their compatibility rests on the
 save/load round-trip tests rather than on this diff.
 
 Additions only, with one explained removal, is what MINOR means (D11, D24).
+
+## Closure audit — round 7, the release-authority property read
+
+Eight findings and one test that could not fail, against the candidate itself,
+with the revision and digest stated. Every one reproduced before repair.
+
+### The fifth way a repository chose what ran, and it was inside the exception
+
+`remote.<name>.uploadpack` names a program Git runs on the far side of a
+transport — and with a `file://` remote the far side is this machine, so the
+program ran **with the reader's own permissions and wrote into the reader**.
+
+That is five routes in four rounds, each found where the previous repair could
+not see. No config key closes this one either: the setting is per-remote and
+remote names cannot be enumerated in advance. `--upload-pack=git-upload-pack`
+overrides the config, verified rather than reasoned about — with the flag the
+program does not run, without it it does.
+
+### The chunks beside the marker
+
+The owner marker is checked and then the artifacts are read from wherever the
+`chunks` directory points. A link to another task's chunks, a valid completion
+marker, and one task's finished work read back as another's. **Fourth
+appearance of one defect:** ownership has now been wrong for the marker unread,
+absent, linked, and for the directory beside it.
+
+### And three more of the same shape as things already fixed
+
+A saved record with `"actionable": [[]]` loaded and then raised `TypeError:
+unhashable type` out of the derivation — an exception where the contract is a
+state. A `Sample` taken at a NaN time produced `STALLED` with
+`flat_for_seconds=nan`: the signals were guarded, then the horizon, and the
+moment was **the third field over**. A branch named after a private term and an
+annotated tag whose message held one both scanned CLEAN, because the scan read
+paths and blobs and a ref name is published with the repository.
+
+### Two findings that changed what a state MEANS
+
+`history_anchor` treated a verified bundle as corroborating a rewrite mapping.
+It does not. The reader kept the original in a bundle, pointed the mapping at an
+unrelated reachable commit, and the citation went green. **A bundle proves the
+original is preserved and says nothing about identity.** Preservation is the
+real remedy, so that is the state — `ANCHORED` — and the mapping is reported
+beside it as the assertion it is.
+
+`close_gate`'s tree check was optional, which the reader correctly called a
+check nobody performs: the module's unconditional claim is *evidence about one
+tree does not close another*, and the default closed on evidence from any tree.
+It is required now, with an explicit `UNSTATED` for a caller that genuinely
+cannot name the tree — **so the gap sits in the caller's code where a reader can
+see it, rather than in an argument nobody passed.**
+
+A test in this release asserted the old behaviour and said it was deliberate:
+*"a caller with no identity to compare against is not silently told its evidence
+is fine — it is told nothing."* An empty problem list **is** the pass. The test
+now asserts the opposite and says why it was wrong.
+
+### The one that was correct as designed
+
+`capacity.gate` returns `DISPATCH_SERIALLY` with five unknowns, which the reader
+called an answer without evidence. **The verdict is kept.** No machine-readable
+quota surface is the ordinary case for the providers this pack routes to, and a
+gate that refused everything it could not compute would refuse everything —
+which is unusability, not conservatism, and a coordinator would route around it
+within a day. What UNKNOWN buys is the most conservative posture that still
+permits work: one at a time, and every unknown named.
+
+The reader's point is answered by disclosure. `why` now distinguishes *the
+arithmetic below is partial* from **NO ARITHMETIC WAS PERFORMED** — because
+"nothing came out unfavourable" and "nothing was computed" are different
+statements and were rendered identically.
+
+### The test that could not fail
+
+`test_the_module_derives_nothing_of_its_own` searched source text for
+`continuation.derive`. The reader **deleted `projection.project` outright** and
+the test still passed. It now runs the projection with the owners' functions
+wrapped and asserts they were called. Sixth appearance in this release of a
+check that passed for a reason it did not state — and the fourth found by
+someone other than its author.

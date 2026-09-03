@@ -78,7 +78,7 @@ def test_an_unrun_profile_stops_a_close_by_default():
     attestation = attest("CAP-1", DECLARED, {"focused": _passed("focused")}, **CANDIDATE)
     assert attestation.refuses_on_unrun
     assert attestation.blocking
-    assert close_gate(attestation)
+    assert close_gate(attestation, against=close_attestation.UNSTATED)
 
 
 def test_a_project_may_declare_that_an_unrun_profile_does_not_stop_it():
@@ -108,7 +108,7 @@ def test_a_failed_or_incomplete_profile_stops_a_close_whatever_the_policy_says()
 def test_every_profile_clean_closes():
     attestation = attest("CAP-1", DECLARED, {name: _passed(name) for name in DECLARED},
                          **CANDIDATE)
-    assert close_gate(attestation) == []
+    assert close_gate(attestation, against=close_attestation.UNSTATED) == []
     assert "every declared profile ran clean" in attestation.render()
 
 
@@ -162,7 +162,7 @@ def test_a_premise_that_could_not_be_re_derived_still_stops_the_close():
     attestation = attest("CAP-1", DECLARED, {name: _passed(name) for name in DECLARED},
                          **CANDIDATE)
     unknown = re_derive(_premise("42", ("no-such-program-at-all",)))
-    assert close_gate(attestation, [unknown])
+    assert close_gate(attestation, [unknown], against=close_attestation.UNSTATED)
 
 
 def test_a_decision_with_no_command_to_reproduce_it_is_refused():
@@ -202,10 +202,10 @@ def test_the_close_gate_is_clean_only_when_both_halves_are():
     attestation = attest("CAP-1", DECLARED, {name: _passed(name) for name in DECLARED},
                          **CANDIDATE)
     good = re_derive(_premise("42", (sys.executable, "-c", "print('42')")))
-    assert close_gate(attestation, [good]) == []
+    assert close_gate(attestation, [good], against=close_attestation.UNSTATED) == []
 
     stale = re_derive(_premise("42", (sys.executable, "-c", "print('415')")))
-    assert close_gate(attestation, [stale])
+    assert close_gate(attestation, [stale], against=close_attestation.UNSTATED)
 
 
 # --- the command line -----------------------------------------------------------------
@@ -287,8 +287,31 @@ def test_evidence_gathered_from_another_tree_does_not_close_this_one():
     assert close_attestation.close_gate(_clean(), against=("a" * 40, "b" * 64)) == []
 
 
-def test_the_tree_check_is_opt_in_and_says_so_by_passing_without_it():
-    """Bounded deliberately: a caller with no identity to compare against is not
-    silently told its evidence is fine — it is told nothing, which is the honest
-    answer to a question it did not ask."""
-    assert close_attestation.close_gate(_clean()) == []
+def test_the_tree_check_is_not_opt_in_because_an_optional_check_is_not_one():
+    """This test asserted the opposite and was wrong. It read: *a caller with no
+    identity to compare against is not silently told its evidence is fine — it
+    is told nothing, which is the honest answer to a question it did not ask.*
+
+    A blind reader pointed out what that actually meant: the module's
+    unconditional claim is *evidence about one tree does not close another*, and
+    the default silently closed on evidence from any tree at all. Being told
+    nothing is being told it is fine, because an empty problem list IS the pass.
+    """
+    assert close_attestation.close_gate(_clean()) != []
+
+
+def test_a_gate_that_was_not_told_which_tree_it_closes_does_not_close():
+    """An optional identity check is a check nobody performs: the unconditional
+    claim was *evidence about one tree does not close another*, and the default
+    did exactly that."""
+    problems = close_attestation.close_gate(_clean())
+    assert len(problems) == 1
+    assert "NOT TOLD WHICH TREE" in problems[0]
+
+
+def test_a_caller_with_no_identity_must_say_so_rather_than_omit_it():
+    """`UNSTATED` puts the gap in the caller's code where a reader can see it,
+    rather than in an argument nobody passed."""
+    assert close_attestation.close_gate(
+        _clean(), against=close_attestation.UNSTATED) == []
+    assert close_attestation.close_gate(_clean(), against=("a" * 40, "b" * 64)) == []

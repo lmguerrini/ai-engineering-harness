@@ -131,8 +131,15 @@ class Sample:
     signals: Mapping[str, float]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.at_seconds, (int, float)) or isinstance(self.at_seconds, bool):
-            raise IntegrityError("a sample is taken at a time", at_seconds=repr(self.at_seconds))
+        if (not isinstance(self.at_seconds, (int, float)) or isinstance(self.at_seconds, bool)
+                or not math.isfinite(self.at_seconds)):
+            # Finite too, and not only numeric. The SIGNALS were guarded against
+            # non-finite readings and the horizon after them; the moment the
+            # reading was taken at was not, so two NaN timestamps produced a
+            # STALLED verdict with `flat_for_seconds=nan` behind it. **The same
+            # rule, a third field over** — which is where this class always is.
+            raise IntegrityError("a sample is taken at a finite time",
+                                 at_seconds=repr(self.at_seconds))
         for kind, value in self.signals.items():
             if kind not in SignalKind.ALL:
                 raise IntegrityError("no such progress signal", kind=repr(kind),

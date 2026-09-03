@@ -453,3 +453,14 @@ def test_a_horizon_that_is_not_a_number_of_seconds_is_refused():
                               flat_since_seconds=0)
     assert progress.classify("r", earlier, later, horizon_seconds=100,
                              flat_since_seconds=0).state == "STALLED"
+
+
+def test_a_sample_taken_at_no_measurable_time_is_refused():
+    """The signals were guarded against non-finite readings, then the horizon
+    they are compared against, and the MOMENT the reading was taken at was not —
+    so two NaN timestamps produced STALLED with `flat_for_seconds=nan` behind
+    it. The same rule, a third field over."""
+    for moment in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(IntegrityError):
+            progress.Sample(moment, {"log_bytes": 1})
+    assert progress.Sample(0.0, {"log_bytes": 1}).at_seconds == 0.0

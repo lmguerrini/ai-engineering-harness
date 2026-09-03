@@ -470,8 +470,23 @@ def classify(contract: OutputContract) -> RecoveryReport:
     over_bound: list[int] = []
     undescribed: list[str] = []
 
+    if contract.chunk_root.is_symlink():
+        # The owner marker is checked and then the chunks are read from wherever
+        # the directory points. A blind reader claimed `beta`, replaced its
+        # `chunks` with a link to `alpha`'s, wrote a valid completion marker,
+        # and read alpha's finished work back as beta's. **Fourth appearance of
+        # one defect** — the ownership question has now been wrong for the
+        # marker unread, absent, linked, and now for the chunks beside it.
+        return RecoveryReport(
+            task_id=contract.task_id, state=RecoveryState.UNKNOWN,
+            why=(f"{CHUNK_DIRECTORY} is a symbolic link, so the artifacts under it are not "
+                 f"this root's and their owner cannot be established from this root"),
+        )
     if contract.chunk_root.is_dir():
         for entry in sorted(contract.chunk_root.iterdir()):
+            if entry.is_symlink():
+                undescribed.append(f"{CHUNK_DIRECTORY}/{entry.name} (a symbolic link)")
+                continue
             if not entry.is_file():
                 undescribed.append(f"{CHUNK_DIRECTORY}/{entry.name}")
                 continue

@@ -157,5 +157,13 @@ discarded finding is evidence about the oracle.
 | RP3-52 | an audit was killed by its provider and wrote a zero-byte report | its stderr held five real findings, recovered before any retry |
 | RP3-53 | a record field added to the dataclass alone was dropped by save and load | the boundary the record exists to survive enumerates its fields twice |
 | RP3-54 | the projection could not show whose tree an audit was about | a dashboard cannot render what the authoritative record does not carry, and the repair belongs in the record |
+| RP3-55 | a remote the repository configured ran its own program during `ls-remote` | the fifth execution route, inside the one exception that lets an operation cross a boundary |
+| RP3-56 | a linked chunks directory lent one task another's finished work | the marker was checked and the artifacts were read from wherever the directory pointed |
+| RP3-57 | a saved record naming work that is not a name raised out of the derivation | untrusted input reached a set |
+| RP3-58 | a sample taken at a NaN time manufactured a stall | the signals and the horizon were guarded and the moment was not |
+| RP3-59 | a branch name and an annotated tag message scanned clean | a ref name is published with the repository and was not history to this scanner |
+| RP3-60 | a verified bundle was read as corroborating a rewrite mapping | a bundle proves preservation and says nothing about identity |
+| RP3-61 | the close gate's tree check was optional | an optional check is a check nobody performs, and the empty problem list is the pass |
+| RP3-62 | a delegation test passed with its subject deleted | it searched source text for a name instead of watching the call |
 
 *(appended as each capability reproduces its own)*

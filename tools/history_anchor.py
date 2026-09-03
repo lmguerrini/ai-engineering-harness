@@ -354,10 +354,23 @@ def _remap(token: str, where: str, successor: str, holder: "Path | None") -> Cit
     remap rests on the assertion that was handed in.
     """
     if holder is not None:
-        return Citation(token, CitationState.REMAPPED, where,
-                        f"a rewrite gave this commit a new identity, a ref reaches it, and the "
-                        f"verified bundle {holder.name} still holds the original to compare against",
-                        maps_to=successor)
+        # ANCHORED, not REMAPPED — and a blind reader is why. A bundle proves
+        # the ORIGINAL IS PRESERVED. It says nothing whatever about whether the
+        # asserted successor is that commit's rewrite: the reader pointed the
+        # mapping at an unrelated reachable commit, kept the original in a
+        # verified bundle, and the citation went green.
+        #
+        # Preservation is the real remedy and it is what the bundle establishes,
+        # so that is the state. The mapping is reported beside it as what it is
+        # — an assertion nobody here verified — and it does not upgrade
+        # anything. Adjudicating a rewrite remains a human act in this release.
+        return Citation(
+            token, CitationState.ANCHORED, where,
+            f"the verified bundle {holder.name} still holds this commit, so it is preserved. "
+            f"The mapping additionally ASSERTS a successor at {successor[:12]}, and nothing here "
+            f"checked that claim — a bundle proves preservation, not identity",
+            maps_to=successor,
+        )
     return Citation(
         token, CitationState.REMAPPED_UNVERIFIED, where,
         "the mapping names a successor a ref reaches, and NOTHING HERE CORROBORATES that the "
