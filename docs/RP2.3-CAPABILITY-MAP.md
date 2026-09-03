@@ -39,7 +39,7 @@ session. Each carries the observation that reopens it.
 | C9 | History, refs and closure anchors | MUST | C8 |
 | C10 | Complete-history public safety and the publication profile | MUST | C9 |
 | C11 | Evidence and close correctness | MUST | C2 |
-| C12 | The diagnostic projection | SHOULD | C4, C5, C7 |
+| C12 | The diagnostic projection | SHOULD | C4, C5, C7 |  *(shipped on human decision; see the gate record)*
 | C13 | Launch, migration and compatibility | MUST | C3–C11 |
 | C14 | Rehearsal, qualification and release candidate | MUST | all |
 

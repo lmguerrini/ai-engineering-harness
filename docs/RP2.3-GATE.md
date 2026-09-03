@@ -743,3 +743,50 @@ cannot name one program and cause another to run.
 a set literal with itself while claiming to check that the radius was derived
 from the declared command. Replaced with one that captures the radius at the
 call and reads it. **Nine mutants, nine killed** afterwards.
+
+### C12 — The diagnostic projection
+
+**The evidence refuses this, and it ships anyway on a human decision.** Worth
+restating in the gate record rather than glossing: *five liveness recurrences
+make a dashboard feel obviously justified, and a human wanting one is not
+evidence that Core should ship one.* The refusal was a recommendation to a
+person; a person decided otherwise, which is where that decision belongs.
+
+**The concrete objection is answered by ordering, not by argument.** *A
+projection over a state nothing transitions displays a stale value confidently*
+— the decisive recorded instance would have shown `WAITING_ON_JOB` for two hours
+and twenty-one minutes and been wrong. C4 made coordinator state **derived**
+rather than stored, so there is no stored value here to go stale. This is why
+C12 sits after C4, C5 and C7 in the dependency order rather than anywhere else.
+
+**A renderer, not a service.** One invocation, one answer, exit. No port, no
+daemon, no cache, no database — `EC-CC-33` asked for a localhost dashboard and
+that is the thing the record refuses; a one-shot renderer over existing files is
+what Decision E asks for in its own words. A test asserts nothing else in the
+toolbelt imports it, so removing this capability is deleting one file.
+
+**Four properties, each asserted rather than described.**
+
+*   *It writes nothing.* Proved by hashing the project tree before and after a
+    render and a full CLI run — not by reading the source for write calls.
+*   *It derives nothing.* Every answer is delegated to the module that owns the
+    question, and a test asserts the state vocabulary is not spelled out here.
+    Two derivations of one fact eventually disagree; this makes the
+    disagreement impossible rather than adjudicable.
+*   *It follows the record.* Identical output across two runs could equally mean
+    it reads nothing, so a second test changes the durable state and asserts the
+    view changes with it.
+*   *An absence is reported as unknown, never as a resting state.* A missing
+    continuation record, an absent capacity observation, an unreadable contract:
+    each named, and the exit status distinguishes *rendered with everything
+    established* from *rendered with something it could not read*.
+
+**Two mutants survived, and both were the same defect in the oracle**: the tests
+asserted on the *rendered text*, and moving a sentence from the unknown list to
+an ordinary line renders almost identically while changing the verdict — which
+is precisely the confusion the projection exists to prevent. Rewritten to assert
+against the `UNKNOWN` list. The second attempt still survived, because a looser
+substring also matched a *different panel's* unknown: two panels, one sentence
+fragment, and a test that could not tell them apart. **The distinction between
+an absence and a reading is the thing this capability is for, and it took two
+tries to write a test that could see it.**

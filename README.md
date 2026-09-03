@@ -129,6 +129,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── pathmatch.py            one path-pattern semantics, oracled against git
     │   ├── scope_check.py          one containment rule, for every gate that asks
     │   ├── evidence_put.py         content-addressed, owner-only, write-then-verify
+    │   ├── projection.py           one read-only view, rebuilt from disk and storing nothing
     │   ├── confine.py              the sandbox profile a dispatched worker runs under
     │   ├── continuation.py         coordinator state derived from artifacts, so silence has a name
     │   ├── progress.py             a disjunction over signals, so a quiet worker is not a dead one

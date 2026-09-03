@@ -9,6 +9,20 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### A diagnostic projection that is a projection
+
+- **`tools/projection.py`** renders one read-only view of a project's durable
+  state: the pin, the derived coordinator state, durable worker output, capacity
+  windows and reserves, and everything it could not read.
+- **A renderer, not a service.** One invocation, one answer, exit. No port, no
+  daemon, no cache, no database, and nothing else in the toolbelt imports it.
+- **It writes nothing and derives nothing.** Both asserted — the first by
+  hashing the tree around a render, the second by delegating every question to
+  the module that owns it. Where this and the governance record disagree, this
+  is the defect, and the view says so in its own header.
+- **An absence is unknown, never a resting state**, and the exit status
+  distinguishes a complete reading from a partial one.
+
 ### Close correctness — which gates ran, answered by something other than the runner
 
 - **`tools/close_attestation.py`** generates the closure gate block from the
