@@ -326,3 +326,42 @@ def test_the_cli_exit_status_follows_the_state_rather_than_a_notion_of_success(t
     out = capsys.readouterr().out
     assert RecoveryState.UNKNOWN in out
     assert "RESUME" not in out and "CONSUME" not in out
+
+
+# --- whose output this is -------------------------------------------------------------
+
+
+def test_another_tasks_finished_output_is_not_this_tasks_result(tmp_path):
+    """The finding, from a blind cross-vendor reader. `claim_root` refuses to
+    claim a root another task owns, and `classify` never asked — so a contract
+    for `beta` pointed at `alpha`'s complete root returned `beta
+    COMPLETED_WITH_DURABLE_OUTPUT` and handed alpha's work over as beta's.
+
+    The marker was already being written for exactly this, and only the writer
+    was reading it. UNKNOWN rather than a refusal, because a mismatched owner is
+    a real state of the disk that a person resolves — and `resume_plan` already
+    refuses to act on UNKNOWN, so it cannot become a retry."""
+    root = tmp_path / "out"
+    alpha = task_output.OutputContract("alpha", root, 64, expected_chunks=1)
+    task_output.claim_root(alpha)
+    task_output.materialise(alpha, 0, "done")
+    task_output.complete(alpha, 1)
+    assert task_output.classify(alpha).state == task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT
+
+    beta = task_output.OutputContract("beta", root, 64, expected_chunks=1)
+    report = task_output.classify(beta)
+    assert report.state == task_output.RecoveryState.UNKNOWN
+    assert "owned by 'alpha'" in report.why
+    with pytest.raises(PreconditionError):
+        task_output.resume_plan(report)
+
+
+def test_an_unreadable_owner_marker_is_unknown_rather_than_ignored(tmp_path):
+    root = tmp_path / "out"
+    contract = task_output.OutputContract("alpha", root, 64, expected_chunks=1)
+    task_output.claim_root(contract)
+    task_output.materialise(contract, 0, "done")
+    task_output.complete(contract, 1)
+    (root / task_output.OWNER_MARKER).write_text("{not json")
+
+    assert task_output.classify(contract).state == task_output.RecoveryState.UNKNOWN

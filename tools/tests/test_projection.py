@@ -207,9 +207,15 @@ def test_one_invocation_answers_and_exits(project_root):
     assert "Rebuilt from durable state" in result.stdout
 
 
-def test_nothing_else_in_the_toolbelt_imports_it():
+def test_no_runtime_tool_module_imports_it():
     """Easy to disable and easy to remove is a structural property, not a
-    promise."""
+    promise.
+
+    Named precisely, because the loose form of the claim — *nothing imports it*
+    — is false and an auditor said so: this module imports it, and so does
+    `test_silent_idle_closure`. Tests importing a module is what tests are for.
+    The property is that no RUNTIME tool module does, so deleting the file
+    breaks no checker."""
     import pathlib
 
     tools = pathlib.Path(projection.__file__).parent

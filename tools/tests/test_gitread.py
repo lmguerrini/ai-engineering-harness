@@ -457,3 +457,85 @@ def test_every_verb_whose_read_onlyness_depends_on_arguments_declares_its_forms(
     assert "config" in gitread.READ_ONLY_ARGUMENT_FORMS
     assert set(gitread.READ_ONLY_ARGUMENT_FORMS) <= gitread.READ_ONLY_VERBS
     assert gitread.WRITING_OPTIONS, "the option denylist must not be empty"
+
+
+# --- code the repository chooses ------------------------------------------------------
+
+
+def _repo_that_runs_a_program(tmp_path, key):
+    """A repository whose own config names a program for Git to run on diff."""
+    repo = tmp_path / "hostile"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "f").write_text("x")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+    writer = repo / "writer.sh"
+    writer.write_text(f"#!/bin/sh\ntouch {repo / 'EXTERNAL-DIFF-RAN'}\n")
+    writer.chmod(0o755)
+    _git(repo, "config", key, str(writer))
+    (repo / "f").write_text("y")
+    return repo, repo / "EXTERNAL-DIFF-RAN"
+
+
+def test_the_subjects_own_config_cannot_make_a_read_run_a_program(tmp_path):
+    """The finding, from a blind cross-vendor reader, and the worst one in the
+    release: `diff.external` in a scratch repository's config, `probe(repo,
+    "diff", ...)` through the read-only API, and the script ran.
+
+    **It ran without the flag too.** For a checker whose whole purpose is
+    reading repositories somebody else controls, that is arbitrary code
+    execution on every diff. The neutralised-config table said of this key
+    *"the diff family has its own switch for this"* — and the switch was never
+    passed. A comment naming the answer is not the answer.
+    """
+    repo, marker = _repo_that_runs_a_program(tmp_path, "diff.external")
+    answer = gitread.probe(repo, "diff", "HEAD", negative_statuses=())
+    assert answer.answered
+    assert not marker.exists(), "the subject's config ran a program through a read"
+
+
+def test_an_attribute_selected_diff_driver_cannot_run_either(tmp_path):
+    """The reason the repair is `--no-ext-diff` and not a config key: a driver
+    named by `.gitattributes` lives under `diff.<name>.command`, and no
+    enumerable set of keys reaches it."""
+    repo, marker = _repo_that_runs_a_program(tmp_path, "diff.evil.command")
+    (repo / ".gitattributes").write_text("* diff=evil\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "attributes")
+    (repo / "f").write_text("z")
+
+    assert gitread.probe(repo, "diff", "HEAD", negative_statuses=()).answered
+    assert not marker.exists()
+
+
+def test_the_option_that_re_enables_it_is_refused(tmp_path):
+    repo, _ = _repo_that_runs_a_program(tmp_path, "diff.external")
+    for option in gitread.CODE_ENABLING_OPTIONS:
+        with pytest.raises(_IntegrityError):
+            gitread.probe(repo, "diff", option, "HEAD", negative_statuses=())
+
+
+def test_the_diff_family_still_reads_after_the_hardening(tmp_path):
+    """The bound: a repair that made every diff refuse would pass the three
+    tests above and break the pack."""
+    repo, _ = _repo_that_runs_a_program(tmp_path, "diff.external")
+    assert gitread.probe(repo, "diff", "--stat", "HEAD", negative_statuses=()).answered
+    assert gitread.probe(repo, "log", "--oneline", "-1", negative_statuses=()).ok
+    assert gitread.probe(repo, "show", "--stat", "HEAD", negative_statuses=()).ok
+
+
+def test_two_paths_sharing_one_blob_are_two_names(tmp_path):
+    """`rev-list --objects` prints one name per object, so the second path was
+    never enumerated at all. Names come from the trees now."""
+    repo = tmp_path / "aliased"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("identical\n")
+    (repo / "b.txt").write_text("identical\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "two names, one blob")
+
+    names = gitread.every_name_in_history(repo, "HEAD")
+    assert sorted(path for _sha, path in names) == ["a.txt", "b.txt"]
+    assert len({sha for sha, _path in names}) == 1, "one blob, deliberately"

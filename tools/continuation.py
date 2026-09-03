@@ -388,7 +388,21 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
         return WaitObservation(wait.job_id, None, "a person resolves this; no machine can observe it")
 
     if wait.kind == WaitKind.PROCESS:
-        finished, how = _process_is_gone(int(wait.pid))
+        # A saved record is untrusted input: it loads so that a run can be
+        # continued, and every field it carries has to survive being wrong. A
+        # `pid` of `"not-a-pid"` reloaded happily and then raised a bare
+        # `ValueError` out of `derive` — an unhandled exception where the
+        # contract is a named state, so the caller learned nothing and the
+        # record could not even be reported as broken.
+        try:
+            pid = int(wait.pid)
+        except (TypeError, ValueError):
+            return WaitObservation(
+                wait.job_id, None,
+                f"this wait names {wait.pid!r} as a process id and that is not one, so nothing "
+                f"about the job can be observed and the record itself needs repair",
+            )
+        finished, how = _process_is_gone(pid)
         return WaitObservation(wait.job_id, finished, how)
 
     target = Path(wait.path)
@@ -431,6 +445,17 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
                 f"job's result; the job may still be running",
             )
 
+        # WHAT THIS ESTABLISHES, stated because an auditor was right about what
+        # it does not. A path becoming true after the wait began is evidence
+        # that SOMETHING wrote it; it is not evidence about WHO. A second
+        # process writing to the same path satisfies this wait, and no property
+        # of a bare filesystem path can distinguish the two.
+        #
+        # `OUTPUT_ROOT` is the kind that establishes a producer: the root
+        # carries an owner marker naming the task, and `task_output.classify`
+        # refuses a root another task owns. A caller who needs to know whose
+        # result this is declares that kind — and this comment exists so the
+        # choice is made knowingly rather than discovered later.
         detail = ""
         if wait.kind == WaitKind.EXIT_FILE:
             try:
@@ -557,32 +582,34 @@ def derive(
     running = tuple(o.job_id for o in observations if o.finished is False)
     human_waits = tuple(w.job_id for w in live if w.kind == WaitKind.HUMAN)
 
-    def _stops_the_outstanding_work(blocker: Blocker) -> bool:
-        """Whether this blocker leaves the coordinator with nothing to do.
-
-        Not *whether it touches something* — that was the first version, using
-        `any`, and it meant a blocker naming one of five items silenced the
-        other four. The scenario the field is named for was reproduced verbatim
-        against it. A blocker stops the run only when **every** outstanding item
-        is one it names.
-        """
-        if not blocker.blocks:
-            return True
-        if not record.actionable:
-            return True
-        return all(item in blocker.blocks for item in record.actionable)
-
+    #: A blocker with no `blocks` names nothing, so it names everything.
+    unscoped = [b for b in record.blockers if not b.blocks]
     named_by_a_blocker = {item for b in record.blockers for item in b.blocks}
     #: What is outstanding and NOT named by any blocker. This, not the whole
     #: list, is what silence is measured against.
-    unblocked = tuple(i for i in record.actionable if i not in named_by_a_blocker)
+    unblocked = () if unscoped else tuple(
+        i for i in record.actionable if i not in named_by_a_blocker)
 
-    human = [b for b in record.blockers if b.kind == "human" and _stops_the_outstanding_work(b)]
-    capacity = [b for b in record.blockers
-                if b.kind == "capacity" and _stops_the_outstanding_work(b)]
+    #: **The question is asked of the blockers TOGETHER, and that is the repair.**
+    #:
+    #: It was asked of each one separately: *does this blocker leave the
+    #: coordinator with nothing to do?* Two blockers, one human and one capacity,
+    #: each naming half of two outstanding items — neither stopped everything, so
+    #: both were filed as scoped, `unblocked` came out empty, and the report read
+    #: *nothing is in the way and nothing is outstanding* while listing two
+    #: outstanding items and two blockers beneath it. Found by a blind auditor,
+    #: and it is the same shape as the `any`/`all` defect one round earlier: the
+    #: predicate was right and the quantifier was over the wrong set.
+    #:
+    #: Coverage is a property of the union. Whether any single blocker happens to
+    #: cover everything is not the question a coordinator is asking.
+    stopped = bool(record.blockers) and not unblocked
+
+    human = [b for b in record.blockers if b.kind == "human"] if stopped else []
+    capacity = [b for b in record.blockers if b.kind == "capacity"] if stopped else []
     #: Recorded and reported whatever their scope, because a blocker nobody can
     #: see is a blocker nobody resolves.
-    scoped_away = [b for b in record.blockers if not _stops_the_outstanding_work(b)]
+    scoped_away = [] if stopped else list(record.blockers)
     blocker_lines = tuple(
         f"{b.kind}: {b.detail}" + (f" (row {b.hitl_row})" if b.hitl_row else "")
         + (f" (pool {b.pool_id})" if b.pool_id else "")

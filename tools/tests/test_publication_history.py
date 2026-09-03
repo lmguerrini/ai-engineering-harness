@@ -335,3 +335,42 @@ def test_an_environment_that_is_not_a_name_is_refused(tmp_path):
         "project:\n  repo_path: .\nvalidation_profiles:\n  focused:\n    reproducible_by: \"  \"\n")
     with pytest.raises(ContractError):
         ProjectContract.load(contract)
+
+
+# --- a scan with a hole in it ---------------------------------------------------------
+
+
+def test_an_object_too_large_to_read_means_the_history_was_not_scanned(repo):
+    """The finding, from a blind cross-vendor reader: a six-megabyte blob whose
+    first line held a private term reported `clean` and exited `0`, while
+    printing `NOT SCANNED` two lines below.
+
+    The skip was recorded honestly and then not counted, which is the difference
+    between disclosing a gap and closing one. The word in this module's name is
+    *complete*."""
+    big = repo / "large.txt"
+    big.write_text("needleprivate\n" + "z" * (outgoing_scan.MAX_SCANNED_BLOB_BYTES + 1024))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a blob nobody can read")
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))))
+    assert report.skipped
+    assert not report.complete
+    assert "INCOMPLETE" in report.render()
+
+
+def test_two_paths_sharing_a_blob_are_both_examined(repo):
+    """`rev-list --objects` names an object once, so the second path was never
+    examined — not deduplicated after the fact, never looked at. Names come from
+    the trees now, deduplicated by the pair."""
+    (repo / "a.txt").write_text("needleprivate\n")
+    (repo / "z-needleprivate.txt").write_text("needleprivate\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "one blob, two names")
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))))
+    locations = sorted((o.location, o.path) for o in report.occurrences)
+    assert ("path", "z-needleprivate.txt") in locations
+    assert ("blob", "a.txt") in locations

@@ -94,8 +94,30 @@ def test_the_right_version_revision_digest_and_state_verify_together(pack):
     ) == []
 
 
-def test_the_digest_is_reproducible_across_calls(pack):
-    assert pack_pin.tree_digest(pack) == pack_pin.tree_digest(pack)
+def test_the_digest_is_of_the_content_and_not_of_the_filesystem(pack):
+    """Calling a pure function twice and comparing the answers was the whole of
+    this test, and a blind auditor named it: it cannot fail, so it establishes
+    nothing about the digest.
+
+    The property actually worth pinning is that the digest is CONTENT-addressed.
+    Rewriting a file with the same bytes moves its mtime, its inode and its
+    ctime; if any of those reached the hash, a release would fail to verify
+    after a checkout that changed nothing — which is the failure this digest
+    exists to make impossible."""
+    import os
+    import time
+
+    before = pack_pin.tree_digest(pack)
+    target = pack / "tool.py"
+    content = target.read_bytes()
+    time.sleep(0.01)
+    target.unlink()
+    target.write_bytes(content)
+    os.utime(target, (0, 0))
+    assert pack_pin.tree_digest(pack) == before, "the digest moved without the content moving"
+
+    target.write_bytes(content + b"# one byte more\n")
+    assert pack_pin.tree_digest(pack) != before, "the digest held while the content moved"
 
 
 # --- the tree ---------------------------------------------------------------

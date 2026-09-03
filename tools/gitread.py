@@ -155,6 +155,33 @@ READ_ONLY_ARGUMENT_FORMS = {
 #: and the separated form are both caught.
 WRITING_OPTIONS = ("--output", "-o=", "--out=")
 
+#: Verbs that run a program **the repository itself names** unless told not to.
+#:
+#: A blind cross-vendor auditor put `diff.external = writer.sh` in a scratch
+#: repository's own config and called `probe(repo, "diff", "--ext-diff", "HEAD")`
+#: through the read-only API. The script ran. **And it ran without the flag
+#: too**, because the config alone is enough — so the reachable surface was
+#: every diff this module performs against any repository whose config an
+#: attacker can set, which for a checker pointed at other people's repositories
+#: is the whole point of the checker.
+#:
+#: The neutralised-config table says of `diff.external`: *"deliberately absent.
+#: An empty value does not mean no external diff — Git tries to run the empty
+#: string and every diff dies with cannot run. The diff family has its own
+#: switch for this."* That reasoning is correct and the switch was never passed.
+#: A comment naming the right answer is not the right answer.
+#:
+#: `--no-ext-diff` is used rather than a config key because it also disables the
+#: per-driver `diff.<name>.command` that `.gitattributes` selects, which no
+#: enumerable set of config keys can reach. `--no-textconv` closes the same
+#: shape for `diff.<name>.textconv`.
+EXTERNAL_PROGRAM_VERBS = frozenset({"diff", "diff-index", "diff-tree", "log", "show"})
+_NO_EXTERNAL_PROGRAMS = ("--no-ext-diff", "--no-textconv")
+#: The options through which a caller undoes the line above. Refused, because an
+#: argument that re-enables repository-controlled execution is a write verb
+#: wearing a read's name.
+CODE_ENABLING_OPTIONS = ("--ext-diff", "--textconv")
+
 #: Verbs that may cross a network boundary, and the only ones for which
 #: `allow_transports` means anything. `archive --remote` is a second network
 #: read and was reachable through the generic API with `ssh` enabled — found by
@@ -313,6 +340,12 @@ def _run(
                 "this option makes an otherwise read-only command write to the filesystem",
                 verb=verb, option=option_text,
             )
+        if option_text in CODE_ENABLING_OPTIONS:
+            raise IntegrityError(
+                "this option lets the repository being read choose a program to run, and a "
+                "read-only interface that executes the subject's code is not read-only",
+                verb=verb, option=option_text,
+            )
     if verb == "bundle":
         subcommand = arguments[1] if len(arguments) > 1 else ""
         if subcommand not in BUNDLE_SUBCOMMANDS:
@@ -329,6 +362,10 @@ def _run(
             verb=verb, transports=", ".join(allow_transports),
             scoped_to=", ".join(sorted(TRANSPORT_VERBS)),
         )
+    arguments = (
+        (arguments[0], *_NO_EXTERNAL_PROGRAMS, *arguments[1:])
+        if verb in EXTERNAL_PROGRAM_VERBS else arguments
+    )
     command = ("git", *arguments)
     environment = _environment(env_overlay, allow_transports)
     # In text mode, decode with `surrogateescape`. A path is a byte string on
@@ -574,6 +611,48 @@ def whitespace_damage(repository: str | Path, *, timeout: float = DEFAULT_TIMEOU
                 ) from exc
             findings.append(reported)
     return "\n".join(item for item in findings if item)
+
+
+def every_name_in_history(
+    repository: str | Path,
+    ref: str,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[tuple[str, str]]:
+    """Every ``(sha, path)`` a tree in this history ever gave an object.
+
+    Separate from `objects_in_outgoing_range` because **`rev-list --objects`
+    prints one name per object**. Two paths holding identical bytes are one
+    blob, and git names it once — so a repository containing `notes.txt` and a
+    second copy under a filename carrying a private word enumerated only the
+    first, and the second name was never examined at all. Found by a blind
+    auditor.
+
+    Read from the trees, which is where names actually live: `ls-tree -r` over
+    every commit, deduplicated by the pair rather than by the object. Costlier
+    than the object walk and correct, and only names are collected here — the
+    content scan still reads each blob once.
+    """
+    commits = _run(repository, "rev-list", ref, timeout=timeout).split()
+    found: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for commit in commits:
+        output = _run(repository, "ls-tree", "-r", "-z", "--full-tree", commit,
+                      timeout=timeout, text=False)
+        assert isinstance(output, bytes)
+        for record in nul_paths(output):
+            if not record:
+                continue
+            # `<mode> SP <type> SP <sha> TAB <path>`
+            meta, _, path = record.partition("\t")
+            parts = meta.split()
+            if len(parts) != 3 or not path:
+                continue
+            pair = (parts[2], path)
+            if pair not in seen:
+                seen.add(pair)
+                found.append(pair)
+    return found
 
 
 def objects_in_outgoing_range(

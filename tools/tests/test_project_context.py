@@ -57,8 +57,24 @@ def _declare(root, **overrides):
 # --- the digest ----------------------------------------------------------------
 
 
-def test_the_digest_is_stable_across_recomputation(context):
-    assert tree_digest(context) == tree_digest(context)
+def test_the_digest_is_of_the_content_and_not_of_the_filesystem(context):
+    """Was `tree_digest(context) == tree_digest(context)`, which cannot fail.
+    The property is that identical bytes digest identically however the
+    filesystem's opinion of the file has changed, and that one changed byte
+    changes the answer."""
+    import os
+
+    files = sorted(p for p in context.rglob("*") if p.is_file())
+    before = tree_digest(context)
+    for path in files:
+        content = path.read_bytes()
+        path.unlink()
+        path.write_bytes(content)
+        os.utime(path, (0, 0))
+    assert tree_digest(context) == before, "the digest moved without the content moving"
+
+    files[0].write_bytes(files[0].read_bytes() + b"x")
+    assert tree_digest(context) != before, "the digest held while the content moved"
 
 
 def test_the_digest_counts_the_files_it_covered(context):

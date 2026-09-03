@@ -1335,3 +1335,100 @@ The obligation that *does* bind now is the one about what this evolution wrote,
 and it is satisfied: zero personal paths, zero credentials, zero private project
 material in twenty-two commits, with the commit gate run against the pack's own
 published vocabulary before each one.
+
+## Closure audit — round 4, the release-authority read
+
+One blind cross-vendor auditor with release authority, against the candidate
+itself. **NOT READY: six blockers, two majors, two minors.** Its report opens
+with the revision and digest it read — the requirement added one round earlier,
+and it worked: nothing had to be re-executed to find out which tree the findings
+were about. Every one was reproduced here before it was touched.
+
+### A read-only interface was running the subject's code
+
+`diff.external` in a scratch repository's own config, `probe(repo, "diff", ...)`
+through the public read API, and the named script ran. **It ran without the flag
+too** — the config alone is enough. For a module whose entire purpose is reading
+repositories somebody else controls, that is arbitrary code execution on every
+diff, and the auditor noted it also removes any meaning from the scoped
+transport exception.
+
+The neutralised-config table says of that key: *"deliberately absent. An empty
+value does not mean no external diff — Git tries to run the empty string and
+every diff dies with cannot run. **The diff family has its own switch for
+this.**"* The reasoning is correct, the switch is `--no-ext-diff`, and it was
+never passed. **A comment naming the right answer is not the right answer**, and
+this one had been sitting there since 2.2.0.
+
+`--no-ext-diff` and `--no-textconv` are now passed to every verb that accepts
+them, and `--ext-diff`/`--textconv` are refused from callers. The switch rather
+than a config key, because it also disables the per-driver `diff.<name>.command`
+that `.gitattributes` selects — which no enumerable set of keys reaches, and
+which is its own test.
+
+### The complete-history scanner was not scanning complete history, twice
+
+A six-megabyte blob whose first line held a private term reported **clean, exit
+0**, with `NOT SCANNED: large.txt exceeds the scan limit` printed two lines
+below. The skip was recorded honestly and then not counted. **The word in the
+module's name is complete**; a scan with a hole in it has not answered the
+question, and it now says `INCOMPLETE` and exits non-zero.
+
+And two paths sharing one blob produced one occurrence instead of three. The
+cause was deeper than the deduplication set: **`git rev-list --objects` prints
+one name per object**, so the second path was never enumerated at all. Names now
+come from the trees, deduplicated by the pair. This is the third finding in this
+release about identity of an occurrence, after `Occurrence.key` and the
+adjudication collision — the same mistake at three different layers.
+
+### Two blockers, each covering half the work, stopped nothing
+
+Each was asked separately *do you leave the coordinator with nothing to do?*
+Each named one of two items and answered no, so both were filed as scoped, the
+unblocked remainder came out empty, and the report read *nothing is in the way
+and nothing is outstanding* above a list of two outstanding items and two
+blockers. Coverage is a property of the union.
+
+**It is the `any`/`all` defect from round 2, one level up.** That round changed
+the quantifier inside the predicate; this one changes the set the predicate is
+asked about. The same misreading twice, which is worth recording as a fact about
+the reader rather than about the code.
+
+### Another task's finished work was this task's result
+
+A contract for `beta` pointed at `alpha`'s complete output root returned `beta
+COMPLETED_WITH_DURABLE_OUTPUT`. The owner marker was already being written for
+exactly this purpose and only the writer was reading it. `UNKNOWN` now, not a
+refusal — a mismatched owner is a real state of the disk that a person resolves,
+and `resume_plan` already refuses to act on `UNKNOWN`, so it cannot become a
+retry.
+
+### And the horizon itself was never checked
+
+Non-finite readings were refused a round earlier; the horizon they are compared
+against was not. `NaN` made the comparison false and reported `STALLED` with no
+flat signal behind it; infinity made it true forever and reported `RUNNING` for
+a run dead a thousand seconds. **The same rule one field over, which is where
+this class of defect always is.** A capacity reading with no `observed_at` was
+the same shape: the class docstring says the timestamp matters as much as the
+figure, and the class accepted a bare number and gated on it.
+
+### The finding the repair does not close
+
+*An unrelated writer can satisfy a path wait.* Correct, and it stays correct: no
+property of a bare filesystem path distinguishes who wrote it. The observation
+was strengthened as far as a filesystem permits — a sentinel must be a regular
+file that does not predate its own wait — and beyond that the honest answer is
+that `PATH_EXISTS` establishes *that* something happened, not *who* did it.
+`OUTPUT_ROOT` is the kind that establishes a producer, and it now genuinely
+does. A test pins both halves so the weaker claim cannot quietly become the
+stronger one.
+
+### Two tests that could not fail
+
+`tree_digest(pack) == tree_digest(pack)`, in two modules. Replaced with the
+property actually worth pinning: the digest is **content-addressed**, so
+rewriting a file with identical bytes and a moved mtime leaves it unchanged, and
+one added byte changes it. And the claim *nothing imports the projection* is
+false — its own tests do. The true claim is that no runtime tool module does,
+and it is now the one being made.

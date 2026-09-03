@@ -415,3 +415,81 @@ def test_a_sentinel_the_job_actually_wrote_still_completes_the_wait(tmp_path):
     record = ContinuationRecord(capability="cap", updated_at=continuation.now(), waits=(wait,))
     report = continuation.derive(record, now=continuation.now())
     assert report.state == State.COMPLETED_NOT_CONSUMED
+
+
+# --- what the blockers say TOGETHER ---------------------------------------------------
+
+
+def test_two_blockers_covering_half_the_work_each_stop_the_run():
+    """The finding, from a blind cross-vendor reader. Each blocker was asked
+    separately *do you leave the coordinator with nothing to do?*, each named one
+    of two items, each answered no — so both were filed as scoped, the unblocked
+    remainder came out empty, and the report said **nothing is in the way and
+    nothing is outstanding** above a list of two outstanding items and two
+    blockers.
+
+    Coverage is a property of the union. It is the same shape as the `any`/`all`
+    defect one round earlier: the predicate was right and the quantifier was
+    over the wrong set."""
+    record = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(), actionable=("a", "b"),
+        blockers=(Blocker(kind="human", detail="a person decides a", hitl_row=2, blocks=("a",)),
+                  Blocker(kind="capacity", detail="no pool for b", pool_id="p", blocks=("b",))),
+    )
+    report = continuation.derive(record)
+    assert report.state == State.BLOCKED_ON_HUMAN
+    assert "nothing is in the way" not in report.why
+
+
+def test_a_blocker_that_leaves_work_uncovered_still_does_not_stop_the_run():
+    """The bound, and the defect the union repair could have reintroduced: the
+    round-2 finding was a scoped blocker silencing what it did not name."""
+    record = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(), actionable=("a", "b", "c"),
+        blockers=(Blocker(kind="human", detail="a person decides a", hitl_row=2, blocks=("a",)),),
+    )
+    report = continuation.derive(record)
+    assert report.state != State.BLOCKED_ON_HUMAN
+    assert "2" in report.why, "the two unblocked items are what silence is measured against"
+
+
+def test_a_process_id_that_is_not_one_is_a_named_state_not_a_traceback():
+    """A saved record is untrusted input. `pid: "not-a-pid"` reloaded happily and
+    raised a bare ValueError out of `derive`, where the contract is a state."""
+    record = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(),
+        waits=(Wait(job_id="j", kind=WaitKind.PROCESS, expects="a worker",
+                    not_beyond_seconds=60, pid="not-a-pid",
+                    declared_at=continuation.now()),),
+    )
+    report = continuation.derive(record)
+    assert report.state == State.RECOVERY_REQUIRED
+    assert "not one" in " ".join(o.how for o in report.observations)
+
+
+def test_a_path_wait_says_that_it_cannot_name_a_producer(tmp_path):
+    """An auditor pointed out that an unrelated writer satisfies a path wait, and
+    was right: no property of a bare path distinguishes who wrote it. This test
+    pins the two things that ARE true, so the weaker claim cannot quietly become
+    the stronger one — the path wait completes on any writer, and the kind that
+    establishes a producer is the owned output root."""
+    completion = tmp_path / "completion"
+    wait = Wait.declare(job_id="worker-a", kind=WaitKind.PATH_EXISTS, path=str(completion),
+                        expects="worker-a's report", not_beyond_seconds=60)
+    completion.write_text("written by somebody else")
+    record = ContinuationRecord(capability="cap", updated_at=continuation.now(), waits=(wait,))
+    assert continuation.derive(record, relative_to=tmp_path).state == State.COMPLETED_NOT_CONSUMED
+
+    # The kind that does establish it.
+    root = tmp_path / "owned"
+    contract = task_output.OutputContract("worker-a", root, max_bytes_per_write=64)
+    task_output.claim_root(contract)
+    task_output.materialise(contract, 0, "done")
+    task_output.complete(contract, 1)
+    intruder = ContinuationRecord(
+        capability="cap", updated_at=continuation.now(),
+        waits=(Wait(job_id="worker-b", kind=WaitKind.OUTPUT_ROOT, path=str(root),
+                    task_id="worker-b", max_bytes_per_write=64, expects="worker-b's report",
+                    not_beyond_seconds=60, declared_at=continuation.now()),),
+    )
+    assert continuation.derive(intruder, relative_to=tmp_path).state == State.RECOVERY_REQUIRED

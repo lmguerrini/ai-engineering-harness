@@ -157,12 +157,31 @@ class HistoryReport:
     def examined(self) -> Examined:
         return Examined({"refs": self.refs_examined, "objects": self.objects_examined})
 
+    @property
+    def complete(self) -> bool:
+        """Whether every reachable object was actually read.
+
+        **A scan with a skip in it has not answered the question it was asked.**
+        The word in this module's name is *complete*, and an object over the
+        size limit, undecodable, or unreadable is an object nobody looked
+        inside. It reported `clean` and exited `0` while printing `NOT SCANNED`
+        two lines below — a blind auditor committed a six-megabyte blob with a
+        private term in its first line and the checker passed it. Skips were
+        recorded honestly and then not counted, which is the difference between
+        disclosing a gap and closing one.
+        """
+        return not self.skipped
+
     def render(self) -> str:
         examined = self.examined
-        verdict = examined.verdict_or_nothing(
-            f"clean ({examined.summary()})" if not self.occurrences
-            else f"{len(self.occurrences)} occurrence(s) to adjudicate ({examined.summary()})"
-        )
+        if self.occurrences:
+            verdict = f"{len(self.occurrences)} occurrence(s) to adjudicate ({examined.summary()})"
+        elif not self.complete:
+            verdict = (f"INCOMPLETE — {len(self.skipped)} object(s) were not read, so this "
+                       f"history has not been scanned ({examined.summary()})")
+        else:
+            verdict = f"clean ({examined.summary()})"
+        verdict = examined.verdict_or_nothing(verdict)
         # Two axes, and both belong in the headline. The SCOPE is in the
         # subject because this module only ever asks the complete question —
         # that is what it is for — and the TIER is the mode, because the same
@@ -212,12 +231,32 @@ def scan_complete_history(
     if not names:
         return report
 
-    seen: set[str] = set()
+    #: Content is deduplicated by object, because reading one blob twice finds
+    #: the same thing twice. **Paths are deduplicated by path**, because two
+    #: paths that happen to share a blob are two different names, and only one
+    #: of them may be the private one.
+    #:
+    #: They were the same set. A repository holding `a.txt` and
+    #: `z-<private term>.txt` with identical contents produced one occurrence
+    #: instead of three: the second path was never examined at all, because its
+    #: blob had been. Found by a blind auditor, and it is the same defect as the
+    #: `Occurrence.key` collision one round earlier — that one merged two
+    #: findings after they were made, and this one stops the second being made.
+    seen_objects: set[str] = set()
+    seen_paths: set[tuple[str, str]] = set()
+    for name in names:
+        for sha, path in gitread.every_name_in_history(repository, name):
+            if (sha, path) in seen_paths:
+                continue
+            seen_paths.add((sha, path))
+            for leak in scanner.scan_name(path, location="path", subject=path):
+                report.occurrences.append(
+                    Occurrence(finding=leak.detail, object_sha=sha, path=path, location="path"))
     for name in names:
         for sha, path in gitread.objects_in_outgoing_range(repository, name, None):
-            if sha in seen:
+            if sha in seen_objects:
                 continue
-            seen.add(sha)
+            seen_objects.add(sha)
             report.objects_examined += 1
             if outgoing_scan.pathmatch.matches_any(path, list(content_exempt_paths)):
                 # Scoped, never skipped: a declared exemption removes the
@@ -226,10 +265,6 @@ def scan_complete_history(
                 exempt = True
             else:
                 exempt = False
-            if path:
-                for leak in scanner.scan_name(path, location="path", subject=path):
-                    report.occurrences.append(
-                        Occurrence(finding=leak.detail, object_sha=sha, path=path, location="path"))
             try:
                 if gitread.object_type(repository, sha) != "blob":
                     continue
@@ -423,7 +458,7 @@ def _cli(argv: list[str]) -> int:
     print(report.render())
     if report.examined.nothing:
         return 2
-    return 1 if report.occurrences else 0
+    return 1 if (report.occurrences or not report.complete) else 0
 
 
 if __name__ == "__main__":

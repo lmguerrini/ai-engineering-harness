@@ -29,7 +29,11 @@ def _dispatch(**overrides):
 
 
 def _pool(**overrides):
-    fields = dict(pool_id="p1")
+    # Dated by default. A numeric reading with no `observed_at` is refused, and
+    # a fixture that had to restate the timestamp in twenty places would push
+    # every test to omit it — which is how the field went unenforced in the
+    # first place. Its absence is proven refused by its own test below.
+    fields = dict(pool_id="p1", observed_at="2026-09-03T12:00:00Z")
     fields.update(overrides)
     return Pool(**fields)
 
@@ -285,7 +289,7 @@ def test_an_unknown_pool_kind_is_refused_by_name():
 
 def test_the_cli_exit_status_separates_permitted_refused_and_human(capsys):
     base = ["t", "--pool", "p", "--authority", AuthorityClass.AUTHORITY_FREE,
-            "--executor", "bounded"]
+            "--executor", "bounded", "--observed-at", "2026-09-03T12:00:00Z"]
 
     assert capacity._cli(base + ["--remaining", "100", "--cost", "1", "--consumption-cost", "1",
                                  "--reserve-coordinator", "1", "--reserve-consumption", "1",
@@ -299,6 +303,12 @@ def test_the_cli_exit_status_separates_permitted_refused_and_human(capsys):
 
     assert capacity._cli(base + ["--remaining", "UNKNOWN"]) == 0
     assert Verdict.DISPATCH_SERIALLY in capsys.readouterr().out
+
+    # A reading with no moment is reported as a refusal, not raised as a
+    # traceback: a command line that cannot use its input has to say so.
+    undated = [a for a in base if a not in ("--observed-at", "2026-09-03T12:00:00Z")]
+    assert capacity._cli(undated + ["--remaining", "100"]) == 2
+    assert "when it was taken" in capsys.readouterr().out
 
 
 def test_the_window_kind_vocabulary_covers_rolling_and_longer_windows():
@@ -338,3 +348,18 @@ def test_the_reproduction_no_longer_dispatches():
             _dispatch(estimated_cost=1, result_consumption_cost=1),
             _pool(remaining=math.nan, kind=PoolKind.INDEPENDENT),
             Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))
+
+
+def test_a_numeric_reading_states_when_it_was_taken():
+    """The class docstring says `observed_at` matters as much as `remaining`, and
+    the class accepted a bare `remaining=100` and gated on it with no unknowns
+    recorded. A figure with no age is the one thing that distinguishes a
+    measurement from an assertion. Quoted back at it by a blind auditor."""
+    with pytest.raises(IntegrityError):
+        capacity.Pool(pool_id="p", remaining=100, kind=capacity.PoolKind.INDEPENDENT)
+
+    dated = capacity.Pool(pool_id="p", remaining=100, kind=capacity.PoolKind.INDEPENDENT,
+                          observed_at="2026-09-03T12:00:00Z")
+    assert dated.remaining == 100
+    # UNKNOWN needs no timestamp: it is already the answer for not knowing.
+    assert capacity.Pool(pool_id="p", kind=capacity.PoolKind.INDEPENDENT).remaining == capacity.UNKNOWN

@@ -229,7 +229,14 @@ def classify(
     arithmetic *visibly*: the report then says "flat for 90s", and a reader can
     see the claim is about ninety seconds rather than about the run.
     """
-    if not isinstance(horizon_seconds, (int, float)) or isinstance(horizon_seconds, bool) or horizon_seconds <= 0:
+    if (not isinstance(horizon_seconds, (int, float)) or isinstance(horizon_seconds, bool)
+            or not math.isfinite(horizon_seconds) or horizon_seconds <= 0):
+        # Non-finite checked here and not only on the SIGNALS. The readings were
+        # guarded a round earlier and the horizon they are compared against was
+        # not, so `NaN` made `flat_for < horizon` false and reported STALLED with
+        # nothing behind it, and infinity made it true forever and reported
+        # RUNNING for a run that had been dead for a thousand seconds. The same
+        # rule, one field over — which is where this class of defect always is.
         raise PreconditionError(
             "a stall horizon is declared by the caller and stated in the report; how long is too "
             "long depends on the task class and the backend, and a built-in number would be wrong "

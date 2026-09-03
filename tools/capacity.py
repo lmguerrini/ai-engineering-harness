@@ -207,6 +207,22 @@ class Pool:
         if not isinstance(self.active_workers, int) or isinstance(self.active_workers, bool) or self.active_workers < 0:
             raise IntegrityError("active_workers is a count", found=repr(self.active_workers))
 
+        # A NUMBER WITH NO MOMENT IS NOT A READING. The docstring two lines up
+        # says `observed_at` matters as much as `remaining`, and the class
+        # accepted a bare `remaining=100` and gated on it with no unknowns
+        # recorded — a figure with no age, which is the one property that
+        # distinguishes a measurement from an assertion. Found by a blind
+        # auditor quoting this class's own contract back at it.
+        #
+        # `UNKNOWN` needs no timestamp: it is already the answer this module
+        # gives when it does not know, and dating it would suggest otherwise.
+        if self.remaining != UNKNOWN and not (self.observed_at or "").strip():
+            raise IntegrityError(
+                "a numeric capacity reading states when it was taken. A reading is evidence "
+                "about a moment, and one with no moment cannot be aged, compared or "
+                "distinguished from a guess",
+                pool_id=self.pool_id, remaining=repr(self.remaining),
+            )
     @property
     def known(self) -> bool:
         return self.remaining != UNKNOWN
@@ -465,10 +481,17 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--fallback", action="append", default=[])
     args = parser.parse_args(argv)
 
-    pool = Pool(pool_id=args.pool, kind=args.kind, window=args.window,
-                remaining=_maybe(args.remaining), unit=args.unit,
-                resets_at=args.resets_at, observed_at=args.observed_at,
-                active_workers=args.active)
+    try:
+        pool = Pool(pool_id=args.pool, kind=args.kind, window=args.window,
+                    remaining=_maybe(args.remaining), unit=args.unit,
+                    resets_at=args.resets_at, observed_at=args.observed_at,
+                    active_workers=args.active)
+    except IntegrityError as exc:
+        # Reported, not raised through the command line. A reading the module
+        # will not accept is an answer this command has to give, and a traceback
+        # is not one.
+        print(exc.render() if hasattr(exc, "render") else str(exc))
+        return 2
     reserve = Reserve(coordinator=_maybe(args.reserve_coordinator),
                       result_consumption=_maybe(args.reserve_consumption),
                       repair_and_audit=_maybe(args.reserve_repair))

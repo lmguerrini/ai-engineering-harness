@@ -437,3 +437,19 @@ def test_a_sentinel_path_cannot_break_out_of_the_generated_waiter():
     for bad in (0, -1, 999999, True, "20", 1.5):
         with pytest.raises(IntegrityError):
             progress.waiter_command("r", 1, sentinel="/tmp/x", poll_seconds=bad)
+
+
+def test_a_horizon_that_is_not_a_number_of_seconds_is_refused():
+    """The signals were guarded against non-finite readings a round earlier and
+    the horizon they are compared against was not. `NaN` made `flat_for <
+    horizon` false and reported STALLED with no flat signal behind it; infinity
+    made it true forever and reported RUNNING for a run dead a thousand seconds.
+    The same rule, one field over, which is where this class always is."""
+    earlier = progress.Sample(0, {"log_bytes": 1, "cpu_seconds": 1})
+    later = progress.Sample(1000, {"log_bytes": 1, "cpu_seconds": 1})
+    for horizon in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(PreconditionError):
+            progress.classify("r", earlier, later, horizon_seconds=horizon,
+                              flat_since_seconds=0)
+    assert progress.classify("r", earlier, later, horizon_seconds=100,
+                             flat_since_seconds=0).state == "STALLED"

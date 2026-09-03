@@ -413,6 +413,35 @@ def classify(contract: OutputContract) -> RecoveryReport:
             why="the output root does not exist, so nothing was ever materialised",
         )
 
+    # WHOSE OUTPUT THIS IS, asked before anything is read out of it.
+    #
+    # `claim_root` refuses to claim a root another task owns — and `classify`
+    # never asked, so a contract for `beta` pointed at `alpha`'s finished root
+    # reported `beta COMPLETED_WITH_DURABLE_OUTPUT` and handed alpha's work over
+    # as beta's. Found by a blind auditor. The marker was already being written
+    # for exactly this and only the writer was reading it.
+    #
+    # UNKNOWN rather than a refusal: a mismatched owner is a real state of the
+    # disk that a person resolves, and `resume_plan` already refuses to act on
+    # UNKNOWN, so this cannot become a retry.
+    marker = root / OWNER_MARKER
+    if marker.is_file():
+        try:
+            recorded = json.loads(marker.read_text(encoding="utf-8")).get("task_id")
+        except (OSError, ValueError) as exc:
+            return RecoveryReport(
+                task_id=contract.task_id, state=RecoveryState.UNKNOWN,
+                why=f"the output root's owner marker cannot be read, so whose work this is "
+                    f"cannot be established: {exc}",
+            )
+        if recorded != contract.task_id:
+            return RecoveryReport(
+                task_id=contract.task_id, state=RecoveryState.UNKNOWN,
+                why=f"this root is owned by {recorded!r} and the contract is for "
+                    f"{contract.task_id!r}; another task's durable output is not this task's "
+                    f"result, however complete it looks",
+            )
+
     complete_indices: list[int] = []
     partial_indices: list[int] = []
     over_bound: list[int] = []

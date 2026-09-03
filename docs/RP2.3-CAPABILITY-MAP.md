@@ -141,5 +141,13 @@ discarded finding is evidence about the oracle.
 | RP3-36 | a close gate accepted evidence gathered from a different tree | six of one audit's eight findings were about a snapshot two repair rounds old, and nothing in the gate could tell |
 | RP3-37 | a dispatched auditor read stdin and waited forever, twice, for a total of 12h21m | the two hangs were the dispatcher's defect and not the route's; the deadline bounded them anyway, which is the property that survives the next unknown cause |
 | RP3-38 | a coordinator's state lived only in a context window | the seven-step rehearsal reconstructs it in a separate process given a path and nothing else |
+| RP3-39 | a read-only git interface ran a program the subject repository named, with and without the flag | the neutralised-config table named the right switch in a comment and the code never passed it |
+| RP3-40 | a complete-history scan reported clean while printing what it had not read | a skip was recorded honestly and then not counted, which discloses a gap rather than closing one |
+| RP3-41 | two paths sharing one blob produced one occurrence | `rev-list --objects` names an object once, so the second path was never enumerated at all |
+| RP3-42 | two blockers each covering half the work left the run reporting nothing outstanding | coverage is a property of the union; the round-2 quantifier repair was one level too deep |
+| RP3-43 | another task's complete output root classified as this task's result | the owner marker was written for exactly this and only the writer read it |
+| RP3-44 | a non-finite stall horizon produced STALLED and RUNNING | the signals were guarded a round earlier and the figure they are compared against was not |
+| RP3-45 | a capacity reading with no `observed_at` gated a dispatch | the class docstring said the timestamp mattered as much as the figure |
+| RP3-46 | two digest tests compared a pure function with itself | replaced by the content-addressing property they were standing in for |
 
 *(appended as each capability reproduces its own)*
