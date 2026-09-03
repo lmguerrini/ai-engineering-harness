@@ -2216,3 +2216,86 @@ Both repaired. **Tenth and eleventh instances in this release**, and the count
 is the finding.
 
 Eight mutants over these repairs, all killed.
+
+## The dashboard completeness figure, and why it was the wrong kind of answer
+
+The previous report said **48 of 49**. Measured again it was 49 of 49 — the
+missing reading had been closed before the sentence was written, and the number
+was stale on arrival.
+
+**That is the defect, not the arithmetic.** A completeness figure produced by
+running a script by hand and writing the result into prose is the
+manually-transcribed-count class this pack refuses everywhere else, in a report
+about the thing that refuses it.
+
+So the readings are a contract now: `policy/dashboard-readings.json` lists all
+49 with the marker each must produce and why it matters, and
+`tools/tests/test_dashboard_contract.py` renders four representative states and
+asserts every one appears — in the text view and in the page. **The number is
+derived where it is used and stated nowhere else.** A reading lost by a panel
+being removed or a key renamed now fails a test, which is how it was going to be
+lost.
+
+Its own bound is a test that removes a required line from a rendered view and
+asserts the contract notices, because a contract of markers every projection
+would print regardless is a contract that cannot fail.
+
+## The three bounded guarantees, stated as what they are
+
+Each was established by execution rather than by argument.
+
+### A worker's bytes are not a worker's work
+
+**Makes:** a recovery report never describes a root other than the one its
+contract names — beta's contract over alpha's root is `UNKNOWN` whatever the
+bytes are.
+**Does not make:** that the bytes inside a root were computed by the task that
+owns it. `cp -c` on APFS clones alpha's chunk into beta's root with
+`st_nlink == 1` on both, and nothing on disk distinguishes it from bytes beta
+wrote — nor could anything, since a worker that copies plausible output is
+indistinguishable from one that produced it.
+**Unsafe acceptance? No.** What is accepted is beta's own root, correctly
+claimed and correctly marked. The recorded failures were roots confused with
+each other, and that half holds.
+**Revisit when** a worker is observed passing off another's output — at which
+point the mechanism is content attestation, not filesystem inspection.
+
+### The link count refuses more than it must
+
+**Makes:** bytes reachable under a second name are never attributed to a root.
+**Does not make:** that every such file is another task's — a task hard-linking
+its own product is caught too.
+**Unsafe acceptance? No.** The error is `UNKNOWN`, and `resume_plan` refuses to
+act on `UNKNOWN`, so nothing is retried and nothing is discarded.
+**Revisit when** a real worker is seen hard-linking its own products.
+
+### A bundle's tips are not a bundle's contents
+
+**Makes:** a cited commit absent from the repository and not a head of a
+verified bundle blocks.
+**Does not make:** that a commit reachable *within* a bundle is recognised.
+Containment is compared against `bundle list-heads`, and proving reachability
+inside one means unbundling — which this release will not do, because it does
+not write.
+**Unsafe acceptance? No.** Executed: a commit pruned from the repository and
+present only inside a verified bundle reports `DESTROYED` and **blocks**. It
+refuses a closure that could legitimately have proceeded.
+**Revisit when** a project's anchoring practice bundles ranges rather than the
+cited commits themselves.
+
+All three now carry an oracle, and all three are in the matrix under their own
+identifiers.
+
+## The matrix checks its own shape now
+
+Four guards, each written because the artifact had already failed that way:
+every identifier names one mechanism (sixteen once named two); every row has
+four columns (one folded its oracle into the disposition cell, so a gate check
+read the fourth column and reported a missing oracle for a row that had one);
+every disposition is one of the five authorised words; and **every oracle the
+matrix names selects at least one real test.**
+
+The last of those failed on all seventy rows when first written, because it
+built `<pack>/test_continuation.py` for rows naming a bare filename. A check
+that fails on every input is as uninformative as one that passes on every input,
+and it took a run to see which of the two it was.
