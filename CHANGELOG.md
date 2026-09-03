@@ -67,6 +67,85 @@ findings almost disjoint. Fifteen repairs, every finding reproduced first.
   is re-measured with this release's own tool: 2090 unadjudicated occurrences
   over the complete reachable history at the strict tier, not ten in four files.
 
+### Repairs from closure audit round 2 — the bounded delta re-audit
+
+**Three of five blockers were defects in round 1's repairs.** That is what a
+delta re-audit is for, and the reason a final repair is unaudited by
+construction until the next one.
+
+- **A read-only allowlist still wrote.** `config` was permitted because *"a
+  write needs a value argument this module never passes"* — while `probe` is a
+  varargs API and the caller passes the arguments. An auditor set and unset keys
+  through it, and `diff --output=FILE` created a file. A verb whose
+  read-onlyness depends on its arguments now declares the forms it may take, and
+  options that make a read write are refused. The test that should have caught
+  it asserted twenty-four verbs were absent from a list they were never on; it
+  now runs **every permitted verb** and asserts the repository is byte-identical
+  afterwards.
+- **A deadline that could not be parsed never expired** — and round-tripped
+  through save and load, putting the indefinite wait this release exists to end
+  back within reach from disk. A deadline nobody can evaluate has passed.
+- **A naive ISO timestamp raised a `TypeError` out of `derive`**, so the shipped
+  command printed a traceback where it should have reported a refusal.
+- **A blocker naming one of five items silenced the other four** — the scenario
+  in its own docstring. A blocker stops the run only when every outstanding item
+  is one it names.
+- **A finished, consumed wait in a terminal record reported `RECOVERY_REQUIRED`**
+  permanently, because time only moves one way. A wait that finished is not
+  waiting.
+- **The generated waiter interpolated its sentinel path into a shell string
+  unquoted** — a hole the hand-written waiter it replaced did not have. Quoted,
+  and the regression asserts it by running the generated condition.
+
+Six tests that passed for reasons they did not state were repaired rather than
+deleted: `DESTROYED` claimed *"gone from this repository"* about blobs the
+repository holds, an attestation accepted two contradictory outcomes for one
+profile, and `classify` trusted a `flat_since` that its own two identical
+readings contradict.
+
+### Repairs from closure audit round 3 — the blind cross-vendor read
+
+**Six of the eight findings were already repaired, and the report could not say
+so.** The auditor had read a snapshot taken before rounds 1 and 2; it never
+stated the revision, so only re-executing all eight, one at a time, could
+distinguish a live defect from a repaired one.
+
+- **Evidence about a different tree does not close this one.**
+  `close_gate(..., against=(revision, digest))` refuses it. The harmless
+  direction is the one that happened; the other is a clean audit of an old tree
+  reading as clean for a new one, which is a green gate over a tree nobody
+  examined. **An audit brief now states the revision and digest the auditor
+  read.**
+- **A rewrite mapping was accepting its own assertion as evidence.**
+  `{orphan: any_reachable_commit}` cleared the orphan: *reachable* is a test
+  every reachable commit passes equally. A successor claim is corroborated
+  against the preserved original in a verified bundle, or it is
+  `REMAPPED_UNVERIFIED` and blocks, naming what would settle it. A mapping
+  handed in by keyword is held to the shape its file loader enforces.
+- **A wait completed on `/dev/null`.** The declaration-time refusal was correct
+  and unreachable — a record built directly never passes through it, and making
+  it a constructor invariant makes a legitimate saved record unloadable. So the
+  observation asks again in the two forms that survive a reload: a sentinel is a
+  regular file, and it does not predate its own wait.
+
+### The continuation rehearsal, and a dispatcher mistaken for a route
+
+Seven steps, executed, with the reconstruction in a **separate process** that
+receives a path and nothing else — a same-interpreter rehearsal shares the
+objects it claims to be recovering. Step 6 asserts the reconstructed coordinator
+waits rather than sending a second worker after an obligation that already has
+one. Step 7 writes a summary beside the record saying the work finished, in the
+place a compaction summary would live, and requires the derived answer not to
+move.
+
+Two cross-vendor dispatches held a named wait for **5h39m and 6h42m** at a third
+of a second of CPU each. The third, identical but with **stdin closed**, wrote
+120KB in three minutes: the dispatcher had been reading standard input. The
+release was about to record *cross-vendor is unreliable* as field evidence about
+somebody else's software. What held without needing the cause understood is the
+deadline on every observable wait — and the next cause will also not be
+understood at the time.
+
 ### Qualification
 
 - **`docs/RP2.3-RELEASE-PACKET.md`** — what a returning release authority reads
