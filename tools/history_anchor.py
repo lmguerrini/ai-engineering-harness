@@ -24,13 +24,20 @@ So a rewrite emits an old-to-new mapping, and resolution consults it. The
 mapping is a first-class input here rather than a convention, because the
 version of this that was a convention produced a file nobody's checker read.
 
-## What is not decided here
+## What is not decided here, and the one thing that is
 
-A token that Git does not recognise at all is **not** a finding. Records are
-prose, prose contains hexadecimal, and a checker that called every unrecognised
-seven-character word a lost commit would produce a remediation list nobody
-could act on. Three answers, and only one of them blocks: Git knows this commit
-and a ref reaches it; Git knows it and nothing does; Git does not know it.
+A **short** token Git does not recognise is not a finding. Records are prose,
+prose contains hexadecimal, and a checker that called every unrecognised
+seven-character word a lost commit would produce a remediation list nobody could
+act on.
+
+A **forty-character** one is different, and getting that wrong was the worst
+defect in this module's first draft: it reported `UNREACHABLE` and blocked while
+the commit was still recoverable, and then a `gc --prune` destroyed the object
+and the same command over the same record reported *every cited commit is
+reachable or anchored*. **The verdict went green exactly when the loss became
+irreversible.** Nobody writes forty hexadecimal characters into a closure record
+by accident, so an unrecognised one is `DESTROYED` and blocks.
 
 Nothing here rewrites history, creates a ref, or prunes anything. It reports,
 and `policy/hitl-matrix.md` rows 2 and 4 decide what happens next.
@@ -83,18 +90,31 @@ class CitationState:
     #: Unreachable from a ref, and present in a verified bundle the project
     #: declared as an anchor. Durable, and a different fact from reachable.
     ANCHORED = "ANCHORED"
-    #: Git does not recognise it. Almost always prose that happens to be
-    #: hexadecimal, so it is reported and never blocks.
+    #: Git does not recognise it, and it is too short to be a full object name.
+    #: Almost always prose that happens to be hexadecimal, so it is reported and
+    #: never blocks.
     NOT_A_COMMIT = "NOT_A_COMMIT"
+    #: **A full forty-character object name this repository does not have.**
+    #: Nobody writes forty hexadecimal characters into a closure record by
+    #: accident, so this is a citation of something that is gone rather than
+    #: prose — and it is the state a destroyed commit lands in.
+    #:
+    #: It exists because the check went GREEN exactly when the loss became
+    #: irreversible: an orphaned commit reported UNREACHABLE and blocked, and
+    #: then `git gc --prune=now` destroyed it and the same command over the same
+    #: record reported *every cited commit is reachable or anchored*. Found by
+    #: an independent auditor running the prune.
+    DESTROYED = "DESTROYED"
     #: Git does not recognise it, and the rewrite mapping does — under a new
     #: identity that a ref reaches. The citation is stale, not lost.
     REMAPPED = "REMAPPED"
     #: Git could not be asked. Never read as any of the above.
     UNKNOWN = "UNKNOWN"
 
-    ALL = (REACHABLE, UNREACHABLE, ANCHORED, NOT_A_COMMIT, REMAPPED, UNKNOWN)
-    #: The states that stop a closure.
-    BLOCKING = (UNREACHABLE, UNKNOWN)
+    ALL = (REACHABLE, UNREACHABLE, ANCHORED, NOT_A_COMMIT, DESTROYED, REMAPPED, UNKNOWN)
+    #: The states that stop a closure. `DESTROYED` blocks the hardest of the
+    #: three, and is the one a reader most needs to see.
+    BLOCKING = (UNREACHABLE, DESTROYED, UNKNOWN)
 
 
 @dataclass(frozen=True)
@@ -190,10 +210,16 @@ class ReachabilityReport:
 
     def render(self) -> str:
         examined = self.examined
-        verdict = examined.verdict_or_nothing(
-            "every cited commit is reachable or anchored" if not self.blocking
-            else f"{len(self.blocking)} cited commit(s) NOT REACHABLE"
-        )
+        destroyed = [c for c in self.citations if c.state == CitationState.DESTROYED]
+        if destroyed:
+            headline = (f"{len(destroyed)} cited commit(s) ARE GONE FROM THIS REPOSITORY"
+                        + (f", and {len(self.blocking) - len(destroyed)} more not reachable"
+                           if len(self.blocking) > len(destroyed) else ""))
+        elif self.blocking:
+            headline = f"{len(self.blocking)} cited commit(s) NOT REACHABLE"
+        else:
+            headline = "every cited commit is reachable or anchored"
+        verdict = examined.verdict_or_nothing(headline)
         lines = [f"closure anchors: {verdict}", f"  examined: {examined.summary()}"]
         counts: dict[str, int] = {}
         for citation in self.citations:
@@ -307,8 +333,17 @@ def _classify(repository, token, where, reachable, mapping, bundles) -> Citation
             return Citation(token, CitationState.UNREACHABLE, where,
                             "the mapping names a successor and no ref reaches it either",
                             maps_to=full)
+        if len(token) == 40:
+            return Citation(
+                token, CitationState.DESTROYED, where,
+                "a full forty-character object name this repository does not have. Nobody "
+                "writes forty hexadecimal characters into a record by accident, so this is a "
+                "citation of something that is GONE — pruned, or never present here — and it "
+                "is not prose. Restore it from a bundle or an anchor, or record what happened",
+            )
         return Citation(token, CitationState.NOT_A_COMMIT, where,
-                        "not an object in this repository")
+                        "not an object in this repository, and too short to be a full object "
+                        "name; almost always prose that happens to be hexadecimal")
 
     full = answer.value.strip()
     if full in reachable:

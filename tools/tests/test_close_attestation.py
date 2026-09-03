@@ -30,6 +30,10 @@ def _passed(name):
     return ProfileOutcome(profile=name, state=ProfileState.PASSED, exit_status=0)
 
 
+def _attest(capability, declared, results, **kwargs):
+    return attest(capability, declared, results, **{**CANDIDATE, **kwargs})
+
+
 # --- omission is unrepresentable ------------------------------------------------
 
 
@@ -95,7 +99,8 @@ def test_a_failed_or_incomplete_profile_stops_a_close_whatever_the_policy_says()
     run did not pass and did not fail: it did not finish."""
     for state in (ProfileState.FAILED, ProfileState.INCOMPLETE):
         results = {name: _passed(name) for name in DECLARED}
-        results["full"] = ProfileOutcome(profile="full", state=state, exit_status=1)
+        results["full"] = ProfileOutcome(
+            profile="full", state=state, exit_status=1 if state == ProfileState.FAILED else None)
         attestation = attest("CAP-1", DECLARED, results, refuses_on_unrun=False, **CANDIDATE)
         assert attestation.blocking, state
 
@@ -216,12 +221,20 @@ def test_the_cli_enumerates_the_contracts_profiles_and_exits_on_the_verdict(tmp_
     )
     base = ["CAP-1", "--project", str(contract), "--head", "a" * 40, "--tree-digest", "b" * 64]
 
-    assert close_attestation._cli(base + ["--passed", "focused"]) == 1
+    assert close_attestation._cli(base + ["--result", "focused=0"]) == 1
     out = capsys.readouterr().out
     assert "full: UNRUN" in out and "focused: PASSED" in out
 
-    assert close_attestation._cli(base + ["--passed", "focused", "--passed", "full"]) == 0
+    assert close_attestation._cli(base + ["--result", "focused=0", "--result", "full=0"]) == 0
     assert "every declared profile ran clean" in capsys.readouterr().out
+
+    # A non-zero status is a failure however the caller would prefer to label it.
+    assert close_attestation._cli(base + ["--result", "focused=1", "--result", "full=0"]) == 1
+    assert "focused: FAILED (exit 1)" in capsys.readouterr().out
+
+    # And a result with no status at all is refused rather than assumed clean.
+    assert close_attestation._cli(base + ["--result", "focused"]) == 2
+    assert "an assertion rather than a reading" in capsys.readouterr().out
 
 
 def test_the_cli_refuses_a_contract_that_declares_no_profiles(tmp_path, capsys):

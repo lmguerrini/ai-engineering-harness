@@ -881,3 +881,149 @@ first. It leads with what the release deliberately does not do, and with the
 mutation history — because nine of this release's mutants survived their first
 pass and every one was the same shape: **an assertion the code satisfied for a
 reason the test did not name.**
+
+## Closure audit — round 1
+
+Two blind auditors on distinct lenses, against an **immutable snapshot** at
+`446b2540be3aa0320514ed47f62d70ada5f6ec90`, both barred from this document, the
+capability map and the release packet. The working tree did not move while they
+read — the previous release recorded a dispatch error of exactly that shape, and
+avoiding it was deliberate.
+
+| leg | configuration | verdict |
+|---|---|---|
+| falsification | codex-cli 0.149.0, `gpt-5.6-terra`, xhigh, `--sandbox read-only`, **independent pool** | **NOT READY** — 5 blockers, 3 major |
+| release authority | fresh same-family session, read-only, `capability-auditor` | **NOT READY** — 2 blockers, 5 major, 3 minor |
+
+**Cross-vendor was available and was used.** The row-12 fallback named at the
+session freeze was not needed and was not invoked.
+
+**Their findings are almost disjoint**, which is the whole reason two lenses run.
+One overlap only: both reached `close_attestation`, from opposite directions —
+the cross-vendor leg through the exported constructor, the release-authority leg
+through the headline sentence.
+
+**Every finding was reproduced by execution before any repair.** Eight from the
+cross-vendor leg, two blockers and five majors from the release-authority leg.
+None was refuted; none was a documented limitation re-reported; none was an
+environment finding.
+
+### The two that matter most
+
+**The verdict went green exactly when the loss became irreversible.**
+`history_anchor` reported `UNREACHABLE` and blocked while an orphaned commit was
+still recoverable — and after `git gc --prune=now` destroyed it, the same command
+over the same record reported *every cited commit is reachable or anchored*. The
+auditor ran the prune. A destroyed forty-character citation had been falling into
+`NOT_A_COMMIT`, the state reserved for prose that happens to be hexadecimal, and
+`NOT_A_COMMIT` does not block. Repaired: a full-length object name this
+repository does not have is `DESTROYED`, blocks, and gets its own headline —
+nobody writes forty hexadecimal characters into a closure record by accident. A
+short one is still prose, because a checker that called every unrecognised
+seven-character word a lost commit produces a list nobody can act on.
+
+**A read-only Git layer that could write a ref.** `DECISIONS.md` D2 extracted
+this module precisely to leave the write verbs behind — *"the discarded remainder
+is mostly Git write verbs, which a report-only toolbelt must not carry at all"* —
+and then `probe` took the verb as a parameter and put every one of them back. The
+auditor created `refs/heads/illicit` through the public read API. Repaired with an
+**allowlist**, not a denylist: a denylist has to anticipate every verb Git will
+ever add and the failure mode of missing one is a write. `git bundle` is checked
+at the subcommand, because it has one that writes. And `archive --remote` was a
+second network read reachable with `ssh` enabled, so a transport may now be
+enabled only for the one verb the postcondition exception is scoped to.
+
+One detail of that repair is worth recording: the refusal is an
+`IntegrityError` rather than a `GitRefusal`, because `probe`'s whole job is to
+turn a Git failure into an answer-shaped result — raising the wrong class made
+*this module will not run a write verb* arrive as an ordinary negative, and the
+first version of the fix did exactly that.
+
+### The rest, by root cause
+
+**A non-finite number passes a `< 0` check** — one cause, two modules. `NaN`
+remaining dispatched an unmeasurable pool; two `NaN` readings produced `STALLED`
+with **zero flat signals named in the report**. Every comparison against a NaN is
+false, so it passed every guard rather than failing one. **`gitread` already
+refuses a non-finite timeout for this exact reason, with a comment saying why,
+and the rule was not carried across.** Finiteness is now checked before the sign,
+so an infinity gets a message about the defect it has rather than one about
+negativity.
+
+**A guarantee that holds in the generator and fails at a boundary a caller can
+reach** — four instances. `Occurrence.key` omitted `location`, so a term found in
+a path and in that path's blob shared one adjudication. The exported
+`Attestation` constructor carried no declared set, so `close_gate` was clean over
+a record missing a profile — repaired by putting the declaration **on the record**
+and validating it there, which makes the omission unrepresentable rather than
+merely unproduced. `ProfileOutcome` accepted `PASSED` with no exit status, so the
+word meant only that somebody typed it; the state is now **derived** from the
+recorded status, which is the rule `evidence_index` already states. And
+`re_derive` compared by substring, so a measurement that drifted from `10` to
+`100` reported as still reproducing — **the same naive-substring defect this pack
+reproduced and repaired in its own term scanner, made again one release later.**
+
+**A completion condition satisfied before the job started.** A wait pointed at
+`/dev/null` derived a finished result for a worker that never existed. The first
+repair put the check in `__post_init__` and made a saved record **unloadable**
+once its job had finished — a worse failure than the one it closed, and the
+fixtures caught it immediately. Declaration and reconstruction are different
+acts, so `Wait.declare` performs the check and the constructor does not.
+
+**A completion marker beside a chunk still in progress** classified
+`COMPLETED_WITH_DURABLE_OUTPUT` and prescribed consumption. And an over-bound
+chunk was a trailing annotation under a clean headline while the module's
+docstring claimed enforcement — the two sentences disagreed, and the code was the
+weaker one. Both are now `UNKNOWN`: a producer that ignored the contract is a
+producer whose output this cannot vouch for.
+
+**A guard that could not fail.** The held-prose disclosure check read the adapter
+figure with a regex written against 2.2.0's wording; this release reworded the
+sentence, the match became `None`, the count fell back to **zero**, and the `if`
+below it became unreachable. **It would have passed with the entire disclosure
+deleted** — which is precisely the regression its sibling's docstring records
+having happened once. A fallback to zero in a guard is the guard's own off
+switch, so it now refuses rather than defaults.
+
+**A vocabulary with no producer.** `DispatchOutcome` was four names, and the only
+test compared the class's own tuple with a literal copy of it — *an assertion
+that would pass unchanged if the mechanism it named were deleted, because there
+was no mechanism.* A decision now **produces** an outcome: a refusal is
+`NOT_DISPATCHED`, a permitted dispatch is `IN_FLIGHT` until whoever ran it
+records which of the other two it became.
+
+**The public-safety disclosure was inherited verbatim and unfalsifiable.** *Ten
+occurrences in four files* was carried word for word from 2.1.1 through 2.2.0 and
+across a release adding ten thousand lines, and **there is no adjudication
+artifact anywhere in the tree from which it can be reproduced.** The auditor could
+not falsify it, and said so — that was the finding. Re-measured with this
+release's own `publication_history` over the complete reachable history at the
+strict tier: **2090 occurrences across 100 paths**, 902 at the tiered tier. The
+largest contributors are this repository's own manifest, changelog and gate
+records *discussing the vocabulary* — which is the case
+`skills/core/public-safety.md` describes when it says a project whose product is
+a harness cannot scan its own source for harness vocabulary. They are
+**unadjudicated**, and by this release's own rule a bare count is not a
+remediation list. The disclosure now says that, and the adjudication is recorded
+as owed.
+
+### What the auditors attacked and could not break
+
+Recorded because it is the most informative half of a report. The suite and the
+manifest's test count agreed exactly. The release identity verified. **Every
+held-prose number recomputed correctly** — 1553 in-release, 1023 adapters, 2576,
+28.8% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
+frozen manifest. Every `D<n> clause <m>` citation in every file was parsed
+against `DECISIONS.md` and matched: **zero dangling pointers**, which one auditor
+said it had expected to find. No AI attribution anywhere in sixteen commit
+messages or any changed file. `projection` wrote nothing, verified by diffing the
+tree around a run rather than by grepping for write calls. The four recovery
+states survived six adversarial fixtures. Authority never moved under resource
+pressure. An unmeasurable pool with a worker already running was refused rather
+than serialised. `ModeSet` refused a single-mode declaration. And an AST sweep
+for tests with no reachable assertion found four candidates, three of them sound.
+
+### Round 1 repair count
+
+Fifteen findings repaired, eight new tests added, and the delta re-audited below.
+No finding was closed by weakening an assertion, and none was deferred.

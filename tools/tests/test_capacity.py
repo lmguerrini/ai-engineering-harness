@@ -235,11 +235,43 @@ def test_a_dispatch_measured_against_the_wrong_pool_is_refused_loudly():
         capacity.gate(_dispatch(pool_id="p1"), _pool(pool_id="p2"), Reserve())
 
 
-def test_not_dispatched_and_dispatched_and_lost_are_different_outcomes():
-    """Three of eight were the second. A record that cannot tell them apart
-    cannot learn from either."""
-    outcomes = set(capacity.DispatchOutcome.ALL)
-    assert {"NOT_DISPATCHED", "DISPATCHED_AND_LOST", "DISPATCHED_AND_CONSUMED", "IN_FLIGHT"} == outcomes
+def test_a_decision_produces_an_outcome_rather_than_merely_naming_a_vocabulary():
+    """The first version of this test compared the class's own tuple with a
+    literal copy of it — an assertion that would have passed unchanged if the
+    mechanism it named were deleted, because there was no mechanism. Found by an
+    independent auditor. What is asserted now is that a decision PRODUCES one."""
+    refused = capacity.gate(
+        _dispatch(estimated_cost=99),
+        _pool(remaining=1, kind=PoolKind.INDEPENDENT),
+        Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))
+    assert not refused.may_dispatch
+    assert refused.outcome == capacity.DispatchOutcome.NOT_DISPATCHED
+    assert "NOT_DISPATCHED" in refused.render()
+
+    permitted = capacity.gate(
+        _dispatch(estimated_cost=1, result_consumption_cost=1),
+        _pool(remaining=100, kind=PoolKind.INDEPENDENT),
+        Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))
+    assert permitted.outcome == capacity.DispatchOutcome.IN_FLIGHT, (
+        "a permitted dispatch has not succeeded yet; calling it consumed here is the conflation "
+        "the four states exist to prevent"
+    )
+    assert permitted.outcome != capacity.DispatchOutcome.NOT_DISPATCHED
+
+
+def test_the_two_outcomes_a_gate_cannot_produce_are_the_ones_a_runner_records():
+    """`DISPATCHED_AND_CONSUMED` and `DISPATCHED_AND_LOST` are produced by
+    whoever ran the work, not by the gate that permitted it — which is why they
+    are different parties at different times."""
+    from_gate = {
+        capacity.gate(_dispatch(estimated_cost=c, result_consumption_cost=1),
+                      _pool(remaining=100, kind=PoolKind.INDEPENDENT),
+                      Reserve(coordinator=1, result_consumption=1, repair_and_audit=1)).outcome
+        for c in (1, 999)
+    }
+    assert from_gate == {capacity.DispatchOutcome.IN_FLIGHT,
+                         capacity.DispatchOutcome.NOT_DISPATCHED}
+    assert capacity.DispatchOutcome.DISPATCHED_AND_LOST not in from_gate
 
 
 def test_an_unknown_pool_kind_is_refused_by_name():
@@ -274,3 +306,35 @@ def test_the_window_kind_vocabulary_covers_rolling_and_longer_windows():
     always was, so a model that cannot express both cannot record why."""
     assert WindowKind.ROLLING in WindowKind.ALL and WindowKind.WEEKLY in WindowKind.ALL
     assert Pool(pool_id="p", window=WindowKind.WEEKLY).window == "weekly"
+
+
+# --- a number that is not a number ---------------------------------------------
+#
+# Every comparison against a NaN is false, so `NaN < 0` passed the sign check and
+# then `remaining - cost < reserve` was false too: the gate DISPATCHED an
+# unmeasurable pool. Found by a cross-vendor auditor. `gitread` already refuses a
+# non-finite timeout for exactly this reason and the rule was not carried across.
+
+
+def test_a_non_finite_quantity_is_refused_rather_than_passing_every_guard():
+    import math
+
+    for bad in (math.nan, math.inf, -math.inf):
+        with pytest.raises(IntegrityError) as caught:
+            Pool(pool_id="p", remaining=bad)
+        assert "every comparison against it is false" in caught.value.render()
+        with pytest.raises(IntegrityError):
+            Reserve(coordinator=bad)
+        with pytest.raises(IntegrityError):
+            _dispatch(estimated_cost=bad)
+
+
+def test_the_reproduction_no_longer_dispatches():
+    """The auditor's exact fixture."""
+    import math
+
+    with pytest.raises(IntegrityError):
+        capacity.gate(
+            _dispatch(estimated_cost=1, result_consumption_cost=1),
+            _pool(remaining=math.nan, kind=PoolKind.INDEPENDENT),
+            Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))

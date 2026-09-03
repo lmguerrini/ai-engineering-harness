@@ -49,6 +49,7 @@ too late to be useful.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -135,7 +136,24 @@ class Sample:
             if kind not in SignalKind.ALL:
                 raise IntegrityError("no such progress signal", kind=repr(kind),
                                      known=", ".join(SignalKind.ALL))
-            if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise IntegrityError("a progress signal is a non-negative quantity",
+                                     kind=kind, value=repr(value))
+            # Finiteness BEFORE the sign, and the order is the repair: every
+            # comparison against a NaN is false, so `value < 0` let one through
+            # and two NaN readings then produced STALLED with **zero** flat
+            # signals named in the report — a verdict with nothing behind it.
+            # Found by a cross-vendor auditor, and the same root cause as the
+            # capacity gate's. Checking the sign first would also give an
+            # infinity a message about negativity, which describes the wrong
+            # defect.
+            if not math.isfinite(value):
+                raise IntegrityError(
+                    "a progress signal is finite; a non-finite reading is neither flat nor "
+                    "advancing, so it would produce a stall with no flat signal behind it",
+                    kind=kind, value=repr(value),
+                )
+            if value < 0:
                 raise IntegrityError("a progress signal is a non-negative quantity",
                                      kind=kind, value=repr(value))
 
@@ -156,13 +174,17 @@ class ProgressReport:
     #: Signals present in one sample and not the other. Not evidence either way,
     #: and named so a reader can see the comparison was partial.
     incomparable: tuple[str, ...] = ()
+    #: Monotonic signals that went backwards. A broken instrument, never a quiet
+    #: run, and never counted among the flat ones that produce a stall.
+    regressed: tuple[str, ...] = ()
 
     def render(self) -> str:
         lines = [f"run {self.run_id}: {self.state}", f"  {self.why}"]
         lines.append(f"  elapsed {self.elapsed_seconds:.0f}s against a declared horizon of "
                      f"{self.horizon_seconds:.0f}s")
         for label, values in (("advanced", self.advanced), ("flat", self.flat),
-                              ("observed in only one sample", self.incomparable)):
+                              ("observed in only one sample", self.incomparable),
+                              ("WENT BACKWARDS, so the instrument is untrustworthy", self.regressed)):
             if values:
                 lines.append(f"  {label}: {', '.join(values)}")
         if self.state == ProgressState.STALLED:
@@ -201,11 +223,16 @@ def classify(
     common = sorted(set(earlier.signals) & set(later.signals))
     incomparable = tuple(sorted(set(earlier.signals) ^ set(later.signals)))
     advanced = tuple(k for k in common if later.signals[k] > earlier.signals[k])
-    flat = tuple(k for k in common if later.signals[k] <= earlier.signals[k])
+    flat = tuple(k for k in common if later.signals[k] == earlier.signals[k])
+    # Every signal here is documented monotonic, so a reading that went DOWN is
+    # a broken instrument — a rotated log, a reset counter, a second writer —
+    # and folding it into "flat" tells a reader the run was quiet when the truth
+    # is that the measurement is untrustworthy.
+    regressed = tuple(k for k in common if later.signals[k] < earlier.signals[k])
 
     base = dict(run_id=run_id, horizon_seconds=float(horizon_seconds),
                 elapsed_seconds=float(elapsed), advanced=advanced, flat=flat,
-                incomparable=incomparable)
+                incomparable=incomparable, regressed=regressed)
 
     if finished:
         return ProgressReport(**base, state=ProgressState.COMPLETE,
@@ -216,6 +243,11 @@ def classify(
             f"{', '.join(advanced)} advanced, so the run is working whatever the others did; "
             "a healthy worker was measured silent on its log for over four minutes while its "
             "processor time climbed"))
+
+    if regressed:
+        return ProgressReport(**base, state=ProgressState.UNKNOWN, why=(
+            f"{', '.join(regressed)} went backwards, and every one of these is documented "
+            "monotonic; a reading that decreases is a broken instrument rather than a quiet run"))
 
     if not common:
         return ProgressReport(**base, state=ProgressState.UNKNOWN, why=(

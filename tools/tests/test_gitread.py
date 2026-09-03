@@ -256,3 +256,109 @@ def test_every_object_listing_entry_carries_a_full_sha(tmp_path):
     root = _repo(tmp_path, "shas")
     for sha, _path in gitread.objects_in_outgoing_range(str(root), "HEAD", None):
         assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha), sha
+
+
+# --- the module carries no write verb, which is why it exists ------------------
+#
+# `DECISIONS.md` D2 extracted this module to leave the write verbs behind, and
+# then `probe` took a verb as a parameter and put every one of them back. A
+# cross-vendor auditor created `refs/heads/illicit` through the public read API.
+
+import subprocess as _subprocess
+
+import pytest as _pytest
+
+from errors import GitRefusal as _GitRefusal, IntegrityError as _IntegrityError
+
+
+def _scratch_repo(tmp_path):
+    directory = tmp_path / "repo"
+    directory.mkdir()
+    for command in (["git", "init", "--quiet"],
+                    ["git", "config", "user.email", "t@example.invalid"],
+                    ["git", "config", "user.name", "T"],
+                    ["git", "commit", "--quiet", "--allow-empty", "-m", "first"]):
+        _subprocess.run(command, cwd=directory, check=True, capture_output=True)
+    head = _subprocess.run(["git", "rev-parse", "HEAD"], cwd=directory,
+                           capture_output=True, text=True, check=True).stdout.strip()
+    return directory, head
+
+
+def test_a_write_verb_is_refused_and_writes_nothing(tmp_path):
+    """The reproduction, inverted.
+
+    Raised rather than answered: `probe`'s job is to turn a Git failure into an
+    answer-shaped result, so a refusal that came back as a `ProbeAnswer` would
+    read as an ordinary negative and the caller would walk past it. Asserted on the filesystem as well as on the
+    refusal: a check that only asserted the exception would pass even if the ref
+    were created first and the exception raised afterwards."""
+    directory, head = _scratch_repo(tmp_path)
+    with _pytest.raises(_IntegrityError) as caught:
+        gitread.probe(directory, "update-ref", "refs/heads/illicit", head, negative_statuses=())
+    assert "read-only Git commands only" in caught.value.render()
+    assert "update-ref" in caught.value.render()
+
+    shown = _subprocess.run(["git", "show-ref", "refs/heads/illicit"], cwd=directory,
+                            capture_output=True, text=True)
+    assert shown.returncode != 0, "the ref exists; the refusal came too late to be a control"
+
+
+def test_every_write_verb_anyone_would_reach_for_is_refused(tmp_path):
+    directory, head = _scratch_repo(tmp_path)
+    for verb in ("update-ref", "commit", "push", "fetch", "clone", "gc", "reflog", "checkout",
+                 "branch", "tag", "reset", "add", "rm", "filter-branch", "replace", "prune",
+                 "worktree", "stash", "apply", "am", "cherry-pick", "rebase", "merge", "init"):
+        with _pytest.raises(_IntegrityError):
+            gitread.probe(directory, verb, negative_statuses=())
+
+
+def test_the_allowlist_is_an_allowlist_and_not_a_denylist():
+    """A denylist has to anticipate every verb Git will ever add, and the
+    failure mode of missing one is a write."""
+    assert "update-ref" not in gitread.READ_ONLY_VERBS
+    assert {"rev-parse", "cat-file", "rev-list", "ls-files", "for-each-ref"} <= gitread.READ_ONLY_VERBS
+    assert all(verb == verb.lower() for verb in gitread.READ_ONLY_VERBS)
+
+
+def test_the_reads_this_toolbelt_actually_performs_still_work(tmp_path):
+    """The other half: an allowlist that refused correct work would be found
+    immediately and removed."""
+    directory, head = _scratch_repo(tmp_path)
+    assert gitread.probe(directory, "rev-parse", "HEAD", negative_statuses=()).value.strip() == head
+    assert gitread.refs(directory)
+    assert gitread.object_type(directory, head) == "commit"
+
+
+def test_git_bundle_may_read_and_may_not_write(tmp_path):
+    """One verb, two subcommands that read and one that writes."""
+    directory, _head = _scratch_repo(tmp_path)
+    with _pytest.raises(_IntegrityError) as caught:
+        gitread.probe(directory, "bundle", "create", "/private/tmp/should-not-exist.bundle",
+                      "HEAD", negative_statuses=())
+    assert "write subcommand" in caught.value.render()
+    assert not __import__("pathlib").Path("/private/tmp/should-not-exist.bundle").exists()
+
+    answer = gitread.probe(directory, "bundle", "list-heads", "/private/tmp/absent.bundle",
+                           negative_statuses=())
+    assert answer.answered, "the read subcommand must still be reachable"
+
+
+def test_a_transport_may_only_be_enabled_for_the_verb_the_exception_is_scoped_to(tmp_path):
+    """`archive --remote` is a second network read, and it was reachable through
+    the generic API with ssh enabled. Found by a cross-vendor auditor."""
+    directory, _head = _scratch_repo(tmp_path)
+    with _pytest.raises(_IntegrityError) as caught:
+        gitread.probe(directory, "archive", "--remote=ssh://git@no-such-host.invalid/x.git",
+                      "HEAD", negative_statuses=(), allow_transports=("ssh",))
+    rendered = caught.value.render()
+    assert "archive" in rendered
+    assert "ls-remote" in rendered, "the refusal must name what the exception IS scoped to"
+
+    # And the one verb it is scoped to still crosses.
+    answer = gitread.probe(directory, "ls-remote", "ssh://git@no-such-host.invalid/x.git",
+                           negative_statuses=(), allow_transports=("ssh",))
+    assert "transport 'ssh' not allowed" not in (answer.detail or "")
+
+
+def test_the_transport_verbs_are_exactly_the_one_the_postcondition_needs():
+    assert gitread.TRANSPORT_VERBS == frozenset({"ls-remote"})

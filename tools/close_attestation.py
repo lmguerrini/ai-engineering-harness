@@ -1,4 +1,14 @@
-"""Which gates ran, answered by something other than the party that ran them.
+"""A closure block generated from the contract, so a declared gate cannot be omitted.
+
+**What this establishes and what it does not.** It does not run a profile,
+launch a checker, or verify that a recorded outcome happened — the outcomes are
+supplied by the caller, and a caller that records a falsehood records a
+falsehood. What it makes impossible is **silence**: a profile the contract
+declares and nobody mentions cannot be absent from the record, because the
+record is built from the declaration and refuses to exist without covering all
+of it. An earlier draft of this sentence promised independent verification of
+what ran, which the mechanism does not provide.
+
 
 A closure record's gate block was prose. Somebody wrote down which checks had
 passed, and nothing compared that sentence to anything — so two capabilities
@@ -91,6 +101,23 @@ class ProfileOutcome:
         if self.state not in ProfileState.ALL:
             raise IntegrityError("no such profile state", found=repr(self.state),
                                  known=", ".join(ProfileState.ALL))
+        # `PASSED` is documented as *the profile ran and its checker exited
+        # zero*, and the type accepted it with no exit status at all — so the
+        # word meant only that somebody typed it. An auditor built a clean
+        # attestation for three profiles that never ran.
+        if self.state in (ProfileState.PASSED, ProfileState.FAILED) and self.exit_status is None:
+            raise PreconditionError(
+                f"{self.state} says a checker ran and reported; record the exit status it "
+                "reported, or use INCOMPLETE for a run that did not finish and UNRUN for one "
+                "that never started",
+                profile=self.profile,
+            )
+        if self.state == ProfileState.PASSED and self.exit_status != 0:
+            raise IntegrityError(
+                "PASSED means the checker exited zero; a non-zero status recorded as a pass is "
+                "the reinterpretation this pack's evidence layer makes unrepresentable",
+                profile=self.profile, exit_status=self.exit_status,
+            )
 
     def __str__(self) -> str:
         status = "" if self.exit_status is None else f" (exit {self.exit_status})"
@@ -111,9 +138,39 @@ class Attestation:
     head_revision: str
     tree_digest: str
     outcomes: tuple[ProfileOutcome, ...]
+    #: What the contract declared. Carried on the record rather than only used
+    #: by the generator, because the generator was the only thing enforcing the
+    #: guarantee and this class is exported: an auditor built an `Attestation`
+    #: directly, omitted a declared profile, and `close_gate` returned clean.
+    declared: tuple[str, ...] = ()
     #: The project's declared policy. `True` — the default — means an `UNRUN`
     #: profile stops the close.
     refuses_on_unrun: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.declared:
+            raise PreconditionError(
+                "an attestation carries the set of profiles the contract declared. Without it "
+                "there is nothing for the outcomes to be complete against, and completeness is "
+                "the only thing this record is for",
+                capability=self.capability,
+            )
+        covered = [outcome.profile for outcome in self.outcomes]
+        missing = [name for name in self.declared if name not in covered]
+        if missing:
+            raise PreconditionError(
+                "these declared profiles have no outcome at all. An omission is not an UNRUN: "
+                "UNRUN is a statement, and silence is the thing this record exists to make "
+                "impossible",
+                capability=self.capability, missing=", ".join(missing),
+            )
+        stray = [name for name in covered if name not in self.declared]
+        if stray:
+            raise PreconditionError(
+                "an outcome names a profile the contract does not declare; the contract is the "
+                "authority on what this project validates",
+                capability=self.capability, undeclared=", ".join(stray),
+            )
 
     @property
     def examined(self) -> Examined:
@@ -191,7 +248,8 @@ def attest(
     )
     return Attestation(
         capability=capability, head_revision=head_revision, tree_digest=tree_digest,
-        outcomes=outcomes, refuses_on_unrun=refuses_on_unrun,
+        outcomes=outcomes, declared=tuple(declared_profiles),
+        refuses_on_unrun=refuses_on_unrun,
     )
 
 
@@ -258,8 +316,13 @@ def re_derive(premise: Premise, *, cwd: str | Path = ".") -> PremiseOutcome:
     except Exception as exc:
         return PremiseOutcome(premise, None, detail=f"{type(exc).__name__}: {exc}")
     observed = (result.stdout or "").strip()
+    # Compared EXACTLY, not as a substring. `"10" in "100"` is true, so a
+    # measurement that drifted from ten to a hundred reported as still
+    # reproducing and the ruling resting on it stood. Found by an independent
+    # auditor — and it is the same naive-substring defect this pack reproduced
+    # and repaired in its own term scanner, made again one release later.
     return PremiseOutcome(
-        premise, premise.measured.strip() in observed, observed=observed[:200])
+        premise, premise.measured.strip() == observed, observed=observed[:200])
 
 
 def close_gate(
@@ -278,7 +341,7 @@ def _cli(argv: list[str]) -> int:
 
     Usage: ``close_attestation.py CAPABILITY --project PATH --head REV
                                   --tree-digest DIGEST
-                                  [--passed PROFILE ...] [--failed PROFILE ...]
+                                  [--result PROFILE=STATUS ...]
                                   [--incomplete PROFILE ...]``
 
     Every profile the contract declares appears, whether or not a result was
@@ -294,9 +357,15 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--project", required=True)
     parser.add_argument("--head", required=True)
     parser.add_argument("--tree-digest", required=True)
-    parser.add_argument("--passed", action="append", default=[], metavar="PROFILE")
-    parser.add_argument("--failed", action="append", default=[], metavar="PROFILE")
-    parser.add_argument("--incomplete", action="append", default=[], metavar="PROFILE")
+    # The STATE IS DERIVED from the recorded exit status, never asserted. A
+    # `--passed PROFILE` flag let a caller record a pass with no number behind
+    # it, which is the reinterpretation `evidence_index` already makes
+    # unrepresentable: *`passed` is a derived property of the recorded exit
+    # status, not a field anybody can set.*
+    parser.add_argument("--result", action="append", default=[], metavar="PROFILE=STATUS",
+                        help="a profile and the exit status its checker actually returned")
+    parser.add_argument("--incomplete", action="append", default=[], metavar="PROFILE",
+                        help="a profile whose run did not finish: neither a pass nor a failure")
     args = parser.parse_args(argv)
 
     from project_contract import ContractError, ProjectContract
@@ -309,11 +378,21 @@ def _cli(argv: list[str]) -> int:
 
     profiles = list((contract.raw.get("validation_profiles") or {}))
     results: dict[str, ProfileOutcome] = {}
-    for names, state in ((args.passed, ProfileState.PASSED),
-                         (args.failed, ProfileState.FAILED),
-                         (args.incomplete, ProfileState.INCOMPLETE)):
-        for name in names:
-            results[name] = ProfileOutcome(profile=name, state=state)
+    for entry in args.result:
+        name, _, raw = entry.partition("=")
+        try:
+            status = int(raw)
+        except ValueError:
+            print(f"REFUSED --result takes PROFILE=STATUS; {entry!r} carries no exit status, and "
+                  "a pass with no number behind it is an assertion rather than a reading")
+            return 2
+        results[name] = ProfileOutcome(
+            profile=name,
+            state=ProfileState.PASSED if status == 0 else ProfileState.FAILED,
+            exit_status=status,
+        )
+    for name in args.incomplete:
+        results[name] = ProfileOutcome(profile=name, state=ProfileState.INCOMPLETE)
 
     try:
         attestation = attest(

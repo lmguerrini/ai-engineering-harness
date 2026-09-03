@@ -107,8 +107,16 @@ class Occurrence:
     location: str = "blob"
 
     @property
-    def key(self) -> tuple[str, str, str]:
-        return (self.finding, self.object_sha, self.path)
+    def key(self) -> tuple[str, str, str, str]:
+        """Finding, object, path AND location.
+
+        `location` was missing, so the same term found in a path and in that
+        path's blob shared one key and one adjudication covered both — the blob
+        occurrence could be genuine and was silently treated as judged. Found by
+        a cross-vendor auditor. Two places are two occurrences, which is the
+        rule this whole stage exists to enforce.
+        """
+        return (self.finding, self.object_sha, self.path, self.location)
 
     def __str__(self) -> str:
         return f"{self.finding} in {self.location} {self.path or self.object_sha[:12]} ({self.object_sha[:12]})"
@@ -118,7 +126,7 @@ class Occurrence:
 class Adjudication:
     """A human's reading of one occurrence, with the reason."""
 
-    occurrence_key: tuple[str, str, str]
+    occurrence_key: tuple[str, str, str, str]
     classification: str
     because: str
 
@@ -244,7 +252,7 @@ def scan_complete_history(
 
 
 def remediation_list(
-    report: HistoryReport, adjudications: dict[tuple[str, str, str], Adjudication]
+    report: HistoryReport, adjudications: dict[tuple[str, str, str, str], Adjudication]
 ) -> list[Occurrence]:
     """The occurrences a human judged genuine, or a refusal.
 
@@ -275,7 +283,7 @@ def remediation_list(
 
 
 def by_finding(
-    report: HistoryReport, adjudications: dict[tuple[str, str, str], Adjudication]
+    report: HistoryReport, adjudications: dict[tuple[str, str, str, str], Adjudication]
 ) -> dict[str, dict[str, int]]:
     """How each finding was classified across its occurrences.
 
@@ -298,7 +306,7 @@ def by_finding(
 
 
 def unadjudicated(
-    report: HistoryReport, adjudications: dict[tuple[str, str, str], Adjudication]
+    report: HistoryReport, adjudications: dict[tuple[str, str, str, str], Adjudication]
 ) -> list[Occurrence]:
     """What still needs a person, so the stage can be worked through."""
     return [

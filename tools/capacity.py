@@ -53,6 +53,7 @@ learn anything from either, so the outcome vocabulary keeps them separate and
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -121,7 +122,17 @@ class Verdict:
 
 class DispatchOutcome:
     """What became of a dispatch. Four answers, and the first two are the ones
-    a two-valued record conflates."""
+    a two-valued record conflates.
+
+    **Produced, not merely enumerated.** An auditor observed that nothing in the
+    release wrote or read any of these values and that the only test restated
+    the class definition — *an assertion that would pass unchanged if the
+    mechanism it names were deleted, because there was no mechanism.* So
+    `Decision.outcome` derives one: a refusal is `NOT_DISPATCHED`, and a
+    permitted dispatch is `IN_FLIGHT` until a caller records what became of it.
+    The two the record must never conflate are then produced by different
+    parties at different times, which is the distinction they exist for.
+    """
 
     NOT_DISPATCHED = "NOT_DISPATCHED"
     DISPATCHED_AND_LOST = "DISPATCHED_AND_LOST"
@@ -135,12 +146,27 @@ def _quantity(value: object, *, field: str) -> float | str:
     """A non-negative number, or `UNKNOWN`. Nothing in between."""
     if value == UNKNOWN or value is None:
         return UNKNOWN
-    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise IntegrityError(
             f"{field} is a non-negative quantity or UNKNOWN; a guess dressed as a number is the "
             "thing this module exists not to produce",
             found=repr(value),
         )
+    # Checked BEFORE the sign, because every comparison against a NaN is False:
+    # `NaN < 0` is False, so a NaN passed the sign check, and then
+    # `remaining - cost < reserve` was False too and the gate DISPATCHED an
+    # unmeasurable pool. Found by a cross-vendor auditor. `gitread` already
+    # refuses a non-finite timeout for exactly this reason and the rule was not
+    # carried across.
+    if not math.isfinite(value):
+        raise IntegrityError(
+            f"{field} is not a finite number, and every comparison against it is false — so it "
+            "would pass every guard below rather than fail one. UNKNOWN is how this module says "
+            "it does not know",
+            found=repr(value),
+        )
+    if value < 0:
+        raise IntegrityError(f"{field} is a non-negative quantity or UNKNOWN", found=repr(value))
     return float(value)
 
 
@@ -277,9 +303,21 @@ class Decision:
     def may_dispatch(self) -> bool:
         return self.verdict in (Verdict.DISPATCH, Verdict.DISPATCH_SERIALLY)
 
+    @property
+    def outcome(self) -> str:
+        """The outcome this decision produces, before anything runs.
+
+        A refusal is `NOT_DISPATCHED` and nothing else can make it one later; a
+        permitted dispatch is `IN_FLIGHT` until whoever ran it records
+        `DISPATCHED_AND_CONSUMED` or `DISPATCHED_AND_LOST`. Three of eight
+        dispatches were the second, and a record that cannot tell *not
+        dispatched* from *dispatched and lost* cannot learn from either.
+        """
+        return DispatchOutcome.IN_FLIGHT if self.may_dispatch else DispatchOutcome.NOT_DISPATCHED
+
     def render(self) -> str:
         lines = [f"dispatch {self.task_id} on pool {self.pool_id or UNKNOWN}: {self.verdict}",
-                 f"  {self.why}"]
+                 f"  {self.why}", f"  outcome so far: {self.outcome}"]
         if self.unknowns:
             lines.append(f"  not established: {', '.join(self.unknowns)}")
         if self.verdict == Verdict.REFUSE_UNTIL_RESET:

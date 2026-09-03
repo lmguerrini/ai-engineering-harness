@@ -23,10 +23,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import instrument
-from errors import GitRefusal
+from errors import GitRefusal, IntegrityError
 from instrument import BlastRadius
 
 __all__ = [
+    "READ_ONLY_VERBS",
+    "BUNDLE_SUBCOMMANDS",
+    "TRANSPORT_VERBS",
     "DEFAULT_TIMEOUT_SECONDS",
     "ProbeAnswer",
     "probe",
@@ -95,6 +98,50 @@ _NEUTRALISED_CONFIG = {
 }
 
 
+#: Every Git command this module may run, and nothing else.
+#:
+#: `DECISIONS.md` D2 extracted this module precisely to leave the write verbs
+#: behind — *"the discarded remainder is mostly Git write verbs, which a
+#: report-only toolbelt must not carry at all"* — and then `probe` took a verb
+#: as a parameter and put every one of them back. A cross-vendor auditor
+#: created `refs/heads/illicit` through this module's public read API.
+#:
+#: An allowlist rather than a denylist: a denylist has to anticipate every verb
+#: Git will ever add, and the failure mode of missing one is a write. Adding a
+#: verb here is a deliberate act with a reviewer, which is what D2 asked for.
+READ_ONLY_VERBS = frozenset({
+    "bundle",        # list-heads and verify only; both are reads. See BUNDLE_SUBCOMMANDS.
+    "cat-file",
+    "check-ignore",
+    "config",        # `--get`-shaped reads; a write needs a value argument this module never passes
+    "diff",
+    "diff-index",
+    "diff-tree",
+    "for-each-ref",
+    "log",
+    "ls-files",
+    "ls-remote",
+    "ls-tree",
+    "merge-base",
+    "rev-list",
+    "rev-parse",
+    "show",
+    "show-ref",
+    "status",
+    "verify-pack",
+})
+
+#: `git bundle` has a write subcommand (`create`) and two read ones. The verb
+#: alone is therefore not enough to decide, so the subcommand is checked too.
+BUNDLE_SUBCOMMANDS = frozenset({"list-heads", "verify", "unbundle-dry-run"})
+
+#: Verbs that may cross a network boundary, and the only ones for which
+#: `allow_transports` means anything. `archive --remote` is a second network
+#: read and was reachable through the generic API with `ssh` enabled — found by
+#: a cross-vendor auditor. The scoped exception exists for the publication
+#: postcondition, and it is scoped to the verb that performs it.
+TRANSPORT_VERBS = frozenset({"ls-remote"})
+
 #: Transports a caller may ask for, one operation at a time. Named rather than
 #: free-form: `protocol.<anything>.allow` would let a caller re-enable a
 #: transport nobody reviewed by spelling it, which is the widening this exists
@@ -136,7 +183,7 @@ def _config_environment(allow_transports: tuple[str, ...] = ()) -> dict[str, str
     #: already stripped and the global and system files are `/dev/null`.
     for transport in allow_transports:
         if transport not in ALLOWABLE_TRANSPORTS:
-            raise GitRefusal(
+            raise IntegrityError(
                 "that transport is not one this module will enable for an operation",
                 transport=transport, allowable=", ".join(ALLOWABLE_TRANSPORTS),
             )
@@ -213,6 +260,35 @@ def _run(
         # subprocess and escapes as an OverflowError, which is neither a named
         # refusal nor recognisable as one.
         raise GitRefusal("git timeout must be a finite number of seconds", timeout=repr(timeout))
+    verb = arguments[0] if arguments else ""
+    # Raised as an IntegrityError rather than a GitRefusal, deliberately.
+    # `probe` converts a GitRefusal into an answer-shaped result — that is its
+    # whole job — so raising one here would turn "this module will not run a
+    # write verb" into an ordinary negative the caller reads past.
+    if verb not in READ_ONLY_VERBS:
+        raise IntegrityError(
+            "this module runs read-only Git commands only, and that verb is not one of them. "
+            "It exists because the layer it was extracted from carried write verbs and a "
+            "report-only toolbelt must not (DECISIONS.md D2)",
+            verb=verb or "(none)",
+            allowed=", ".join(sorted(READ_ONLY_VERBS)),
+        )
+    if verb == "bundle":
+        subcommand = arguments[1] if len(arguments) > 1 else ""
+        if subcommand not in BUNDLE_SUBCOMMANDS:
+            raise IntegrityError(
+                "`git bundle` has a write subcommand and this module may run only its reads",
+                subcommand=subcommand or "(none)",
+                allowed=", ".join(sorted(BUNDLE_SUBCOMMANDS)),
+            )
+    if allow_transports and verb not in TRANSPORT_VERBS:
+        raise IntegrityError(
+            "a transport is enabled for the one operation that must cross a boundary, and this "
+            "verb is not it. Enabling a protocol for a verb the exception was not scoped to is "
+            "a second network read nobody reviewed",
+            verb=verb, transports=", ".join(allow_transports),
+            scoped_to=", ".join(sorted(TRANSPORT_VERBS)),
+        )
     command = ("git", *arguments)
     environment = _environment(env_overlay, allow_transports)
     # In text mode, decode with `surrogateescape`. A path is a byte string on

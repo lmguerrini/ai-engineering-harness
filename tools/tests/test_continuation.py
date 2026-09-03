@@ -26,24 +26,29 @@ def _record(**overrides):
     return ContinuationRecord(**fields)
 
 
-def _spawn_and_reap(tmp_path):
-    """A real detached process that exits, and the exit-status file it leaves.
+def _declare_wait_then_finish(tmp_path, job_id="regen", name="exit-status"):
+    """Declare the wait FIRST, then let a real process create the sentinel.
 
-    Reaped here so the test does not depend on the parent's zombie handling,
-    which would make the process appear alive on some platforms and turn a
-    correct observation into a flake.
+    The order is the fixture. A wait declared against a path that already exists
+    has a completion condition that was satisfied before the job started, which
+    is now refused at construction — and every fixture here originally built the
+    wait after reaping the process, so they were all testing a shape the module
+    should never see. Found by a cross-vendor auditor pointing a wait at
+    `/dev/null`.
     """
-    sentinel = tmp_path / "exit-status"
+    sentinel = tmp_path / name
+    wait = Wait.declare(job_id=job_id, kind=WaitKind.EXIT_FILE, path=str(sentinel),
+                        expects="the regenerated records, in the output root")
     process = subprocess.Popen([
         sys.executable, "-c",
-        f"import sys, pathlib; pathlib.Path({str(sentinel)!r}).write_text('0')",
+        f"import pathlib; pathlib.Path({str(sentinel)!r}).write_text('0')",
     ])
     process.wait()
     for _ in range(200):
         if sentinel.exists():
             break
         time.sleep(0.01)
-    return process.pid, sentinel
+    return wait, sentinel
 
 
 # --- the decisive fixture ---------------------------------------------------------
@@ -54,11 +59,8 @@ def test_a_finished_job_advances_the_state_with_nobody_acting(tmp_path):
     result — and then the job exits and nothing happens on the coordinator's
     side. The state is derived, so it has already moved by the time anybody
     looks, which is the whole difference from a sentence."""
-    pid, sentinel = _spawn_and_reap(tmp_path)
-    record = _record(waits=(
-        Wait(job_id="regen", kind=WaitKind.EXIT_FILE, path=str(sentinel),
-             expects="the regenerated records, in the output root"),
-    ))
+    wait, _sentinel = _declare_wait_then_finish(tmp_path)
+    record = _record(waits=(wait,))
 
     report = continuation.derive(record, relative_to=tmp_path)
 
@@ -183,12 +185,35 @@ def test_an_output_root_that_cannot_be_classified_needs_recovery_not_patience(tm
 
 
 def test_an_unreadable_exit_file_is_unobservable_rather_than_finished(tmp_path):
+    """Declared against a path that does not exist, and what appears there is
+    not a status anyone can read."""
     directory = tmp_path / "status-is-a-directory"
-    directory.mkdir()
     record = _record(waits=(
         Wait(job_id="j", kind=WaitKind.EXIT_FILE, path=str(directory), expects="a status"),
     ))
+    directory.mkdir()
     assert continuation.derive(record, relative_to=tmp_path).state == State.RECOVERY_REQUIRED
+
+
+def test_a_wait_whose_condition_is_already_satisfied_is_refused_at_declaration(tmp_path):
+    """A completion condition that holds before the job starts can never mean
+    the job finished. An auditor declared a wait on `/dev/null` and derived a
+    completed result for a worker that never existed."""
+    existing = tmp_path / "already-here"
+    existing.write_text("0")
+    for kind in (WaitKind.EXIT_FILE, WaitKind.PATH_EXISTS):
+        with pytest.raises(PreconditionError) as caught:
+            Wait.declare(job_id="j", kind=kind, path=str(existing), expects="a result")
+        assert "already satisfied" in caught.value.render()
+
+    with pytest.raises(PreconditionError):
+        Wait.declare(job_id="j", kind=WaitKind.EXIT_FILE, path="/dev/null", expects="a result")
+
+    # And reconstruction is a different act: a record saved before the job
+    # finished must reload after it finished. A check in the constructor made
+    # that record unloadable, which is worse than the defect it closed.
+    assert Wait(job_id="j", kind=WaitKind.EXIT_FILE, path=str(existing),
+                expects="a result").path == str(existing)
 
 
 # --- blocked, which is neither progress nor a defect ------------------------------------
@@ -232,11 +257,11 @@ def test_a_human_wait_is_reported_as_a_human_block_not_as_an_unobservable_job():
 def test_an_unconsumed_completion_is_not_buried_under_another_running_job(tmp_path):
     """The edge four of five recurrences were. Reporting only "still waiting on
     something" is how it stayed invisible."""
-    _pid, sentinel = _spawn_and_reap(tmp_path)
+    done, _sentinel = _declare_wait_then_finish(tmp_path, job_id="done")
     running = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     try:
         record = _record(waits=(
-            Wait(job_id="done", kind=WaitKind.EXIT_FILE, path=str(sentinel), expects="a result"),
+            done,
             Wait(job_id="still-going", kind=WaitKind.PROCESS, pid=running.pid, expects="another"),
         ))
         report = continuation.derive(record, relative_to=tmp_path)
@@ -250,11 +275,11 @@ def test_an_unconsumed_completion_is_not_buried_under_another_running_job(tmp_pa
 def test_something_that_cannot_be_established_outranks_everything_else(tmp_path):
     """Acting on an unestablished state is the error class the pack exists to
     refuse, so it is reported before any answer that could be acted on."""
-    _pid, sentinel = _spawn_and_reap(tmp_path)
-    record = _record(waits=(
-        Wait(job_id="done", kind=WaitKind.EXIT_FILE, path=str(sentinel), expects="a result"),
-        Wait(job_id="lost", kind=WaitKind.EXIT_FILE, path=str(tmp_path), expects="another"),
-    ))
+    done, _sentinel = _declare_wait_then_finish(tmp_path, job_id="done")
+    lost = Wait(job_id="lost", kind=WaitKind.EXIT_FILE,
+                path=str(tmp_path / "never-a-file"), expects="another")
+    (tmp_path / "never-a-file").mkdir()
+    record = _record(waits=(done, lost))
     assert continuation.derive(record, relative_to=tmp_path).state == State.RECOVERY_REQUIRED
 
 
@@ -262,11 +287,14 @@ def test_a_consumed_completion_is_superseded_rather_than_reported_again(tmp_path
     """A stale wait left declared after its result was taken up is how a quorum
     of waiters reported RUNNING indefinitely and fired four notifications after
     the job had exited."""
-    _pid, sentinel = _spawn_and_reap(tmp_path)
-    record = _record(waits=(
-        Wait(job_id="done", kind=WaitKind.EXIT_FILE, path=str(sentinel),
-             expects="a result", consumed=True),
-    ))
+    done, _sentinel = _declare_wait_then_finish(tmp_path, job_id="done")
+    # Marked consumed afterwards, the way a coordinator that took the result up
+    # would — by replacing the record's own field, not by re-declaring the wait
+    # against a path that now exists.
+    # Reconstructed, not re-declared: the sentinel exists by now, and that is
+    # exactly the state a saved record is reloaded into.
+    consumed = continuation.Wait(**{**done.as_dict(), "consumed": True})
+    record = _record(waits=(consumed,))
     report = continuation.derive(record, relative_to=tmp_path)
     assert report.superseded == ("done",)
     assert report.state == State.ACTIONABLE_WORK_READY
@@ -316,10 +344,14 @@ def test_the_cli_exit_status_separates_owed_from_blocked_from_unestablished(tmp_
     assert continuation._cli([str(path)]) == 1
     assert State.SILENT_IDLE in capsys.readouterr().out
 
-    continuation.save(_record(waits=(
-        Wait(job_id="j", kind=WaitKind.EXIT_FILE, path=str(tmp_path), expects="a status"),
-    )), path)
-    assert continuation._cli([str(path)]) == 2
+    unobservable = Wait(job_id="j", kind=WaitKind.EXIT_FILE,
+                        path=str(tmp_path / "becomes-a-directory"), expects="a status")
+    (tmp_path / "becomes-a-directory").mkdir()
+    continuation.save(_record(waits=(unobservable,)), path)
+    assert continuation._cli([str(path)]) == 2, (
+        "a record LOADED from disk describes a wait declared earlier; reloading it must not "
+        "re-apply the declaration-time check to a world that has since moved"
+    )
 
     continuation.save(_record(blockers=(
         Blocker(kind="human", detail="the freeze decision", hitl_row=2),

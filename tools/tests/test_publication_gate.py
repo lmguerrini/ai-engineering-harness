@@ -546,7 +546,11 @@ def test_a_boolean_in_the_containment_field_is_refused():
 import subprocess as _subprocess
 
 import gitread as _gitread
-from errors import GitRefusal as _GitRefusal, PreconditionError as _PreconditionError
+from errors import (
+    GitRefusal as _GitRefusal,
+    IntegrityError as _IntegrityError,
+    PreconditionError as _PreconditionError,
+)
 
 
 def _config_pairs(environment):
@@ -580,7 +584,7 @@ def test_the_widening_names_transports_beside_the_standing_refusal():
 def test_a_transport_this_module_will_not_enable_is_refused_by_name():
     """Free-form protocol names would let a caller re-enable an unreviewed
     transport by spelling it."""
-    with pytest.raises(_GitRefusal) as caught:
+    with pytest.raises(_IntegrityError) as caught:
         _gitread._environment(None, ("ftp",))
     assert "ssh" in caught.value.render() and "ftp" in caught.value.render()
 

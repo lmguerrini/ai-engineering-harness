@@ -418,3 +418,59 @@ def test_a_verified_bundle_anchors_only_the_commits_it_actually_carries(repo, tm
     assert states[unrelated] == CitationState.UNREACHABLE, (
         "a verified bundle anchored a commit it does not carry"
     )
+
+
+# --- the verdict must not go green when the loss becomes irreversible ----------
+#
+# The worst defect this module had, found by an independent auditor who ran the
+# prune: an orphaned commit reported UNREACHABLE and blocked, and once
+# `gc --prune=now` destroyed it the same command over the same record reported
+# `every cited commit is reachable or anchored`. The tool alarmed only while the
+# citation was still recoverable.
+
+
+def test_a_destroyed_citation_blocks_rather_than_reading_as_prose(repo):
+    directory, shas = repo
+    _orphan_the_middle_commit(directory, shas)
+    record = {"CLOSURE.md": f"the second capability closed at {shas[1]}"}
+
+    before = history_anchor.check_reachability(directory, record)
+    assert before.blocking and before.blocking[0].state == CitationState.UNREACHABLE
+
+    _git(directory, "reflog", "expire", "--expire=now", "--all")
+    _git(directory, "gc", "--prune=now", "--quiet")
+
+    after = history_anchor.check_reachability(directory, record)
+    assert after.blocking, "the verdict went green exactly when the loss became irreversible"
+    assert after.blocking[0].state == CitationState.DESTROYED
+    assert "ARE GONE FROM THIS REPOSITORY" in after.render()
+    assert "every cited commit is reachable" not in after.render()
+
+
+def test_a_full_length_token_the_repository_never_had_is_destroyed_not_prose(repo):
+    """A full-length token the repository never had: nobody writes forty
+    hexadecimal characters into a closure record by accident."""
+    directory, _shas = repo
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": "closed at " + "a1b2c3d4" * 5})
+    assert report.blocking and report.blocking[0].state == CitationState.DESTROYED
+
+
+def test_a_short_hexadecimal_word_is_still_prose(repo):
+    """The other side. A checker that called every unrecognised seven-character
+    word a lost commit produces a list nobody can act on."""
+    directory, _shas = repo
+    report = history_anchor.check_reachability(
+        directory, {"NOTES.md": "the deadbeef case and the c0ffee00 case"})
+    assert report.blocking == []
+    assert {c.state for c in report.citations} == {CitationState.NOT_A_COMMIT}
+
+
+def test_the_cli_exits_non_zero_on_a_destroyed_citation(repo, capsys):
+    directory, shas = repo
+    _orphan_the_middle_commit(directory, shas)
+    _git(directory, "reflog", "expire", "--expire=now", "--all")
+    _git(directory, "gc", "--prune=now", "--quiet")
+    record = directory / "CLOSURE.md"
+    record.write_text(f"closed at {shas[1]}\n")
+    assert history_anchor._cli([str(directory), "--record", str(record)]) == 1

@@ -56,8 +56,10 @@ generated tree is refused, and a root another task has claimed is refused.
 
 **This module does not know whether the chunk size is right.** That number comes
 from the provider's output limit and the per-record cost, both adapter facts
-that change. It enforces that a bound was declared and that what landed honours
-it; it has no opinion on the value.
+that change. It requires that a bound be declared, refuses a write that exceeds
+it, and classifies a root holding an over-bound chunk as `UNKNOWN` — because a
+producer that ignored the contract is a producer whose output this cannot vouch
+for. It has no opinion on the value itself.
 """
 
 from __future__ import annotations
@@ -352,11 +354,17 @@ class RecoveryReport:
     #: in a task-owned root is either a second writer or a scheme the recovery
     #: path does not understand, and both are `UNKNOWN`.
     undescribed: tuple[str, ...] = ()
-    #: Chunks that landed over the declared bound. Evidence the bound was not
-    #: honoured, which does not by itself invalidate the bytes.
+    #: Chunks that landed over the declared bound. The producer did not honour
+    #: the contract this classification reads, so whether those bytes are whole
+    #: is not decidable from here — which makes it `UNKNOWN` rather than a note
+    #: beside a clean verdict. An auditor obtained
+    #: `COMPLETED_WITH_DURABLE_OUTPUT` over three chunks fifty times the bound.
     over_bound: tuple[int, ...] = ()
-    #: What the completion marker claimed, if one was present.
+    #: What the completion marker claimed, if one was present and readable.
     claimed_count: int | None = None
+    #: A completion marker that exists and cannot be read. Distinct from absent,
+    #: because a claim nobody can check is not the same as no claim.
+    marker_unreadable: bool = False
     why: str = ""
 
     @property
@@ -439,19 +447,24 @@ def classify(contract: OutputContract) -> RecoveryReport:
             undescribed.append(relative)
 
     claimed: int | None = None
+    marker_unreadable = False
     marker = root / COMPLETION_MARKER
     if marker.is_file():
         try:
             claimed = int(json.loads(marker.read_text(encoding="utf-8"))["chunk_count"])
         except (OSError, ValueError, KeyError, TypeError):
-            claimed = -1  # present and unreadable: a claim nobody can check
+            # Present and unreadable. Recorded as its own fact rather than as a
+            # negative count in a field labelled `chunk_count`: a sentinel in a
+            # field a reader will treat as a number is the shape this pack
+            # refuses everywhere else.
+            claimed, marker_unreadable = None, True
 
     present, gaps = _contiguous(complete_indices)
     common = dict(
         task_id=contract.task_id, complete=present, gaps=gaps,
         partial=tuple(sorted(partial_indices)), products=tuple(products_present),
         undescribed=tuple(undescribed), over_bound=tuple(sorted(over_bound)),
-        claimed_count=None if claimed is None else claimed,
+        claimed_count=claimed, marker_unreadable=marker_unreadable,
     )
 
     # --- UNKNOWN, and every reason for it is specific -----------------------
@@ -466,11 +479,21 @@ def classify(contract: OutputContract) -> RecoveryReport:
     if len(common["partial"]) > 1:
         return RecoveryReport(**common, state=RecoveryState.UNKNOWN, why=(
             "more than one chunk is in progress, which means more than one producer wrote here"))
+    if common["partial"] and (claimed is not None or marker_unreadable):
+        return RecoveryReport(**common, state=RecoveryState.UNKNOWN, why=(
+            "a completion marker is present and a chunk is still in progress; the task's own "
+            "claim that it finished and the bytes on disk disagree, and consuming this would "
+            "consume a sequence with a hole in it"))
+    if common["over_bound"]:
+        return RecoveryReport(**common, state=RecoveryState.UNKNOWN, why=(
+            f"chunk(s) {', '.join(str(i) for i in common['over_bound'])} exceed the bound the "
+            "task declared, so the producer did not honour the contract this classification "
+            "reads; whether those bytes are whole is not decidable from here"))
+    if marker_unreadable:
+        return RecoveryReport(**common, state=RecoveryState.UNKNOWN, why=(
+            "a completion marker is present and unreadable, so the task's own claim about "
+            "how much it wrote cannot be checked"))
     if claimed is not None:
-        if claimed < 0:
-            return RecoveryReport(**common, state=RecoveryState.UNKNOWN, why=(
-                "a completion marker is present and unreadable, so the task's own claim about "
-                "how much it wrote cannot be checked"))
         if claimed != len(present):
             return RecoveryReport(**common, state=RecoveryState.UNKNOWN, why=(
                 f"the completion marker claims {claimed} chunk(s) and {len(present)} are on "

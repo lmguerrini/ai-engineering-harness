@@ -183,6 +183,36 @@ class Wait:
                 job_id=self.job_id, kind=self.kind, missing=", ".join(missing),
             )
 
+    @classmethod
+    def declare(cls, **fields) -> "Wait":
+        """Build a wait AT THE MOMENT IT IS DECLARED, with the extra check that
+        only makes sense then.
+
+        A path that already exists when a wait is declared is a completion
+        condition that was satisfied before the job started — an auditor pointed
+        one at `/dev/null` and derived a finished result for a worker that never
+        existed. The sentinel a job creates on exit does not exist yet, by
+        definition.
+
+        **This is not a constructor invariant, and the difference is the whole
+        point.** A record saved before a job finished is reconstructed after it
+        finished, when the path *does* exist; a check in `__post_init__` made
+        that record unloadable, which is a worse failure than the one it fixed.
+        Declaration and reconstruction are different acts, so they have
+        different entry points: `load` builds; only a caller declaring a new
+        wait calls this.
+        """
+        wait = cls(**fields)
+        if wait.kind in (WaitKind.EXIT_FILE, WaitKind.PATH_EXISTS) and wait.path:
+            if Path(wait.path).exists():
+                raise PreconditionError(
+                    "this wait's completion condition is already satisfied at the moment it is "
+                    "declared, so it can never mean that the job finished. A sentinel a job "
+                    "creates on exit does not exist yet",
+                    job_id=wait.job_id, path=wait.path,
+                )
+        return wait
+
     def as_dict(self) -> dict:
         return {key: value for key, value in self.__dict__.items() if value is not None}
 

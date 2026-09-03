@@ -995,14 +995,46 @@ def test_the_held_prose_figure_the_gate_record_states_is_the_measured_one():
     )
 
 
+def test_the_held_prose_guard_refuses_rather_than_passing_when_it_cannot_measure():
+    """The guard above must fail on a manifest with no adapter figure, rather
+    than treating the absence as zero and skipping its own assertion."""
+    import re as _re
+
+    for wording in ("held prose 9999 lines against a ~2000 target (400% over)", ""):
+        found = _re.search(r"(\d+)\D{0,80}?installed adapters", wording,
+                           _re.IGNORECASE | _re.DOTALL)
+        assert found is None, "a disclosure with no adapter figure must not satisfy the pattern"
+
+    real = ("held prose 2576 lines against a ~2000 target (28.8% over ...). the 1023 that put "
+            "the total over are the two installed adapters, outside this envelope")
+    found = _re.search(r"(\d+)\D{0,80}?installed adapters", real, _re.IGNORECASE | _re.DOTALL)
+    assert found and int(found.group(1)) == 1023, (
+        "the pattern must read the figure out of the wording the manifest actually uses"
+    )
+
+
 def test_the_manifest_discloses_the_held_prose_breach_while_there_is_one(manifest):
     measured = _held_prose_lines()
     limitations = " ".join(manifest.get("known_limitations") or [])
     # The adapter half is read from the manifest's own disclosure rather than
     # guessed at — it was the one number in this file that was neither measured
     # nor bound.
-    declared_adapters = re.search(r"(\d+) of\s+those lines are the two installed adapters", limitations)
-    adapters = int(declared_adapters.group(1)) if declared_adapters else 0
+    # REFUSED, never defaulted. This regex was written against 2.2.0's wording;
+    # 2.3.0 rewrote the sentence and the match became `None`, `adapters` became
+    # `0`, the `if` below became unreachable, and the guard passed vacuously —
+    # it would have passed with the entire disclosure deleted, which is the
+    # exact regression its sibling records having happened once. Found by an
+    # independent auditor. A fallback to zero in a guard is the guard's own
+    # off switch.
+    declared_adapters = re.search(
+        r"(\d+)\D{0,80}?installed adapters", limitations, re.IGNORECASE | re.DOTALL)
+    assert declared_adapters, (
+        "the manifest states no adapter line count, so this guard cannot compute the total it "
+        "exists to check. It refuses rather than assuming zero: assuming zero is how it stopped "
+        "binding the last time the sentence was reworded"
+    )
+    adapters = int(declared_adapters.group(1))
+    assert adapters > 0, "an adapter count of zero would make the total unmeasurable"
     if measured + adapters > 2000:
         assert "held prose" in limitations, (
             "the release is over the held-prose target and the manifest does not say so"

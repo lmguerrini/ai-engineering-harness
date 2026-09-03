@@ -263,3 +263,32 @@ def test_the_cli_exit_status_separates_stalled_from_unknown(capsys):
     running = progress._cli(["r", "--horizon", "10", "--earlier", "0", "log_bytes=1",
                              "cpu_seconds=1", "--later", "100", "log_bytes=1", "cpu_seconds=9"])
     assert running == 0 and ProgressState.RUNNING in capsys.readouterr().out
+
+
+# --- a reading that is not a reading -------------------------------------------
+
+
+def test_a_non_finite_signal_is_refused_rather_than_producing_a_stall_with_no_flat_signals():
+    """Two NaN readings produced `STALLED` with **zero** flat signals named in
+    its own report — a verdict with nothing behind it. Found by a cross-vendor
+    auditor, and the same root cause as the capacity gate's."""
+    import math
+
+    for bad in (math.nan, math.inf, -math.inf):
+        with pytest.raises(IntegrityError) as caught:
+            Sample(0, {"log_bytes": bad})
+        assert "neither flat nor advancing" in caught.value.render()
+
+
+def test_a_monotonic_signal_that_went_backwards_is_a_broken_instrument_not_a_quiet_run():
+    """Every signal here is documented monotonic. Folding a decrease into
+    "flat" tells a reader the run was quiet when the truth is that the
+    measurement cannot be trusted."""
+    report = progress.classify(
+        "rotated", _sample(0, log_bytes=22000, cpu_seconds=4.0),
+        _sample(9999, log_bytes=12, cpu_seconds=4.0), horizon_seconds=1,
+    )
+    assert report.state == ProgressState.UNKNOWN
+    assert report.regressed == ("log_bytes",)
+    assert "log_bytes" not in report.flat
+    assert "went backwards" in report.render()

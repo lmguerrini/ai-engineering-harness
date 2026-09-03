@@ -9,6 +9,38 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Repairs from closure audit round 1
+
+Two blind auditors, one cross-vendor on an independent pool, both NOT READY,
+findings almost disjoint. Fifteen repairs, every finding reproduced first.
+
+- **The closure-anchor check went green exactly when the loss became
+  irreversible.** A destroyed forty-character citation fell into the state
+  reserved for prose. It is now `DESTROYED`, blocks, and has its own headline.
+- **The read-only Git layer could write a ref.** `probe` took the verb as a
+  parameter, which put back every write verb `DECISIONS.md` D2 extracted the
+  module to leave behind. Repaired with an allowlist, a subcommand check for
+  `git bundle`, and a transport that may be enabled only for the one verb the
+  postcondition is scoped to.
+- **A non-finite number passed every guard rather than failing one**, in the
+  capacity gate and the progress classifier. Finiteness is now checked before
+  the sign.
+- **Four guarantees held in a generator and failed at a boundary**: an
+  occurrence key omitting where it was found, an exported attestation
+  constructor carrying no declared set, `PASSED` accepted with no exit status,
+  and a premise compared by substring so `10` still reproduced as `100`.
+- **A wait whose completion condition was satisfied before the job started.**
+  Declaration and reconstruction are now different entry points, because the
+  first repair made a saved record unloadable.
+- **A completion marker beside a chunk still in progress**, and an over-bound
+  chunk under a clean headline. Both `UNKNOWN`.
+- **A guard that could not fail**: the held-prose check fell back to zero when
+  its regex stopped matching, and would have passed with the disclosure deleted.
+- **A vocabulary with no producer**: a decision now produces an outcome.
+- **The public-safety disclosure was inherited verbatim and unfalsifiable**, and
+  is re-measured with this release's own tool: 2090 unadjudicated occurrences
+  over the complete reachable history at the strict tier, not ten in four files.
+
 ### Qualification
 
 - **`docs/RP2.3-RELEASE-PACKET.md`** — what a returning release authority reads
