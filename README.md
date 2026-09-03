@@ -144,6 +144,7 @@ Derived from the tracked tree, not maintained by hand
         ├── RP2.3-ARCHITECTURE.md   what the layering picture gains, and why it is not an authority
         ├── RP2.3-CAPABILITY-MAP.md the plan, and every reproduction behind it
         ├── RP2.3-RELEASE-PACKET.md what a returning release authority reads first
+        ├── RP2.3-FAILURE-MODE-CLOSURE.md every verified failure mechanism, and its disposition
         ├── ROUTING-TABLE-HISTORY.md two grades that were wrong, moved out of policy
         ├── RESOURCE-OBSERVATION-SETUP.md the opt-in procedure, pulled on demand
         ├── RP2.2-GATE.md           the previous release's gate

@@ -9,6 +9,32 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Closing ACTIONABLE_WORK + SILENT_IDLE
+
+The release produced another instance of the failure class it was closing — a
+dispatched audit held this session for **five hours and thirty-nine minutes** on
+a process with 0.34 seconds of processor time and no output — and the incident is
+the evidence.
+
+- **A wait declares how long the coordinator will remain in it**, and an
+  observable wait without a deadline is unwritable. Past it the state is
+  `RECOVERY_REQUIRED` whatever the process is doing: a live process satisfies a
+  liveness question forever, so the deadline is what ends the wait.
+- **The stall classifier measures the horizon against how long the run has been
+  flat**, not the gap between two samples. Sampled 90s apart it had reported
+  `RUNNING` for a run dead five hours — a caller who polls could never have seen
+  a stall.
+- **A wait names the obligation it discharges.** Two live waits on one
+  obligation are refused rather than raced; retiring frees it, and retiring is
+  not deleting.
+- **A blocker says what it blocks.** An unscoped one still blocks everything;
+  one scoped to a stalled process no longer silences unrelated authorised work.
+- **`progress.waiter_command`** watches a registered process number, because the
+  reason a coordinator hand-writes a waiter is that the pack shipped none — and
+  the hand-written one matched its own pattern and could never terminate.
+- **`docs/RP2.3-FAILURE-MODE-CLOSURE.md`**: every verified in-scope failure
+  mechanism with an explicit disposition, and the five residues that remain.
+
 ### Repairs from closure audit round 1
 
 Two blind auditors, one cross-vendor on an independent pool, both NOT READY,
