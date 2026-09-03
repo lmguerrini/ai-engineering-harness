@@ -9,9 +9,14 @@ not rewrite it for reassurance — prove closure using its existing oracle.* Eve
 row below was executed. No row is asserted.
 
 **A class with no executing oracle is the finding this table is for.** There are
-none, and finding that out took three corrections to the table itself: three
-filters selected nothing and reported green by selecting nothing, which is the
-same vacuous-pass shape this release has now found four times in its own tests.
+none. Finding that out took three corrections to the table itself: three filters
+selected nothing and reported green **by selecting nothing**, which is the same
+vacuous-pass shape this release has now found six times in its own tests. A
+selector that matches no test is a passing command and an empty claim, and the
+run counts every row's tests for exactly that reason.
+
+Re-run in full after the last repair: **39 rows, 39 passing, 0 selecting
+nothing.**
 
 | Recurrence class | Oracle |
 |---|---|
@@ -38,23 +43,24 @@ same vacuous-pass shape this release has now found four times in its own tests.
 | completed-but-not-consumed output | `test_continuation.py -k consum` |
 | gate failure hidden by a pipeline or lost exit code | `test_commit_gate.py` (82) |
 | oracle satisfied for a reason other than its claim | `test_pack_pin.py -k digest`, and the mutation pass |
-| vacuous mutation test / test iterating the mutated constant | `test_gitread.py::test_the_option_that_re_enables_it_is_refused` |
+| vacuous mutation test / test iterating the mutated constant | `test_gitread.py -k re_enables`, plus two mutation passes over 25 guards |
 | self-derived golden, stale verifier | `test_release_integrity.py` (52) |
 | audit evidence about revision A accepted for revision B | `test_close_attestation.py -k tree` |
 | audit report not identifying the revision it read | the brief requires it; rounds 4, 5 and 6 complied |
 | transcribed counts drifting from computable facts | `test_release_integrity.py -k "count or routing"` |
 | substring-based semantic comparison | `test_close_attestation.py -k "exact or premise"` |
-| non-finite values bypassing guards | `test_capacity.py`, `test_progress.py -k "finite or horizon"` |
-| constructor bypassing the loader's validation | `test_history_anchor.py -k shape`, `test_close_attestation.py` |
+| non-finite values bypassing guards | `test_capacity.py`, `test_progress.py -k "finite or horizon or measurable"` — the signals, then the horizon, then the moment: three fields, three rounds |
+| constructor bypassing the loader's validation | `test_history_anchor.py`, `test_close_attestation.py -k "shape or loader or declared"` |
 | project contract / schema drift | `test_project_contract.py` (48) |
 | real-consumer incompatibility | `test_consumer_compatibility.py` (62) |
 | adapter executable drift | `test_adapter_pin.py` (31) |
 | backend / model qualification drift | `test_backend_contract.py` (44) |
 | read-only Git acquiring write authority | `test_gitread.py -k "write or verb or byte_identical"` |
-| read-only Git executing repository-configured programs | `test_gitread.py -k "program or filter or submodule"` |
+| read-only Git executing repository-configured programs | `test_gitread.py -k "program or filter or submodule or proxy or closure"` — five routes, then a check on the shape of the config key |
+| a repository disabling the check that inspects it | `test_gitread.py -k "breaking_its_own or re_enter"` |
 | read-only operation gaining network authority | `test_gitread.py -k "transport or remote"` |
 | scanner skipping unreadable objects | `test_publication_history.py -k "scanned or incomplete"` |
-| shared object/path enumeration incomplete | `test_publication_history.py -k "sharing or alias or exempt"` |
+| shared object/path enumeration incomplete | `test_publication_history.py -k "sharing or alias or exempt or history_too"` |
 | current-tree safety mistaken for complete-history safety | `test_publication_history.py` (28) |
 | publication ceremony leaking into private projects | `test_publication_history.py -k "obligation or profile"` |
 | disclosure broader than reproducible evidence | `test_publication_history.py -k profile` |
