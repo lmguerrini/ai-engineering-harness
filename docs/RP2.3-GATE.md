@@ -1432,3 +1432,22 @@ rewriting a file with identical bytes and a moved mtime leaves it unchanged, and
 one added byte changes it. And the claim *nothing imports the projection* is
 false — its own tests do. The true claim is that no runtime tool module does,
 and it is now the one being made.
+
+## The mutation pass over rounds 3 and 4
+
+Twelve guards added by the last two rounds, each deliberately broken, each
+suite re-run. **Eleven mutants died. One survived, and it was mine.**
+
+The surviving mutant emptied `CODE_ENABLING_OPTIONS` — the list of options
+through which a caller re-enables repository-controlled code execution. The test
+guarding it looped over that same constant, so an empty list meant zero
+iterations and a pass.
+
+**A test that iterates its subject's own configuration tests nothing when the
+configuration is emptied.** It is the third appearance in this release of one
+idea — a check that asks the subject what to check — after the twenty-four verbs
+asserted absent from a list they were never on, and the two digest tautologies.
+The options are named literally now, and the mutant dies.
+
+Worth stating plainly: the survivor was found by running the mutation pass, not
+by writing the test. Every one of these tests was written believing it worked.

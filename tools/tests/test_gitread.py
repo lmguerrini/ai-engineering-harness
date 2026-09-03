@@ -509,11 +509,22 @@ def test_an_attribute_selected_diff_driver_cannot_run_either(tmp_path):
     assert not marker.exists()
 
 
-def test_the_option_that_re_enables_it_is_refused(tmp_path):
-    repo, _ = _repo_that_runs_a_program(tmp_path, "diff.external")
-    for option in gitread.CODE_ENABLING_OPTIONS:
-        with pytest.raises(_IntegrityError):
-            gitread.probe(repo, "diff", option, "HEAD", negative_statuses=())
+@pytest.mark.parametrize("option", ["--ext-diff", "--textconv"])
+def test_the_option_that_re_enables_it_is_refused(tmp_path, option):
+    """The options are NAMED here rather than read from
+    `gitread.CODE_ENABLING_OPTIONS`, and that is the point.
+
+    The first version looped over the constant, so emptying the constant made
+    the loop run zero times and the test pass — it survived that mutant in this
+    release's own mutation pass. **A test that iterates its subject's
+    configuration tests nothing when the configuration is emptied**, which is
+    the same anti-test an auditor had already found twice in this release under
+    a different disguise."""
+    repo, marker = _repo_that_runs_a_program(tmp_path, "diff.external")
+    assert option in gitread.CODE_ENABLING_OPTIONS, "the refusal list still names it"
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "diff", option, "HEAD", negative_statuses=())
+    assert not marker.exists()
 
 
 def test_the_diff_family_still_reads_after_the_hardening(tmp_path):
