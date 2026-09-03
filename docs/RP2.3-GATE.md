@@ -2081,3 +2081,48 @@ renderer are re-asserted over the second one, including hashing the whole tree
 around a render. Content that looks like markup is escaped, because a capability
 name is prose somebody wrote and a page a reader trusts must not be a page that
 record's author controls.
+
+## The final evidence-completeness audit
+
+Six specific searches, each named in advance rather than chosen after looking.
+
+**Duplicated or merged identifiers hiding separate classes.** None duplicated —
+that was the previous check's repair. One row, `M-02`, describes two things in
+one sentence (*routing has no capacity model; "delegate to the worker" is
+false…*), and it is one mechanism stated twice rather than two merged: both
+halves are the same absence, and the oracle for it is the whole capacity module.
+
+**One oracle cited for a property it does not discriminate.** This is the
+finding, and it was large: **51 of 69 rows described their closure in prose and
+named nothing runnable.** The descriptions are accurate and say what the code
+does — which is evidence about the design, not a demonstration that it holds
+today. Every row now names a selector, and all 69 were executed: 69 pass.
+
+Four of the selectors written first **matched no test at all** and reported
+green by selecting nothing. Ninth instance in this release of a check passing
+for a reason it does not state, in the instrument written to find exactly that.
+The run counts each row's tests now.
+
+**`ALREADY_COVERED` rows without executing evidence.** Five rows, five oracles,
+all executed.
+
+**`DEFERRED` rows whose underlying failure can still recur.** One row, `M-23`
+(contract, classification and sandbox gaps), and it stays deferred: it is
+inherited from 2.2.0 with no discriminating oracle demonstrated *here*. It now
+names `test_project_contract.py`, which runs — so the mechanism is not
+uncovered, and the row is honest that the demonstration is inherited rather than
+made in this release.
+
+**Claims inherited from 2.2.0 without current evidence.** Zero remain: every
+inherited row now names a check that runs in this suite.
+
+**Fixes that cover the observed path but not the architectural boundary.** The
+one that matters is recorded at length above: five separate routes by which a
+repository being read could run a program, each closed where the last repair
+could not see it, until the check moved to the *shape* of the config key rather
+than the route. Two more have the same shape and are worth naming as partial:
+the owner-marker question was wrong four times (unread, absent, linked, and the
+chunks beside it), and the non-finite guard was wrong three times (signals, then
+the horizon, then the moment a sample was taken). Each is closed at the boundary
+now; each took more than one attempt to get there, and the pattern is the
+release's most reliable predictor of where the next defect will be.
