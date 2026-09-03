@@ -1504,7 +1504,12 @@ def test_every_non_deferred_mechanism_names_an_oracle():
     for row in _matrix_rows():
         if row[2].strip("* ").startswith("DEFERRED"):
             continue
-        assert "Oracle:" in row[3], f"{row[0]} names no oracle: {row[3][:80]}"
+        # The SAME spelling the selector parser requires. The two guards read
+        # different syntax — this one accepted any `Oracle:` and the parser
+        # required `**Oracle:**` — so a non-bold entry satisfied the presence
+        # check and was silently skipped by the one that actually runs it. Found
+        # by an independent reader building a table with one of each.
+        assert "**Oracle:**" in row[3], f"{row[0]} names no oracle: {row[3][:80]}"
 
 
 def test_every_oracle_the_matrix_names_selects_at_least_one_test():
@@ -1540,7 +1545,18 @@ def test_every_oracle_the_matrix_names_selects_at_least_one_test():
         if files:
             selectors.append((row[0], files, keyword))
 
-    assert len(selectors) > 60, f"only {len(selectors)} oracles parsed out of the matrix"
+    # EVERY ROW THAT NAMES ONE, counted rather than a floor — a floor passes
+    # while rows go unparsed, which is exactly how a non-bold entry hid.
+    #
+    # Compared against the rows that NAME an oracle, not against the non-deferred
+    # rows: both deferred mechanisms name one too, and a deferred mechanism with
+    # a bounded oracle behind it is better than one without. The first version
+    # compared against non-deferred and reported two rows missing that were
+    # present and correct.
+    expected = [r[0] for r in _matrix_rows() if "**Oracle:**" in r[3]]
+    assert len(selectors) == len(expected), (
+        f"{len(expected) - len(selectors)} row(s) name an oracle the parser did not read: "
+        f"{sorted(set(expected) - {s[0] for s in selectors})}")
     command = [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"]
     empty = []
     for mechanism, files, keyword in selectors:

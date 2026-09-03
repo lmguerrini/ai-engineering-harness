@@ -332,7 +332,15 @@ def scan_complete_history(
                     report.skipped.append(f"{path or sha[:12]} exceeds the scan limit")
                     continue
                 text = outgoing_scan._decoded(gitread.object_bytes(repository, sha))
-            except Exception as exc:  # a refusal from the read-only layer
+            except IntegrityError:
+                # THE SAME RULE AS THE MESSAGE PATH, and the repair for that one
+                # did not generalise because it was written for that one. An
+                # object the store cannot produce is a fact about the
+                # REPOSITORY, whether the reader hit it on a commit or on a
+                # blob. An independent reader made the blob half fail and got a
+                # skip.
+                raise
+            except Exception as exc:  # an ordinary refusal from the read-only layer
                 report.skipped.append(f"{path or sha[:12]} could not be read: {exc}")
                 continue
             if text is None:

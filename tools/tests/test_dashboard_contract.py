@@ -171,6 +171,14 @@ def test_the_contract_and_the_count_cannot_drift_apart():
     rows = _contract()["readings"]
     assert len(rows) == len({r["reading"] for r in rows}), "a reading is listed twice"
     assert all(r["marker"].strip() and r["why"].strip() for r in rows)
+    # THE COUNT ITSELF. The previous version guarded uniqueness and non-empty
+    # fields and not the number, so a reading could be dropped from the contract
+    # and every check would still pass — the file would simply require less of
+    # the implementation. An independent reader pointed that out.
+    assert len(rows) == 49, (
+        f"the contract holds {len(rows)} readings. Changing that is a decision about what a "
+        f"reader of a long autonomous run must be able to see, so it changes here and in this "
+        f"number together")
 
 
 def test_a_reading_removed_from_the_projection_fails_this_contract(tmp_path):
@@ -187,23 +195,42 @@ def test_a_reading_removed_from_the_projection_fails_this_contract(tmp_path):
     assert row["marker"].lower() not in without.lower()
 
 
-@pytest.mark.parametrize("row", _contract()["readings"], ids=lambda r: r["reading"])
-def test_a_marker_that_matches_something_else_is_caught(row, rendered):
+#: Readings whose marker legitimately appears with no project record at all —
+#: the pack's own manifest, the page's fixed vocabulary, the panel titles, and
+#: the header. Everything else must come from the record.
+_FROM_THE_PACK_OR_THE_CHROME = {
+    "pack version", "pack state", "pack digest", "pack revision", "adoptability",
+    "UNKNOWN", "projection versus authority", "coordinator state",
+    "project identity and pin", "durable output", "capacity observation",
+    "freshness of the reading", "budgets used and remaining",
+    "outstanding evolution candidates", "public-safety state", "continuation health",
+    "recurrence-class status", "real-consumer compatibility", "adapter qualification",
+    "latest audit verdict", "failure-mode closure status", "deterministic gate status",
+    "stale-audit warning", "STALLED", "ORPHANED", "SUPERSEDED", "context reconstruction",
+}
+
+
+@pytest.mark.parametrize(
+    "row", [r for r in _contract()["readings"]
+            if r["reading"] not in _FROM_THE_PACK_OR_THE_CHROME],
+    ids=lambda r: r["reading"])
+def test_a_marker_must_come_from_the_record_and_not_from_the_page(row, tmp_path):
     """Every marker must DISCRIMINATE its own reading.
 
-    An independent reader removed every real `subject:` line from a rendered view
-    and the parameterised check still passed, because the marker was the word
-    `subject` and the static panel title *audit subject vs candidate* contains
-    it. **A marker another part of the page prints regardless is a marker that
-    cannot fail.**
+    The first version removed every line containing the marker and asserted the
+    marker was gone — **which it is, by construction.** An independent reader
+    said so: the test could not detect its own claimed failure mode.
 
-    Removing the lines that carry a reading must make its marker disappear. Any
-    marker that survives that is matching something other than the thing it is
-    supposed to be checking.
+    What actually distinguishes a marker from chrome is where it comes from. A
+    projection of a directory with **nothing declared** renders the pack's own
+    identity, the fixed vocabulary, the panel titles and the header, and nothing
+    else; a marker appearing there is produced by the page rather than by the
+    reading it names. The readings that legitimately do appear are listed above
+    by name, so adding one is a decision somebody makes in the open rather than
+    a marker quietly going slack.
     """
-    text, _ = rendered
-    marker = row["marker"]
-    kept = "\n".join(line for line in text.splitlines() if marker.lower() not in line.lower())
-    assert marker.lower() not in kept.lower(), (
-        f"the marker {marker!r} for {row['reading']!r} survives the removal of every line that "
-        f"carries it, so it is matching something else")
+    empty = projection.project(tmp_path).render()
+    assert row["marker"].lower() not in empty.lower(), (
+        f"the marker {row['marker']!r} for {row['reading']!r} appears with no record at all, so "
+        f"it is matching the page rather than the reading")
+

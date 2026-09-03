@@ -2397,3 +2397,74 @@ narrowed to the tests that actually discriminate their class.
 The suite's size is in `PACK_MANIFEST.json` and its runtime is whatever
 `pytest` prints; neither is restated here, because a count written into prose is
 the thing these three guards were built to stop.
+
+## Cycle 12 — the last correctness closure
+
+Three real defects, two of my own tests that were not evidence, and two
+criticisms of claims that were true and are now stated correctly.
+
+### The repair written for the path the finding arrived on
+
+The missing-object rule was applied to `commit_messages` and not to the blob
+read beside it, so a repository whose *blobs* the store cannot produce still
+recorded a skip. **The repair was written for that path rather than for the
+class** — the third time in this release that sentence has been the finding,
+after the pid check that did not generalise to the write bound and the non-finite
+guard that took three fields to cover.
+
+### Guarding fields somebody thought of
+
+The projection had been guarded at the deadline, then the budget position, then
+the write bound. An independent reader supplied `attempt: "three"` and
+`{"pools": 1}` and got a `TypeError` from each. **Every panel is built inside a
+guard now**, including the liveness panel, which was outside it because it
+returns the record as well and did not fit the helper. A panel that cannot be
+built says so; one that vanished would be worse, because a reader cannot miss
+what is not there.
+
+### Two of my own tests were not evidence
+
+`test_a_marker_that_matches_something_else_is_caught` removed every line
+containing a marker and asserted the marker was gone — **which it is, by
+construction.** It could not detect its own claimed failure mode. The property
+that actually separates a marker from chrome is where it comes from: a
+projection of a directory with nothing declared renders the pack's identity, the
+fixed vocabulary and the panel titles, and a marker appearing *there* is produced
+by the page. The readings that legitimately appear are listed by name, so adding
+one is a decision somebody makes in the open.
+
+And the contract's own guard checked uniqueness and non-empty fields **and not
+the count**, so a reading could be dropped and every check would still pass —
+the file would simply require less of the implementation.
+
+### Two guards that read different syntax
+
+The presence guard accepted any `Oracle:` and the selector parser required
+`**Oracle:**`, so a non-bold entry satisfied the first and was silently skipped
+by the one that runs it. Both read the same spelling now, and the parser's count
+is compared against the number of non-deferred rows rather than a floor — **a
+floor passes while rows go unparsed, which is exactly how the non-bold entry
+hid.**
+
+### The two criticisms that were right about the claim
+
+*An oracle selecting a test does not prove it tests the mechanism it is cited
+for.* True, and unfixable mechanically: relevance is a human judgement and the
+guard establishes only that the citation resolves to something that runs. Stated
+that way now rather than implied to be more.
+
+*The clone test demonstrates that cloned output is accepted; it is not evidence
+for the conclusion that acceptance is safe.* Also true. The test proves the
+two-roots property; the safety conclusion is reasoning about what acceptance
+means, and the two are now separated in the matrix rather than presented as one
+result.
+
+### The page normalisation, stated exactly
+
+`test_dashboard_contract` normalises the page into the text view's shape before
+matching, so `capability: C7` is compared against
+`<span class=k>capability</span><span class=v>C7</span>` rewritten. That is a
+comparison of two serialisations of one reading, and it does **not** establish
+that the page's markup is correct — the projection's own tests do that. The
+helper is deliberately crude and says so, because the moment it becomes a parser
+it is a second implementation of the thing it is checking.

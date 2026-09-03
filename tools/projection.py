@@ -664,21 +664,61 @@ def project(
     base = Path(project_root)
     record_path = base / continuation_record
     contract_panel, _contract = _contract_panel(base / contract)
-    liveness_panel, record = _liveness_panel(record_path)
+    # The liveness panel is built inside the same guard as the rest. It returns
+    # the record as well, so it could not go through `_panel` — and being the
+    # one panel outside the guard is how `attempt: "three"` still raised after
+    # every other panel was covered.
+    try:
+        liveness_panel, record = _liveness_panel(record_path)
+    except Exception as exc:
+        liveness_panel = Panel("coordinator state", group="now")
+        liveness_panel.unknown.append(
+            f"the coordinator's position could not be rendered from this record: "
+            f"{type(exc).__name__}: {exc}"[:300])
+        liveness_panel.summary, liveness_panel.summary_tone = UNKNOWN, Tone.UNKNOWN
+        try:
+            import continuation
+            record = continuation.load(record_path)
+        except Exception:
+            record = None
     return Projection(
         headline=_guarded(_headline, record, default=f"{UNKNOWN} — the headline could not be derived"),
         panels=[
             _pack_panel(Path(__file__).resolve().parent.parent),
             contract_panel,
             liveness_panel,
-            _states_panel(record, _report_or_none(record, record_path)),
-            _audit_freshness_panel(record),
-            _output_panel(record, base),
-            _budget_panel(record),
-            _capacity_panel(base / capacity_observation),
-            _freshness_panel(record, record_path),
+            # EVERY panel, not the fields anybody has thought of. Guarding the
+            # deadline and the budget position one at a time closed two shapes
+            # and left `attempt: "three"` and `{"pools": 1}` — an independent
+            # reader found both, and would have found a third. A panel that
+            # cannot be built reports that it could not be built, which is the
+            # only behaviour a view of a broken record may have.
+            _panel(_states_panel, record, _report_or_none(record, record_path),
+                   title="the states this reading can report", group="now"),
+            _panel(_audit_freshness_panel, record,
+                   title="audit subject vs candidate", group="evidence"),
+            _panel(_output_panel, record, base,
+                   title="durable worker output", group="now"),
+            _panel(_budget_panel, record,
+                   title="budgets and standing evidence", group="evidence"),
+            _panel(_capacity_panel, base / capacity_observation,
+                   title="capacity", group="resources"),
+            _panel(_freshness_panel, record, record_path,
+                   title="freshness of this reading", group="identity"),
         ],
     )
+
+
+def _panel(build, *args, title: str, group: str) -> Panel:
+    """Build a panel, or a panel saying why it could not be built."""
+    try:
+        return build(*args)
+    except Exception as exc:
+        panel = Panel(title, group=group)
+        panel.unknown.append(
+            f"this panel could not be built from the record: {type(exc).__name__}: {exc}"[:300])
+        panel.summary, panel.summary_tone = UNKNOWN, Tone.UNKNOWN
+        return panel
 
 
 # --- the same reading, in a browser ------------------------------------------------

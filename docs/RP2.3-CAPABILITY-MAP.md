@@ -191,5 +191,10 @@ discarded finding is evidence about the oracle.
 | RP3-86 | the projection raised on a budget position that was not a position | a view may not raise on the record it exists to display |
 | RP3-87 | a hole in the object store was recorded as one ref's skip | a repository-level fact reported as a per-ref inconvenience |
 | RP3-88 | three cycle-11 repairs had no regression behind them | found by the mutation pass, not by writing them |
+| RP3-89 | a blob the object store cannot produce was recorded as a skip | the repair was written for the path the finding arrived on |
+| RP3-90 | the projection raised on two field types nobody had guarded | guarding fields one at a time closes the shapes somebody thought of |
+| RP3-91 | a marker test removed every line containing its marker and asserted it was gone | true by construction, and unable to detect its own failure mode |
+| RP3-92 | the contract's guard checked everything about the readings except how many | a reading could be dropped and the file would simply require less |
+| RP3-93 | two guards over one field read different syntax | the presence check accepted what the parser skipped |
 
 *(appended as each capability reproduces its own)*

@@ -738,3 +738,48 @@ def test_every_panel_belongs_to_one_of_the_questions_a_reader_asks(tmp_path):
     groups = {p.group for p in projection.project(tmp_path).panels}
     assert groups <= {"now", "evidence", "resources", "identity", "detail"}
     assert "now" in groups and "identity" in groups
+
+
+@pytest.mark.parametrize("record,capacity", [
+    ({"waits": [{"job_id": "h", "kind": "human", "expects": "a decision",
+                 "attempt": "three"}]}, None),
+    ({"actionable": ["x"]}, {"pools": 1}),
+    ({"actionable": ["x"]}, {"pools": [{"pool_id": 7}]}),
+    ({"waits": [{"job_id": "h", "kind": "human", "expects": "e", "depth": "deep"}]}, None),
+    ({"actionable": ["x"], "evidence": {"suite": {"nested": True}}}, None),
+])
+def test_no_shape_of_a_saved_record_makes_the_view_raise(tmp_path, record, capacity):
+    """Guarding the deadline, then the budget position, then the write bound
+    closed three shapes and left `attempt: "three"` and `{"pools": 1}` — an
+    independent reader found both and would have found a third.
+
+    **Every panel is built inside a guard now**, so the question stops being
+    which field somebody thought of. A panel that cannot be built says it could
+    not be built, which is the only behaviour a view of a broken record may
+    have."""
+    import json as _json
+
+    (tmp_path / "CONTINUATION.json").write_text(_json.dumps(
+        {"capability": "c", "updated_at": _continuation.now(), **record}))
+    if capacity is not None:
+        (tmp_path / "CAPACITY.json").write_text(_json.dumps(capacity))
+
+    out = projection.project(tmp_path).render()
+    assert out
+    assert projection.render_html(projection.project(tmp_path)).endswith("</html>")
+
+
+def test_a_panel_that_cannot_be_built_says_so_rather_than_vanishing(tmp_path, monkeypatch):
+    """A panel that raised used to take the whole view with it; a panel that
+    silently disappeared would be worse, because a reader cannot miss what is
+    not there."""
+    _record(tmp_path, actionable=("x",))
+
+    def broken(*_args, **_kw):
+        raise RuntimeError("this panel cannot be built")
+
+    monkeypatch.setattr(projection, "_capacity_panel", broken)
+    view = projection.project(tmp_path)
+    capacity = [p for p in view.panels if p.title == "capacity"]
+    assert capacity, "the panel vanished instead of reporting"
+    assert any("could not be built" in u for u in capacity[0].unknown)
