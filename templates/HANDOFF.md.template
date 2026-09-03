@@ -41,3 +41,14 @@ Only if one is genuinely open. Otherwise: "none."
 - PROGRESS.md: `capabilities/<id>/PROGRESS.md`
 - FINDINGS.md: `capabilities/<id>/FINDINGS.md`
 - ROADMAP.md: `ROADMAP.md`
+
+## Continuation record
+
+    <project>/CONTINUATION.json     the machine-readable declaration
+    python3 <pack_root>/tools/continuation.py <project>/CONTINUATION.json
+
+This file names the current position in prose. That file names what is being
+waited for and how anyone can observe it finishing, and the state is derived
+from it rather than written into it — so it is right after a job exits even
+though nobody edited anything. Read both; where they disagree, this file and the
+governance record win, and the derivation is the defect.

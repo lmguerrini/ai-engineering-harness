@@ -112,5 +112,6 @@ discarded finding is evidence about the oracle.
 | RP3-8 | a durable output path does not bound the write that fills it | one write over the backend's output limit leaves no artifact, and its absence is indistinguishable from never having started — 27 records, then 81 across a wave |
 | RP3-9 | a retry decision taken from a worker's status label discards work the worker left behind | three of six killed workers left usable bytes; one left a complete generator it never ran, worth 22 records |
 | RP3-10 | a task's output root can be a directory a generator owns | a correct destructive rebuild destroyed two hand-written documents inside one |
+| RP3-11 | a coordinator's declared wait is prose, so it cannot have a transition | four distinct situations — finished, capacity-blocked, waiting on a live job, idle with authorised work — produce one identical observable, and the decisive instance declared its wait correctly and still went silent for 2h 21m after the job exited |
 
 *(appended as each capability reproduces its own)*

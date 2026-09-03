@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1488
+    in-release (skills/core/*.md + policy/*.md)   1508
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2511   25.6% over the ~2,000
+    total against a ~2,000 target                 2531   26.6% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -260,3 +260,64 @@ the completion marker believed, an unbounded write allowed, an over-bound write
 written anyway, a generator-owned root claimable, another task's root claimable,
 `UNKNOWN` yielding a plan, and products-with-no-chunks reading as nothing. Every
 one turned the suite red.
+
+### C4 — Coordinator continuation and liveness state
+
+The largest recurring class in the evidence, and the one whose decisive instance
+removes every explanation but the mechanical one.
+
+**Four situations produce one observable — nothing happening.** Finished.
+Blocked on a provider window. Legitimately waiting on a live job. Idle with
+authorised work outstanding. Only the last is a defect, and from outside they
+are identical: ten recorded instances, and more than six hours of wall clock
+across three of them in a single phase.
+
+**The decisive instance is not the longest.** In it the coordinator applied
+every rule the previous four had produced — it declared that it was waiting and
+it named the job, the process and the log — and then the job exited and the
+declaration stayed exactly as written, for two hours and twenty-one minutes.
+That removes "somebody forgot", which is what the earlier instances invited. **A
+state that exists only as a sentence cannot have a transition.**
+
+**So the state is derived, not stored.** `tools/continuation.py` stores a
+declaration — what is being waited for and how anyone could observe that it
+finished — and computes the state from that declaration plus the artifacts every
+time it is asked. It therefore advances on job exit whether or not anybody is
+watching, which is the only property that helps: *the coordinator that has gone
+silent is the one that cannot poll.* A structural test asserts the record holds
+no state field at all, because a stored state is a value that can be right when
+written and wrong a second later.
+
+**It is not a second authority**, by construction rather than by promise. D23
+clause 8 requires every transition to be reconstructible from a durable
+artifact; a derived state has nothing to reconstruct because nothing was stored.
+Where the derivation and the governance record disagree, the derivation is the
+defect.
+
+**A declared wait must name an observable**, and this is refused where the wait
+is written rather than discovered later: a process, an exit-status file, a task
+output root, a path that appears. A wait carrying none of them is the shape that
+decayed, and it is now unwritable. `HUMAN` is the deliberate exception — a
+person is not a broken observable, and a wait on one reports as a human block.
+
+**Ordering is part of the answer.** Anything that cannot be established outranks
+anything that can, because acting on an unestablished state is the class this
+pack refuses. A completed-and-unconsumed result outranks a remaining job,
+because burying it under "still waiting on something else" is how the edge four
+of five recurrences share stayed invisible.
+
+**`SILENT_IDLE` is representable and is a defect.** Authorised work outstanding,
+nothing declared to be in the way, nothing running. An empty record is
+`ACTIONABLE_WORK_READY` instead, and the distinction is what makes the defect
+state mean anything.
+
+**`COORDINATOR_WAKE_REQUIRED` is a fact this module reports and not an act it
+performs** (D23 clause 4). It starts nothing and wakes nothing.
+
+**What this does not establish.** That silence will not recur. It establishes
+that silence is now nameable, which is what the rehearsal plan says this
+capability is for and is repeated here rather than quietly upgraded.
+
+**Mutation-checked, nine for nine**, including the two that matter most: folding
+`SILENT_IDLE` into a ready state, and burying an unconsumed completion under a
+job that is still running.

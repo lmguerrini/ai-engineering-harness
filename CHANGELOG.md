@@ -9,6 +9,26 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Coordinator continuation — a state derived from artifacts, so silence has a name
+
+- **`tools/continuation.py`**: eight states including `SILENT_IDLE`, which is a
+  **defect** rather than a resting place. The record stores a declaration — what
+  is being waited for and how anyone can observe it finishing — and the state is
+  **derived** from that plus the artifacts, so it advances on job exit whether
+  or not anybody is watching.
+- **A declared wait must name an observable completion condition** and is
+  refused where it is written otherwise. A wait on a person is the deliberate
+  exception and reports as a human block, which names the numbered row it sits
+  on.
+- **A finished job whose result nobody took up has its own state.** That edge is
+  four of five recorded recurrences, and it outranks a job still running so it
+  cannot be buried under one.
+- **`COORDINATOR_WAKE_REQUIRED` is reported, never performed.** Nothing here
+  starts, wakes or creates a session.
+- Anything that cannot be established outranks anything that can: an
+  unobservable wait, an output root in an unknown state, or a record that
+  declares itself both terminal and outstanding, all report `RECOVERY_REQUIRED`.
+
 ### Durable worker output — bounded, incremental, recovered before retry
 
 - **`tools/task_output.py`**: an output root a task owns, a chunk scheme whose

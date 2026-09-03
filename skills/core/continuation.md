@@ -24,6 +24,26 @@ confirm the record and the tree agree. If they do not, that is HITL row 11
 Git disagree about, it stops and asks. Target: full reconstruction in these four
 reads plus the one Git check. Anything else is pull-on-demand, not held.
 
+## A declared wait is a machine-readable declaration, not a sentence
+
+The rule above is necessary and was measured insufficient. A coordinator that
+declared its wait correctly — naming the job, the process and the log — still
+produced a two-hour silence after that job exited, because **a state that exists
+only as a sentence cannot have a transition**. Four of five recorded recurrences
+are that one edge.
+
+So a wait is declared in `tools/continuation.py`'s record, with a completion
+condition somebody other than the coordinator can evaluate, and the state is
+**derived** from that declaration and the artifacts rather than stored. It
+therefore advances on job exit whether or not anyone is watching, which is the
+point: the coordinator that has gone silent is the one that cannot poll. Where
+the derived state and the governance record disagree, the record wins and the
+derivation is the defect.
+
+`SILENT_IDLE` — authorised work outstanding, nothing declared to be in the way,
+nothing running — is representable, and it is a **defect**, never a resting
+state.
+
 ## State what budgets are consumed
 
 Reconstruction is not just position, it is spend. Read the counters in
