@@ -116,3 +116,38 @@ def test_diff_refs_over_a_real_repo_detects_growth_and_relocation(repo):
     assert ("added_public_name", "a.added") in a_changes
 
     assert ("will_move", "a.py", "b.py") in relocations
+
+
+# --- the layer this equivalence gate enters each path at ----------------------
+#
+# The class: a parity gate compared two transports' already-decoded arguments,
+# passed, and was structurally unable to see that the two decoders disagreed
+# about what the same request text meant. One request, two answers, in the
+# capability whose subject was parity. The gap is not the defect; the gap being
+# invisible in the gate's own output is.
+
+
+def test_the_report_names_the_layer_on_a_clean_run(repo, capsys):
+    """A reader who has just been told `clean` is the one who most needs to know
+    what was never looked at. Before RP2.3 the gap lived in `--help` and in a
+    module docstring, neither of which is stored beside the verdict."""
+    (repo / "mod.py").write_text("def stable(): pass\n")
+    _git(repo, "add", "mod.py")
+    _git(repo, "commit", "--quiet", "-m", "first")
+    first = _head(repo)
+    (repo / "mod.py").write_text("def stable(): pass\n# a comment changes nothing\n")
+    _git(repo, "commit", "--quiet", "-a", "-m", "second")
+
+    assert surface_diff._cli([str(repo), first, _head(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "clean: no public-surface changes" in out
+    assert "compared at:" in out
+    assert "NOT compared: class-level attributes and dataclass field types" in out
+
+
+def test_the_declared_layers_are_well_formed():
+    """A side with no layer named is refused at construction, so the constant
+    below cannot silently lose half of its statement."""
+    assert surface_diff.LAYERS.left and surface_diff.LAYERS.right
+    assert surface_diff.LAYERS.not_compared
+    assert "AST" in surface_diff.LAYERS.left

@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from errors import GateRefusal
+from instrument import read_rule
 
 __all__ = [
     "ContractError",
@@ -614,6 +615,11 @@ class ProjectContract:
     #: no semantic authority to consult. Parsed here so a malformed declaration
     #: fails when every other block does, rather than at first use.
     project_context: object | None = None
+    #: Where the default vocabulary was actually read from, and whether that was
+    #: the canonical location. A checker reading a stale copy of its own rule
+    #: manufactures findings as readily as a weak one misses them, and the
+    #: resolution that produced them used to be invisible in every report.
+    default_terms_source: object | None = None
 
     @classmethod
     def load(cls, path: str | Path, *, pack_root: str | Path | None = None) -> "ProjectContract":
@@ -646,7 +652,7 @@ class ProjectContract:
             raise ContractError("`publication:` must be a mapping")
 
         declared_default = terms_block.get("default_set")
-        defaults = _load_default_terms(declared_default, contract_path, pack_root)
+        defaults, default_terms_source = _load_default_terms(declared_default, contract_path, pack_root)
 
         optional_groups = _as_str_list(
             terms_block.get("optional_pattern_groups"), field="private_terms.optional_pattern_groups"
@@ -698,6 +704,7 @@ class ProjectContract:
             ),
             adapters=_load_adapters(raw),
             project_context=_load_project_context(raw),
+            default_terms_source=default_terms_source,
         )
 
     def repository(self, override: str | None = None) -> str:
@@ -758,8 +765,8 @@ def _optional_str(value: object) -> str | None:
 
 def _load_default_terms(
     declared: object, contract_path: Path, pack_root: str | Path | None
-) -> dict:
-    """The pack's default vocabulary, located and read, or a stated failure.
+) -> tuple[dict, object]:
+    """The pack's default vocabulary, the file it came from, or a stated failure.
 
     `private_terms.default_set` is a path relative to the pack root. A project
     that omits it still gets the defaults: the whole point of EC-H is that
@@ -771,29 +778,38 @@ def _load_default_terms(
             raise ContractError("private_terms.default_set must be a path")
         relative = declared
 
+    #: The root the rule must come from. A declared pack root is the project's
+    #: own statement of where its governance lives; absent one, the pack this
+    #: module ships inside is the only root there is.
+    canonical_root = Path(pack_root) if pack_root else Path(__file__).resolve().parent.parent
+
     candidates: list[Path] = []
     declared_path = Path(relative)
     if declared_path.is_absolute():
         candidates.append(declared_path)
     else:
-        if pack_root:
-            candidates.append(Path(pack_root) / relative)
-        # The pack root as seen from this module, which is `tools/`'s parent.
-        candidates.append(Path(__file__).resolve().parent.parent / relative)
+        candidates.append(canonical_root / relative)
+        # Kept as a SEARCHED location rather than a usable one. Before RP2.3 a
+        # copy beside the contract was a silent fallback: a project that
+        # declared a pack root whose rule was missing got whichever file the
+        # order reached next, applied its terms, and reported only how many
+        # there were. Listing it here means the refusal can say what else was
+        # on the path.
         candidates.append(contract_path.parent / relative)
 
-    for candidate in candidates:
-        if candidate.is_file():
-            try:
-                data = json.loads(candidate.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
-                raise ContractError(f"cannot read the default term set at {candidate}: {exc}") from exc
-            if not isinstance(data, dict):
-                raise ContractError(f"the default term set at {candidate} must be a JSON object")
-            return data
+    try:
+        content, source = read_rule(candidates, canonical_root=canonical_root, what="default term set")
+    except GateRefusal as exc:
+        raise ContractError(
+            f"the default term set {relative!r} could not be resolved from the canonical root. "
+            f"{exc.render()} A scan without the default vocabulary is not a scan the pack can "
+            f"vouch for, and a scan with somebody else's copy of it is worse."
+        ) from exc
 
-    raise ContractError(
-        f"the default term set {relative!r} was not found (looked in: "
-        f"{', '.join(str(c) for c in candidates)}). A scan without the default "
-        f"vocabulary is not a scan the pack can vouch for."
-    )
+    try:
+        data = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ContractError(f"cannot read the default term set at {source.path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ContractError(f"the default term set at {source.path} must be a JSON object")
+    return data, source

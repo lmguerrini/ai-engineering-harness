@@ -44,6 +44,7 @@ from pathlib import Path
 
 import gitread
 import pathmatch
+from instrument import Examined, Mode, ModeSet, NOTHING_EXAMINED
 from commit_gate import (
     _CREDENTIAL_PATTERNS,
     _UUID,
@@ -112,6 +113,16 @@ class Leak:
 #: vocabulary.
 CONTENT_LOCATIONS = ("blob",)
 
+#: The two rule sets this gate runs under. They give different answers on the
+#: same range, and a
+#: report that does not name the one it ran leaves a reader to supply the wrong
+#: one. A recorded limitation did exactly that, and the remedy it proposed could
+#: not have cleared the hits the other tier finds.
+MODES = ModeSet([
+    Mode("tiered", "bare common words are not applied to blob content"),
+    Mode("strict", "every declared rule applies to every surface, content included"),
+])
+
 
 class Scanner:
     """Finds every prohibited thing in a piece of text, not the first one.
@@ -149,6 +160,11 @@ class Scanner:
     def vocabulary(self) -> TermSet:
         """The term set this scanner applies, so a report can disclose it."""
         return self._terms
+
+    @property
+    def mode(self) -> Mode:
+        """Which of `MODES` is running, so a report can put it in its headline."""
+        return MODES.select("strict" if self._strict else "tiered")
 
     def scan(self, text: object, *, location: str, subject: str) -> list[Leak]:
         """Every prohibited thing in ``text``, described without reproducing it."""
@@ -210,6 +226,13 @@ class OutgoingReport:
     #: cannot be audited, and the motivating defect was a scan that applied
     #: none of the default rules and printed `clean`.
     vocabulary: str = ""
+    #: Which of `MODES` produced this report. Empty only for a report built by
+    #: hand in a test; every scan function sets it.
+    mode: str = ""
+    #: Where the vocabulary was read from, with its digest. A surprising finding
+    #: count is evidence about the checker before it is evidence about the tree,
+    #: and the first question is which copy of the rule ran.
+    rule_source: str = ""
     #: Exemption patterns the project declared that matched no path in this
     #: range. A dead declaration is silent otherwise, which is exactly how one
     #: survived unnoticed until a deliberate A/B run.
@@ -218,6 +241,13 @@ class OutgoingReport:
     #: More than one means the earlier commit still carries the material and
     #: amending the tip will not clear it.
     blob_multiplicity: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def examined(self) -> Examined:
+        """What this scan actually reached."""
+        if self.ref == "INDEX":
+            return Examined({"staged blobs": self.blobs_examined})
+        return Examined({"commits": self.commits_examined, "blobs": self.blobs_examined})
 
     @property
     def clean(self) -> bool:
@@ -230,6 +260,12 @@ class OutgoingReport:
         """
         return not self.leaks and not self.skipped
 
+    def _headline(self, subject: str, verdict: str) -> str:
+        """The verdict, with the mode inside it rather than beside it."""
+        if not self.mode:
+            return f"{subject}: {verdict}"
+        return MODES.headline(subject, verdict, self.mode)
+
     def render(self) -> str:
         """A rendering that never claims more than the data behind it.
 
@@ -241,8 +277,13 @@ class OutgoingReport:
         for a disclosure. Every rendering path below must name what it did
         not read, whether or not the range is `clean`.
         """
-        header = f"outgoing range {self.baseline or 'ROOT'}..{self.ref}"
+        header = (
+            "staged content" if self.ref == "INDEX"
+            else f"outgoing range {self.baseline or 'ROOT'}..{self.ref}"
+        )
         provenance = [f"  rules applied: {self.vocabulary}"] if self.vocabulary else []
+        if self.rule_source:
+            provenance.append(f"  rules read from: {self.rule_source}")
         # An exemption count is printed even when it is zero. `0 file(s)
         # content-exempt by declaration` beats silence: a declaration that
         # matched nothing produced a report byte-identical to one where it
@@ -256,15 +297,21 @@ class OutgoingReport:
             f"    DECLARED BUT MATCHED NOTHING: {pattern}" for pattern in self.unused_exemptions
         )
 
+        examined = self.examined
         if self.clean:
-            lines = [
-                f"{header}: clean ({self.commits_examined} commits, {self.blobs_examined} blobs)"
-            ]
+            verdict = examined.verdict_or_nothing(f"clean ({examined.summary()})")
+            lines = [self._headline(header, verdict)]
+            if verdict == NOTHING_EXAMINED:
+                lines.append(
+                    "  this range or index resolved to nothing, so nothing was read. "
+                    "That is not the same answer as clean, and the usual cause is a "
+                    "baseline, ref or path that is not the one you meant."
+                )
             lines.extend(provenance)
             lines.extend(exemption_lines)
             return "\n".join(lines)
 
-        lines = [f"{header}: {len(self.leaks)} leak(s)"]
+        lines = [self._headline(header, f"{len(self.leaks)} leak(s) ({examined.summary()})")]
         lines.extend(provenance)
         for leak in self.leaks:
             lines.append(f"  {leak.location} {leak.subject}: {leak.detail}")
@@ -320,7 +367,10 @@ def scan_outgoing(
     """
     if not isinstance(scanner, Scanner):
         raise TypeError("an outgoing scan requires a Scanner built from the project's declared terms")
-    report = OutgoingReport(ref=ref, baseline=baseline, vocabulary=scanner.vocabulary.summary())
+    report = OutgoingReport(
+        ref=ref, baseline=baseline,
+        vocabulary=scanner.vocabulary.summary(), mode=scanner.mode.name,
+    )
     exempt_patterns = tuple(content_exempt_paths)
     exemptions_used: set[str] = set()
     blobs_by_path: dict[str, set[str]] = {}
@@ -414,7 +464,13 @@ def scan_staged(
     """
     if not isinstance(scanner, Scanner):
         raise TypeError("a staged scan requires a Scanner built from the project's declared terms")
-    report = OutgoingReport(ref="INDEX", baseline="HEAD", vocabulary=scanner.vocabulary.summary() + ", strict")
+    # The mode is a headline fact, not a suffix on the provenance line. It used
+    # to be appended to the vocabulary string, where a reader taking the first
+    # line of a stored report never saw it.
+    report = OutgoingReport(
+        ref="INDEX", baseline="HEAD",
+        vocabulary=scanner.vocabulary.summary(), mode=scanner.mode.name,
+    )
     exempt_patterns = tuple(content_exempt_paths)
     exemptions_used: set[str] = set()
 
@@ -479,6 +535,23 @@ def _looks_like_sha(ref: str) -> bool:
     return len(ref) >= 7 and all(character in "0123456789abcdef" for character in ref.lower())
 
 
+def _verdict(report: "OutgoingReport", source: str) -> int:
+    """Print the report and return the exit status its verdict earns.
+
+    Three statuses, because there are three answers. `0` clean, `1` leaks, and
+    `2` **nothing examined** — the range or index resolved to nothing, so the
+    gate read nothing and has nothing to vouch for. Folding the third into `0`
+    is what let a scan of an empty range read as a scan that found nothing
+    wrong, and `2` is already this module's code for a verdict it could not
+    reach.
+    """
+    report.rule_source = source
+    print(report.render())
+    if report.examined.nothing:
+        return 2
+    return 0 if report.clean else 1
+
+
 def _cli(argv: list[str]) -> int:
     """Scan a range in a repository and print findings.
 
@@ -533,6 +606,8 @@ def _cli(argv: list[str]) -> int:
         print("a repository is required, either positionally or via --project")
         return 2
     exempt = [*(contract.content_exempt if contract else ()), *args.exempt]
+    source = getattr(contract, "default_terms_source", None) if contract else None
+    rule_source = source.summary() if source is not None else ""
 
     if args.staged:
         # The staged diff, checked before the commit exists. Process vocabulary
@@ -543,8 +618,7 @@ def _cli(argv: list[str]) -> int:
         report = scan_staged(
             repository, scanner=Scanner(term_set, strict=True), content_exempt_paths=exempt
         )
-        print(report.render())
-        return 0 if report.clean else 1
+        return _verdict(report, rule_source)
 
     if not args.ref:
         print("a ref is required unless --staged is given")
@@ -553,8 +627,7 @@ def _cli(argv: list[str]) -> int:
         repository, ref=args.ref, baseline=args.baseline,
         scanner=scanner, content_exempt_paths=exempt,
     )
-    print(report.render())
-    return 0 if report.clean else 1
+    return _verdict(report, rule_source)
 
 
 if __name__ == "__main__":

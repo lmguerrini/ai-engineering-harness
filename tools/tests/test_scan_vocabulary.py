@@ -76,7 +76,13 @@ def test_the_project_flag_alone_reproduces_a_scan(repo, tmp_path, pack_defaults,
 
     assert outgoing_scan._cli(["--project", str(contract), "main"]) == 0
     out = capsys.readouterr().out
-    assert "outgoing range ROOT..main: clean" in out
+    assert "outgoing range ROOT..main [tiered]: clean" in out
+    # The rule the scan ran is named, with how it was reached and its digest, so
+    # a surprising count can be attributed to the tree or to the checker. This
+    # contract names one absolute location, so the answer is `declared`: nothing
+    # was substituted for anything, which is a different fact from `canonical`
+    # and is reported as one.
+    assert "rules read from:" in out and "(declared, sha256 " in out
     assert "rules applied:" in out
 
 

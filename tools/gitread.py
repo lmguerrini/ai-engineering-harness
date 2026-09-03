@@ -22,7 +22,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import instrument
 from errors import GitRefusal
+from instrument import BlastRadius
 
 __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
@@ -127,6 +129,24 @@ def _environment(overlay: dict[str, str] | None) -> dict[str, str]:
     return {**inherited, **_GIT_ENVIRONMENT, **(overlay or {})}
 
 
+#: Everything this module does outside itself, declared before it does any of
+#: it. Every read in the toolbelt is a Git invocation and they all pass through
+#: `_run`, so this is the toolbelt's entire launch surface.
+#:
+#: Written as a control rather than a note because the version that was a note
+#: failed four times, the last of them by launching a browser and crossing a
+#: host security boundary. `instrument.launch` refuses an executable this does
+#: not name, so widening the surface means widening the declaration.
+BLAST_RADIUS = BlastRadius(
+    reads=("the named repository, through git, read-only",),
+    launches=("git",),
+    because=(
+        "every read this toolbelt performs is a git invocation, and there is no "
+        "supported Python binding for the questions it asks"
+    ),
+)
+
+
 def _run(
     repository: str | Path,
     *arguments: str,
@@ -154,8 +174,9 @@ def _run(
     # binary read.
     decoding = {"errors": "surrogateescape"} if text else {}
     try:
-        result = subprocess.run(
-            command, cwd=_repository(repository), capture_output=True, check=False,
+        result = instrument.launch(
+            command, radius=BLAST_RADIUS,
+            cwd=_repository(repository), capture_output=True, check=False,
             timeout=timeout, text=text, input=input_value, env=environment, **decoding,
         )
     except subprocess.TimeoutExpired as exc:

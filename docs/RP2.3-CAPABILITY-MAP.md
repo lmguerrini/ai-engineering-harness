@@ -104,5 +104,10 @@ discarded finding is evidence about the oracle.
 | ID | Defect | Reproduction |
 |---|---|---|
 | RP3-1 | an adapter pin verifies the files an adapter is made of, and reports success while the executable those files drive is a different version from the qualified one | live at this baseline: the qualified executable version and the installed one differ, and `adapter_pin.py` reports every declared adapter verified |
+| RP3-2 | two release guards disagreed about whose documents they check, and the one that was wrong demanded a superseded release's own gate record be rewritten | appending a decision put the previous release's packet and changelog entry in breach of a guard whose sibling exempts them in terms |
+| RP3-3 | a gate with two modes names neither in its headline | one range, one vocabulary: the tiered run prints `clean`, the strict run prints `1 leak(s)`, and neither headline says which ran |
+| RP3-4 | an instrument that examined nothing reports a result | a range resolving to no commits renders `clean (0 commits, 0 blobs)` |
+| RP3-5 | a checker silently reads a stale copy of its own rule | a project declaring a pack root whose term set is absent gets the copy beside its own contract, applies it, and no report says which file was read |
+| RP3-7 | an equivalence gate does not name the layer it enters each path at | the public-surface gate's honest gap lives in a docstring and `--help`, neither of which is stored beside the verdict |
 
 *(appended as each capability reproduces its own)*

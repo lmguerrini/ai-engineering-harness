@@ -9,6 +9,35 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Checker hygiene — the instrument before the measurement
+
+- **`tools/instrument.py`**: what a checker must state about itself before its
+  verdict is interpretable. A gate with modes names the active one **inside its
+  headline**; an instrument that examined nothing renders `NOTHING EXAMINED`
+  rather than `clean`; a rule resolved by a search order must come from the
+  declared root, and every report names the file it read with its digest; an
+  equivalence gate names the layer it enters each path at and what it therefore
+  never reaches; and a tool that launches an external program declares it or is
+  refused.
+- **The same range, the two tiers, two verdicts, no tier in either headline.**
+  Reproduced against the frozen baseline. Elsewhere, a recorded limitation
+  quoted one tier's count without saying which, and proposed a remedy that
+  could not have cleared the other tier's hits.
+- **A scan of an empty range printed `clean (0 commits, 0 blobs)`.** Now a third
+  verdict with its own exit status. Not a refusal of empty counts in general: a
+  range with one commit and no blobs is a real observation.
+- **A checker silently substituted a stale copy of its own rule.** A project
+  declaring a pack root whose default term set was absent got a copy from beside
+  its own contract, applied it, and could not find out. A search order leaving
+  the declared root is now refused, naming everything it looked at. A single
+  declared location is *not* a search order and is not refused — it is reported
+  as `declared` rather than `canonical`, because refusing it would refuse
+  correct work.
+- **The public-surface gate now prints the layer it compares at**, with every
+  verdict rather than only in `--help`, along with what it never reaches.
+- **The read-only Git layer declares the one program the toolbelt launches**,
+  and an undeclared executable is refused rather than noted.
+
 ### Architecture and session governance
 
 - **`DECISIONS.md` D23** records the founder architecture decision this release

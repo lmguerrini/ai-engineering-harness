@@ -117,3 +117,88 @@ non-regression differential runs against, and the release whose held-prose
 figure this one quotes. The second was hardcoded to `2.1.1`, so a release
 comparing itself to 2.2.0 would have searched for a sentence nobody would write
 and failed with a message about the wrong release.
+
+### C2 — Checker hygiene: the instrument before the measurement
+
+Second, and the ordering is the point. The rehearsal obligations this release
+must satisfy are unconditional about it — *every rehearsal's own tooling is
+subject to these rules* — so building the instruments after the measurements
+they validate would qualify the release with the same class of defect it exists
+to close.
+
+`tools/instrument.py` carries four refusals and one output requirement. Nothing
+in it is about whether a check is *correct*; all of it is about whether the
+answer is interpretable, which is a different property and the one that failed.
+
+**RP3-3 — a gate with two modes named neither.** Reproduced on a scratch
+repository at the frozen baseline: one range, one vocabulary, two tiers. The
+tiered run printed `clean`; the strict run printed `1 leak(s)`. Neither headline
+said which tier produced it, and the staged gate hid its mode in a suffix on the
+provenance line, where a reader taking the first line of a stored report never
+sees it. The same shape appeared on a real tree, where the two tiers' counts differ,
+and a recorded limitation then quoted one of those counts without its tier —
+proposing a remedy that could not have cleared the hits the other tier finds.
+Repaired: the mode is composed *inside* the headline, before the verdict, and a
+test asserts the position rather than the presence.
+
+**RP3-4 — a scan that read nothing reported `clean`.** Reproduced:
+`clean (0 commits, 0 blobs)`, byte-comparable to a range that was read and found
+safe. `NOTHING EXAMINED` is now a third verdict with its own exit status — `2`,
+this module's existing code for a verdict it could not reach — and the report
+says what the usual cause is, because it is almost always a baseline or a ref
+that is not the one the caller meant. Deliberately not a refusal of empty
+counts in general: a range with one commit and no blobs is a real observation,
+and a guard that refused it would refuse correct work.
+
+**RP3-5 — a checker silently read a stale copy of its own rule.** Reproduced
+against the frozen baseline, and this is the one that was not on the inherited
+list. `_load_default_terms` searched three locations in order — the declared
+pack root, the module's own root, then *the directory beside the project's own
+contract* — took the first that existed, and reported only how many terms it
+had loaded. A project that declares a pack root whose rule is missing therefore
+got a copy from its own working directory, applied it, and had no way to find
+out. The same shape elsewhere was measured at nine refusals where the real count
+against the current rule was one.
+
+Repaired in two halves, because either alone is insufficient. A search order
+that lands outside the declared root is now a **refusal** naming both the file
+it refused and everything else it looked at; and every scan reports the file it
+actually read, with its digest, so a surprising finding count can be attributed
+to the tree or to the checker before anyone starts editing history. Verified
+read-only against a live 215-commit consumer repository: the mode, the counts
+and the rule's path and digest all appear.
+
+**One candidate is not a search order**, and the distinction is reported rather
+than flattened. A project naming exactly one absolute location has not been
+substituted against — it asked for that file, the choice is visible in its own
+contract, and the digest is in every report. That resolution is labelled
+`declared`, distinct from `canonical`; refusing it would have refused a real
+consumer shape, which is how this class of control fails in the other
+direction.
+
+**RP3-7 — an equivalence gate that never named the layer it entered.**
+`surface_diff` compares two revisions' public Python surface and carries an
+honest gap — class attributes, dataclass field types, base classes, nested
+classes — in its docstring and its `--help`, neither of which is stored beside
+the verdict. The class this belongs to survived six audit cycles and twelve
+blind legs elsewhere: a parity gate compared two transports' already-decoded
+arguments and was structurally unable to see that the two decoders disagreed
+about what the same request text meant. The layer statement now prints with
+every verdict, clean ones included, and an equivalence report missing either
+side is refused at construction.
+
+**The toolbelt's launch surface is declared and enforced.** Every read it
+performs is a Git invocation through one function, so `gitread` declares
+`launches=("git",)` with its reason, and the launch helper refuses an executable
+the declaration does not name. The instance behind this crossed a host security
+boundary by launching a browser; the version of the rule that was a note had
+already failed four times.
+
+**Mutation-checked, eight for eight.** Each guard was broken deliberately and
+the suite went red: the empty-count check forced false, the mode appended after
+the verdict instead of inside it, the root check disabled, the launch check
+made permissive, the equivalence-side check removed, the layer statement not
+printed, the nothing-examined exit folded back into `0`, and the staged mode
+returned to the provenance line. A killed mutant proves the check can fail, not
+that it asks the right question — the pinned-test-asserting-the-buggy-value
+case is why that sentence is here rather than a claim of correctness.

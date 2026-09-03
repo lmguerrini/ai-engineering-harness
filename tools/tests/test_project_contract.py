@@ -278,3 +278,60 @@ def test_anchors_and_aliases_are_refused_rather_than_guessed(document):
 def test_a_doubled_quote_inside_a_single_quoted_scalar_is_one_quote():
     assert parse_yaml_subset("t: 'it''s'\n") == {"t": "it's"}
     assert parse_yaml_subset('t: "it""s"\n') == {"t": 'it""s'}
+
+
+# --- which copy of the rule actually ran --------------------------------------
+#
+# Reproduced against the frozen 2.2.0 baseline: a project declaring a pack root
+# whose default term set is not present under it silently got a copy sitting
+# beside its own contract, applied that copy's terms, and reported only how many
+# terms there were. Nine refusals against a rule that yields one is the measured
+# cost of the same shape elsewhere.
+
+
+def _contract_with_a_copy_beside_it(tmp_path, *, term):
+    (tmp_path / "pack").mkdir()
+    (tmp_path / "private-terms.default.json").write_text(
+        '{"policy_schema": 2, "terms": ["%s"], "identity_terms": [], "patterns": [],'
+        ' "identity_patterns": [], "optional_patterns": {}}' % term,
+        encoding="utf-8",
+    )
+    contract = tmp_path / "PROJECT.yaml"
+    contract.write_text(
+        "project:\n  name: rule-source\n  repo_path: .\n"
+        "private_terms:\n  default_set: private-terms.default.json\n",
+        encoding="utf-8",
+    )
+    return contract
+
+
+def test_a_rule_resolved_outside_the_declared_pack_root_is_refused(tmp_path):
+    contract = _contract_with_a_copy_beside_it(tmp_path, term="ghost term")
+    with pytest.raises(ContractError) as caught:
+        ProjectContract.load(contract, pack_root=tmp_path / "pack")
+    message = str(caught.value)
+    assert "cache rather than an authority" in message
+    assert str(tmp_path / "pack") in message, "the refusal must name the root it measured against"
+    assert "private-terms.default.json" in message
+
+
+def test_the_refusal_names_every_location_it_looked_in(tmp_path):
+    """After a surprising finding count the first question is which copy ran,
+    and the second is what else was on the path."""
+    contract = _contract_with_a_copy_beside_it(tmp_path, term="ghost term")
+    with pytest.raises(ContractError) as caught:
+        ProjectContract.load(contract, pack_root=tmp_path / "pack")
+    assert str((tmp_path / "pack" / "private-terms.default.json")) in str(caught.value)
+
+
+def test_a_contract_records_where_it_read_its_vocabulary_from(tmp_path):
+    """The disclosure half. Refusing the substitution is not enough on its own:
+    a report that does not say which file it applied cannot be audited."""
+    contract = _contract_with_a_copy_beside_it(tmp_path, term="declared term")
+    loaded = ProjectContract.load(contract, pack_root=tmp_path)
+    assert "declared term" in loaded.default_terms
+    source = loaded.default_terms_source
+    assert source is not None, "a contract that cannot say where its rule came from is the defect"
+    assert source.canonical and source.how == "canonical"
+    assert len(source.digest) == 64
+    assert "private-terms.default.json" in source.summary()

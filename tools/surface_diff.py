@@ -34,8 +34,29 @@ import ast
 import sys
 from dataclasses import dataclass, field
 
+from instrument import EquivalenceLayers
+
 import gitread
 from errors import IntegrityError
+
+#: Where this gate enters each of the two paths it compares, and what it
+#: therefore never reaches. Printed in the report, not only in `--help`.
+#:
+#: An equivalence gate that does not say this reads as a comparison of the two
+#: systems. The measured case compared two transports' already-decoded
+#: arguments, passed, and was structurally unable to see that the two decoders
+#: disagreed about what the same request text meant — one request, two answers,
+#: in the capability whose subject was parity. The gap is not the defect; the
+#: gap being invisible in the output is.
+LAYERS = EquivalenceLayers(
+    left="module source at the earlier ref, parsed to AST, module level only",
+    right="module source at the later ref, parsed to AST, module level only",
+    not_compared=(
+        "class-level attributes and dataclass field types",
+        "base classes and nested classes",
+        "anything a module does at import time rather than declares",
+    ),
+)
 
 __all__ = [
     "Parameter", "Signature", "PublicClass", "Surface", "SurfaceChange",
@@ -430,6 +451,10 @@ def _cli(argv: list[str]) -> int:
 
     if not changes_by_module and not relocations:
         print("clean: no public-surface changes")
+    # Always, and after the verdict rather than instead of it. A reader who has
+    # just been told `clean` is the reader who most needs to know what was never
+    # looked at.
+    print(LAYERS.summary())
 
     return 1 if (unrequested_growth or relocations) else 0
 

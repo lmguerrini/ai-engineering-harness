@@ -274,3 +274,70 @@ def test_the_staged_gate_applies_the_same_rule(repo_with_fixture_dir):
         repo_with_fixture_dir, scanner=scanner, content_exempt_paths=("fixtures/",)
     )
     assert any(leak.kind == "credential" for leak in report.leaks)
+
+
+# --- the tier a verdict came from, and the range that was never read ----------
+#
+# Both reproduced against the frozen 2.2.0 baseline before repair: the same
+# range under the two tiers produced `clean` and `1 leak(s)` with neither
+# headline naming a tier, and a range resolving to nothing rendered
+# `clean (0 commits, 0 blobs)`.
+
+
+def _identity_only(term):
+    """A bare common word: applied to names everywhere, to content only in strict."""
+    return TermSet.of(terms=(), patterns=(), identity_terms=[term], identity_patterns=())
+
+
+def test_the_two_tiers_disagree_on_one_range_and_each_headline_names_its_tier(repo):
+    (repo / "prose.md").write_text("the envelope was sealed\n")
+    _git(repo, "add", "prose.md")
+    _git(repo, "commit", "--quiet", "-m", "add prose")
+
+    verdicts = {}
+    for strict in (False, True):
+        report = outgoing_scan.scan_outgoing(
+            repo, ref="HEAD", baseline=None,
+            scanner=outgoing_scan.Scanner(_identity_only("envelope"), strict=strict),
+        )
+        verdicts[strict] = (len(report.leaks), report.render().splitlines()[0])
+
+    # The disagreement is the reason the tier has to be stated. If this ever
+    # stops holding, the fixture no longer reproduces the defect and the
+    # assertions below would pass for the wrong reason.
+    assert verdicts[False][0] != verdicts[True][0], "the fixture no longer distinguishes the tiers"
+    assert "[tiered]" in verdicts[False][1] and "[strict]" not in verdicts[False][1]
+    assert "[strict]" in verdicts[True][1] and "[tiered]" not in verdicts[True][1]
+
+
+def test_a_range_that_resolved_to_nothing_does_not_render_as_clean(repo):
+    report = outgoing_scan.scan_outgoing(
+        repo, ref="HEAD", baseline="HEAD",
+        scanner=outgoing_scan.Scanner(_identity_only("envelope"), strict=True),
+    )
+    rendered = report.render()
+    assert outgoing_scan.NOTHING_EXAMINED in rendered.splitlines()[0]
+    assert "clean" not in rendered.splitlines()[0]
+    # And it says why a reader is probably here.
+    assert "not the one you meant" in rendered
+
+
+def test_the_cli_exits_two_when_it_read_nothing(repo, capsys):
+    """Distinct from 0 and from 1. A gate that read nothing has not passed and
+    has not found anything either."""
+    status = outgoing_scan._cli([str(repo), "HEAD", "HEAD", "--term", "envelope"])
+    assert status == 2
+    assert outgoing_scan.NOTHING_EXAMINED in capsys.readouterr().out
+
+
+def test_the_staged_gate_names_strict_in_its_headline_not_in_its_vocabulary(repo):
+    """The mode used to be appended to the provenance line, where a reader
+    taking the first line of a stored report never saw it."""
+    (repo / "staged.md").write_text("nothing notable\n")
+    _git(repo, "add", "staged.md")
+    report = outgoing_scan.scan_staged(
+        repo, scanner=outgoing_scan.Scanner(_identity_only("envelope"), strict=True)
+    )
+    headline = report.render().splitlines()[0]
+    assert "[strict]" in headline
+    assert "strict" not in report.vocabulary
