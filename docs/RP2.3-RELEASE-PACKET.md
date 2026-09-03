@@ -112,6 +112,31 @@ published vocabulary — is closed rather than worked around.
     informatively, and repairing it is that project's to do.
 *   **The 2.2.0 and 2.1.1 releases are untouched.** Both still verify.
 
+## What four independent readings cost, and what they say about the fifth
+
+Four blind closure audits, each against an immutable snapshot, each barred from
+the design documents, each instructed to falsify. **All four returned NOT
+READY**, and the arithmetic is the most decision-relevant fact in this packet:
+
+| Round | Reader | Findings | Of which were defects IN THE PREVIOUS ROUND'S REPAIRS |
+|---|---|---|---|
+| 1 | blind, same family | 15 | — |
+| 2 | blind delta re-audit | 5 blockers + 6 decorative tests | **3 of 5** |
+| 3 | blind, cross-vendor | 8 | 0 — but 6 were about a snapshot two rounds old |
+| 4 | blind cross-vendor, release authority | 6 blockers + 4 others | 1 (the blocker-union defect, one level up from round 2's) |
+
+**A repair has been roughly as likely to contain a defect as the code it
+repaired.** That is not an argument for a fifth round; it is the reason the
+release records that its own final repairs are unaudited by construction, and
+the reason a reader should treat "all findings closed" as a statement about what
+was looked for rather than about what is there.
+
+Round 3 is the instructive one. Six of its eight findings were already repaired,
+and its report could not say so because it never stated which revision it read.
+The wasted direction was harmless. The other direction — a clean audit of an old
+tree reading as clean for a new one — is a green gate over a tree nobody
+examined, and `close_gate(..., against=(revision, digest))` now refuses it.
+
 ## The finding that most deserves a decision
 
 **The D18 layout defect is unchanged and it is live.** One real project pins the

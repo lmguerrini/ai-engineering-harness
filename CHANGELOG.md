@@ -146,6 +146,51 @@ somebody else's software. What held without needing the cause understood is the
 deadline on every observable wait — and the next cause will also not be
 understood at the time.
 
+### Repairs from closure audit round 4 — the release-authority read
+
+Ten findings against the candidate itself, all reproduced before repair. The
+report opened with the revision and digest it had read, which is the requirement
+added one round earlier working as intended.
+
+- **A read-only Git interface ran the subject repository's own configured
+  program.** `diff.external` in a scratch repository's config and any `diff`
+  through the public API executed it — **with or without `--ext-diff`**. For a
+  module whose purpose is reading repositories other people control, that is
+  arbitrary code execution on every diff. The neutralised-config table had said
+  since 2.2.0 that *"the diff family has its own switch for this"*; the switch
+  was never passed. `--no-ext-diff` and `--no-textconv` are now passed and the
+  options that undo them refused — the switch rather than a config key, because
+  it also disables the `.gitattributes`-selected driver.
+- **The complete-history scanner reported clean about objects it had not read**,
+  printing `NOT SCANNED` two lines below the word. A skip now makes the report
+  INCOMPLETE and the exit non-zero.
+- **Two paths sharing one blob produced one occurrence.** `git rev-list
+  --objects` names an object once, so the second path was never enumerated at
+  all. Names come from the trees now.
+- **Two blockers each covering half the outstanding work stopped nothing**, and
+  the report said *nothing is in the way and nothing is outstanding* above a
+  list of both. Coverage is a property of the union. This is round 2's
+  `any`/`all` defect one level up: that round fixed the quantifier inside the
+  predicate, this one fixes the set it is asked about.
+- **One task's complete output root classified as another task's result.** The
+  owner marker was being written for exactly this and only the writer read it.
+- **A non-finite stall horizon** produced STALLED with no flat signal and
+  RUNNING for a run dead a thousand seconds, and **a capacity reading with no
+  `observed_at`** gated a dispatch — the same rule as an earlier round, one
+  field over.
+- **A `pid` of `"not-a-pid"`** reloaded and raised a bare `ValueError` where the
+  contract is a named state.
+- **Two digest tests compared a pure function with itself.** Replaced by the
+  property they stood in for: the digest is content-addressed, so a file
+  rewritten with identical bytes and a moved mtime leaves it unchanged.
+
+One finding is closed as far as it can be rather than closed. *An unrelated
+writer can satisfy a path wait* is correct and stays correct: no property of a
+bare filesystem path names who wrote it. The observation is strengthened to what
+a filesystem can prove, `OUTPUT_ROOT` is the kind that establishes a producer,
+and a test pins both halves so the weaker claim cannot quietly become the
+stronger one.
+
 ### Qualification
 
 - **`docs/RP2.3-RELEASE-PACKET.md`** — what a returning release authority reads
