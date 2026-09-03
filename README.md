@@ -119,6 +119,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── backend_contract.py     backend identity and per-task-class qualification
     │   ├── resource_observation.py documented resource truth as routing evidence
     │   ├── evidence_index.py       certification bound to one exact candidate
+    │   ├── close_attestation.py    which gates ran, generated from the contract's own declarations
     │   ├── outgoing_scan.py        leak scan over history, staged content and refs
     │   ├── publication_history.py  the complete reachable history, strictly, and who adjudicates it
     │   ├── commit_gate.py          one message, or a whole range

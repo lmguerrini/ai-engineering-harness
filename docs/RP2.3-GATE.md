@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1562
+    in-release (skills/core/*.md + policy/*.md)   1578
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2585   29.2% over the ~2,000
+    total against a ~2,000 target                 2601   30.0% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -701,3 +701,45 @@ trigger.
 **Nine mutants, nine killed** after one repair: an occurrence explicitly
 recorded as undecided was indistinguishable from an absent one in the oracle,
 though not in the code.
+
+### C11 — Evidence and close correctness
+
+**The generator iterates the declarations, not the results**, and that single
+choice is the whole capability. A closure record's gate block was prose;
+somebody wrote down which checks had passed and nothing compared that sentence
+to anything, so two capabilities closed green over red gates and a profile that
+was never run looked exactly like one that did. `close_attestation.attest`
+enumerates the `validation_profiles` the contract declares and reports what
+became of each — so a profile nobody ran is **enumerated and reported `UNRUN`**,
+and omission is not something an author has to remember to avoid. A generator
+walking the results could only ever describe what somebody chose to record,
+which is the prose form with extra steps.
+
+**A result for a profile the contract does not declare is refused** rather than
+appended: the attestation and the contract then disagree about what this project
+validates, and the contract is the authority.
+
+**D24, implemented.** Generating the attestation is mandatory and always
+satisfiable — its input is a block the contract already carries. Refusing to
+close over an `UNRUN` profile is the project's declared policy, **defaulting to
+refusing**, and a project that declares otherwise still gets every profile
+enumerated. The obligation that is unconditional is not *run everything*; it is
+that a step nobody ran must not be indistinguishable afterwards from a step that
+passed. A failed or incomplete profile stops the close whatever the policy says,
+because the policy governs absence and nothing else — an interrupted run did not
+pass and did not fail.
+
+**A figure inside a human decision decays into human authority.** A ruling was
+taken on a measurement a later commit falsified, and it went on standing because
+nothing downstream questions a decision a person made. A premise may now declare
+the command that produces it, closing re-runs it, and a premise that stops
+reproducing **names the decision that now rests on nothing** — *a check failed*
+is not the finding. A premise that could not be re-derived is neither clean nor
+broken and still stops the close: nobody established it. The launch goes through
+a blast radius built from the command the record declares, so a decision record
+cannot name one program and cause another to run.
+
+**A tautology was found in this capability's own tests.** One assertion compared
+a set literal with itself while claiming to check that the radius was derived
+from the declared command. Replaced with one that captures the radius at the
+call and reads it. **Nine mutants, nine killed** afterwards.

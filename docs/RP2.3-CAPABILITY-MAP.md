@@ -125,5 +125,7 @@ discarded finding is evidence about the oracle.
 | RP3-21 | a reachability check shipped without a revision map fails closed across a whole corpus after the first rewrite | every commit-shaped token stops resolving at once, and the old commit remains resolvable-but-unreachable so a map consulted only on unresolvable tokens misses all of them |
 | RP3-22 | the pack cannot check its own commit messages with the vocabulary it publishes | this repository has no project contract, so `--project` has nothing to read and the shipped gate can only check structure — which is why a coordinator wrote a substitute instrument, and the substitute manufactured a finding on `resolves` |
 | RP3-23 | the strict tier and the complete reachable history are never combined by any shipped invocation | a term committed and then deleted survives in a blob that the staged scan, the working tree and `ls-files` all miss, while the range scan that would see it runs at the tier that does not apply the rule |
+| RP3-24 | a closure record's gate block is prose, so a profile nobody ran is indistinguishable from one that passed | two capabilities closed green over red gates, and nothing compared the sentence to a run |
+| RP3-25 | a measurement inside a human decision record is never re-checked, and nothing downstream questions a ruling | one ruling was taken on a figure a later commit falsified, and the decision went on standing |
 
 *(appended as each capability reproduces its own)*

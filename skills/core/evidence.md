@@ -43,6 +43,22 @@ When you cannot tell, say so and stop. "Could not verify" recorded as "verified"
 is the defect that survives longest, because everything downstream then treats
 it as settled.
 
+## Which gates ran is not answered by the party that ran them
+
+A closure record's gate block was prose, and two capabilities closed green over
+red gates because a profile nobody ran read exactly like one that passed.
+`tools/close_attestation.py` **generates** the block from the contract's declared
+`validation_profiles`, so a profile that was never run is enumerated and reported
+`UNRUN` — the list being iterated is the declaration, which makes omission
+unrepresentable rather than discouraged. Whether an `UNRUN` profile stops the
+close is the project's declared policy and defaults to stopping it.
+
+And a figure inside a **human decision** decays into human authority, because
+nothing downstream questions a ruling. A decision may declare the command that
+produces its premise; closing re-runs it, and a premise that stops reproducing
+names *the decision that now rests on nothing* rather than reporting a failed
+check.
+
 ## Reading an auditor
 
 Findings are not equal, and treating them as a queue to burn down produces bad

@@ -302,6 +302,21 @@ private_terms:
   # commits. Adopt it only if this project really emits ticket identifiers.
   optional_pattern_groups: []    # e.g. ["ticket_ids"]
 
+closure:
+  # WHETHER A PROFILE THE CONTRACT DECLARES AND NOBODY RAN STOPS A CLOSE.
+  # Defaults to true, and the default is the point: two capabilities closed
+  # green over red gates because the closure record was prose and a profile
+  # nobody ran looked exactly like a profile that passed.
+  #
+  # The attestation is GENERATED from this file's `validation_profiles` block,
+  # so every declared profile is enumerated whatever this says — omission is
+  # unrepresentable. What this decides is only whether an UNRUN one blocks.
+  #
+  #   refuses_on_unrun: true    (default)
+  #   refuses_on_unrun: false   this project must be able to close over a
+  #                             profile it cannot run here; the profile is still
+  #                             enumerated and still reported UNRUN.
+
 publication:
   # Refs a push may carry. Everything else — notes refs, recovery branches,
   # agent worktree branches — fails `tools/publication_gate.py`. A clean branch

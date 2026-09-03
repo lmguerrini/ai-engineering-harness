@@ -9,6 +9,23 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Close correctness — which gates ran, answered by something other than the runner
+
+- **`tools/close_attestation.py`** generates the closure gate block from the
+  contract's declared `validation_profiles`. A profile nobody ran is enumerated
+  and reported `UNRUN`; omission is unrepresentable because the list being
+  iterated is the declaration.
+- **`closure.refuses_on_unrun`** is the project's policy and defaults to `true`
+  (`DECISIONS.md` D24). A project that declares otherwise still gets every
+  profile enumerated. A failed or incomplete profile stops the close whatever
+  the policy says.
+- **A decision may declare the command that produces its premise.** Closing
+  re-runs it, and a premise that stops reproducing names *the decision that now
+  rests on nothing* rather than reporting a failed check. One that could not be
+  re-derived stops the close too.
+- The attestation carries the exact candidate it was taken against, because a
+  later capability's commits invalidate an earlier one's evidence.
+
 ### Complete-history public safety, and a profile that keeps internal work out of ceremony
 
 - **`tools/publication_history.py`** asks the question no shipped invocation
