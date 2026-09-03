@@ -100,6 +100,11 @@ class Panel:
     #: A one-phrase answer for this panel, shown beside its title.
     summary: str = ""
     summary_tone: str = Tone.PLAIN
+    #: Which question this panel answers. A reader scanning a long run asks four
+    #: things in order — what is happening, is anything wrong, what happens next,
+    #: and then everything else — and panels in the order they were written do
+    #: not answer them in that order.
+    group: str = "detail"
 
     def say(self, text: str, tone: str = Tone.PLAIN, label: str = "", depth: int = 0) -> None:
         self.lines.append(Line(text, tone, label, depth))
@@ -138,6 +143,36 @@ class Projection:
     #: decided here: the words come from the state `continuation` derived.
     headline: str = ""
 
+    @property
+    def attention(self) -> "list[Line]":
+        """Every line a reader must not miss, hoisted out of its panel.
+
+        Nothing is computed: these are the lines the owning panel already marked
+        BAD, WARN or UNKNOWN. Hoisting them is a change of position, not of
+        judgement — the panel still shows them where they belong, and this is a
+        second place to find them rather than the only one.
+        """
+        urgent = (Tone.BAD, Tone.WARN, Tone.UNKNOWN)
+        found = []
+        for panel in self.panels:
+            for line in panel.rows():
+                if line.tone in urgent:
+                    found.append(Line(f"{panel.title} — "
+                                      + (f"{line.label}: " if line.label else "") + line.text,
+                                      line.tone))
+            for item in panel.unknown:
+                found.append(Line(f"{panel.title} — {item}", Tone.UNKNOWN))
+        found.sort(key=lambda l: (Tone.BAD, Tone.WARN, Tone.UNKNOWN).index(l.tone))
+        return found
+
+    @property
+    def next_action(self) -> str:
+        for panel in self.panels:
+            for line in panel.rows():
+                if line.label == "NEXT AUTHORISED ACTION":
+                    return line.text
+        return ""
+
     def render(self) -> str:
         header = [
             "RUNTIME PACK — PROJECTION",
@@ -154,7 +189,7 @@ class Projection:
 
 
 def _contract_panel(contract_path: Path) -> tuple[Panel, object | None]:
-    panel = Panel("project and pin")
+    panel = Panel("project and pin", group="identity")
     try:
         from project_contract import ContractError, ProjectContract
 
@@ -193,7 +228,7 @@ def _contract_panel(contract_path: Path) -> tuple[Panel, object | None]:
 
 
 def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
-    panel = Panel("coordinator state")
+    panel = Panel("coordinator state", group="now")
     if not record_path.is_file():
         panel.unknown.append(
             f"no continuation record at {record_path}; the coordinator's position cannot be read, "
@@ -328,7 +363,7 @@ def _states_panel(record, report) -> Panel:
     """
     import continuation
 
-    panel = Panel("the states this reading can report")
+    panel = Panel("the states this reading can report", group="now")
     if report is None:
         panel.unknown.append("no derived state, so none of the vocabulary applies")
         return panel
@@ -358,7 +393,7 @@ def _audit_freshness_panel(record) -> Panel:
     """Whether any audit in flight is about the tree this record calls the
     candidate. An audit of revision A must never look current for revision B —
     it happened in this release and cost six findings' worth of re-execution."""
-    panel = Panel("audit subject vs candidate")
+    panel = Panel("audit subject vs candidate", group="evidence")
     if record is None:
         panel.unknown.append("no record, so no audit subject is declared")
         return panel
@@ -403,7 +438,7 @@ def _deadline_line(wait) -> str:
 
 
 def _budget_panel(record) -> Panel:
-    panel = Panel("budgets and standing evidence")
+    panel = Panel("budgets and standing evidence", group="evidence")
     if record is None:
         panel.unknown.append("no continuation record, so no budget position is declared")
         return panel
@@ -449,7 +484,7 @@ def _freshness_panel(record, record_path: Path) -> Panel:
     projection, and the objection this whole module was built against was
     exactly that — so the age of the record is rendered rather than assumed
     small."""
-    panel = Panel("freshness of this reading")
+    panel = Panel("freshness of this reading", group="identity")
     if record is None:
         panel.unknown.append("no record, so nothing to date")
         return panel
@@ -476,7 +511,7 @@ def _freshness_panel(record, record_path: Path) -> Panel:
 def _pack_panel(here: Path) -> Panel:
     """The identity of the pack this projection is part of — not the project's
     pin, which is the panel above, but what is actually running."""
-    panel = Panel("the pack this projection ships in")
+    panel = Panel("the pack this projection ships in", group="identity")
     manifest = here / "PACK_MANIFEST.json"
     if not manifest.is_file():
         panel.unknown.append(f"no manifest at {manifest}")
@@ -507,7 +542,7 @@ def _pack_panel(here: Path) -> Panel:
 
 
 def _output_panel(record, base: Path) -> Panel:
-    panel = Panel("durable worker output")
+    panel = Panel("durable worker output", group="now")
     if record is None:
         panel.unknown.append("no continuation record, so no output roots are declared")
         return panel
@@ -555,7 +590,7 @@ def _capacity_panel(path: Path) -> Panel:
     declaration is part of the answer: a reading is evidence about the moment it
     was taken and licenses no claim about what the next dispatch will cost.
     """
-    panel = Panel("capacity")
+    panel = Panel("capacity", group="resources")
     if not path.is_file():
         panel.unknown.append(
             f"no capacity observation at {path}; no window is known, which is the ordinary case "
@@ -644,6 +679,41 @@ def project(
 # to stdout, and a caller redirecting that to a file is the caller writing.
 
 _STYLE = """
+/* --- the structural pass -------------------------------------------------
+   A reader of a long run asks four things in order: what is happening, is
+   anything wrong, what happens next, and then everything else. The page is
+   laid out in that order and the type sizes follow it. Detail is preserved
+   in full and put behind a disclosure rather than deleted, because the
+   forensic reading is the second reading and both have to be possible.      */
+.state{font-size:26px;line-height:1.15;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
+.said{font-size:13px;color:var(--dim);max-width:78ch;margin:0}
+.next{margin-top:14px;padding:12px 14px;border-radius:8px;background:var(--actionbg);
+border-left:4px solid var(--action)}
+.next b{display:block;font-size:11px;letter-spacing:.12em;color:var(--action);margin-bottom:3px}
+.next span{font-size:15px;font-weight:600}
+.attn{margin-top:14px;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.attn>summary{cursor:pointer;padding:9px 14px;font-size:12px;letter-spacing:.08em;
+text-transform:uppercase;color:var(--dim);background:var(--bg);list-style:none}
+.attn>summary::-webkit-details-marker{display:none}
+.attn>summary::before{content:"▸ ";color:var(--dim)}
+.attn[open]>summary::before{content:"▾ "}
+.attn ul{padding:4px 0}
+.attn li{font-size:12.5px}
+.count{display:inline-block;min-width:20px;text-align:center;padding:1px 7px;border-radius:99px;
+font-size:11px;font-weight:700;margin-left:6px}
+.count.bad{background:var(--badbg);color:var(--bad)}
+.count.warn{background:var(--warnbg);color:var(--warn)}
+.count.unknown{background:var(--unknownbg);color:var(--unknown)}
+.count.good{background:var(--goodbg);color:var(--good)}
+h3.group{grid-column:1/-1;margin:10px 2px 0;font-size:11px;letter-spacing:.16em;
+text-transform:uppercase;color:var(--dim);font-weight:700}
+h3.group:first-of-type{margin-top:0}
+section>details>summary{cursor:pointer;padding:6px 14px 8px;font-size:11.5px;color:var(--dim);
+letter-spacing:.06em;list-style:none;border-top:1px solid var(--rule)}
+section>details>summary::-webkit-details-marker{display:none}
+section>details>summary::before{content:"▸ ";}
+section>details[open]>summary::before{content:"▾ ";}
+
 :root{--ink:#12161c;--dim:#5b6675;--rule:#dde3ea;--card:#fff;--bg:#f4f6f9;
 --good:#1a7f4b;--warn:#8a5a00;--bad:#b3261e;--unknown:#5b4b8a;--action:#0b4fa8;
 --goodbg:#e8f5ee;--warnbg:#fdf3e0;--badbg:#fdeceb;--unknownbg:#efecf8;--actionbg:#e8f0fc}
@@ -664,8 +734,9 @@ border-left:4px solid var(--dim);background:var(--bg)}
 .v-warn{border-left-color:var(--warn);background:var(--warnbg);color:var(--warn)}
 .v-good{border-left-color:var(--good);background:var(--goodbg);color:var(--good)}
 .v-unknown{border-left-color:var(--unknown);background:var(--unknownbg);color:var(--unknown)}
-main{display:grid;gap:14px;padding:16px 20px 40px;
-grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start}
+main{display:grid;gap:14px 14px;padding:16px 20px 40px;
+grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));align-items:start}
+@media(min-width:1250px){main{grid-template-columns:repeat(3,1fr)}}
 section{background:var(--card);border:1px solid var(--rule);border-radius:8px;overflow:hidden}
 .head{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
 padding:10px 14px;border-bottom:1px solid var(--rule)}
@@ -702,49 +773,100 @@ def _escape(text: str) -> str:
 
 
 def render_html(view: "Projection", title: str = "Runtime Pack — projection") -> str:
-    """The same panels, for a browser. Derives nothing the text renderer does not."""
-    verdict_class = {
-        Tone.BAD: "v-bad", Tone.WARN: "v-warn", Tone.GOOD: "v-good",
-        Tone.UNKNOWN: "v-unknown",
-    }.get(_verdict_tone(view.headline), "")
+    """The same panels, for a browser. Derives nothing the text renderer does not.
+
+    Laid out in the order a reader of a long run actually asks: **what is
+    happening, is anything wrong, what happens next**, and only then the panels.
+    Nothing is summarised away — every line the text view shows is here, and the
+    ones hoisted into the attention strip appear in their panels as well.
+    """
+    tone = _verdict_tone(view.headline)
+    verdict_class = {Tone.BAD: "v-bad", Tone.WARN: "v-warn", Tone.GOOD: "v-good",
+                     Tone.UNKNOWN: "v-unknown"}.get(tone, "")
+    state, _, sentence = view.headline.partition(":")
+    attention = view.attention
+    counts = {t: sum(1 for line in attention if line.tone == t)
+              for t in (Tone.BAD, Tone.WARN, Tone.UNKNOWN)}
+
     out = ["<!doctype html>", "<html lang=\"en\">", "<head>", "<meta charset=\"utf-8\">",
            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
            f"<title>{_escape(title)}</title>", f"<style>{_STYLE}</style>", "</head>", "<body>",
-           "<header><h1>Runtime Pack — projection</h1>",
-           "<p class=sub>Read-only. Rebuilt from durable state on every invocation, and it "
-           "stores nothing. Where this and the governance record disagree, THIS is the defect.</p>"]
-    if view.headline:
-        out.append(f"<div class='verdict {verdict_class}'><b>coordinator</b>"
-                   f"{_escape(view.headline)}</div>")
-    if view.unknowns:
-        out.append(f"<div class='verdict v-unknown'><b>not established</b>"
-                   f"{len(view.unknowns)} thing(s) could not be read. They are listed in their "
-                   f"panels, and an absence is never rendered as a resting state.</div>")
+           "<header>", "<h1>Runtime Pack — projection</h1>",
+           f"<div class='verdict {verdict_class}'>",
+           f"<p class=state>{_escape(state.strip())}</p>",
+           f"<p class=said>{_escape(sentence.strip() or view.headline)}</p>", "</div>"]
+
+    if view.next_action:
+        out.append("<div class=next><b>NEXT AUTHORISED ACTION</b>"
+                   f"<span>{_escape(view.next_action)}</span></div>")
+
+    if attention:
+        badge = "".join(
+            f"<span class='count {t}'>{n}</span>" for t, n in counts.items() if n)
+        out.append(f"<details class=attn open><summary>needs attention{badge}</summary><ul>")
+        for line in attention:
+            out.append(f"<li class='{line.tone}'><span class=v>{_escape(line.text)}</span></li>")
+        out.append("</ul></details>")
+    else:
+        out.append("<details class=attn><summary>needs attention"
+                   "<span class='count good'>0</span></summary>"
+                   "<ul><li class=muted><span class=v>nothing is marked wrong, unknown or "
+                   "waiting on a person. That is a reading of this record, not a promise about "
+                   "the run.</span></li></ul></details>")
+
     out.append("</header><main>")
-    for panel in view.panels:
-        # The tone is a CLASS NAME and is validated as one rather than escaped
-        # as text: `Panel(summary_tone="x' onclick='…")` put an event attribute
-        # into the page, because escaping covers content and this was markup.
-        # Anything not in the vocabulary renders as plain.
-        tone = panel.summary_tone if panel.summary_tone in Tone.ALL else Tone.PLAIN
-        chip = (f"<span class='chip {tone}'>{_escape(panel.summary)}</span>"
-                if panel.summary else "")
-        out.append(f"<section><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>")
-        for line in panel.rows():
-            key = f"<span class=k>{_escape(line.label)}</span>" if line.label else ""
-            safe_tone = line.tone if line.tone in Tone.ALL else Tone.PLAIN
-            out.append(f"<li class='{safe_tone} d{min(line.depth, 2)}'>{key}"
-                       f"<span class=v>{_escape(line.text)}</span></li>")
-        for item in panel.unknown:
-            out.append(f"<li class='unknown d0'><span class=k>{UNKNOWN}</span>"
-                       f"<span class=v>{_escape(item)}</span></li>")
-        if not panel.lines and not panel.unknown:
-            out.append(f"<li class='unknown d0'><span class=v>nothing to read</span></li>")
-        out.append("</ul></section>")
+    for group, heading in (("now", "what is happening"), ("evidence", "what is established"),
+                           ("resources", "what it is spending"), ("identity", "what this is"),
+                           ("detail", "everything else")):
+        panels = [p for p in view.panels if p.group == group]
+        if not panels:
+            continue
+        out.append(f"<h3 class=group>{_escape(heading)}</h3>")
+        for panel in panels:
+            rows = panel.rows()
+            #: The forensic half. A line is detail when its own panel marked it
+            #: MUTED or nested it under another — never when it is BAD, WARN or
+            #: UNKNOWN, because putting uncertainty behind a disclosure is
+            #: hiding it.
+            # Depth does NOT decide this. The first version collapsed anything
+            # nested, and an expired deadline is a nested line marked BAD — so
+            # the single most urgent fact on the page went behind a disclosure.
+            # Caught by the test that asserts uncertainty is never collapsed,
+            # which is the reason to write that test rather than assume it.
+            urgent = (Tone.BAD, Tone.WARN, Tone.UNKNOWN, Tone.ACTION)
+            head = [l for l in rows
+                    if l.tone in urgent or (l.depth == 0 and l.tone != Tone.MUTED)]
+            rest = [l for l in rows if l not in head]
+            tone_here = panel.summary_tone if panel.summary_tone in Tone.ALL else Tone.PLAIN
+            chip = (f"<span class='chip {tone_here}'>{_escape(panel.summary)}</span>"
+                    if panel.summary else "")
+            if panel.unknown:
+                chip += f"<span class='count unknown'>{len(panel.unknown)}</span>"
+            out.append(f"<section><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>")
+            for line in head:
+                out.append(_row(line))
+            for item in panel.unknown:
+                out.append(f"<li class='unknown d0'><span class=k>{UNKNOWN}</span>"
+                           f"<span class=v>{_escape(item)}</span></li>")
+            if not rows and not panel.unknown:
+                out.append("<li class='unknown d0'><span class=v>nothing to read</span></li>")
+            out.append("</ul>")
+            if rest:
+                out.append(f"<details><summary>{len(rest)} more</summary><ul>")
+                out.extend(_row(line) for line in rest)
+                out.append("</ul></details>")
+            out.append("</section>")
     out.append("</main><footer>Every answer here is delegated to the module that owns it. "
                "This page authorises nothing, schedules nothing, wakes nothing and stores "
                "nothing; deleting it breaks no checker.</footer></body></html>")
     return "\n".join(out)
+
+
+def _row(line: "Line") -> str:
+    safe = line.tone if line.tone in Tone.ALL else Tone.PLAIN
+    key = f"<span class=k>{_escape(line.label)}</span>" if line.label else ""
+    return (f"<li class='{safe} d{min(line.depth, 2)}'>{key}"
+            f"<span class=v>{_escape(line.text)}</span></li>")
 
 
 def _verdict_tone(headline: str) -> str:

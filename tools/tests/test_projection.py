@@ -485,7 +485,11 @@ def test_every_line_the_text_view_shows_the_page_shows_too(tmp_path):
     # nothing but those and it passed, with every panel title, every label and
     # the headline missing. A test for *the page shows what the text view shows*
     # that ignores most of what the text view shows is a test for something else.
-    assert projection._escape(view.headline) in page
+    # The headline is split across the state and its sentence in the page, so
+    # both halves are checked rather than the joined literal.
+    state, _, sentence = view.headline.partition(":")
+    assert projection._escape(state.strip()) in page
+    assert projection._escape(sentence.strip()) in page
     for panel in view.panels:
         assert projection._escape(panel.title) in page, f"the page dropped the title {panel.title!r}"
         for line in panel.rows():
@@ -503,7 +507,10 @@ def test_an_unknown_is_marked_in_the_page_and_not_merely_written(tmp_path):
     _record(tmp_path, actionable=("x",))
     page = projection.render_html(projection.project(tmp_path))
     assert "class='unknown" in page or 'class="unknown' in page
-    assert "not established" in page
+    # Hoisted into the attention strip AND left in its panel: a reader who
+    # scans the top sees it, and a reader who reads the panel sees it too.
+    assert "needs attention" in page
+    assert "count unknown" in page
 
 
 def test_the_headline_tone_comes_from_the_state_and_not_from_its_wording(tmp_path):
@@ -515,7 +522,7 @@ def test_the_headline_tone_comes_from_the_state_and_not_from_its_wording(tmp_pat
         # defined in the stylesheet above it, so the assertion was true whatever
         # the code did. It survived a mutant that mapped SILENT_IDLE to GOOD.
         import re
-        return re.search(r"<div class='verdict ([a-z-]*)'><b>coordinator</b>", page).group(1)
+        return re.search(r"<div class='verdict ([a-z-]*)'>", page).group(1)
 
     _record(tmp_path, actionable=("work nobody is doing",))
     assert verdict_class(projection.render_html(projection.project(tmp_path))) == "v-bad"
@@ -666,3 +673,68 @@ def test_a_budget_position_that_is_not_a_position_does_not_raise(tmp_path):
     out = projection.project(tmp_path).render()
     assert "not a position this view can read" in out
     assert projection.render_html(projection.project(tmp_path)).endswith("</html>")
+
+
+# --- the structural pass ---------------------------------------------------------
+
+
+def test_uncertainty_is_never_put_behind_a_disclosure(tmp_path):
+    """Detail is collapsed and uncertainty is not. A line marked BAD, WARN or
+    UNKNOWN by its own panel stays in the panel's open list AND is hoisted into
+    the attention strip; only MUTED and nested lines go behind `<details>`."""
+    import re
+
+    _record(tmp_path, actionable=("x",), waits=(_continuation.Wait(
+        job_id="j", kind=_continuation.WaitKind.PROCESS, pid=1, expects="a result",
+        not_beyond_seconds=1, declared_at="2020-01-01T00:00:00+00:00"),))
+    page = projection.render_html(projection.project(tmp_path))
+
+    collapsed = "".join(re.findall(r"<details>(?!\s*<summary>needs).*?</details>", page, re.S))
+    for tone in ("bad", "warn", "unknown"):
+        assert f"class='{tone} " not in collapsed, f"a {tone} line is hidden behind a disclosure"
+
+
+def test_the_attention_strip_repeats_rather_than_replaces(tmp_path):
+    """Hoisting is a change of position, not of judgement. Every line in the
+    strip is still in the panel it came from."""
+    _record(tmp_path, actionable=("x",))
+    view = projection.project(tmp_path)
+    assert view.attention, "this state has unknowns to hoist"
+    page = projection.render_html(view)
+    for line in view.attention:
+        assert projection._escape(line.text.split(" — ", 1)[-1]) in page
+
+
+def test_the_next_action_is_lifted_out_of_the_panel_it_lives_in(tmp_path):
+    """The question a reader most often has is *what happens next*, and it was
+    one line among forty."""
+    _record(tmp_path, actionable=("consume the audit", "then verify identity"))
+    view = projection.project(tmp_path)
+    assert view.next_action == "consume the audit"
+    assert "<div class=next><b>NEXT AUTHORISED ACTION</b>" in projection.render_html(view)
+
+
+def test_a_clean_reading_says_so_without_claiming_the_run_is_fine(tmp_path):
+    """An empty attention strip is a reading of a record, not a promise about a
+    run, and the page says which."""
+    sentinel = tmp_path / "done"
+    wait = _continuation.Wait(job_id="j", kind=_continuation.WaitKind.PATH_EXISTS,
+                              path=str(sentinel), expects="a result",
+                              not_beyond_seconds=3600, declared_at=_continuation.now())
+    sentinel.write_text("ok")
+    _record(tmp_path, waits=(wait,),
+            evidence={n: "declared" for n in
+                      ("candidate", "suite", "gates", "latest_audit", "closure",
+                       "recurrence_classes", "real_consumers", "adapters", "continuation",
+                       "public_safety", "evolution_candidates")},
+            budgets={"cycles": {"used": 1, "ceiling": 8}})
+    page = projection.render_html(projection.project(tmp_path))
+    if "count good" in page:
+        assert "not a promise about the run" in page
+
+
+def test_every_panel_belongs_to_one_of_the_questions_a_reader_asks(tmp_path):
+    _record(tmp_path, actionable=("x",))
+    groups = {p.group for p in projection.project(tmp_path).panels}
+    assert groups <= {"now", "evidence", "resources", "identity", "detail"}
+    assert "now" in groups and "identity" in groups
