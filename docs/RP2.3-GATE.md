@@ -1832,3 +1832,21 @@ mistake: a precondition check that answers a question the caller did not ask.
 The cost is about 17 seconds on a 110-second suite — two extra Git processes per
 repository per invocation. Recorded because it is real, and because a check
 whose cost nobody measured is a check somebody eventually disables.
+
+### The pack's own history, re-read after the scanner grew
+
+Re-run once ref names and annotated tag messages became part of the scan:
+**253 occurrences over 3 refs and 1179 objects, and — the number that changed
+meaning — ZERO NOT SCANNED.**
+
+The earlier run reported 218 and could not have told you whether that was all of
+them. This one can: every reachable object was read, so the finding list is the
+whole finding list rather than as much of it as the scanner could reach. That is
+the difference the `INCOMPLETE` verdict bought.
+
+No occurrence is in a ref name or a tag message. All 253 are content findings of
+the two kinds already adjudicated in prose — absolute paths of the `/tmp` and
+`/dev/null` kind, and the credential-shaped fixtures the credential detector is
+tested against. **No personal path and no real credential**, re-verified
+directly. The disposition is unchanged: declared, not remediated, and the input
+to a publication decision rather than a substitute for one.
