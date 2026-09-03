@@ -113,5 +113,7 @@ discarded finding is evidence about the oracle.
 | RP3-9 | a retry decision taken from a worker's status label discards work the worker left behind | three of six killed workers left usable bytes; one left a complete generator it never ran, worth 22 records |
 | RP3-10 | a task's output root can be a directory a generator owns | a correct destructive rebuild destroyed two hand-written documents inside one |
 | RP3-11 | a coordinator's declared wait is prose, so it cannot have a transition | four distinct situations — finished, capacity-blocked, waiting on a live job, idle with authorised work — produce one identical observable, and the decisive instance declared its wait correctly and still went silent for 2h 21m after the job exited |
+| RP3-12 | liveness read from one signal produces the mirror-image error of reading it from process existence | a hung run at 0.05s of processor time over 31 minutes, and a HEALTHY run silent on its log for over four minutes while processor time climbed — one detector cannot tell them apart, and the action a stall invites destroys work |
+| RP3-13 | a waiter that matches on a pattern matches itself | one worker acquired three waiters whose patterns matched each other's command lines, so none could terminate while any sibling lived; four notifications fired after the job had exited |
 
 *(appended as each capability reproduces its own)*

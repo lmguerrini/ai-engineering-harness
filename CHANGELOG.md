@@ -9,6 +9,23 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Progress and stalls — a disjunction, because one signal kills healthy workers
+
+- **`tools/progress.py`**: `RUNNING`, `STALLED`, `COMPLETE`, `UNKNOWN` from two
+  readings of a run's monotonic signals. **Any** signal advancing means running;
+  a stall requires at least two independently observed signals to agree, and a
+  single flat signal is `UNKNOWN` rather than a stall.
+- **The stall horizon is declared by the caller and refused if absent**, and
+  every report states the horizon it was measured against.
+- **A stall is a classification, and the report says so.** Ending a worker stays
+  a human decision (row 4); this release ships the detection and not the
+  termination.
+- **A waiter watches a registered run, never a pattern**, and one whose own
+  command line matches its own pattern is refused at construction. Completion
+  retires every waiter on that run, on any terminal state and not only success.
+- A signal present in only one of the two readings is named as such and is never
+  counted as flat — a report that did would claim an observation nobody made.
+
 ### Coordinator continuation — a state derived from artifacts, so silence has a name
 
 - **`tools/continuation.py`**: eight states including `SILENT_IDLE`, which is a

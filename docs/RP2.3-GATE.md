@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1508
+    in-release (skills/core/*.md + policy/*.md)   1519
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2531   26.6% over the ~2,000
+    total against a ~2,000 target                 2542   27.1% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -321,3 +321,50 @@ capability is for and is repeated here rather than quietly upgraded.
 **Mutation-checked, nine for nine**, including the two that matter most: folding
 `SILENT_IDLE` into a ready state, and burying an unconsumed completion under a
 job that is still running.
+
+### C5 — Progress, stall and waiter lifecycle
+
+Two measurements from the same phase, four minutes apart, pointing in opposite
+directions. A worker that existed for thirty-one minutes and consumed 0.05
+seconds of processor time, with no log bytes and no provider rollout at all —
+process existence read as progress, and it was not. And a healthy worker that
+looked exactly like it: over four minutes with no log output while its processor
+time climbed 3.81 → 4.05 → 4.14. It was working the whole time.
+
+**So the disjunction is a safety property, not a completeness one.** Any
+observed signal advancing means running, whatever the others did. What follows
+from that is the rule that actually protects work: `tools/progress.py` **refuses
+to assert a stall from a single kind of observation**, and answers `UNKNOWN`
+instead. The alternative was measured killing recoverable work, and `UNKNOWN`
+there is the correct answer rather than a hedge.
+
+**The horizon is the caller's and is refused if undeclared.** How long is too
+long depends on the task class and the backend; a built-in number would be wrong
+exactly where it mattered. Every report states the horizon it was measured
+against.
+
+**A stall is a classification and says so in its own output.** Ending a worker
+is the only destructive act in this area, its false-positive rate is measured
+rather than theoretical, and it sits on `policy/hitl-matrix.md` row 4. The
+release ships the detection and not the termination, which is recorded in
+`docs/RP2.3-CAPABILITY-MAP.md` as removed from scope rather than overlooked.
+
+**A run is a registered identity and never a pattern.** One worker acquired
+three coordinator-owned waiters whose patterns matched each other's command
+lines, so none could terminate while any sibling lived — a quorum reporting
+RUNNING indefinitely, and four notifications that fired after the job had
+exited. A waiter whose own command line matches its own pattern is now refused
+**at construction**, because observing it hang later is too late to be useful.
+Completion retires every waiter on the run, on any terminal state and not only
+on success: one that exits cleanly on success and hangs on failure is armed
+precisely when something has gone wrong.
+
+**A mutant survived, and the repair is the more useful fact.** Padding the
+report's `flat` list with signals that appeared in only one sample changed no
+verdict — the stall decision keys off the comparable set — so seven of eight
+mutants died and this one lived. What it broke was the report's honesty: it
+would have named a signal as flat that nobody compared, which is a claim about
+an observation that was never made. The oracle now asserts against the `flat`
+set and against the rendered line, not only against the verdict. **A test that
+checks only the verdict passes while the report lies**, and that is this
+release's own subject arriving in its own test.

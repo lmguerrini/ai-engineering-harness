@@ -99,6 +99,17 @@ so, rather than let a requested value read as an observed one.
     ingests a patch from it — but it never writes history the coordinator did
     not choose to accept.
 
+## Existence is not progress, and one signal is worse than none
+
+A worker that existed for thirty-one minutes consumed 0.05 seconds of processor
+time and wrote nothing. A healthy one, measured four minutes later, wrote no log
+output for over four minutes while its processor time climbed. **Any** observed
+signal advancing means running; a stall needs several independent signals to
+agree, and a single flat one is `UNKNOWN` (`tools/progress.py`). A stall is a
+classification: ending a worker is a human decision, row 4. A waiter watches a
+registered run and never a pattern — a pattern matches the watcher too, and
+three that did formed a quorum that could not terminate.
+
 ## Tree ownership while a worker runs
 
 The coordinator does not edit a working tree while a worker is running in it. A
