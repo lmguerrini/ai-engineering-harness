@@ -7,6 +7,8 @@ to obtain a positive qualification from something that is not evidence of one.
 
 from pathlib import Path
 
+import pathlib
+
 import pytest
 
 from backend_contract import (
@@ -190,9 +192,41 @@ def test_environmental_failures_do_not_grade_a_backend_incapable():
 
 
 def test_the_derived_view_is_a_pure_function_of_the_log():
-    """It is regenerated wholesale, never patched — so two derivations of an
-    unchanged log must be identical."""
-    assert grades_from_observations(OBSERVATIONS) == grades_from_observations(OBSERVATIONS)
+    """It is regenerated wholesale, never patched, so the view is a function of
+    the log and of nothing else.
+
+    **Was `f(x) == f(x)`, which cannot fail** — the third self-comparison of
+    that exact shape in this release, after the two digest ones, and found by a
+    mechanical sweep of the suite rather than by a reader. Calling a pure
+    function twice tests the language.
+
+    The property is that the view depends on the log ALONE: order does not
+    change it, an unrelated row does not change the grades of other task
+    classes, and one changed row changes exactly its own grade."""
+    import json
+    import tempfile
+
+    rows = [json.loads(line) for line in
+            OBSERVATIONS.read_text(encoding="utf-8").splitlines() if line.strip()]
+    baseline = grades_from_observations(OBSERVATIONS)
+    assert baseline, "the fixture log produced no grades, so nothing below discriminates"
+
+    with tempfile.TemporaryDirectory() as scratch:
+        def graded(records):
+            path = pathlib.Path(scratch) / "log.jsonl"
+            path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+            return grades_from_observations(path)
+
+        assert graded(rows) == baseline, "the same rows through a copy gave a different view"
+        assert graded(list(reversed(rows))) == baseline, "the order of the log changed the view"
+
+        unrelated = rows + [{**rows[0],
+                             "task_class": "a task class nothing else mentions",
+                             "outcome": "validated"}]
+        after = graded(unrelated)
+        for key, grade in baseline.items():
+            assert after[key] == grade, f"an unrelated row moved the grade for {key}"
+        assert len(after) == len(baseline) + 1, "the new row produced no grade of its own"
 
 
 # --- the derivation itself, asserted rather than shape-checked -----------------
