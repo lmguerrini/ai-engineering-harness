@@ -24,7 +24,11 @@ from __future__ import annotations
 #: load a contract that declares things it knows nothing about — all three real
 #: consumers do, and a reader that refused unknown blocks would have broken
 #: every one of them.
-UNKNOWN_BLOCKS = """
+#: The blocks a real consumer carries that Core never reads, minus the two it
+#: DOES read — profiles and publication — so a shape that declares its own can
+#: still carry the unknown-block property. Split out rather than duplicated:
+#: `UNKNOWN_BLOCKS` below is byte-identical to what it always was.
+_UNKNOWN_BLOCKS_CORE = """
 dimensions:
   correctness: "the thing does what was asked"
   clarity: "a reader can follow it"
@@ -34,11 +38,9 @@ mutation_policy:
   scope: "only the declared repository"
 approval:
   integration: "coordinator"
-validation_profiles:
-  focused:
-    command: "python3 -m pytest -q"
-    when: "every task gate"
-hitl_selections:
+"""
+
+_UNKNOWN_BLOCKS_TAIL = """hitl_selections:
   release: "human"
 private_terms:
   project_terms: ["ProjectCodename"]
@@ -47,7 +49,13 @@ private_terms:
 workspace_classification:
   generated: ["build/*", "dist/*"]
   content_exempt: [".gitignore", "docs/figures/*.png"]
-publication:
+"""
+
+UNKNOWN_BLOCKS = _UNKNOWN_BLOCKS_CORE + """validation_profiles:
+  focused:
+    command: "python3 -m pytest -q"
+    when: "every task gate"
+""" + _UNKNOWN_BLOCKS_TAIL + """publication:
   release_ref: "main"
   publishable: ["src/**", "README.md"]
 """
@@ -110,7 +118,86 @@ requires:
 
 #: name -> (compatibility class, template). The class string is what a reader
 #: should understand this shape to be protecting.
+#: Everything RP2.3 adds, all of it optional. The MINOR claim rests on the
+#: absence of these keys being indistinguishable from the previous release.
+_PUBLICATION_INTENT = """
+publication:
+  intent: "{intent}"
+"""
+
+_REPRODUCIBLE_PROFILES = """
+validation_profiles:
+  focused:
+    command: "python3 -m pytest -q"
+    reproducible_by: developer_machine
+  full:
+    command: "python3 -m pytest"
+    reproducible_by: public_clone
+"""
+
+_CLOSURE_POLICY = """
+closure:
+  refuses_on_unrun: false
+"""
+
+_ADAPTER_WITH_EXECUTABLE = """
+adapters:
+  - id: "a-worker"
+    locator: "{adapter}"
+    digest: "{adapter_digest}"
+    executable: "echo"
+    version_command: "echo 1.2.3"
+    qualified_version: "1.2.3"
+"""
+
+#: The pre-2.1 shape, still carried by a real project on the machine this
+#: release was built on. It must NOT load — it is in its own collection for
+#: that reason, and what is asserted about it is the message.
+_LEGACY_FLAT_TERMS = """project:
+  name: "{name}"
+  repo_path: "{repo}"
+private_terms:
+  - 'session id'
+  - 'worker id'
+"""
+
+#: Shapes that must be REFUSED, and what the refusal has to say. A shape that
+#: cannot load has no other behaviour to test, so it cannot sit in `SHAPES`
+#: beside shapes whose whole point is that they load.
+REFUSED_SHAPES: dict[str, tuple[str, str, str]] = {
+    "legacy_flat_private_terms": (
+        "the pre-2.1 list form of `private_terms`, still live on a real machine and unreadable "
+        "by every tool since the schema changed; the refusal must name the migration rather "
+        "than report a type, because a project told its file is malformed does not learn that "
+        "it is a generation behind",
+        _LEGACY_FLAT_TERMS,
+        "pre-2.1 schema",
+    ),
+}
+
 SHAPES: dict[str, tuple[str, str]] = {
+    "unchanged_since_2_2": (
+        "a contract carrying none of the keys this release adds; the MINOR claim is that it "
+        "loads and behaves exactly as it did, so every new key must be optional",
+        _HEADER + _FULL_PIN + UNKNOWN_BLOCKS,
+    ),
+    "adapter_with_executable": (
+        "an adapter declaring the program it drives, so the pin covers the executable and not "
+        "only the definition files whose digest it already carried",
+        _HEADER + _FULL_PIN + UNKNOWN_BLOCKS + _ADAPTER_WITH_EXECUTABLE,
+    ),
+    "internal_intent": (
+        "a project that declares itself internal and declines to close over an unrun profile; "
+        "it must not be walked through publication ceremony and must keep every safety invariant",
+        _HEADER + _FULL_PIN + _UNKNOWN_BLOCKS_CORE + _UNKNOWN_BLOCKS_TAIL
+        + _PUBLICATION_INTENT + _REPRODUCIBLE_PROFILES + _CLOSURE_POLICY,
+    ),
+    "public_intent": (
+        "a project that declares it intends to publish and names the environment each profile "
+        "is reproducible by; it carries both halves of the obligation set",
+        _HEADER + _FULL_PIN + _UNKNOWN_BLOCKS_CORE + _UNKNOWN_BLOCKS_TAIL
+        + _PUBLICATION_INTENT + _REPRODUCIBLE_PROFILES,
+    ),
     "legacy_pin_version_only": (
         "a pin from before the four-field identity: version and nothing else. Two of "
         "three real consumers are in this state. It must classify as LEGACY and say so, "
@@ -163,7 +250,11 @@ SHAPES: dict[str, tuple[str, str]] = {
 
 def render(shape: str, **values: object) -> str:
     """One shape, with its placeholders resolved against a caller's paths."""
-    if shape not in SHAPES:
-        raise KeyError(f"no consumer shape named {shape!r}; known: {', '.join(sorted(SHAPES))}")
-    _description, template = SHAPES[shape]
-    return template.format(**values)
+    if shape in SHAPES:
+        return SHAPES[shape][1].format(**values)
+    if shape in REFUSED_SHAPES:
+        return REFUSED_SHAPES[shape][1].format(**values)
+    raise KeyError(
+        f"no consumer shape named {shape!r}; known: "
+        f"{', '.join(sorted(set(SHAPES) | set(REFUSED_SHAPES)))}"
+    )

@@ -149,7 +149,18 @@ def _contract(tmp_path, shape, release, context_tree, **overrides):
         "state": release["state"],
         "context": context_tree["path"],
         "context_digest": context_tree["digest"],
+        "intent": "internal",
     }
+    # A real adapter file, so the digest in the shape is the digest of bytes
+    # that exist. A shape carrying an invented digest would test the refusal
+    # path while claiming to test the verifying one.
+    adapter = tmp_path / "adapter.md"
+    if not adapter.exists():
+        adapter.write_text("name: a-worker\n", encoding="utf-8")
+    import hashlib
+
+    values["adapter"] = str(adapter)
+    values["adapter_digest"] = hashlib.sha256(adapter.read_bytes()).hexdigest()
     values.update(overrides)
     path = tmp_path / "PROJECT.yaml"
     path.write_text(consumer_shapes.render(shape, **values))
@@ -169,8 +180,14 @@ def test_every_compatibility_class_the_release_learned_is_still_listed():
         "context_required_and_verified",
         "pin_to_an_unqualified_release",
         "full_pin_that_does_not_verify",
+        # RP2.3
+        "unchanged_since_2_2",
+        "adapter_with_executable",
+        "internal_intent",
+        "public_intent",
     }
     assert set(consumer_shapes.SHAPES) == expected
+    assert set(consumer_shapes.REFUSED_SHAPES) == {"legacy_flat_private_terms"}
     for name, (description, template) in consumer_shapes.SHAPES.items():
         assert len(description) > 40, f"{name} does not say which class it preserves"
         assert "project:" in template
@@ -724,3 +741,151 @@ adapters:
     assert adapters.blocking is False, "a permitted absence must not block"
     assert any("1 of 2" in note for note in adapters.notes), adapters.notes
     assert report.ready
+
+
+# --- RP2.3: every key this release adds is optional, and the old shape is named
+#
+# The MINOR claim under `DECISIONS.md` D24 rests on the first of these: a
+# contract written before this release loads and behaves exactly as it did.
+
+
+def test_a_contract_from_before_this_release_behaves_exactly_as_it_did(
+    tmp_path, release, context_tree
+):
+    """The MINOR claim, asserted rather than argued. Every key RP2.3 adds is
+    absent here, and absence must be indistinguishable from the previous
+    release rather than merely tolerated."""
+    contract = ProjectContract.load(
+        _contract(tmp_path, "unchanged_since_2_2", release, context_tree))
+
+    assert contract.publication_intent is None
+    assert contract.reproducible_by == ()
+    assert contract.raw.get("closure") is None
+    assert contract.default_terms, "the default vocabulary still resolves"
+    assert contract.default_terms_source.canonical
+
+
+def test_an_internal_project_is_not_walked_through_publication_ceremony(
+    tmp_path, release, context_tree
+):
+    import publication_history
+
+    contract = ProjectContract.load(
+        _contract(tmp_path, "internal_intent", release, context_tree, intent="internal"))
+    applicable, not_applicable, _why = publication_history.obligations(contract)
+
+    assert contract.publication_intent == "internal"
+    assert not_applicable, "an internal project carries fewer obligations, not more"
+    assert set(applicable) == set(publication_history.UNIVERSAL_OBLIGATIONS)
+
+
+def test_a_public_project_carries_both_halves_and_names_its_environments(
+    tmp_path, release, context_tree
+):
+    import publication_history
+
+    contract = ProjectContract.load(
+        _contract(tmp_path, "public_intent", release, context_tree, intent="public"))
+    applicable, not_applicable, _why = publication_history.obligations(contract)
+
+    assert not not_applicable
+    assert dict(contract.reproducible_by) == {
+        "focused": "developer_machine", "full": "public_clone"}
+
+
+def test_a_project_may_declare_that_an_unrun_profile_does_not_stop_it(
+    tmp_path, release, context_tree
+):
+    import close_attestation
+
+    contract = ProjectContract.load(
+        _contract(tmp_path, "internal_intent", release, context_tree, intent="internal"))
+    profiles = list(contract.raw.get("validation_profiles") or {})
+    attestation = close_attestation.attest(
+        "C1-first", profiles, {}, head_revision="a" * 40, tree_digest="b" * 64,
+        refuses_on_unrun=bool((contract.raw.get("closure") or {}).get("refuses_on_unrun", True)),
+    )
+    assert attestation.unrun and not attestation.blocking
+    assert "UNRUN" in attestation.render(), "the profiles are enumerated either way"
+
+
+def test_an_adapter_declaring_its_executable_verifies_the_program_too(
+    tmp_path, release, context_tree
+):
+    import adapter_pin
+
+    contract = ProjectContract.load(
+        _contract(tmp_path, "adapter_with_executable", release, context_tree))
+    report = adapter_pin.verify_contract(contract)
+    assert report.clean, report.render()
+    assert report.executables_verified == ["a-worker"]
+    assert "1 file(s), 1 executable(s)" in report.render()
+
+
+def test_the_pre_2_1_contract_is_refused_with_its_migration_named(
+    tmp_path, release, context_tree
+):
+    """Live on a real machine, unreadable by every tool since the schema
+    changed, and told only that its file was the wrong type. A project a
+    generation behind should learn that it is a generation behind."""
+    path = _contract(tmp_path, "legacy_flat_private_terms", release, context_tree)
+    with pytest.raises(ContractError) as caught:
+        ProjectContract.load(path)
+
+    message = str(caught.value)
+    _description, _template, must_say = consumer_shapes.REFUSED_SHAPES["legacy_flat_private_terms"]
+    assert must_say in message
+    assert "default_set" in message and "project:" in message
+    assert "NOT migrated automatically" in message, (
+        "guessing which tier an entry belongs to would change what gets scanned"
+    )
+
+
+def test_every_refused_shape_names_what_its_refusal_has_to_say():
+    """A refusal fixture whose expected message is not asserted is a fixture
+    that passes on any refusal at all."""
+    for name, (description, template, must_say) in consumer_shapes.REFUSED_SHAPES.items():
+        assert len(description) > 40, name
+        assert "project:" in template, name
+        assert must_say.strip(), f"{name} does not say what its refusal must contain"
+
+
+# --- adoption: a candidate is not adoptable, and the gate says so ------------------
+
+
+def test_a_project_cannot_adopt_this_candidate_while_it_is_in_progress(tmp_path):
+    """`DECISIONS.md` D21 reserves hard refusal for what is actually broken, and
+    a migration target that is not itself qualified is on that list. This
+    release is `IN_PROGRESS` until a person moves it, so a project offered it
+    must be refused rather than warned."""
+    import json
+    import pathlib
+    import subprocess
+
+    import pack_migration
+
+    root = pathlib.Path(pack_migration.__file__).parent.parent
+    manifest = json.loads((root / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root),
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+    index = tmp_path / "RELEASE_INDEX.json"
+    index.write_text(json.dumps({"releases": [{
+        "version": manifest["version"], "root_path": str(root), "sha": head,
+        "digest": manifest["tree_digest_sha256"], "state": manifest["state"],
+    }]}))
+    target = pack_migration.read_release_index(index)[0]
+    assert target.state == "IN_PROGRESS", (
+        "this test only means anything while the candidate is unfrozen; once it is frozen "
+        "the assertion below is about a different release"
+    )
+
+    pin = pack_migration.Pin(
+        root_path=str(root), version="2.2.0", sha="d" * 40, digest="4" * 64,
+        state="QUALIFIED_AND_FROZEN",
+    )
+    report = pack_migration.migration_gate(pin, target, at_capability_boundary=True)
+    assert report.findings, "an unqualified target must be refused, not offered"
+    assert any("IN_PROGRESS" in finding or "QUALIFIED" in finding for finding in report.findings), (
+        report.findings
+    )

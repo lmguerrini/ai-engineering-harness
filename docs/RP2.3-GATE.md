@@ -790,3 +790,54 @@ substring also matched a *different panel's* unknown: two panels, one sentence
 fragment, and a test that could not tell them apart. **The distinction between
 an absence and a reading is the thing this capability is for, and it took two
 tries to write a test that could see it.**
+
+### C13 — Launch, migration and compatibility
+
+**Real-consumer contact first, because that is what the evidence says pays.**
+Every tool this release adds was pointed read-only at all five project contracts
+on this machine before anything else in this capability was written. Four loaded
+and behaved. One did not, and the finding is worth more than the capability
+around it.
+
+**RP3-26 — a live project's contract has been unreadable by every tool since the
+schema changed.** `private_terms:` is a **list** in it, which is the pre-2.1
+shape, and the reader answers *`private_terms:` must be a mapping*. Confirmed
+identical against the frozen 2.2.0 baseline, so this is inherited rather than
+introduced. The defect is not the refusal — the refusal is correct — it is that
+a project a generation behind is told its file is the wrong type, learns nothing
+about which generation it is behind, and is given no migration.
+
+Repaired the way an unverifiable legacy pin is: the older shape is recognised
+and **named as legacy**, the refusal states the current shape and where the
+template is, and the entries are **not migrated automatically**. That last part
+is the safety half — the two tiers differ in whether a term applies to blob
+content, so choosing for the project would change what gets scanned.
+
+**Compatibility is asserted, not claimed.** The representative-consumer corpus
+gains four shapes and, for the first time, a collection of shapes that must be
+**refused** — a refusal fixture whose expected message is not asserted is a
+fixture that passes on any refusal at all. The load-bearing one is
+`unchanged_since_2_2`: a contract carrying none of the keys this release adds,
+which must load and behave exactly as it did. **That is the MINOR claim, and it
+is a test rather than an argument.**
+
+**The release index exists now**, at the install root beside the release
+directories, where D18 says it belongs. It lists 2.2.0 and **deliberately omits
+2.1.1**: that release is qualified and has no root of its own, because it lives
+in the checkout the next version is developed in. Listing the directory would
+enshrine the D18 layout defect rather than record it, and a project pinned to
+2.1.1 stays correctly pinned either way. The full readiness path was then run
+against a real consumer with the index supplied and returned `READY`, with the
+newer release reported as information and not as a gate (D21).
+
+**A project cannot adopt this candidate**, and that is now a test rather than a
+property of the manifest: the migration gate refuses an `IN_PROGRESS` target,
+and the assertion says out loud that it only means something while the candidate
+is unfrozen.
+
+**The launch contract needed one addition and no more.** Its own rule is that a
+project reads the release's shipped templates rather than reconstructing a
+schema from the launch document, so every new declaration this release adds
+needs nothing there. What it did need was the index: a sentence saying it exists,
+that an entry is a claim rather than an answer, and that a project runs against
+its own pin and never against an index.

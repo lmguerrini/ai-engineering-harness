@@ -9,6 +9,25 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Launch, migration and compatibility
+
+- **A pre-2.1 contract is named as legacy rather than reported as a type
+  error.** A live project has been unreadable by every `--project` tool since
+  the schema changed; the refusal now states the current shape, points at the
+  template, and says the entries are not migrated automatically, because the
+  two tiers differ in whether a term applies to blob content.
+- **Four new representative consumer shapes**, including one carrying none of
+  the keys this release adds — the MINOR claim, as a test. Plus the first
+  collection of shapes that must be **refused**, each naming what its refusal
+  has to say.
+- **A release index now exists beside the release roots.** It omits 2.1.1
+  deliberately: that release has no root of its own, and listing the working
+  checkout would enshrine the D18 defect rather than record it.
+- **The migration gate refuses this candidate while it is `IN_PROGRESS`**, and
+  that is a test.
+- The launch contract gains one sentence: the index exists, an entry is a claim,
+  and a project runs against its own pin rather than against an index.
+
 ### A diagnostic projection that is a projection
 
 - **`tools/projection.py`** renders one read-only view of a project's durable

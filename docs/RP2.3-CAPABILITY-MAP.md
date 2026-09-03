@@ -127,5 +127,6 @@ discarded finding is evidence about the oracle.
 | RP3-23 | the strict tier and the complete reachable history are never combined by any shipped invocation | a term committed and then deleted survives in a blob that the staged scan, the working tree and `ls-files` all miss, while the range scan that would see it runs at the tier that does not apply the rule |
 | RP3-24 | a closure record's gate block is prose, so a profile nobody ran is indistinguishable from one that passed | two capabilities closed green over red gates, and nothing compared the sentence to a run |
 | RP3-25 | a measurement inside a human decision record is never re-checked, and nothing downstream questions a ruling | one ruling was taken on a figure a later commit falsified, and the decision went on standing |
+| RP3-26 | a live project's contract is written to the pre-2.1 schema, unreadable by every tool since, and told only that its type is wrong | `private_terms:` as a list refuses with a message about a mapping; nothing names the schema generation or the migration, and the refusal is identical at the frozen 2.2.0 baseline |
 
 *(appended as each capability reproduces its own)*

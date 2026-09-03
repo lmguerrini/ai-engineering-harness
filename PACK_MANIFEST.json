@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "db84db29d70d380b4d1d7186d0418a1088b5369125de2723ec26c2c4a78c4824",
+  "tree_digest_sha256": "1c80f359647eaa7bb1f29338dceeeb86457c65c412d00dea8d26f7ed2b8ded4d",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 1016
+    "passed": 1032
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -42,7 +42,8 @@
     "the tree digest is computed over WORKING-TREE BYTES, so a checkout with core.autocrlf=true produces a different digest for the same commit. There is no .gitattributes.",
     "NO CAPABILITY IN THIS CANDIDATE HAS BEEN INDEPENDENTLY AUDITED YET. The audit history is in docs/RP2.3-GATE.md and it is currently empty.",
     "THE CAPACITY GATE HAS NEVER BEEN RUN AGAINST A LIVE PROVIDER READING. Every fixture supplies its own pool figures, and the one documented resource surface this pack can read (tools/resource_observation.py) reports UNKNOWN in the ordinary case by that surface's own definition. What is exercised is the arithmetic, the refusals and the conservative posture; what is not is whether a real reading arrives in the shape the gate expects.",
-    "THE DIAGNOSTIC PROJECTION SHIPS AGAINST THE EVIDENCE, ON A HUMAN DECISION. The reconciliation this release draws on refuses a dashboard in terms — a human wanting one is not evidence that Core should ship one — and the refusal is recorded rather than reversed. What answers its concrete objection is the ordering: coordinator state is derived rather than stored, so there is no stored value to go stale. It is a one-shot renderer with no port, no cache and no importer, and removing it is deleting one file."
+    "THE DIAGNOSTIC PROJECTION SHIPS AGAINST THE EVIDENCE, ON A HUMAN DECISION. The reconciliation this release draws on refuses a dashboard in terms — a human wanting one is not evidence that Core should ship one — and the refusal is recorded rather than reversed. What answers its concrete objection is the ordering: coordinator state is derived rather than stored, so there is no stored value to go stale. It is a one-shot renderer with no port, no cache and no importer, and removing it is deleting one file.",
+    "A REAL PROJECT ON THIS MACHINE STILL CARRIES A PRE-2.1 CONTRACT and this release does not migrate it. The refusal now names the schema generation and the migration instead of reporting a type error, which is the repair; performing the migration is the project's, because the two private-term tiers differ in whether a term applies to blob content and choosing would change what gets scanned."
   ],
   "deferred": {
     "RP2.3 DEFER_WITH_TRIGGER": "see docs/RP2.3-CAPABILITY-MAP.md for each item and the observation that reopens it: the full routing-evidence schema; the clean-clone reproducibility gate; a commit-subject length ceiling; publication readiness beyond the profile declaration; a write-ceiling runtime for delegation scope.",

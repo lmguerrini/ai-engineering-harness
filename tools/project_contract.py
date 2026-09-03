@@ -659,6 +659,30 @@ class ProjectContract:
             raise ContractError("`project:` must be a mapping")
 
         terms_block = raw.get("private_terms") or {}
+        if isinstance(terms_block, list):
+            # The pre-2.1 shape, and a real project on this machine still
+            # carries it. Every `--project` tool has refused that contract since
+            # the schema changed, with a message about a type — so the project
+            # was told its file was malformed rather than that it was written to
+            # an older generation of the schema, and nothing named the
+            # migration. Treated the way an unverifiable legacy pin is: reported
+            # at every use, named as legacy, and remedied by migrating rather
+            # than by this reader guessing which of the two tiers the entries
+            # belonged to. Guessing is the part that would be unsafe — the tiers
+            # differ in whether a term is applied to blob content, and reading
+            # the older flat list as either one changes what gets scanned.
+            raise ContractError(
+                "`private_terms:` is a LIST, which is the pre-2.1 schema. This contract has not "
+                "been migrated, and no tool has been able to read it since. The current shape is "
+                "a mapping:\n"
+                "    private_terms:\n"
+                "      default_set: policy/private-terms.default.json\n"
+                "      project: [ ... this file's current list ... ]\n"
+                "      project_patterns: [ ... any `private_patterns:` block ... ]\n"
+                "The entries are NOT migrated automatically: the two tiers differ in whether a "
+                "term applies to blob content, and choosing for you would change what gets "
+                "scanned. See templates/PROJECT.yaml.template."
+            )
         if not isinstance(terms_block, dict):
             raise ContractError("`private_terms:` must be a mapping")
         classification = raw.get("workspace_classification") or {}
