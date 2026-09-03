@@ -1450,3 +1450,104 @@ def test_the_routing_table_states_the_observation_count_it_was_derived_from():
     assert int(stated.group(1)) == rows, (
         f"the routing table says {stated.group(1)} observations; the log holds {rows}"
     )
+
+
+# --- the closure matrix is an artifact, and artifacts drift -------------------------
+
+
+def _matrix_rows():
+    import pathlib
+
+    rows = []
+    for line in (ROOT / "docs" / "RP2.3-FAILURE-MODE-CLOSURE.md").read_text(
+            encoding="utf-8").split("\n"):
+        if line.startswith("| M-"):
+            rows.append([c.strip() for c in line.strip().strip("|").split(" | ")])
+    return rows
+
+
+def test_every_mechanism_identifier_names_one_mechanism():
+    """Sixteen identifiers once named two mechanisms each, because the table grew
+    in two places and both reused the same numbers. A closure matrix whose
+    identifiers do not identify is not a matrix, and it is this release's central
+    evidence artifact."""
+    rows = _matrix_rows()
+    seen = {}
+    for row in rows:
+        assert row[0] not in seen, f"{row[0]} names both {seen.get(row[0])!r} and {row[1]!r}"
+        seen[row[0]] = row[1]
+    assert len(rows) > 60, "the matrix lost rows"
+
+
+def test_every_row_has_the_four_columns_the_table_declares():
+    """`M-18e` had three, with its oracle folded into the disposition cell — so a
+    check that read the fourth column found no oracle and reported a gate
+    failure about a row that had one. The shape is checked because the readers of
+    this table are programs as well as people."""
+    for row in _matrix_rows():
+        assert len(row) == 4, f"{row[0]} has {len(row)} columns, not four: {row}"
+
+
+def test_every_disposition_is_one_the_release_authorised():
+    vocabulary = ("PREVENTED", "DETECTED_AND_BLOCKED", "SAFELY_RECOVERABLE",
+                  "ALREADY_COVERED", "DEFERRED")
+    for row in _matrix_rows():
+        stated = row[2].strip("* ")
+        assert any(stated.startswith(word) for word in vocabulary), \
+            f"{row[0]} is dispositioned {stated!r}, which is not one of {vocabulary}"
+
+
+def test_every_non_deferred_mechanism_names_an_oracle():
+    """A description of a mechanism is evidence about the design, not a
+    demonstration that it holds today. Fifty-one rows described their closure and
+    named nothing runnable until the final evidence-completeness audit."""
+    for row in _matrix_rows():
+        if row[2].strip("* ").startswith("DEFERRED"):
+            continue
+        assert "Oracle:" in row[3], f"{row[0]} names no oracle: {row[3][:80]}"
+
+
+def test_every_oracle_the_matrix_names_selects_at_least_one_test():
+    """A selector that matches nothing is a passing command and an empty claim.
+    Four of the selectors written first matched no test at all and reported green
+    by selecting nothing."""
+    import re
+    import subprocess
+    import sys
+
+    selectors = []
+    for row in _matrix_rows():
+        found = re.search(r"\*\*Oracle:\*\*\s*(.+)$", row[3])
+        if not found:
+            continue
+        parts = re.findall(r"`([^`]+)`", found.group(1))
+        if not parts:
+            continue
+        # Rows written at different times name the file either bare or with its
+        # directory, so both are resolved. The first version built
+        # `<pack>/test_continuation.py`, which exists nowhere, and reported that
+        # EVERY oracle selected nothing — a check that fails on all inputs is as
+        # uninformative as one that passes on all of them.
+        files = []
+        for piece in parts[0].split():
+            if not piece.endswith(".py"):
+                continue
+            files.append(piece if "/" in piece else f"tools/tests/{piece}")
+        keyword = None
+        for piece in parts[1:]:
+            if piece.startswith("-k "):
+                keyword = piece[3:].strip().strip('"')
+        if files:
+            selectors.append((row[0], files, keyword))
+
+    assert len(selectors) > 60, f"only {len(selectors)} oracles parsed out of the matrix"
+    command = [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"]
+    empty = []
+    for mechanism, files, keyword in selectors:
+        result = subprocess.run(
+            command + [str(ROOT / f) for f in files] + (["-k", keyword] if keyword else []),
+            capture_output=True, text=True, timeout=300, cwd=ROOT)
+        collected = [l for l in result.stdout.splitlines() if "::" in l]
+        if not collected:
+            empty.append((mechanism, files, keyword))
+    assert not empty, f"these oracles select no test at all: {empty}"
