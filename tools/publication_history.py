@@ -244,6 +244,15 @@ def scan_complete_history(
     for name in names:
         try:
             messages = gitread.commit_messages(repository, name)
+        except IntegrityError:
+            # NOT a skip. An `IntegrityError` from the reader is a fact about the
+            # REPOSITORY — an object it names and its store cannot produce — and
+            # recording it as one ref's skip left the stated guarantee (*stop
+            # rather than be skipped*) untrue even though the outcome was
+            # conservative. An independent reader made the distinction, and it
+            # is the right one: a hole in the object store is not a per-ref
+            # inconvenience.
+            raise
         except Exception as exc:
             report.skipped.append(f"the commit messages on {name} could not be read: {exc}")
             continue

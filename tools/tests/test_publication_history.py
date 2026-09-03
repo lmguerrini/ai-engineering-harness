@@ -436,3 +436,24 @@ def test_a_private_term_in_a_commit_message_is_found(repo):
         repo, outgoing_scan.Scanner(TermSet(terms=("needlecommit",))))
     assert [o.location for o in report.occurrences] == ["commit"]
     assert report.complete
+
+
+def test_a_repository_whose_objects_cannot_be_produced_stops_the_scan(repo, monkeypatch):
+    """An `IntegrityError` from the reader is a fact about the REPOSITORY — an
+    object it names and its store cannot produce — and recording it as one ref's
+    skip left the stated guarantee (*stop rather than be skipped*) untrue even
+    though the outcome was conservative. A hole in the object store is not a
+    per-ref inconvenience."""
+    from errors import IntegrityError
+
+    (repo / "f").write_text("x\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a message")
+
+    def missing(*_args, **_kw):
+        raise IntegrityError("named object missing from object store")
+
+    monkeypatch.setattr(publication_history.gitread, "commit_messages", missing)
+    with pytest.raises(IntegrityError):
+        publication_history.scan_complete_history(
+            repo, outgoing_scan.Scanner(TermSet(terms=("secretword",))))

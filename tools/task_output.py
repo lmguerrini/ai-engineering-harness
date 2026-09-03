@@ -407,6 +407,18 @@ def classify(contract: OutputContract) -> RecoveryReport:
     never ran. The label and the disk disagreed, and the disk was right.
     """
     root = contract.output_root
+    # THE ROOT ITSELF, before anything inside it. Links inside the root were
+    # checked and the root was not, so `alias -> actual` classified as complete
+    # and the report described bytes in a directory the contract did not name —
+    # and gave the chunk a second reachable path with an ordinary link count,
+    # walking around the hard-link check as well. **Sixth shape of one defect**,
+    # each closed at the depth the previous repair could see.
+    if root.is_symlink():
+        return RecoveryReport(
+            task_id=contract.task_id, state=RecoveryState.UNKNOWN,
+            why=f"the output root is a symbolic link, so the artifacts under it are not this "
+                f"contract's root and may be reachable by another name as well",
+        )
     if not root.is_dir():
         return RecoveryReport(
             task_id=contract.task_id, state=RecoveryState.FAILED_BEFORE_USEFUL_OUTPUT,

@@ -613,3 +613,29 @@ def test_the_link_count_check_errs_only_towards_refusing(tmp_path):
     assert report.state == task_output.RecoveryState.UNKNOWN
     with pytest.raises(PreconditionError):
         task_output.resume_plan(report)
+
+
+def test_an_output_root_that_is_a_link_is_not_this_contract_s_root(tmp_path):
+    """Links INSIDE the root were checked and the root itself was not, so
+    `alias -> actual` classified as complete and the report described bytes in a
+    directory the contract did not name — and gave every chunk a second
+    reachable path with an ordinary link count, walking around the hard-link
+    check as well.
+
+    **Sixth shape of one defect**, each closed at the depth the previous repair
+    could see: the owner marker unread, absent, linked; the chunks directory
+    linked; the completion marker naming another task; and now the root."""
+    real = tmp_path / "actual"
+    contract = task_output.OutputContract("beta", real, 64, expected_chunks=1)
+    task_output.claim_root(contract)
+    task_output.materialise(contract, 0, "beta bytes")
+    task_output.complete(contract, 1)
+    assert task_output.classify(contract).state == \
+        task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT
+
+    alias = tmp_path / "alias"
+    alias.symlink_to(real, target_is_directory=True)
+    through = task_output.OutputContract("beta", alias, 64, expected_chunks=1)
+    report = task_output.classify(through)
+    assert report.state == task_output.RecoveryState.UNKNOWN
+    assert "symbolic link" in report.why

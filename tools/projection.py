@@ -412,6 +412,12 @@ def _budget_panel(record) -> Panel:
             "the record declares no budgets. NOT the same as none spent — an untracked counter is "
             "unknown, and zero-used is a claim nobody made")
     for counter, position in sorted(record.budgets.items()):
+        if not isinstance(position, dict):
+            # `budgets: {"cycles": 7}` loads and then raises here. A projection
+            # may not raise, least of all on the record it exists to display.
+            panel.say(f"{position!r} — not a position this view can read", Tone.UNKNOWN,
+                      label=counter)
+            continue
         used, ceiling = position.get("used"), position.get("ceiling")
         left = (ceiling - used) if isinstance(used, int) and isinstance(ceiling, int) else UNKNOWN
         spent = isinstance(left, int) and left <= 0
@@ -526,9 +532,19 @@ def _output_panel(record, base: Path) -> Panel:
         except Exception as exc:
             panel.unknown.append(f"{wait.job_id}: the output root could not be classified: {exc}")
             continue
-        panel.lines.append(f"{wait.job_id}: {report.state} — {report.examined.summary()}")
+        panel.say(f"{report.state} — {report.examined.summary()}",
+                  {task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT: Tone.GOOD,
+                   task_output.RecoveryState.UNKNOWN: Tone.UNKNOWN,
+                   task_output.RecoveryState.FAILED_WITH_PARTIAL_DURABLE_OUTPUT: Tone.WARN,
+                   task_output.RecoveryState.FAILED_BEFORE_USEFUL_OUTPUT: Tone.WARN}
+                  .get(report.state, Tone.PLAIN), label=wait.job_id)
+        # WHOSE root this is. The panel showed a state and never said which task
+        # owns the artifacts it describes — found by sharpening the contract's
+        # marker for *task ownership* until it stopped matching something else,
+        # at which point there was nothing left for it to match.
+        panel.say(str(wait.task_id), Tone.MUTED, label="task_id", depth=1)
         if report.state == task_output.RecoveryState.UNKNOWN:
-            panel.lines.append(f"  {report.why}")
+            panel.say(report.why, Tone.UNKNOWN, depth=1)
     return panel
 
 

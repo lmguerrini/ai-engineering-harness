@@ -106,10 +106,17 @@ def test_an_abbreviated_citation_is_resolved_like_a_full_one(repo):
 # --- the anchor -------------------------------------------------------------------
 
 
-def test_a_verified_bundle_anchor_makes_an_unreachable_commit_durable(repo, tmp_path):
-    """`D-073`'s own precedent, and the only form that is safe where a fence
-    forbids creating refs: a bundle, restored into an isolated repository and
-    read back."""
+def test_a_verified_bundle_names_a_commit_without_proving_it_carries_it(repo, tmp_path):
+    """This test asserted the opposite and the assertion was wrong.
+
+    It read *a verified bundle anchor makes an unreachable commit durable*, and
+    an independent reader disproved it in one fixture: edit a valid bundle's
+    header to name an object the pack does not contain, and `git bundle verify`
+    still exits zero while `bundle list-heads` prints the forged name. **A
+    header is a claim inside the artifact being checked.**
+
+    Establishing containment means indexing the pack, which is a write, so this
+    release reports what it knows — the header names it — and blocks."""
     directory, shas = repo
     bundle = tmp_path / "orphan.bundle"
     # A bundle carries refs, not bare revisions, so the anchor is created as a
@@ -123,8 +130,10 @@ def test_a_verified_bundle_anchor_makes_an_unreachable_commit_durable(repo, tmp_
     report = history_anchor.check_reachability(
         directory, {"CLOSURE.md": f"closed at {shas[1]}"}, bundles=[bundle])
 
-    assert report.blocking == []
-    assert report.citations[0].state == CitationState.ANCHORED
+    # BLOCKING, and named: the header says the bundle carries it and nothing
+    # here has read the pack. An edited header passed `bundle verify`.
+    assert report.citations[0].state == CitationState.ANCHOR_UNCONFIRMED
+    assert report.citations[0] in report.blocking
     assert report.anchors[0].verified
 
 
@@ -157,12 +166,12 @@ def test_a_rewritten_citation_resolves_through_the_mapping(repo, tmp_path):
     a rewrite invalidates every commit-shaped token in every record at once, so
     a check shipped alone fails closed on a corpus, not on a defect.
 
-    Non-blocking here because the original is ANCHORED — and that, not the
-    mapping, is why. An earlier version of this test said the bundle "makes that
-    claim checkable"; it does not, and a blind reader proved it by pointing the
-    mapping at an unrelated commit with the bundle still in place. A bundle
-    proves preservation. The mapping is reported beside it as an assertion.
-    Without the bundle the same call blocks — the test below.
+    Blocking, and this docstring has now been wrong twice. It first said the
+    bundle made the mapping's claim checkable; a reader disproved that by
+    pointing the mapping at an unrelated commit. It then said the bundle proved
+    preservation; a reader disproved that by editing the bundle's header. **What
+    a verified bundle establishes is that its header names a commit**, and the
+    header is a claim inside the artifact being checked.
     """
     directory, shas = repo
     bundle = tmp_path / "original.bundle"
@@ -176,9 +185,13 @@ def test_a_rewritten_citation_resolves_through_the_mapping(repo, tmp_path):
         directory, {"CLOSURE.md": f"closed at {shas[1]}"},
         mapping=mapping, bundles=[bundle])
 
-    assert report.blocking == []
+    # BLOCKING now, and the docstring above is corrected with it: a bundle
+    # header names a commit, and an independent reader edited one to name an
+    # object the pack does not contain while `bundle verify` still exited zero.
+    # A claim inside the artifact being checked is not evidence about it.
     citation = report.citations[0]
-    assert citation.state == CitationState.ANCHORED
+    assert citation.state == CitationState.ANCHOR_UNCONFIRMED
+    assert citation in report.blocking
     assert citation.maps_to == rewritten
     assert "ASSERTS" in citation.detail
 
@@ -463,7 +476,7 @@ def test_a_verified_bundle_anchors_only_the_commits_it_actually_carries(repo, tm
 
     assert report.anchors[0].verified
     states = {c.token: c.state for c in report.citations}
-    assert states[shas[1]] == CitationState.ANCHORED
+    assert states[shas[1]] == CitationState.ANCHOR_UNCONFIRMED
     assert states[unrelated] == CitationState.UNREACHABLE, (
         "a verified bundle anchored a commit it does not carry"
     )
@@ -573,9 +586,9 @@ def test_a_bundle_proves_preservation_and_never_the_mapping(repo, tmp_path):
         directory, {"CLOSURE.md": f"closed at {shas[1]}"}, mapping=mapping, bundles=[bundle])
 
     citation = report.citations[0]
-    assert citation.state == CitationState.ANCHORED
+    assert citation.state == CitationState.ANCHOR_UNCONFIRMED
     assert "ASSERTS" in citation.detail
-    assert "not identity" in citation.detail
+    assert "nothing here checked either claim" in citation.detail
 
 
 def test_a_sha256_repository_is_read_rather_than_reported_clean(tmp_path):
@@ -645,3 +658,42 @@ def test_a_commit_only_inside_a_bundle_blocks_rather_than_being_anchored(tmp_pat
     citation = report.citations[0]
     assert citation.state == CitationState.DESTROYED
     assert citation in report.blocking, "the safe direction: it blocks rather than anchoring"
+
+
+def test_a_bundle_header_naming_a_commit_the_pack_lacks_does_not_anchor(repo, tmp_path):
+    """The finding, and it broke a bound this release had already stated.
+
+    An independent reader took a valid bundle, replaced the head SHA in its
+    header with an object the pack does not contain, and: `git bundle verify`
+    exited **zero**, `bundle list-heads` printed the forged name, and a citation
+    of a commit present in neither the repository nor the pack came back
+    `ANCHORED` and non-blocking.
+
+    **A header is a claim inside the artifact being checked** — the one kind of
+    evidence this pack refuses everywhere else, accepted here. Confirming
+    containment means indexing the pack, which is a write, so the honest state
+    is that the header names it and nothing has read the contents.
+    """
+    directory, shas = repo
+    bundle = tmp_path / "forged.bundle"
+    _git(directory, "bundle", "create", str(bundle), "HEAD")
+    head = _git(directory, "rev-parse", "HEAD").strip()
+    absent = "a1b2c3d4" * 5
+    bundle.write_bytes(bundle.read_bytes().replace(head.encode(), absent.encode(), 1))
+
+    verified = subprocess.run(["git", "bundle", "verify", str(bundle)],
+                              cwd=directory, capture_output=True, text=True)
+    assert verified.returncode == 0, "the premise: git still verifies the edited bundle"
+
+    # Asserted as the PROPERTY rather than as one state: with no mapping the
+    # forged name reaches `DESTROYED` first, and with one it reaches
+    # `ANCHOR_UNCONFIRMED`. Both block, which is the thing that matters, and
+    # pinning either state would make this test a claim about which branch runs.
+    for mapping in (None, {absent: _git(directory, "rev-parse", "HEAD").strip()}):
+        report = history_anchor.check_reachability(
+            directory, {"CLOSURE.md": f"closed at {absent}"},
+            bundles=[bundle], mapping=mapping)
+        citation = report.citations[0]
+        assert citation in report.blocking, (
+            f"a forged header anchored a commit the pack lacks: {citation.state}")
+        assert citation.state != CitationState.ANCHORED

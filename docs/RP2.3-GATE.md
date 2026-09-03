@@ -2299,3 +2299,66 @@ The last of those failed on all seventy rows when first written, because it
 built `<pack>/test_continuation.py` for rows naming a bare filename. A check
 that fails on every input is as uninformative as one that passes on every input,
 and it took a run to see which of the two it was.
+
+## Cycle 11 — the delta-bounded reading, and the bound it broke
+
+Five properties did not hold, and one of them **falsified a bound this release
+had just finished stating**.
+
+### A bundle header is a claim inside the artifact being checked
+
+The bound said the bundle limitation errs only towards refusing. The reader took
+a valid bundle, replaced the head SHA in its header with an object the pack does
+not contain, and:
+
+    git bundle verify   → exit 0
+    bundle list-heads   → the forged name
+    check_reachability  → ANCHORED, non-blocking
+
+A commit present in neither the repository nor the pack came back **anchored**.
+That is unsafe acceptance, in the direction I had said it could not go, one
+section after saying it.
+
+The header is a claim inside the artifact being checked — the one kind of
+evidence this pack refuses everywhere else, accepted here because
+`bundle list-heads` was read as a fact about contents. Confirming containment
+means indexing the pack, which is a write, so the state is
+`ANCHOR_UNCONFIRMED`: the header names it, nothing has read the contents, and it
+**blocks**.
+
+**That test's docstring has now been wrong twice** — first that the bundle made
+a mapping checkable, then that it proved preservation. Each time a reader
+disproved the sentence rather than the code.
+
+### The root itself, after everything inside it
+
+Links *inside* an output root were checked and the root was not, so
+`alias -> actual` classified as complete while describing bytes in a directory
+the contract did not name — and gave every chunk a second reachable path with
+an ordinary link count, walking around the hard-link check too.
+
+**Sixth shape of one defect.** The owner marker unread, absent, then linked; the
+chunks directory linked; the completion marker naming another task; and now the
+root. Each closed at the depth the previous repair could see.
+
+### And two more of the shapes this release keeps finding
+
+The projection raised `AttributeError` on `budgets: {"cycles": 7}` — a
+projection may not raise, least of all on the record it exists to display. And
+`publication_history` caught the missing-object `IntegrityError` and recorded it
+as one ref's skip: conservative, since `complete` was false and the CLI blocked,
+but the stated guarantee was *stop rather than be skipped* and it was untrue. **A
+hole in the object store is a fact about the repository, not a per-ref
+inconvenience.**
+
+### The contract test the reader called overbroad, and it is
+
+`test_dashboard_contract` asserts each required reading appears by looking for a
+marker, and the marker for *subject revision and digest* was the word `subject`
+— which also occurs in the static panel title *audit subject vs candidate*. The
+reader removed every real `subject:` line and the test still passed.
+
+Four mutants over cycle 11's repairs. **Three survived on the first run** — the
+root-symlink check, the budget guard and the integrity-error propagation each
+had a repair and no regression behind it, which is precisely the state a
+mutation pass exists to find. All three have oracles now and all four die.

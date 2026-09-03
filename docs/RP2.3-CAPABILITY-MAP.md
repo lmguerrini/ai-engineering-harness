@@ -186,5 +186,10 @@ discarded finding is evidence about the oracle.
 | RP3-81 | text fields of a saved record reached the code that consumes them unchecked | untrusted input is untrusted in every field |
 | RP3-82 | a completion marker naming another task completed this one | the fifth shape of one ownership defect |
 | RP3-83 | a page-completeness test ignored titles, labels and the headline | it checked the part of the view it had thought of |
+| RP3-84 | a forged bundle header anchored a commit the pack does not contain | `bundle verify` exits zero on it, and a header is a claim inside the artifact being checked |
+| RP3-85 | a symlinked output root described another root's bytes as this contract's | links inside the root were checked and the root was not |
+| RP3-86 | the projection raised on a budget position that was not a position | a view may not raise on the record it exists to display |
+| RP3-87 | a hole in the object store was recorded as one ref's skip | a repository-level fact reported as a per-ref inconvenience |
+| RP3-88 | three cycle-11 repairs had no regression behind them | found by the mutation pass, not by writing them |
 
 *(appended as each capability reproduces its own)*

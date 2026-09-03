@@ -95,7 +95,19 @@ class CitationState:
     UNREACHABLE = "UNREACHABLE"
     #: Unreachable from a ref, and present in a verified bundle the project
     #: declared as an anchor. Durable, and a different fact from reachable.
+    #:
+    #: **No longer reachable from a bundle header alone.** An independent reader
+    #: edited a valid bundle's header to name an object the pack does not
+    #: contain: `git bundle verify` still exited zero, `bundle list-heads` still
+    #: printed the forged name, and a citation of a commit present in neither
+    #: the repository nor the pack came back ANCHORED and non-blocking. **The
+    #: header is a claim inside the artifact being checked**, which is the one
+    #: kind of evidence this pack refuses everywhere else.
     ANCHORED = "ANCHORED"
+    #: A verified bundle's header names this commit and nothing here has read
+    #: the pack to confirm it is inside. Blocking: establishing containment means
+    #: indexing the pack, and this release does not write.
+    ANCHOR_UNCONFIRMED = "ANCHOR_UNCONFIRMED"
     #: Git does not recognise it, and it is too short to be a full object name.
     #: Almost always prose that happens to be hexadecimal, so it is reported and
     #: never blocks.
@@ -130,11 +142,11 @@ class CitationState:
     #: Git could not be asked. Never read as any of the above.
     UNKNOWN = "UNKNOWN"
 
-    ALL = (REACHABLE, UNREACHABLE, ANCHORED, NOT_A_COMMIT, DESTROYED, REMAPPED,
-           REMAPPED_UNVERIFIED, UNKNOWN)
+    ALL = (REACHABLE, UNREACHABLE, ANCHORED, ANCHOR_UNCONFIRMED, NOT_A_COMMIT,
+           DESTROYED, REMAPPED, REMAPPED_UNVERIFIED, UNKNOWN)
     #: The states that stop a closure. `DESTROYED` blocks the hardest of the
     #: three, and is the one a reader most needs to see.
-    BLOCKING = (UNREACHABLE, DESTROYED, REMAPPED_UNVERIFIED, UNKNOWN)
+    BLOCKING = (UNREACHABLE, DESTROYED, REMAPPED_UNVERIFIED, ANCHOR_UNCONFIRMED, UNKNOWN)
 
 
 @dataclass(frozen=True)
@@ -366,15 +378,18 @@ def _remap(token: str, where: str, successor: str, holder: "Path | None") -> Cit
         # mapping at an unrelated reachable commit, kept the original in a
         # verified bundle, and the citation went green.
         #
-        # Preservation is the real remedy and it is what the bundle establishes,
-        # so that is the state. The mapping is reported beside it as what it is
-        # — an assertion nobody here verified — and it does not upgrade
-        # anything. Adjudicating a rewrite remains a human act in this release.
+        # Preservation would be the real remedy, and a bundle HEADER does not
+        # establish it: an independent reader edited one to name an object the
+        # pack does not contain, and `bundle verify` and `list-heads` both went
+        # along with it. So this reports what is actually known — the header
+        # names the commit, the mapping asserts a successor — and blocks on
+        # both. Adjudicating a rewrite remains a human act in this release.
         return Citation(
-            token, CitationState.ANCHORED, where,
-            f"the verified bundle {holder.name} still holds this commit, so it is preserved. "
-            f"The mapping additionally ASSERTS a successor at {successor[:12]}, and nothing here "
-            f"checked that claim — a bundle proves preservation, not identity",
+            token, CitationState.ANCHOR_UNCONFIRMED, where,
+            f"the verified bundle {holder.name} NAMES this commit in its header, which is a claim "
+            f"inside the artifact being checked rather than a reading of its contents. The "
+            f"mapping additionally ASSERTS a successor at {successor[:12]}, and nothing here "
+            f"checked either claim",
             maps_to=successor,
         )
     return Citation(
@@ -445,8 +460,12 @@ def _classify(repository, token, where, reachable, mapping, bundles) -> Citation
         return _remap(token, where, successor, holder)
 
     if holder is not None:
-        return Citation(token, CitationState.ANCHORED, where,
-                        f"held by the verified bundle {holder.name}")
+        return Citation(
+            token, CitationState.ANCHOR_UNCONFIRMED, where,
+            f"the verified bundle {holder.name} names this commit in its header. A header is a "
+            f"claim inside the artifact being checked: an edited one passed `bundle verify` and "
+            f"`list-heads` for an object the pack does not contain. Confirming containment means "
+            f"indexing the pack, and this release does not write")
     return Citation(
         token, CitationState.UNREACHABLE, where,
         "the object exists and no ref reaches it; it survives only while a reflog keeps it, "

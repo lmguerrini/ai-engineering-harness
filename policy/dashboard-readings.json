@@ -1,21 +1,21 @@
 {
   "policy_schema": "dashboard-readings-v1",
   "description": "The readings a human watching a long autonomous run must be able to get from the projection. This file is the CONTRACT; tools/projection.py is the implementation; tools/tests/test_dashboard_contract.py renders representative states and asserts every row appears. It exists because the completeness figure was previously established by running a script by hand and writing the number down, which is the manually-transcribed-count defect this pack refuses everywhere else.",
-  "how_to_read": "`marker` is a literal that must appear in the rendered projection for at least one of the representative states. It is a presence check, not a semantic one: the test proves the reading is REACHABLE, and the module's own tests prove it is CORRECT.",
+  "how_to_read": "`marker` is a literal that must appear in the rendered projection for at least one of the representative states. It must DISCRIMINATE: an independent reader removed every real `subject:` line and the test still passed, because the marker was the word `subject` and the static panel title `audit subject vs candidate` contains it. A marker that another part of the page prints regardless is a marker that cannot fail, so each is now the literal form the reading itself takes — and `test_a_marker_that_matches_something_else_is_caught` removes each reading's own lines from a rendered view and asserts its marker disappears with them.",
   "readings": [
     {
       "reading": "pack version",
-      "marker": "version",
+      "marker": "version: ",
       "why": "the pack's own version"
     },
     {
       "reading": "pack state",
-      "marker": "state",
+      "marker": "state: IN_PROGRESS",
       "why": "and whether it is adoptable"
     },
     {
       "reading": "pack digest",
-      "marker": "digest",
+      "marker": "digest: ",
       "why": "the tree digest, abbreviated"
     },
     {
@@ -40,7 +40,7 @@
     },
     {
       "reading": "capability and phase",
-      "marker": "capability",
+      "marker": "capability: ",
       "why": "what the coordinator is working on"
     },
     {
@@ -55,17 +55,17 @@
     },
     {
       "reading": "task ownership",
-      "marker": "task",
+      "marker": "task_id",
       "why": "which task owns an output root"
     },
     {
       "reading": "subject revision and digest",
-      "marker": "subject",
+      "marker": "subject: ",
       "why": "which tree a job's evidence will be about"
     },
     {
       "reading": "wait deadline and expiry",
-      "marker": "deadline",
+      "marker": "deadline ",
       "why": "when patience runs out, and whether it has"
     },
     {
@@ -125,17 +125,17 @@
     },
     {
       "reading": "retries and reason",
-      "marker": "attempt",
+      "marker": "attempt ",
       "why": "which try this is and why the last one ended"
     },
     {
       "reading": "provider, model and effort",
-      "marker": "executor",
+      "marker": "executor: ",
       "why": "what is actually running the job"
     },
     {
       "reading": "routing qualification",
-      "marker": "routing qualification",
+      "marker": "routing qualification: ",
       "why": "how the route was qualified, or UNKNOWN"
     },
     {
@@ -145,7 +145,7 @@
     },
     {
       "reading": "reset horizon",
-      "marker": "reset",
+      "marker": "resets",
       "why": "when a window refills, if observable"
     },
     {
@@ -155,22 +155,22 @@
     },
     {
       "reading": "budgets used and remaining",
-      "marker": "budget",
+      "marker": "used, ",
       "why": "with who raised a ceiling"
     },
     {
       "reading": "HITL row",
-      "marker": "row ",
+      "marker": "(row ",
       "why": "which row of the matrix a blocker sits on"
     },
     {
       "reading": "what each HITL blocks",
-      "marker": "blocked",
+      "marker": "SCOPED",
       "why": "the obligations a blocker names"
     },
     {
       "reading": "unrelated work still actionable",
-      "marker": "outstanding",
+      "marker": "authorised and outstanding",
       "why": "what remains runnable behind a scoped blocker"
     },
     {
@@ -230,17 +230,17 @@
     },
     {
       "reading": "last meaningful progress",
-      "marker": "last progress",
+      "marker": "last progress: ",
       "why": "when the job last did something observable"
     },
     {
       "reading": "age since progress",
-      "marker": "min ago",
+      "marker": " min ago",
       "why": "how long ago, because existence is not progress"
     },
     {
       "reading": "freshness of the reading",
-      "marker": "freshness",
+      "marker": "record written",
       "why": "how old the record itself is"
     },
     {

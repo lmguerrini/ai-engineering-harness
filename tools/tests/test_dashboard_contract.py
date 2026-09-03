@@ -118,11 +118,30 @@ def _states(root: Path) -> list[Path]:
     return made
 
 
+def _page_as_text(page: str) -> str:
+    """The page's readings in the text view's shape.
+
+    The two renderers serialise one reading differently — `capability: C7` in
+    text, `<span class=k>capability</span><span class=v>C7</span>` in the page —
+    so a marker sharp enough to discriminate in one does not literally occur in
+    the other. Rather than weaken the markers back to words that match anything,
+    the page is normalised into the shape the marker is written in.
+
+    Deliberately crude: it is a test helper comparing two serialisations of the
+    same data, not a parser, and it must not become one.
+    """
+    import re
+
+    text = page.replace("</span><span class=v>", ": ").replace("</h2>", ": ")
+    text = re.sub(r"<[^>]+>", "", text)
+    return text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+
+
 @pytest.fixture(scope="module")
 def rendered(tmp_path_factory):
     root = tmp_path_factory.mktemp("dashboard-contract")
     text = [projection.project(state).render() for state in _states(root)]
-    page = [projection.render_html(projection.project(state)) for state in _states(
+    page = [_page_as_text(projection.render_html(projection.project(state))) for state in _states(
         tmp_path_factory.mktemp("dashboard-contract-html"))]
     return "\n".join(text), "\n".join(page)
 
@@ -166,3 +185,25 @@ def test_a_reading_removed_from_the_projection_fails_this_contract(tmp_path):
                         if "NEXT AUTHORISED ACTION" not in line)
     row = next(r for r in _contract()["readings"] if r["reading"] == "next authorised action")
     assert row["marker"].lower() not in without.lower()
+
+
+@pytest.mark.parametrize("row", _contract()["readings"], ids=lambda r: r["reading"])
+def test_a_marker_that_matches_something_else_is_caught(row, rendered):
+    """Every marker must DISCRIMINATE its own reading.
+
+    An independent reader removed every real `subject:` line from a rendered view
+    and the parameterised check still passed, because the marker was the word
+    `subject` and the static panel title *audit subject vs candidate* contains
+    it. **A marker another part of the page prints regardless is a marker that
+    cannot fail.**
+
+    Removing the lines that carry a reading must make its marker disappear. Any
+    marker that survives that is matching something other than the thing it is
+    supposed to be checking.
+    """
+    text, _ = rendered
+    marker = row["marker"]
+    kept = "\n".join(line for line in text.splitlines() if marker.lower() not in line.lower())
+    assert marker.lower() not in kept.lower(), (
+        f"the marker {marker!r} for {row['reading']!r} survives the removal of every line that "
+        f"carries it, so it is matching something else")

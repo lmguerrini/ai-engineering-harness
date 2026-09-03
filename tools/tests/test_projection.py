@@ -652,3 +652,17 @@ def test_a_tone_is_a_class_name_and_not_free_text(tmp_path):
     page = projection.render_html(projection.Projection(panels=[panel]))
     assert "onclick" not in page
     assert "class='chip plain'" in page
+
+
+def test_a_budget_position_that_is_not_a_position_does_not_raise(tmp_path):
+    """`budgets: {"cycles": 7}` loads and the view then called `.get` on an
+    integer. A projection may not raise, least of all on the record it exists to
+    display."""
+    import json as _json
+
+    (tmp_path / "CONTINUATION.json").write_text(_json.dumps({
+        "capability": "cap", "updated_at": _continuation.now(),
+        "actionable": ["x"], "budgets": {"cycles": 7}}))
+    out = projection.project(tmp_path).render()
+    assert "not a position this view can read" in out
+    assert projection.render_html(projection.project(tmp_path)).endswith("</html>")
