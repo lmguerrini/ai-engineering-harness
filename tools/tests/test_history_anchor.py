@@ -474,3 +474,29 @@ def test_the_cli_exits_non_zero_on_a_destroyed_citation(repo, capsys):
     record = directory / "CLOSURE.md"
     record.write_text(f"closed at {shas[1]}\n")
     assert history_anchor._cli([str(directory), "--record", str(record)]) == 1
+
+
+def test_a_full_object_name_the_repository_holds_is_not_reported_as_gone(repo):
+    """The length rule said "GONE FROM THIS REPOSITORY" about a blob the
+    repository holds perfectly well, because it asked only whether the token
+    resolved to a COMMIT. Found by an auditor pointing it at the repository's
+    own blob."""
+    directory, _shas = repo
+    blob = _git(directory, "rev-parse", "HEAD:0.txt")
+    tree = _git(directory, "rev-parse", "HEAD^{tree}")
+    report = history_anchor.check_reachability(
+        directory, {"NOTES.md": f"the blob {blob} and the tree {tree}"})
+
+    states = {c.token: c.state for c in report.citations}
+    assert states[blob] == CitationState.NOT_A_COMMIT
+    assert states[tree] == CitationState.NOT_A_COMMIT
+    assert report.blocking == []
+    assert "GONE FROM THIS REPOSITORY" not in report.render()
+    assert "rather than a commit" in " ".join(c.detail for c in report.citations)
+
+
+def test_a_full_object_name_the_repository_does_not_hold_is_still_destroyed(repo):
+    directory, _shas = repo
+    report = history_anchor.check_reachability(
+        directory, {"CLOSURE.md": "closed at " + "a1b2c3d4" * 5})
+    assert report.blocking and report.blocking[0].state == CitationState.DESTROYED

@@ -164,6 +164,13 @@ class Attestation:
                 "impossible",
                 capability=self.capability, missing=", ".join(missing),
             )
+        duplicated = sorted({name for name in covered if covered.count(name) > 1})
+        if duplicated:
+            raise PreconditionError(
+                "a declared profile has more than one outcome. Two answers to one question is no "
+                "answer, and the evidence count would overstate itself",
+                capability=self.capability, duplicated=", ".join(duplicated),
+            )
         stray = [name for name in covered if name not in self.declared]
         if stray:
             raise PreconditionError(
@@ -174,7 +181,7 @@ class Attestation:
 
     @property
     def examined(self) -> Examined:
-        return Examined({"declared profiles": len(self.outcomes)})
+        return Examined({"declared profiles": len(self.declared)})
 
     @property
     def unrun(self) -> tuple[ProfileOutcome, ...]:

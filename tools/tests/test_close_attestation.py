@@ -243,3 +243,20 @@ def test_the_cli_refuses_a_contract_that_declares_no_profiles(tmp_path, capsys):
     status = close_attestation._cli(
         ["CAP-1", "--project", str(contract), "--head", "a" * 40, "--tree-digest", "b" * 64])
     assert status == 2 and "REFUSED" in capsys.readouterr().out
+
+
+def test_one_declared_profile_may_not_have_two_outcomes():
+    """Two answers to one question is no answer, and the evidence count
+    overstated itself: `examined` counted outcomes under the label "declared
+    profiles" while `declared` sat on the record saying otherwise."""
+    with pytest.raises(PreconditionError) as caught:
+        Attestation(capability="c", head_revision="a" * 40, tree_digest="b" * 64,
+                    declared=("p",),
+                    outcomes=(ProfileOutcome("p", ProfileState.FAILED, exit_status=1),
+                              ProfileOutcome("p", ProfileState.PASSED, exit_status=0)))
+    assert "more than one outcome" in caught.value.render()
+
+
+def test_the_examined_count_is_the_number_of_profiles_the_contract_declared():
+    attestation = attest("c", DECLARED, {name: _passed(name) for name in DECLARED}, **CANDIDATE)
+    assert attestation.examined.counts == {"declared profiles": len(DECLARED)}

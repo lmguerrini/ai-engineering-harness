@@ -113,7 +113,7 @@ READ_ONLY_VERBS = frozenset({
     "bundle",        # list-heads and verify only; both are reads. See BUNDLE_SUBCOMMANDS.
     "cat-file",
     "check-ignore",
-    "config",        # `--get`-shaped reads; a write needs a value argument this module never passes
+    "config",        # gated further by ARGUMENT SHAPE below: `git config k v` WRITES
     "diff",
     "diff-index",
     "diff-tree",
@@ -134,6 +134,26 @@ READ_ONLY_VERBS = frozenset({
 #: `git bundle` has a write subcommand (`create`) and two read ones. The verb
 #: alone is therefore not enough to decide, so the subcommand is checked too.
 BUNDLE_SUBCOMMANDS = frozenset({"list-heads", "verify", "unbundle-dry-run"})
+
+#: **The verb is not the unit of read-onlyness, and believing it was is how the
+#: first version of this allowlist still wrote.** `git config audit.k v` sets a
+#: key; `git config --unset user.name` removes one. Both were admitted, because
+#: `config` sat on the list under a comment asserting that "a write needs a
+#: value argument this module never passes" — while `probe(cwd, *arguments)` is
+#: a public varargs API and the caller passes the arguments, not the module. An
+#: auditor added `[audit] injected = yes` to a repository through the read-only
+#: layer and removed `user.name` from it.
+#:
+#: So a verb whose read-onlyness depends on its arguments declares the forms it
+#: may take, and everything else about it is refused.
+READ_ONLY_ARGUMENT_FORMS = {
+    "config": ("--get", "--get-all", "--get-regexp", "--list", "-l"),
+}
+
+#: Options that make an otherwise-read-only command write to the filesystem.
+#: `git diff --output=FILE` creates FILE. Matched as a prefix so the `=` form
+#: and the separated form are both caught.
+WRITING_OPTIONS = ("--output", "-o=", "--out=")
 
 #: Verbs that may cross a network boundary, and the only ones for which
 #: `allow_transports` means anything. `archive --remote` is a second network
@@ -273,6 +293,26 @@ def _run(
             verb=verb or "(none)",
             allowed=", ".join(sorted(READ_ONLY_VERBS)),
         )
+    forms = READ_ONLY_ARGUMENT_FORMS.get(verb)
+    if forms is not None and not any(str(a).split("=")[0] in forms for a in arguments[1:]):
+        raise IntegrityError(
+            f"`git {verb}` is read-only only in certain argument forms, and this is not one of "
+            "them. The verb alone does not decide: this command writes when it is given a value",
+            given=" ".join(str(a) for a in arguments[1:]) or "(no arguments)",
+            read_only_forms=", ".join(forms),
+        )
+    for argument in arguments[1:]:
+        # NOT named `text`: that is this function's own parameter deciding
+        # whether the read is decoded, and shadowing it turned every binary read
+        # into a text one. Caught by the suite immediately, which is the only
+        # reason it is a footnote rather than a finding.
+        option_text = str(argument)
+        if any(option_text == option.rstrip("=") or option_text.startswith(option)
+               for option in WRITING_OPTIONS):
+            raise IntegrityError(
+                "this option makes an otherwise read-only command write to the filesystem",
+                verb=verb, option=option_text,
+            )
     if verb == "bundle":
         subcommand = arguments[1] if len(arguments) > 1 else ""
         if subcommand not in BUNDLE_SUBCOMMANDS:

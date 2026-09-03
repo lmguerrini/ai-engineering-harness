@@ -180,19 +180,24 @@ class Wait:
     retired: bool = False
 
     def expired_at(self, now: str) -> bool:
-        """Whether the coordinator's declared patience has run out.
+        """Whether the declared patience has run out.
 
         Compared on the clock the caller supplies rather than on wall time, so
         the answer is deterministic and a rehearsal can reach it without
         waiting.
+
+        **Fails closed.** The first version swallowed a parse failure and
+        returned `False`, so a wait whose `declared_at` was the word `soon`
+        never expired — and it round-tripped through `save`/`load`, which made
+        the indefinite wait this module exists to end reachable from disk. An
+        auditor wrote it in three lines. A deadline that cannot be evaluated is
+        a deadline that has passed: the alternative is the failure class.
         """
         if self.not_beyond_seconds is None or not self.declared_at:
             return False
-        try:
-            started = datetime.fromisoformat(self.declared_at)
-            current = datetime.fromisoformat(now)
-        except (TypeError, ValueError):
-            return False
+        started, current = _moment(self.declared_at), _moment(now)
+        if started is None or current is None:
+            return True
         return (current - started).total_seconds() > float(self.not_beyond_seconds)
 
     def __post_init__(self) -> None:
@@ -492,7 +497,15 @@ def derive(
     #: Past its declared deadline, whatever the process is doing. A live process
     #: satisfies a liveness question forever, which is how a dispatch that never
     #: started held a coordinator for five hours and thirty-nine minutes.
-    expired = tuple(w.job_id for w in live if w.expired_at(moment))
+    finished_ids = {o.job_id for o in observations if o.finished}
+    #: A wait that finished is not waiting, so patience does not apply to it —
+    #: and one whose result was taken up is simply done. Including them made a
+    #: terminal record report RECOVERY_REQUIRED permanently, because time only
+    #: moves one way. Introduced by the expiry repair and found by an auditor.
+    expired = tuple(
+        w.job_id for w in live
+        if w.expired_at(moment) and not (w.consumed or w.job_id in finished_ids)
+    )
 
     unobservable = tuple(
         o.job_id for o in observations
@@ -505,9 +518,24 @@ def derive(
     human_waits = tuple(w.job_id for w in live if w.kind == WaitKind.HUMAN)
 
     def _stops_the_outstanding_work(blocker: Blocker) -> bool:
+        """Whether this blocker leaves the coordinator with nothing to do.
+
+        Not *whether it touches something* — that was the first version, using
+        `any`, and it meant a blocker naming one of five items silenced the
+        other four. The scenario the field is named for was reproduced verbatim
+        against it. A blocker stops the run only when **every** outstanding item
+        is one it names.
+        """
         if not blocker.blocks:
             return True
-        return any(item in blocker.blocks for item in record.actionable) or not record.actionable
+        if not record.actionable:
+            return True
+        return all(item in blocker.blocks for item in record.actionable)
+
+    named_by_a_blocker = {item for b in record.blockers for item in b.blocks}
+    #: What is outstanding and NOT named by any blocker. This, not the whole
+    #: list, is what silence is measured against.
+    unblocked = tuple(i for i in record.actionable if i not in named_by_a_blocker)
 
     human = [b for b in record.blockers if b.kind == "human" and _stops_the_outstanding_work(b)]
     capacity = [b for b in record.blockers
@@ -580,9 +608,9 @@ def derive(
                 "outstanding; those cannot both be true"))
         return LivenessReport(**common, state=State.TERMINAL, why="nothing is outstanding")
 
-    if record.actionable:
+    if unblocked:
         return LivenessReport(**common, state=State.SILENT_IDLE, why=(
-            f"{len(record.actionable)} authorised item(s) are outstanding, nothing is declared to "
+            f"{len(unblocked)} authorised item(s) are outstanding, nothing is declared to "
             "be in the way, and no job is running. This is a DEFECT, not a resting state: the "
             "next action is owed now"))
 
@@ -634,6 +662,28 @@ def now() -> str:
 #: Internal alias so `derive` can default its clock without shadowing the
 #: parameter a caller supplies.
 _now = now
+
+
+def _moment(text: object) -> datetime | None:
+    """One timestamp, always comparable, or `None`.
+
+    Naive and aware timestamps cannot be subtracted from each other, and the
+    subtraction sat outside the guard — so an ordinary ISO-8601 string with no
+    offset raised a `TypeError` out of `derive`, and the shipped command line
+    printed a traceback where it should have reported a refusal. That exact
+    class is already in this pack's observation log as repaired once.
+
+    A timestamp with no offset is read as UTC rather than refused: it is
+    unambiguous in every record this pack writes, and refusing it would turn a
+    formatting difference into a stop.
+    """
+    if not isinstance(text, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _cli(argv: list[str]) -> int:

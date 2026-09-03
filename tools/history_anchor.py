@@ -334,6 +334,18 @@ def _classify(repository, token, where, reachable, mapping, bundles) -> Citation
                             "the mapping names a successor and no ref reaches it either",
                             maps_to=full)
         if len(token) == 40:
+            # Git resolved no COMMIT for it — but it may still be a blob, a tree
+            # or a tag object the repository holds perfectly well, and saying
+            # "GONE FROM THIS REPOSITORY" about one of those is false. Asked
+            # before the claim is made, because an auditor pointed the check at
+            # this repository's own blob and read that sentence back.
+            present = gitread.probe(repository, "cat-file", "-t", token, negative_statuses=(1, 128))
+            if present.answered and present.ok:
+                return Citation(
+                    token, CitationState.NOT_A_COMMIT, where,
+                    f"a full object name this repository holds, and it is a "
+                    f"{present.value.strip()} rather than a commit; a closure cites commits",
+                )
             return Citation(
                 token, CitationState.DESTROYED, where,
                 "a full forty-character object name this repository does not have. Nobody "

@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import math
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -263,6 +264,19 @@ def classify(
     # is that the measurement is untrustworthy.
     regressed = tuple(k for k in common if later.signals[k] < earlier.signals[k])
 
+    if (common and flat_for < elapsed
+            and all(later.signals[k] == earlier.signals[k] for k in common)):
+        # The two readings are identical, which proves the run was already flat
+        # at the EARLIER one — so a `flat_since` later than that contradicts the
+        # samples it was passed with. The module refuses an undeclared horizon
+        # precisely so a caller cannot pick a convenient one; this closed the
+        # same hole one field over.
+        raise PreconditionError(
+            "every compared signal is identical across the two samples, so the run was already "
+            "flat at the earlier one — a later `flat_since` contradicts the readings it came with",
+            run_id=run_id, flat_since=float(flat_since_seconds), earlier=earlier.at_seconds,
+        )
+
     base = dict(run_id=run_id, horizon_seconds=float(horizon_seconds),
                 elapsed_seconds=float(elapsed), flat_for_seconds=float(flat_for),
                 advanced=advanced, flat=flat,
@@ -366,8 +380,17 @@ def waiter_command(run_id: str, pid: int, *, sentinel: str, poll_seconds: int = 
         raise IntegrityError("a waiter watches a real process number", run_id=run_id, pid=repr(pid))
     if not (sentinel or "").strip():
         raise IntegrityError("a waiter needs the path whose appearance ends it", run_id=run_id)
+    if (not isinstance(poll_seconds, int) or isinstance(poll_seconds, bool)
+            or not 1 <= poll_seconds <= 3600):
+        raise IntegrityError("a poll interval is a whole number of seconds between 1 and 3600",
+                             run_id=run_id, poll_seconds=repr(poll_seconds))
+    # QUOTED. The first version interpolated the path into a shell string raw,
+    # so a sentinel containing a quote broke out and ran a second command — new
+    # code, shipped in the repair for a hand-written waiter, carrying a hole the
+    # hand-written one did not have. Found by an auditor in the same pass.
+    quoted = shlex.quote(str(sentinel))
     return ["sh", "-c",
-            f'while kill -0 {pid} 2>/dev/null && [ ! -s "{sentinel}" ]; do sleep {poll_seconds}; done']
+            f"while kill -0 {pid} 2>/dev/null && [ ! -s {quoted} ]; do sleep {poll_seconds}; done"]
 
 
 def retire_waiters(waiters: Sequence[Waiter], *, finished_runs: Sequence[str]) -> tuple[Waiter, ...]:

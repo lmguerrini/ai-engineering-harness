@@ -5,6 +5,8 @@ the one that protects work: a detector that fails it kills recoverable workers,
 and it was measured four minutes after the stall rule was written.
 """
 
+import pathlib
+
 import pytest
 
 import progress
@@ -389,3 +391,49 @@ def test_a_waiter_command_needs_a_real_process_number_and_a_sentinel():
             progress.waiter_command("r", bad, sentinel="/tmp/x")
     with pytest.raises(IntegrityError):
         progress.waiter_command("r", 1, sentinel="   ")
+
+
+def test_a_flat_since_the_samples_themselves_contradict_is_refused():
+    """The module refuses an undeclared horizon precisely so a caller cannot pick
+    a convenient one, and the repair left the same hole one field over: two
+    identical readings prove the run was already flat at the earlier one, so a
+    later `flat_since` contradicts the samples it came with."""
+    with pytest.raises(PreconditionError) as caught:
+        progress.classify(
+            "delta-audit", _sample(20393.0, log_bytes=39.0, cpu_seconds=0.43),
+            _sample(20483.0, log_bytes=39.0, cpu_seconds=0.43),
+            horizon_seconds=900, flat_since_seconds=20483.0)
+    assert "contradicts the readings" in caught.value.render()
+
+
+def test_a_flat_since_after_the_earlier_sample_is_fine_when_something_advanced():
+    """The other side: if a signal moved between the readings, the caller's
+    later `flat_since` is consistent with them and must not be refused."""
+    report = progress.classify(
+        "moving", _sample(0, log_bytes=1, cpu_seconds=1),
+        _sample(100, log_bytes=1, cpu_seconds=9),
+        horizon_seconds=10, flat_since_seconds=100.0)
+    assert report.state == ProgressState.RUNNING
+
+
+def test_a_sentinel_path_cannot_break_out_of_the_generated_waiter():
+    """New code shipped in the repair for a hand-written waiter, carrying a hole
+    the hand-written one did not have: the path was interpolated raw, so a quote
+    in it started a second command."""
+    import subprocess as sub
+
+    marker = "/private/tmp/waiter-injection-marker"
+    hostile = f'/tmp/a b"; touch {marker}; #'
+    script = progress.waiter_command("r", 2776, sentinel=hostile)[2]
+
+    # Asserted by RUNNING the generated script's condition, not by reading it: a
+    # string assertion about quoting is a claim about the author's intent, and
+    # the property is what a shell does with it.
+    pathlib.Path(marker).unlink(missing_ok=True)
+    sub.run(["sh", "-c", script.replace("kill -0 2776 2>/dev/null", "false")],
+            capture_output=True, timeout=20)
+    assert not pathlib.Path(marker).exists(), "the sentinel path broke out and ran a command"
+
+    for bad in (0, -1, 999999, True, "20", 1.5):
+        with pytest.raises(IntegrityError):
+            progress.waiter_command("r", 1, sentinel="/tmp/x", poll_seconds=bad)

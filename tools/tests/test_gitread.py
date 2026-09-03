@@ -304,6 +304,12 @@ def test_a_write_verb_is_refused_and_writes_nothing(tmp_path):
 
 
 def test_every_write_verb_anyone_would_reach_for_is_refused(tmp_path):
+    """Weak on its own — every verb here is absent from the allowlist and stays
+    absent, so it cannot fail while that holds, and an auditor said so. It is
+    kept as the cheap half of the pair; the binding half is
+    `test_every_allowlisted_verb_is_actually_read_only_in_the_forms_permitted`,
+    which exercises the verbs that ARE permitted and asserts the repository is
+    unchanged."""
     directory, head = _scratch_repo(tmp_path)
     for verb in ("update-ref", "commit", "push", "fetch", "clone", "gc", "reflog", "checkout",
                  "branch", "tag", "reset", "add", "rm", "filter-branch", "replace", "prune",
@@ -312,12 +318,47 @@ def test_every_write_verb_anyone_would_reach_for_is_refused(tmp_path):
             gitread.probe(directory, verb, negative_statuses=())
 
 
-def test_the_allowlist_is_an_allowlist_and_not_a_denylist():
+def test_every_allowlisted_verb_is_actually_read_only_in_the_forms_permitted(tmp_path):
     """A denylist has to anticipate every verb Git will ever add, and the
-    failure mode of missing one is a write."""
-    assert "update-ref" not in gitread.READ_ONLY_VERBS
-    assert {"rev-parse", "cat-file", "rev-list", "ls-files", "for-each-ref"} <= gitread.READ_ONLY_VERBS
-    assert all(verb == verb.lower() for verb in gitread.READ_ONLY_VERBS)
+    failure mode of missing one is a write — so this is an allowlist. But an
+    allowlist is only as good as the claim that each entry belongs on it, and
+    the first version of this test asserted that 24 verbs were absent (they were,
+    and stayed so) plus that every entry was lowercase, which has nothing to do
+    with read-onlyness. It never touched the one allowlisted verb that writes.
+
+    This runs each permitted verb against a scratch repository and asserts the
+    repository is byte-identical afterwards.
+    """
+    import hashlib
+
+    directory, head = _scratch_repo(tmp_path)
+
+    def _fingerprint():
+        digest = hashlib.sha256()
+        for path in sorted(p for p in (directory / ".git").rglob("*") if p.is_file()):
+            digest.update(str(path.relative_to(directory)).encode())
+            digest.update(path.read_bytes())
+        return digest.hexdigest()
+
+    safe_arguments = {
+        "config": ("--list",), "bundle": ("list-heads", str(tmp_path / "absent.bundle")),
+        "ls-remote": (str(directory),), "cat-file": ("-t", head), "show": (head,),
+        "diff": (head,), "log": ("-1",), "rev-parse": ("HEAD",), "rev-list": ("--all",),
+        "merge-base": (head, head), "show-ref": (), "status": ("--porcelain",),
+        "ls-files": (), "ls-tree": (head,), "for-each-ref": (), "diff-index": (head,),
+        "diff-tree": (head,), "check-ignore": ("x",), "verify-pack": (),
+    }
+    assert set(safe_arguments) == set(gitread.READ_ONLY_VERBS), (
+        "a verb was added to the allowlist without a case here proving it does not write"
+    )
+
+    before = _fingerprint()
+    for verb, arguments in sorted(safe_arguments.items()):
+        try:
+            gitread.probe(directory, verb, *arguments, negative_statuses=tuple(range(1, 130)))
+        except Exception:
+            pass  # what it answers is another test's business; what it WRITES is this one's
+        assert _fingerprint() == before, f"`git {verb}` changed the repository"
 
 
 def test_the_reads_this_toolbelt_actually_performs_still_work(tmp_path):
@@ -362,3 +403,57 @@ def test_a_transport_may_only_be_enabled_for_the_verb_the_exception_is_scoped_to
 
 def test_the_transport_verbs_are_exactly_the_one_the_postcondition_needs():
     assert gitread.TRANSPORT_VERBS == frozenset({"ls-remote"})
+
+
+# --- the verb is not the unit of read-onlyness -----------------------------------
+#
+# The first allowlist admitted `config`, under a comment asserting that "a write
+# needs a value argument this module never passes" — while `probe(cwd, *args)`
+# is a public varargs API and the CALLER passes the arguments. An auditor added
+# a key to a repository through the read-only layer, and removed another.
+
+
+def test_git_config_writes_and_is_therefore_gated_on_its_argument_form(tmp_path):
+    directory, _head = _scratch_repo(tmp_path)
+
+    for arguments in (("config", "audit.injected", "yes"),
+                      ("config", "--unset", "user.name"),
+                      ("config", "--replace-all", "user.name", "someone")):
+        with _pytest.raises(_IntegrityError) as caught:
+            gitread.probe(directory, *arguments, negative_statuses=())
+        assert "argument forms" in caught.value.render()
+
+    # Asserted on the repository, not only on the exception.
+    written = _subprocess.run(["git", "config", "--get", "audit.injected"], cwd=directory,
+                              capture_output=True, text=True)
+    assert written.returncode != 0, "the key exists; the refusal came too late to be a control"
+    kept = _subprocess.run(["git", "config", "--get", "user.name"], cwd=directory,
+                           capture_output=True, text=True)
+    assert kept.stdout.strip() == "T", "the value was removed through a read-only layer"
+
+
+def test_the_read_shaped_config_forms_still_work(tmp_path):
+    """A gate that refused correct work would be found immediately and removed."""
+    directory, _head = _scratch_repo(tmp_path)
+    answer = gitread.probe(directory, "config", "--get", "user.name", negative_statuses=(1,))
+    assert answer.answered and answer.value.strip() == "T"
+    assert gitread.probe(directory, "config", "--list", negative_statuses=(1,)).answered
+
+
+def test_an_option_that_makes_a_read_write_to_a_file_is_refused(tmp_path):
+    """`git diff --output=FILE` creates FILE. The verb is a read; the invocation
+    is not."""
+    directory, _head = _scratch_repo(tmp_path)
+    target = tmp_path / "leaked.txt"
+    with _pytest.raises(_IntegrityError) as caught:
+        gitread.probe(directory, "diff", f"--output={target}", "HEAD", negative_statuses=())
+    assert "write to the filesystem" in caught.value.render()
+    assert not target.exists()
+
+
+def test_every_verb_whose_read_onlyness_depends_on_arguments_declares_its_forms():
+    """Structural: a verb added to the allowlist that can write in some form
+    must appear in the argument-form table, or the table is decoration."""
+    assert "config" in gitread.READ_ONLY_ARGUMENT_FORMS
+    assert set(gitread.READ_ONLY_ARGUMENT_FORMS) <= gitread.READ_ONLY_VERBS
+    assert gitread.WRITING_OPTIONS, "the option denylist must not be empty"

@@ -1119,3 +1119,79 @@ termination of work.
 because they were near-equivalent, which is the second and third time that has
 happened this session and is worth recording as a property of the harness rather
 than of the code.
+
+## Closure audit — round 2, the bounded delta re-audit
+
+One blind same-family auditor against an immutable snapshot at `26d31ed`,
+barred from this document, the capability map and the release packet.
+**NOT READY: five blockers, four recommendations, and six tests named as
+decorative.** Every finding reproduced by execution before repair.
+
+**Three of the five blockers were defects in round 1's repairs**, which is what
+a delta re-audit is for and the reason the standing condition of any final
+repair is that it is unaudited.
+
+### The allowlist still wrote
+
+`config` sat on the read-only allowlist under a comment asserting that *"a write
+needs a value argument this module never passes"* — while `probe(cwd,
+*arguments)` is a public varargs API and **the caller passes the arguments**.
+The auditor added `[audit] injected = yes` to a repository through the read-only
+layer and removed `user.name` from it. Separately, `diff --output=FILE` created
+a file.
+
+**The verb is not the unit of read-onlyness, and believing it was is how an
+allowlist still wrote.** A verb whose read-onlyness depends on its arguments now
+declares the forms it may take, options that make a read write to the filesystem
+are refused, and the test that should have caught this — twenty-four verbs
+asserted absent from a list they were never on — is replaced by one that runs
+**every permitted verb** against a scratch repository and asserts it is
+byte-identical afterwards.
+
+### The deadline failed open
+
+`expired_at` swallowed a parse failure and returned *not expired*, so a wait
+whose `declared_at` was the word `soon` never expired — **and it round-tripped
+through save and load**, putting the indefinite wait this release exists to end
+back within reach from disk, in three lines. A deadline that cannot be evaluated
+has passed; the alternative is the failure class. And a naive ISO timestamp
+raised a `TypeError` out of `derive` because the subtraction sat outside the
+guard, so the shipped command line printed a traceback where it should have
+reported a refusal — a class this pack's own observation log already records as
+repaired once.
+
+### The scoped blocker did not close the case it was named for
+
+`_stops_the_outstanding_work` used `any`, so a blocker naming one of five items
+silenced the other four — **the scenario in its own docstring, reproduced
+verbatim against it.** A blocker now stops the run only when every outstanding
+item is one it names, and `SILENT_IDLE` is measured against the unblocked
+remainder.
+
+### The expiry repair broke a terminal record
+
+A job that finished, whose result was consumed, in a record declaring itself
+terminal, reported `RECOVERY_REQUIRED` — permanently, because time only moves
+one way. A wait that finished is not waiting, so patience does not apply to it.
+
+### And the repair for a hand-written waiter shipped a hole the hand-written one did not have
+
+`waiter_command` interpolated the sentinel path into a shell string unquoted, so
+a quote in it started a second command. Quoted now, and the test asserts the
+property by **running** the generated condition rather than by inspecting its
+text.
+
+### Six tests were named as passing for reasons they did not state
+
+All repaired rather than deleted. The `DESTROYED` state reported *"GONE FROM
+THIS REPOSITORY"* about blobs and trees the repository holds — it asked only
+whether the token resolved to a *commit* — and now asks. An attestation accepted
+two contradictory outcomes for one profile while its `examined` count said
+"declared profiles" and counted outcomes. `classify` trusted a `flat_since` that
+two identical readings contradict, which is the hole the required horizon exists
+to close, one field over.
+
+**And one defect the suite caught within a minute of being introduced:** the
+argument-form loop named its variable `text`, shadowing `_run`'s own `text`
+parameter, and turned every binary read into a text read. Recorded because the
+difference between that and the findings above is only that a test existed.
