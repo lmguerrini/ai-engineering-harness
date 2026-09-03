@@ -43,6 +43,26 @@ no private/internal IDs, no orchestration vocabulary
 - <outcome bullet>
 ```
 
+## Output contract — for a task that produces more than a patch
+
+Generated, not written by hand:
+
+    python3 <pack_root>/tools/task_output.py <root> --task <id> --max-bytes <N> \
+        [--expect <N>] [--product <name>] --brief
+
+Paste the clause it prints. The byte bound is derived from the executing
+backend's output limit and the per-record cost of this task's records — it is an
+adapter fact, so it is looked up per dispatch rather than remembered. Omit the
+whole section for a task whose only product is a patch.
+
+After the dispatch, whatever happened to it:
+
+    python3 <pack_root>/tools/task_output.py <root> --task <id> --max-bytes <N>
+
+Read the state before deciding what to retry. `UNKNOWN` prints no plan, and that
+is the point: it is classified by a person, because auto-resolving it is how one
+task acquires two workers.
+
 ## Report format expected back
 
 Patch (or committed diff inside the worker's own disposable checkout) +

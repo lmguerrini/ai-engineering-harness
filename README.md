@@ -128,6 +128,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── scope_check.py          one containment rule, for every gate that asks
     │   ├── evidence_put.py         content-addressed, owner-only, write-then-verify
     │   ├── confine.py              the sandbox profile a dispatched worker runs under
+    │   ├── task_output.py          bounded durable output, and the four answers before a retry
     │   ├── instrument.py           what a checker must say about itself to be believed
     │   ├── errors.py               the refusal hierarchy; every refusal names its cause
     │   └── tests/                  the suite; `python3 -m pytest tools/tests/ -q`

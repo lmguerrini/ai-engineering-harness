@@ -18,6 +18,18 @@ Not held for the final message. A worker or auditor that discovers something
 material and keeps working risks losing it to a truncated run, a crash, or its
 own later confusion about what it already knew. Write it, then keep going.
 
+**A durable path is necessary and not sufficient.** One write large enough to
+exceed the provider's output limit produces no artifact at all, and its absence
+looks identical to never having started — measured twice, at 27 records and at
+81. So a substantial dispatch declares an output root it OWNS, a chunk scheme
+whose indices are derivable from the brief alone, and a byte bound per
+individual write; completed chunks materialise immediately, and the final
+message is a report ABOUT the output rather than the output. Before any retry,
+classify from the ARTIFACTS and never from the worker's status label: three of
+six killed workers had left usable bytes, and one had written a complete
+generator it never ran. `tools/task_output.py` composes the clause and reads the
+four answers; `templates/task-brief.template.md` carries it.
+
 **This applies to mutating dispatches only.** A read-only sandbox denies *all*
 writes, not only writes inside the repository, so a reviewer told both "you are
 read-only" and "write your findings to a file" has a contract that prohibits and

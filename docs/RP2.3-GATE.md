@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1476
+    in-release (skills/core/*.md + policy/*.md)   1488
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2499   24.9% over the ~2,000
+    total against a ~2,000 target                 2511   25.6% over the ~2,000
 
 **The breach is inherited and it has grown.** 2.2.0 recorded 2486 on the same
 rule and declined to shave it, on the ground that re-scoping a rule to fit its
@@ -202,3 +202,61 @@ printed, the nothing-examined exit folded back into `0`, and the staged mode
 returned to the provenance line. A killed mutant proves the check can fail, not
 that it asks the right question — the pinned-test-asserting-the-buggy-value
 case is why that sentence is here rather than a claim of correctness.
+
+### C3 — Durable worker output, bounds and recovery
+
+The first of the two capabilities whose absence **destroyed** work rather than
+delaying it. `skills/core/worker-contract.md` already required a durable file;
+the gap was that a durable path is necessary and not sufficient.
+
+**The evidence, and it is two different mechanisms with two different
+remedies.** One worker produced a complete result, tried to return it in a
+single write, exceeded the provider's output limit and left no artifact at all —
+27 records, and the file's absence is indistinguishable from never having
+started. Separately, a wave of eight lost 81 records, while three of six killed
+workers had in fact left usable bytes on disk and one had written a complete
+generator it never executed. Nothing looked, because the retry decision was
+taken from each worker's status label.
+
+`tools/task_output.py` carries the contract, the clause that puts it in the
+brief, ownership of the output root, and the four-valued classification
+afterwards. It does not write a worker's output: a dispatched worker is another
+vendor's process and will not import a Python module, so the rule travels in the
+brief clause and Core owns the parts that must be identical for every backend.
+
+**The chunk protocol is one rename.** A piece is written to `NNNN.ext.part`,
+finished, and only then renamed onto `NNNN.ext`. A process killed before the
+rename leaves a part file; one killed after leaves a complete chunk; there is no
+third state. That is the whole of what bounds an interruption at one chunk, and
+`materialise` uses the same protocol the brief describes so the fixtures
+exercise it rather than an imitation of it.
+
+**`UNKNOWN` is earned, never a catch-all**, and it never resolves itself. Each
+of its five reasons is specific and reproduced by a fixture: a gap in the index,
+a completion marker that disagrees with what is on disk, a completion marker
+that cannot be read, more than one part file, and bytes the contract does not
+describe. `resume_plan` refuses on `UNKNOWN` rather than guessing, because
+auto-resolving an unknown is how one task acquires two workers.
+
+**The case a two-valued classifier discards** is the one that recovered 22
+records: declared products present with no chunks at all. Neither the result nor
+nothing.
+
+**A task owns its output root** (M-18f). A root under a declared generated tree
+is refused — hand-authored content there is cached rather than stored, and the
+destructive rebuild that destroyed two documents was itself correct — and so is
+a root another task has already claimed, because two producers interleaving
+indices leave a sequence neither can be recovered from.
+
+**What this does not establish.** Whether the chunk size is right. That number
+comes from the backend's output limit and the per-record cost, both adapter
+facts that change; the module enforces that a bound was declared and that what
+landed honours it, and holds no opinion on the value. The rehearsal plan says
+the same thing and it is repeated here rather than assumed.
+
+**Mutation-checked, eleven for eleven.** A part file read as complete, a gap
+resolving to a resume, a resume restarting from zero, undescribed bytes ignored,
+the completion marker believed, an unbounded write allowed, an over-bound write
+written anyway, a generator-owned root claimable, another task's root claimable,
+`UNKNOWN` yielding a plan, and products-with-no-chunks reading as nothing. Every
+one turned the suite red.

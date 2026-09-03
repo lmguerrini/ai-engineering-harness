@@ -109,5 +109,8 @@ discarded finding is evidence about the oracle.
 | RP3-4 | an instrument that examined nothing reports a result | a range resolving to no commits renders `clean (0 commits, 0 blobs)` |
 | RP3-5 | a checker silently reads a stale copy of its own rule | a project declaring a pack root whose term set is absent gets the copy beside its own contract, applies it, and no report says which file was read |
 | RP3-7 | an equivalence gate does not name the layer it enters each path at | the public-surface gate's honest gap lives in a docstring and `--help`, neither of which is stored beside the verdict |
+| RP3-8 | a durable output path does not bound the write that fills it | one write over the backend's output limit leaves no artifact, and its absence is indistinguishable from never having started — 27 records, then 81 across a wave |
+| RP3-9 | a retry decision taken from a worker's status label discards work the worker left behind | three of six killed workers left usable bytes; one left a complete generator it never ran, worth 22 records |
+| RP3-10 | a task's output root can be a directory a generator owns | a correct destructive rebuild destroyed two hand-written documents inside one |
 
 *(appended as each capability reproduces its own)*

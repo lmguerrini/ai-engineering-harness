@@ -9,6 +9,29 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Durable worker output — bounded, incremental, recovered before retry
+
+- **`tools/task_output.py`**: an output root a task owns, a chunk scheme whose
+  indices are derivable from the brief alone, a byte bound per individual write,
+  and the four answers a retry decision is taken from —
+  `COMPLETED_WITH_DURABLE_OUTPUT`, `FAILED_WITH_PARTIAL_DURABLE_OUTPUT`,
+  `FAILED_BEFORE_USEFUL_OUTPUT`, `UNKNOWN` — read from the artifacts and never
+  from a worker's status label.
+- **A write is materialised by a rename.** Written to a part file, finished,
+  then renamed. A kill before the rename costs that chunk; a kill after costs
+  nothing. There is no third state.
+- **`UNKNOWN` never resolves itself**, and every one of its reasons is specific:
+  a gap in the index, a completion marker that disagrees with the disk or cannot
+  be read, two producers writing at once, or bytes the contract does not
+  describe. The resume planner refuses rather than guessing.
+- **A task that does not bound a single write is refused before dispatch**, and
+  a plan never reproduces a chunk that is already complete.
+- **A task owns its output root**: one under a declared generated tree is
+  refused, because content there is cached rather than stored, and so is one
+  another task has claimed.
+- `skills/core/worker-contract.md` and `templates/task-brief.template.md` carry
+  the obligation; the brief clause is generated rather than written by hand.
+
 ### Checker hygiene — the instrument before the measurement
 
 - **`tools/instrument.py`**: what a checker must state about itself before its

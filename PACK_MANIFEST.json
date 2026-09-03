@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "64fed64ebdf4075c85e54ac283fe7e2ed2f1d49790cb5076a442e55d1cb6e16b",
+  "tree_digest_sha256": "1c337c8c58e0317bcd1112347def23636c9c382e5f7becd7dfc741e7daba64b0",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 797
+    "passed": 821
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -29,7 +29,7 @@
   },
   "known_limitations": [
     "STATE IS IN_PROGRESS. This is a candidate, not a release. No project may pin it, and moving it to QUALIFIED_AND_FROZEN is a human decision (policy/hitl-matrix.md row 2) the coordinator does not take.",
-    "held prose 2499 lines against a ~2000 target (24.9% over, recorded not shaved; 1023 of those lines are the two installed adapters, outside this envelope and covered by no digest, so that half cannot be verified from the release). 2.2.0 was 2486 (24.3% over) on the same rule, so HELD PROSE HAS GROWN AGAIN, for the second release running. Delete-before-adding was applied where it could be — one sentence duplicated word for word inside policy/auditor-strategy.md was removed — and it did not cover the addition. A held-prose pass is owed before qualification and is recorded as owed, not as done.",
+    "held prose 2511 lines against a ~2000 target (25.6% over, recorded not shaved; 1023 of those lines are the two installed adapters, outside this envelope and covered by no digest, so that half cannot be verified from the release). 2.2.0 was 2486 (24.3% over) on the same rule, so HELD PROSE HAS GROWN AGAIN, for the second release running. Delete-before-adding was applied where it could be — one sentence duplicated word for word inside policy/auditor-strategy.md was removed — and it did not cover the addition. A held-prose pass is owed before qualification and is recorded as owed, not as done.",
     "THE EVOLUTION WORKSPACE IS A WORKTREE, BECAUSE A LIVE PROJECT PINS THE PACK'S WORKING CHECKOUT BY ROOT PATH. That is the D18 layout defect the 2.2.0 manifest named as the finding most deserving a decision, and it is unchanged: the older pinned root verifies only because it happens to sit on its pinned revision, and ordinary development in it would break a live pin. This candidate avoids the hazard rather than removing it. Relocating that project's release root is the founder's decision and was explicitly not taken during this session.",
     "AN ADAPTER PIN VERIFIES FILES AND NOT THE EXECUTABLE THOSE FILES DRIVE, and the drift is live at this baseline: one adapter's qualified executable version and the installed one differ, and adapter_pin.py reports every declared adapter verified. Reproduced by execution before this candidate proposed to repair it (docs/RP2.3-CAPABILITY-MAP.md, RP3-1).",
     "installed adapter skills and agents live outside this repository and are not covered by tree_digest_sha256; they are covered instead by a project's declared adapters contract, which is verified rather than frozen",
@@ -52,5 +52,5 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 113
+  "digest_file_count": 115
 }
