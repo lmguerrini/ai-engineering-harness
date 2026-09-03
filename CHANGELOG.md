@@ -9,6 +9,33 @@ below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
 
+### Remote verification — the one check that has to leave the machine
+
+- **The transport widening is scoped to the postcondition, named, and per
+  invocation.** `protocol.allow = never` stays; specific protocols are added
+  beside it. Every other read in the toolbelt still refuses every protocol, and
+  a test asserts it.
+- **Enabling the protocol was not enough.** `core.sshCommand = ""` makes Git run
+  the empty string, so the read moved from `transport not allowed` to `unable to
+  fork` — the same non-functional check in different words. The neutralisation
+  is removed for an operation that enables ssh, not set to something.
+- **A failed remote read now says why.** A refused transport and a host that
+  does not resolve arrived as one sentence, and one of them is a setting this
+  pack controls.
+- **The expectation set is derived from the authorised refspec** rather than
+  hand-typed, and a push form with no derivable expectation is refused rather
+  than guessed at.
+
+### The non-regression gate — a compatible addition is not a break
+
+- **A keyword-capable parameter appended with a default is
+  `added_optional_parameter`, not `changed_signature`.** No call written against
+  the previous signature can fail on it, and the gate's own message says callers
+  would break. Reported rather than silenced.
+- Everything else still breaks: a parameter without a default, one inserted
+  among the existing ones, one removed, a default withdrawn, a kind or
+  annotation altered, or a function becoming async.
+
 ### Capacity — a refusal before a dispatch, never a queue that dispatches
 
 - **`tools/capacity.py`** gates one proposed dispatch at a time against one

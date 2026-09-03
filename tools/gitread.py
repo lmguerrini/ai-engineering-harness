@@ -95,10 +95,56 @@ _NEUTRALISED_CONFIG = {
 }
 
 
-def _config_environment() -> dict[str, str]:
-    """`_NEUTRALISED_CONFIG` in the form Git reads from the environment."""
-    environment = {"GIT_CONFIG_COUNT": str(len(_NEUTRALISED_CONFIG))}
-    for index, (key, value) in enumerate(sorted(_NEUTRALISED_CONFIG.items())):
+#: Transports a caller may ask for, one operation at a time. Named rather than
+#: free-form: `protocol.<anything>.allow` would let a caller re-enable a
+#: transport nobody reviewed by spelling it, which is the widening this exists
+#: to avoid.
+ALLOWABLE_TRANSPORTS = ("ssh", "https", "http", "git", "file")
+
+
+def _config_environment(allow_transports: tuple[str, ...] = ()) -> dict[str, str]:
+    """`_NEUTRALISED_CONFIG` in the form Git reads from the environment.
+
+    `allow_transports` re-enables **named** protocols for one invocation, and
+    does so by adding `protocol.<name>.allow` entries beside the standing
+    `protocol.allow = never` rather than by relaxing it. Git consults the
+    specific key first and falls back to the general one, so every transport
+    the caller did not name stays refused — which is the property that makes
+    this narrow rather than a hole with a parameter in front of it.
+
+    It exists because a check that must cross a boundary was disabled by the
+    hardening that correctly protects every other read: the postcondition after
+    a push could not read any real remote, so the one observation of what a
+    push actually did was unavailable on every transport but `file`.
+    """
+    settings = dict(_NEUTRALISED_CONFIG)
+    #: Transports that reach the network through an external program, and the
+    #: neutralisation that has to be lifted with them.
+    #:
+    #: **Enabling the transport is not enough**, and finding that out is what
+    #: makes this a second defect rather than a detail. `core.sshCommand = ""`
+    #: does not mean "no ssh command": Git tries to run the empty string and
+    #: dies with `cannot run :`. This module already recorded that exact lesson
+    #: two entries above, for `diff.external`, and deliberately left that key
+    #: absent for the same reason — and then set the ssh one to empty anyway.
+    #: So a caller that enabled `ssh` got past the protocol refusal and into
+    #: `unable to fork`, which is the same non-functional postcondition wearing
+    #: a different error.
+    #:
+    #: Removed rather than set: absent, Git falls through to its own default,
+    #: which is deterministic here because every ambient `GIT_*` variable is
+    #: already stripped and the global and system files are `/dev/null`.
+    for transport in allow_transports:
+        if transport not in ALLOWABLE_TRANSPORTS:
+            raise GitRefusal(
+                "that transport is not one this module will enable for an operation",
+                transport=transport, allowable=", ".join(ALLOWABLE_TRANSPORTS),
+            )
+        settings[f"protocol.{transport}.allow"] = "always"
+        if transport == "ssh":
+            settings.pop("core.sshCommand", None)
+    environment = {"GIT_CONFIG_COUNT": str(len(settings))}
+    for index, (key, value) in enumerate(sorted(settings.items())):
         environment[f"GIT_CONFIG_KEY_{index}"] = key
         environment[f"GIT_CONFIG_VALUE_{index}"] = value
     return environment
@@ -120,13 +166,16 @@ _GIT_ENVIRONMENT = {
     # credentials. This module is not interactive, so a prompt is a hang.
     "GIT_TERMINAL_PROMPT": "0",
     "GIT_ATTR_NOSYSTEM": "1",
-    **_config_environment(),
 }
 
 
-def _environment(overlay: dict[str, str] | None) -> dict[str, str]:
+def _environment(
+    overlay: dict[str, str] | None, allow_transports: tuple[str, ...] = ()
+) -> dict[str, str]:
     inherited = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
-    return {**inherited, **_GIT_ENVIRONMENT, **(overlay or {})}
+    return {
+        **inherited, **_GIT_ENVIRONMENT, **_config_environment(allow_transports), **(overlay or {})
+    }
 
 
 #: Everything this module does outside itself, declared before it does any of
@@ -154,6 +203,7 @@ def _run(
     text: bool = True,
     input_value: str | bytes | None = None,
     env_overlay: dict[str, str] | None = None,
+    allow_transports: tuple[str, ...] = (),
 ):
     """Run Git with a deadline, converting every operational failure to refusal."""
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
@@ -164,7 +214,7 @@ def _run(
         # refusal nor recognisable as one.
         raise GitRefusal("git timeout must be a finite number of seconds", timeout=repr(timeout))
     command = ("git", *arguments)
-    environment = _environment(env_overlay)
+    environment = _environment(env_overlay, allow_transports)
     # In text mode, decode with `surrogateescape`. A path is a byte string on
     # POSIX and need not be valid UTF-8; the default strict decode raises
     # `UnicodeDecodeError` from inside subprocess, which is neither a named
@@ -230,9 +280,11 @@ def _decode(value: str | bytes | None) -> str:
 def _line(
     repository: str | Path, *arguments: str, timeout: float = DEFAULT_TIMEOUT_SECONDS,
     env_overlay: dict[str, str] | None = None,
+    allow_transports: tuple[str, ...] = (),
 ) -> str:
     return str(
-        _run(repository, *arguments, timeout=timeout, env_overlay=env_overlay)
+        _run(repository, *arguments, timeout=timeout, env_overlay=env_overlay,
+             allow_transports=allow_transports)
     ).rstrip("\n")
 
 
@@ -264,6 +316,12 @@ class ProbeAnswer:
     #: distinction is per command: there is no status that means "no" in
     #: general, which is why the caller declares it.
     negative: bool = False
+    #: What Git actually printed when it failed. Carried because `cause` alone
+    #: says only *that* the invocation failed, and two failures with the same
+    #: `cause` can have opposite remedies: a refused transport and a host that
+    #: does not resolve both arrive as "git invocation failed", and one is a
+    #: configuration this pack controls while the other is the network.
+    detail: str = ""
 
     @property
     def unknown(self) -> bool:
@@ -298,6 +356,7 @@ class ProbeAnswer:
 def probe(
     cwd: str | Path, *arguments: str, timeout: float = DEFAULT_TIMEOUT_SECONDS,
     negative_statuses: tuple[int, ...] = (),
+    allow_transports: tuple[str, ...] = (),
 ) -> ProbeAnswer:
     """Ask Git a read-only question, distinguishing "no" from "cannot ask".
 
@@ -305,7 +364,10 @@ def probe(
     nobody looked, and the caller has to be able to tell the difference.
     """
     try:
-        return ProbeAnswer(True, True, _line(cwd, *arguments, timeout=timeout))
+        return ProbeAnswer(
+            True, True,
+            _line(cwd, *arguments, timeout=timeout, allow_transports=allow_transports),
+        )
     except GitRefusal as refusal:
         detail = getattr(refusal, "detail", {}) or {}
         if "returncode" in detail:
@@ -318,6 +380,7 @@ def probe(
             return ProbeAnswer(
                 True, False, "", str(refusal.cause), status,
                 status in negative_statuses,
+                detail=str(detail.get("stderr") or detail.get("stdout") or "").strip(),
             )
         # Timed out, could not start, or the directory could not be entered.
         return ProbeAnswer(False, False, "", str(refusal.cause))

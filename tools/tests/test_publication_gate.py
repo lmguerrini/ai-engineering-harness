@@ -534,3 +534,205 @@ def test_a_boolean_in_the_containment_field_is_refused():
         publication_gate.RefFinding("refs/heads/x", "reason", "identity", True)
     with pytest.raises(ValueError):
         publication_gate.RefFinding("refs/heads/x", "reason", "identity", "probably")
+
+
+# --- the postcondition that could not cross a boundary --------------------------
+#
+# RP3-16. `gitread` refuses every protocol, correctly: nothing else in the
+# toolbelt has business leaving the machine. The one check that exists TO leave
+# it — the single observation of what a push actually did — was disabled by the
+# same setting, and was measured non-functional on every real remote.
+
+import subprocess as _subprocess
+
+import gitread as _gitread
+from errors import GitRefusal as _GitRefusal, PreconditionError as _PreconditionError
+
+
+def _config_pairs(environment):
+    count = int(environment["GIT_CONFIG_COUNT"])
+    return {environment[f"GIT_CONFIG_KEY_{i}"]: environment[f"GIT_CONFIG_VALUE_{i}"]
+            for i in range(count)}
+
+
+def test_every_ordinary_read_still_refuses_every_protocol():
+    """The negative control, and it is the point of the whole exercise. A
+    rehearsal that only proved the postcondition works would hide a global
+    widening."""
+    pairs = _config_pairs(_gitread._environment(None))
+    assert pairs["protocol.allow"] == "never"
+    assert not any(key.startswith("protocol.") and key.endswith(".allow")
+                   and key not in ("protocol.allow", "protocol.file.allow")
+                   for key in pairs), sorted(pairs)
+
+
+def test_the_widening_names_transports_beside_the_standing_refusal():
+    """`protocol.allow = never` is not relaxed; specific protocols are added
+    beside it, and Git consults the specific key first. Everything unnamed
+    stays refused even inside the widened operation."""
+    pairs = _config_pairs(_gitread._environment(None, ("ssh", "https")))
+    assert pairs["protocol.allow"] == "never"
+    assert pairs["protocol.ssh.allow"] == "always"
+    assert pairs["protocol.https.allow"] == "always"
+    assert "protocol.ftp.allow" not in pairs
+
+
+def test_a_transport_this_module_will_not_enable_is_refused_by_name():
+    """Free-form protocol names would let a caller re-enable an unreviewed
+    transport by spelling it."""
+    with pytest.raises(_GitRefusal) as caught:
+        _gitread._environment(None, ("ftp",))
+    assert "ssh" in caught.value.render() and "ftp" in caught.value.render()
+
+
+def test_the_postcondition_declares_only_the_transports_it_needs():
+    assert set(publication_gate.REMOTE_VERIFICATION_TRANSPORTS) == {"ssh", "https", "file"}
+
+
+def test_the_hardening_is_what_refused_ssh_and_the_scoped_widening_is_what_lifts_it():
+    """The reproduction and its repair, side by side, at the layer where the
+    difference lives.
+
+    Asserted on the transport refusal rather than on whatever the network says
+    next: `.invalid` never resolves, but a resolver that wildcard-answered
+    would make a message-matching test lie. What must change is that Git stops
+    refusing the protocol; what happens after that is the network's business.
+    """
+    import subprocess as sub
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        sub.run(["git", "init", "--quiet"], cwd=directory, check=True, capture_output=True)
+        hardened = _gitread.probe(directory, "ls-remote", "ssh://git@no-such-host.invalid/x.git",
+                                  negative_statuses=())
+        widened = _gitread.probe(directory, "ls-remote", "ssh://git@no-such-host.invalid/x.git",
+                                 negative_statuses=(),
+                                 allow_transports=publication_gate.REMOTE_VERIFICATION_TRANSPORTS)
+
+    assert "transport 'ssh' not allowed" in hardened.detail, hardened.detail
+    assert "transport 'ssh' not allowed" not in widened.detail, widened.detail
+    # And not the OTHER non-functional shape: emptying `core.sshCommand` made
+    # Git try to run the empty string, so enabling the protocol alone moved the
+    # failure from "not allowed" to "unable to fork" without restoring anything.
+    assert "unable to fork" not in widened.detail, widened.detail
+    assert "cannot run :" not in widened.detail, widened.detail
+
+
+def test_the_ssh_command_neutralisation_is_lifted_only_where_ssh_is_enabled():
+    """`core.sshCommand = ""` does not mean "no ssh command" — Git runs the
+    empty string. This module recorded that exact lesson for `diff.external`
+    and set the ssh key to empty anyway."""
+    ordinary = _config_pairs(_gitread._environment(None))
+    assert ordinary["core.sshCommand"] == "", "the neutralisation must stand everywhere else"
+
+    widened = _config_pairs(_gitread._environment(None, ("ssh",)))
+    assert "core.sshCommand" not in widened, (
+        "absent, not empty: Git falls through to its own default, and every ambient GIT_* "
+        "variable is already stripped"
+    )
+
+    https_only = _config_pairs(_gitread._environment(None, ("https",)))
+    assert https_only["core.sshCommand"] == "", "a transport that needs no external program lifts nothing"
+
+
+def test_the_postcondition_says_why_a_remote_could_not_be_read(tmp_path):
+    """Two failures with opposite remedies arrived as one sentence — "git
+    invocation failed" — so a refused transport and a dead host were the same
+    finding. One is a setting this pack controls."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True, capture_output=True)
+    problems = publication_gate.verify_remote(
+        repo, f"file://{tmp_path / 'absent.git'}", expected={"refs/heads/main": "a" * 40})
+    assert problems
+    assert problems[0].rstrip().rstrip(":") != problems[0].split(":")[0], problems[0]
+    assert len(problems[0]) > len("the remote '' could not be read, so publication is unverified: "
+                                  "git invocation failed"), problems[0]
+    assert "does not appear to be a git repository" in problems[0] or "not a git repo" in problems[0].lower(), problems[0]
+
+
+def test_the_postcondition_itself_crosses_a_non_file_transport(tmp_path):
+    """The mechanism working proves nothing until the caller uses it.
+
+    A control with no caller is not implemented, and this is the assertion that
+    fails when `verify_remote` is reverted to the hardened environment — the
+    two tests above pass unchanged in that case, because they exercise the
+    layer below.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True, capture_output=True)
+    problems = publication_gate.verify_remote(
+        repo, "ssh://git@no-such-host.invalid/x.git",
+        expected={"refs/heads/main": "a" * 40},
+    )
+    assert problems and "publication is unverified" in problems[0]
+    assert "transport 'ssh' not allowed" not in problems[0], (
+        "the postcondition is still being refused by the hardening rather than reaching the "
+        "remote: " + problems[0]
+    )
+    assert "unable to fork" not in problems[0], problems[0]
+
+
+def test_a_file_remote_still_verifies_after_the_change(tmp_path):
+    """Unchanged behaviour on the one transport that already worked."""
+    origin = tmp_path / "origin.git"
+    _subprocess.run(["git", "init", "--bare", "--quiet", str(origin)], check=True, capture_output=True)
+    work = tmp_path / "work"
+    work.mkdir()
+    for command in (["git", "init", "--quiet", "--initial-branch", "main"],
+                    ["git", "config", "user.email", "t@example.invalid"],
+                    ["git", "config", "user.name", "T"],
+                    ["git", "config", "commit.gpgsign", "false"]):
+        _subprocess.run(command, cwd=work, check=True, capture_output=True)
+    (work / "a.txt").write_text("x\n")
+    _subprocess.run(["git", "add", "a.txt"], cwd=work, check=True, capture_output=True)
+    _subprocess.run(["git", "commit", "--quiet", "-m", "first"], cwd=work, check=True, capture_output=True)
+    head = _subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True,
+                           text=True, check=True).stdout.strip()
+    _subprocess.run(["git", "push", "--quiet", f"file://{origin}",
+                     "refs/heads/main:refs/heads/main"], cwd=work, check=True, capture_output=True)
+
+    assert publication_gate.verify_remote(
+        work, f"file://{origin}",
+        expected=publication_gate.expectation_from_refspec("refs/heads/main:refs/heads/main", head),
+    ) == []
+
+
+def test_an_unreadable_remote_still_fails_closed_in_the_same_words(tmp_path):
+    """The property that must not be lost while the transport is fixed."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True, capture_output=True)
+    problems = publication_gate.verify_remote(
+        repo, f"file://{tmp_path / 'no-such-repository.git'}",
+        expected={"refs/heads/main": "b" * 40},
+    )
+    assert problems and "publication is unverified" in problems[0]
+
+
+# --- the expectation set, derived rather than typed ---------------------------------
+
+
+def test_the_expectation_is_derived_from_the_authorised_refspec():
+    """Never hand-typed. A hand-authored expectation set is the shape the
+    checker-hygiene rules refuse in terms, and the refspec is a mapping that
+    already holds the answer."""
+    head = "c" * 40
+    assert publication_gate.expectation_from_refspec(
+        "refs/heads/main:refs/heads/main", head) == {"refs/heads/main": head}
+    assert publication_gate.expectation_from_refspec(
+        "refs/heads/work:refs/heads/release", head) == {"refs/heads/release": head}
+
+
+def test_a_push_form_with_no_derivable_expectation_is_refused_not_guessed():
+    for form in ("--mirror", "refs/heads/*:refs/heads/*", "main:main", ""):
+        with pytest.raises(_PreconditionError):
+            publication_gate.expectation_from_refspec(form, "d" * 40)
+
+
+def test_an_expectation_without_the_exact_revision_is_refused():
+    """A remote still carrying last week's commit under the right name would
+    otherwise verify clean."""
+    with pytest.raises(_PreconditionError):
+        publication_gate.expectation_from_refspec("refs/heads/main:refs/heads/main", "abc123")

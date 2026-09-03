@@ -348,13 +348,60 @@ def compare(before: Surface, after: Surface) -> list[SurfaceChange]:
     return changes
 
 
+def _is_compatible_addition(before: Signature, after: Signature) -> bool:
+    """Whether the only difference is parameters no existing caller passes.
+
+    A parameter that is **keyword-capable, carries a default, and is appended
+    after every parameter the previous signature had** cannot break a call
+    written against that previous signature. Reporting it as a break makes the
+    gate say something its own message denies — *the qualified baseline's
+    callers would break on:* — and a gate that fires where nothing would break
+    is one a release learns to override.
+
+    Every other shape is still a change: a removed parameter, a renamed one, a
+    default withdrawn, a kind altered, an annotation altered, or a new parameter
+    inserted among the existing ones rather than after them.
+    """
+    if before.is_async != after.is_async or before.decorators != after.decorators:
+        return False
+    old, new = before.parameters, after.parameters
+    # No length comparison here, deliberately. One was written and then found
+    # unreachable: `added` is empty whenever nothing was appended, and
+    # `bool(added)` below already refuses that case. A clause no fixture can
+    # reach is decoration, which is the shape this release spends its time
+    # removing rather than adding.
+    #
+    # Positional-or-keyword parameters must be unchanged AND in the same order;
+    # keyword-only ones are order-insensitive to a caller, so they are compared
+    # by name.
+    def split(parameters):
+        positional = [p for p in parameters if p.kind != KEYWORD_ONLY]
+        keyword = {p.name: p for p in parameters if p.kind == KEYWORD_ONLY}
+        return positional, keyword
+
+    old_positional, old_keyword = split(old)
+    new_positional, new_keyword = split(new)
+    if new_positional[:len(old_positional)] != old_positional:
+        return False
+    if any(new_keyword.get(name) != parameter for name, parameter in old_keyword.items()):
+        return False
+    added = new_positional[len(old_positional):] + [
+        parameter for name, parameter in new_keyword.items() if name not in old_keyword
+    ]
+    return bool(added) and all(
+        parameter.has_default and parameter.kind in (POSITIONAL_OR_KEYWORD, KEYWORD_ONLY)
+        for parameter in added
+    )
+
+
 def _compare_signature(changes: list[SurfaceChange], name: str, before: Signature, after: Signature) -> None:
     if (
         before.parameters != after.parameters
         or before.is_async != after.is_async
         or before.decorators != after.decorators
     ):
-        changes.append(SurfaceChange("changed_signature", name))
+        kind = "added_optional_parameter" if _is_compatible_addition(before, after) else "changed_signature"
+        changes.append(SurfaceChange(kind, name))
     if before.return_annotation != after.return_annotation:
         changes.append(SurfaceChange("changed_return_annotation", name))
 

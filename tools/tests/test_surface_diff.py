@@ -151,3 +151,95 @@ def test_the_declared_layers_are_well_formed():
     assert surface_diff.LAYERS.left and surface_diff.LAYERS.right
     assert surface_diff.LAYERS.not_compared
     assert "AST" in surface_diff.LAYERS.left
+
+
+# --- a compatible addition is not a break -------------------------------------
+#
+# RP3-19, found by the release's own non-regression gate refusing a keyword-only
+# parameter with a default. The gate's message reads "the qualified baseline's
+# callers would break on", and no caller would. A gate that fires where nothing
+# breaks is one a release learns to override.
+
+
+def _kinds(before_source, after_source):
+    before = surface_diff.surface(before_source, "mod")
+    after = surface_diff.surface(after_source, "mod")
+    return {change.kind for change in surface_diff.compare(before, after)}
+
+
+def test_an_appended_keyword_only_parameter_with_a_default_is_not_a_break():
+    kinds = _kinds("def f(a, *, b=1): pass\n", "def f(a, *, b=1, c=2): pass\n")
+    assert kinds == {"added_optional_parameter"}
+
+
+def test_an_appended_positional_parameter_with_a_default_is_not_a_break():
+    kinds = _kinds("def f(a): pass\n", "def f(a, b=2): pass\n")
+    assert kinds == {"added_optional_parameter"}
+
+
+def test_an_appended_parameter_without_a_default_is_still_a_break():
+    """Every existing call site would now be missing an argument."""
+    assert _kinds("def f(a): pass\n", "def f(a, b): pass\n") == {"changed_signature"}
+
+
+def test_a_parameter_inserted_among_the_existing_ones_is_still_a_break():
+    """`f(1, 2)` would now bind 2 to a different parameter."""
+    assert _kinds("def f(a, b=1): pass\n", "def f(a, c=9, b=1): pass\n") == {"changed_signature"}
+
+
+def test_a_removed_parameter_is_still_a_break():
+    assert _kinds("def f(a, b=1): pass\n", "def f(a): pass\n") == {"changed_signature"}
+
+
+def test_a_default_withdrawn_from_an_existing_parameter_is_still_a_break():
+    assert _kinds("def f(a, b=1): pass\n", "def f(a, b, c=2): pass\n") == {"changed_signature"}
+
+
+def test_an_existing_parameter_changing_kind_is_still_a_break():
+    """`def f(a, b)` and `def f(a, *, b)` accept different calls."""
+    assert _kinds("def f(a, b=1): pass\n", "def f(a, *, b=1, c=2): pass\n") == {"changed_signature"}
+
+
+def test_an_existing_keyword_parameter_changing_while_another_is_added_is_still_a_break():
+    """Keyword-only parameters are compared by name rather than by position,
+    because their order is invisible to a caller. That comparison has to be a
+    real one: a default silently altered underneath an addition is a change
+    every caller relying on it would feel."""
+    assert _kinds("def f(a, *, b=1): pass\n",
+                  "def f(a, *, b=2, c=3): pass\n") == {"changed_signature"}
+    assert _kinds("def f(a, *, b=1): pass\n",
+                  "def f(a, *, b: int = 1, c=3): pass\n") == {"changed_signature"}
+
+
+def test_an_existing_parameter_changing_annotation_is_still_a_break():
+    assert _kinds("def f(a: int = 1): pass\n", "def f(a: str = 1, b=2): pass\n") == {"changed_signature"}
+
+
+def test_a_function_becoming_async_is_still_a_break_however_its_parameters_grew():
+    assert _kinds("def f(a): pass\n", "async def f(a, b=1): pass\n") == {"changed_signature"}
+
+
+def test_a_compatible_addition_is_reported_rather_than_hidden():
+    """Relaxed, not silenced: the change still appears in the report, under a
+    name that says what it is."""
+    changes = surface_diff.compare(
+        surface_diff.surface("def f(a): pass\n", "mod"),
+        surface_diff.surface("def f(a, b=1): pass\n", "mod"),
+    )
+    assert [c.name for c in changes] == ["mod.f"]
+    assert not changes[0].kind.startswith(("changed", "removed"))
+
+
+def test_two_identical_signatures_are_not_an_addition():
+    """Tested against the helper directly, because the gate never asks it about
+    two identical signatures — it only calls it once they differ.
+
+    That is the point. The clause is a statement about the helper's contract
+    rather than a branch the gate can reach, and a mutation survived until this
+    fixture existed: `all()` over nothing is true, so a helper without this
+    guard would call an unchanged signature a compatible addition. Its
+    neighbour, a length comparison, turned out to have no such statement behind
+    it and was removed rather than left as decoration.
+    """
+    signature = surface_diff.surface("def f(a, *, b=1): pass\n", "mod").functions["f"]
+    assert not surface_diff._is_compatible_addition(signature, signature)

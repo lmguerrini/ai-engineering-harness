@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import gitread
+from errors import PreconditionError
 
 __all__ = [
     "PublicationReport",
@@ -59,6 +60,8 @@ __all__ = [
     "inspect_namespace",
     "check_push_command",
     "verify_remote",
+    "REMOTE_VERIFICATION_TRANSPORTS",
+    "expectation_from_refspec",
 ]
 
 #: What an ordinary public repository is allowed to carry. Everything else is
@@ -101,6 +104,21 @@ _PUSH_REFSPEC = re.compile(r"^refs/heads/[^:*\s]+:refs/heads/[^:*\s]+$")
 #: remote, one refspec, nothing else. Written as a constant so the refusal
 #: message and the check cannot drift apart.
 SUPPORTED_PUSH_FORM = "git push <remote> refs/heads/<branch>:refs/heads/<branch>"
+
+#: The transports the remote postcondition may cross, and the only widening of
+#: the read-only layer's hardening anywhere in this pack.
+#:
+#: `gitread` refuses every protocol by default, correctly: nothing else in the
+#: toolbelt has any business leaving the machine. The one exception is this
+#: check, which exists *to* leave it — it is the single observation of what a
+#: push actually did, and it was measured non-functional on every real remote
+#: because the hardening that protects every other read also disabled it.
+#:
+#: Scoped to this operation and enumerated by name. The widening is per
+#: invocation, adds `protocol.<name>.allow` beside the standing
+#: `protocol.allow = never` rather than relaxing it, and every transport not
+#: listed here stays refused everywhere including here.
+REMOTE_VERIFICATION_TRANSPORTS = ("ssh", "https", "file")
 
 #: Git answers `ls-remote` and `rev-parse` with full object names. Anything
 #: shorter reaching the postcondition comparison is a caller defect.
@@ -480,9 +498,18 @@ def verify_remote(
 
     # No declared negative: `ls-remote` printing nothing and exiting 0 is the
     # "no refs" answer, so every non-zero status here means nobody looked.
-    answer = gitread.probe(repository, "ls-remote", remote, negative_statuses=())
+    answer = gitread.probe(
+        repository, "ls-remote", remote, negative_statuses=(),
+        allow_transports=REMOTE_VERIFICATION_TRANSPORTS,
+    )
     if not answer.answered or not answer.ok:
-        return [f"the remote {remote!r} could not be read, so publication is unverified: {answer.cause}"]
+        # The detail is part of the finding, not decoration. Without it a
+        # refused transport and a host that does not resolve are the same
+        # sentence — "git invocation failed" — and one is a setting this pack
+        # controls while the other is the network. A reader who cannot tell
+        # them apart cannot act on either.
+        because = f"{answer.cause}: {answer.detail}" if answer.detail else answer.cause
+        return [f"the remote {remote!r} could not be read, so publication is unverified: {because}"]
 
     seen: dict[str, str] = {}
     for line in answer.value.splitlines():
@@ -505,6 +532,33 @@ def verify_remote(
         if name not in seen:
             problems.append(f"the remote does not carry {name}, which the push was supposed to create")
     return problems
+
+
+def expectation_from_refspec(refspec: str, revision: str) -> dict[str, str]:
+    """The refs a push was authorised to create, derived from the refspec it used.
+
+    Derived rather than hand-typed. A hand-authored expectation set is the shape
+    the checker-hygiene rules refuse in terms — *never hand-type an identifier a
+    mapping already holds* — and the mapping here is the refspec, which the push
+    form already constrains to exactly one source and one destination.
+
+    A push whose form is not the supported one has no derivable expectation, and
+    is refused rather than given a guessed one.
+    """
+    if not _PUSH_REFSPEC.match(refspec.strip()):
+        raise PreconditionError(
+            "an expectation is derived from the authorised refspec, and this is not the "
+            f"supported push form ({SUPPORTED_PUSH_FORM})",
+            refspec=refspec,
+        )
+    if not _FULL_OBJECT_NAME.match(revision.strip().lower()):
+        raise PreconditionError(
+            "the expectation carries the exact revision that was pushed; without it a remote "
+            "still holding last week's commit under the right name verifies clean",
+            revision=revision,
+        )
+    _, _, destination = refspec.strip().partition(":")
+    return {destination: revision.strip().lower()}
 
 
 def _same_revision(left: str, right: str) -> bool:

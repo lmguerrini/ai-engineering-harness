@@ -474,3 +474,81 @@ either.
 
 **Mutation-checked, ten for ten**, including the two that matter most: rerouting
 a task that carries authority, and turning the unknown case into a deadlock.
+
+### C8 — Remote verification across a real transport
+
+The three local publication checks are all claims about what *should* happen.
+The postcondition after a push is the only observation of what *did*, and it was
+non-functional on every real remote: `gitread` refuses every protocol, correctly
+— nothing else in the toolbelt has business leaving the machine — and the check
+that exists to leave it was refused by the same setting.
+
+**Scoped by name, per invocation, beside the standing refusal.**
+`protocol.allow = never` is not relaxed. Named protocols are added as
+`protocol.<name>.allow`, Git consults the specific key first, and everything
+unnamed stays refused *including inside the widened operation*. The allowable
+set is enumerated, so a caller cannot re-enable an unreviewed transport by
+spelling it. The negative control asserts every other entry point still carries
+`protocol.allow = never` and no per-protocol key at all — a rehearsal that only
+proved the postcondition works would hide a global widening.
+
+**RP3-17, and it is why the transport fix alone would have shipped a
+half-repair.** With the protocol allowed, the read still failed: `cannot run :`,
+then `unable to fork`. `core.sshCommand = ""` does not mean *no ssh command* —
+Git runs the empty string. **This module records that exact lesson two entries
+above the key it set to empty**, where `diff.external` is deliberately absent
+rather than empty and the comment says why. So the neutralisation is *removed*
+for an operation that enables `ssh`, not set to something: absent, Git falls
+through to its own default, which is deterministic here because every ambient
+`GIT_*` variable is stripped and both config files are `/dev/null`. A transport
+needing no external program lifts nothing.
+
+**RP3-18 — the report could not tell two opposite remedies apart.** A refused
+transport and a host that does not resolve both arrived as `git invocation
+failed`, because the probe answer carried the cause and discarded what Git
+actually printed. One of those is a setting this pack controls. The detail is
+now part of the finding.
+
+**The expectation set is derived, never typed.** *Never hand-type an identifier
+a mapping already holds*: the authorised refspec is that mapping, and the
+supported push form constrains it to one source and one destination. A push form
+with no derivable expectation is refused rather than given a guessed one, and an
+expectation carrying no revision is refused because a remote still holding last
+week's commit under the right name would otherwise verify clean.
+
+**A mutant survived twice, and the second survival was the useful one.** The
+first pass showed the oracle could not distinguish the hardened case from the
+repaired one at all — both failures said `git invocation failed` — which is what
+produced RP3-18. After that repair the mutation *still* survived: the new tests
+proved the **mechanism** worked while nothing asserted that `verify_remote`
+**used** it. That is *a control with no caller is not implemented*, arriving as
+a live mutation rather than as a maxim. The assertion that closes it drives the
+postcondition itself across a non-file transport.
+
+**Nine mutants, nine killed** after those two repairs.
+
+**RP3-19 — the non-regression gate refused a change that breaks nothing.** Found
+by this capability's own work: adding a keyword-only parameter with a default to
+a public function turned the gate red, under a message that reads *the qualified
+baseline's callers would break on*. No call written against the previous
+signature would fail. That is an instrument asking a narrower question than its
+message claims, and a gate that fires where nothing breaks is one a release
+learns to override — which is worse than the drift it was written to catch.
+
+Relaxed exactly, and bounded by fixtures for everything it must still refuse: a
+parameter appended, keyword-capable and carrying a default, is
+`added_optional_parameter`. A parameter without a default, one inserted among
+the existing ones, one removed, a default withdrawn, a kind or annotation
+altered, or a function becoming async, all remain `changed_signature`. The
+compatible case is **reported rather than silenced** — it appears in the output
+under a name that says what it is.
+
+**Two mutants survived the first pass and both taught something.** One was a
+missing fixture: a keyword-only parameter altered underneath an addition, which
+is compared by name rather than position and so needed its own case. The other
+was a length comparison **no fixture could reach** — every path it guarded was
+already refused by an earlier clause — so it was removed rather than left as
+decoration, which is the shape this release spends its time deleting. Its
+neighbour, the emptiness check, *is* reachable but only through the helper's own
+contract rather than through the gate, so it is tested there and the reason is
+written down beside it.
