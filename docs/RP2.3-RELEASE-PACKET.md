@@ -233,3 +233,78 @@ and that is the founder's call too.
 forty-character revision, tree digest and state, and adopts at its own next
 capability boundary. `consumer-c-v1` stays on 2.2.0 until it decides otherwise, and
 a project that never moves is correctly pinned rather than out of date.
+
+## READY_FOR_FOUNDER_FREEZE
+
+    version   2.3.0
+    revision  f416e07e4d269162619b09072d93135cfd2040de
+    digest    b9f8de7315dea8ef1555cf343d89496ad79e98d896650a22634ad1dfc5014348
+    state     IN_PROGRESS  — and it stays there until a person moves it
+    tests     1207 passing
+
+Verified by the shipped mechanism, not by this document:
+
+    python3 tools/pack_pin.py . --version 2.3.0 \
+        --sha f416e07e4d269162619b09072d93135cfd2040de \
+        --digest b9f8de7315dea8ef1555cf343d89496ad79e98d896650a22634ad1dfc5014348 \
+        --state IN_PROGRESS
+
+### What is green
+
+Eight blind closure audits, all NOT READY, all consumed and repaired. 1207
+tests. The commit gate reports VALID over every message from the 2.2.0 freeze to
+this revision, checked against the pack's own published vocabulary. **63 verified
+failure mechanisms in the closure matrix, every one PREVENTED,
+DETECTED_AND_BLOCKED or SAFELY_RECOVERABLE, none uncovered.** 39 mandated
+recurrence classes, each proved against an oracle that was executed rather than
+cited. Two mutation passes over 25 guards: 22 killed on the first run, 3
+survivors each given an oracle that kills them, and 4 more guards from the last
+round killed on the first run.
+
+The live rehearsal against the two projects that actually pin this pack:
+`VERIFIED_PIN` on both, read-only, nothing in either project changed. The
+consumer surface against the frozen 2.2.0: **121 entries, all additions**, with
+two deleted test functions explained. The complete-history scan reads paths,
+blobs, ref names, tag messages and commit messages: **253 occurrences to
+adjudicate over 1179 objects and zero unscanned.**
+
+2.2.0 verifies. 2.1.1 verifies. Zero remotes, zero tags, nothing pushed or
+published, no history rewritten, `main` unmoved.
+
+### What is not, and will not be before a person acts
+
+**Round 8's repairs are unaudited, and the closure ceiling is reached.** The
+founder raised it from 4 to 8 mid-session; all 8 are spent. A ninth reading is
+HITL row 8. The three repairs it would examine are the thread-local inspection
+guard, commit-message scanning, and the write-bound check — each reproduced,
+repaired, regressed and mutation-killed by the coordinator, and none read by
+anybody else.
+
+That matters more here than the sentence usually does. **Thirteen of roughly
+fifty findings across eight rounds were defects in the previous round's
+repairs.** On that base rate, a ninth reading would probably find something. It
+is the founder's call whether the marginal finding is worth the cycle.
+
+**Two of the eight readings were killed mid-run by their provider's content
+filter** and wrote nothing; their findings were recovered from stderr, and both
+sets mattered. Neither completed its sweep, so rounds 6 and 8 are partial by
+construction.
+
+The other standing limitations are in `PACK_MANIFEST.json` under
+`known_limitations`, and the ones a reader should not skip are: the
+program-valued config list is not complete and cannot be; no project declares an
+adapter executable, so that verification path is exercised only against the live
+installation; the capacity gate has never seen a real provider reading; and the
+projection has never been watched during a real multi-hour run.
+
+### The remaining human actions
+
+1. **Decide whether to spend a ninth closure cycle** on round 8's repairs. Row 8.
+2. **Freeze**, if you choose to: the procedure is in *The freeze, prepared and
+   not performed* above — five surfaces to make say one thing, two independent
+   digest verifications, a commit, then a root nobody works in and only then the
+   index entry.
+3. Everything else — push, remote, tag, publication — remains a separate human
+   action and none of it is required to qualify this candidate.
+
+The coordinator stops here. Moving the state is not its act.
