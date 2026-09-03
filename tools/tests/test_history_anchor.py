@@ -603,3 +603,45 @@ def test_a_sha256_repository_is_read_rather_than_reported_clean(tmp_path):
     report = history_anchor.check_reachability(repo, {"CLOSURE.md": f"closed at {head}"})
     assert report.citations, "a 64-character object name is a citation"
     assert report.citations[0].state == CitationState.REACHABLE
+
+
+def test_a_commit_only_inside_a_bundle_blocks_rather_than_being_anchored(tmp_path):
+    """The bounded guarantee for bundle containment, stated as what it is.
+
+    **MAKES:** a cited commit that is gone from the repository and is not a head
+    of any verified bundle BLOCKS. **DOES NOT MAKE:** that a commit reachable
+    *within* a bundle is recognised — `_bundle_contains` compares
+    `bundle list-heads` tips, and proving reachability inside a bundle means
+    unbundling, which this release does not do because it does not write.
+
+    **Unsafe acceptance?** No. The error reports `DESTROYED` and blocks a closure
+    that could legitimately have proceeded: conservative, and the safe direction.
+    **Revisit when:** a project's anchoring practice bundles ranges rather than
+    the cited commits themselves, at which point the refusal starts costing.
+    """
+    repo = tmp_path / "pruned"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.name", "T")
+    _git(repo, "config", "user.email", "t@example.invalid")
+    for content in ("one", "two"):
+        (repo / "f").write_text(content)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", content)
+    parent = _git(repo, "rev-parse", "HEAD~1").strip()
+    bundle = tmp_path / "all.bundle"
+    _git(repo, "bundle", "create", str(bundle), "main")
+
+    _git(repo, "checkout", "-q", "--orphan", "fresh")
+    (repo / "g").write_text("x")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a fresh root")
+    _git(repo, "branch", "-qD", "main")
+    _git(repo, "reflog", "expire", "--expire=now", "--all")
+    _git(repo, "gc", "--prune=now", "--quiet")
+
+    report = history_anchor.check_reachability(
+        repo, {"CLOSURE.md": f"closed at {parent}"}, bundles=[bundle])
+    citation = report.citations[0]
+    assert citation.state == CitationState.DESTROYED
+    assert citation in report.blocking, "the safe direction: it blocks rather than anchoring"

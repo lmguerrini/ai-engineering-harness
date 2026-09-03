@@ -1,0 +1,252 @@
+{
+  "policy_schema": "dashboard-readings-v1",
+  "description": "The readings a human watching a long autonomous run must be able to get from the projection. This file is the CONTRACT; tools/projection.py is the implementation; tools/tests/test_dashboard_contract.py renders representative states and asserts every row appears. It exists because the completeness figure was previously established by running a script by hand and writing the number down, which is the manually-transcribed-count defect this pack refuses everywhere else.",
+  "how_to_read": "`marker` is a literal that must appear in the rendered projection for at least one of the representative states. It is a presence check, not a semantic one: the test proves the reading is REACHABLE, and the module's own tests prove it is CORRECT.",
+  "readings": [
+    {
+      "reading": "pack version",
+      "marker": "version",
+      "why": "the pack's own version"
+    },
+    {
+      "reading": "pack state",
+      "marker": "state",
+      "why": "and whether it is adoptable"
+    },
+    {
+      "reading": "pack digest",
+      "marker": "digest",
+      "why": "the tree digest, abbreviated"
+    },
+    {
+      "reading": "pack revision",
+      "marker": "not in the tree",
+      "why": "stated as absent by design, with the command that gets it"
+    },
+    {
+      "reading": "adoptability",
+      "marker": "ADOPTABLE",
+      "why": "only QUALIFIED_AND_FROZEN may be pinned"
+    },
+    {
+      "reading": "project identity and pin",
+      "marker": "project and pin",
+      "why": "the consuming project's contract and what it pins"
+    },
+    {
+      "reading": "coordinator state",
+      "marker": "coordinator state",
+      "why": "the derived state, from the module that owns it"
+    },
+    {
+      "reading": "capability and phase",
+      "marker": "capability",
+      "why": "what the coordinator is working on"
+    },
+    {
+      "reading": "next authorised action",
+      "marker": "NEXT AUTHORISED ACTION",
+      "why": "the single most-read line"
+    },
+    {
+      "reading": "active jobs",
+      "marker": "job ",
+      "why": "every outstanding job by name"
+    },
+    {
+      "reading": "task ownership",
+      "marker": "task",
+      "why": "which task owns an output root"
+    },
+    {
+      "reading": "subject revision and digest",
+      "marker": "subject",
+      "why": "which tree a job's evidence will be about"
+    },
+    {
+      "reading": "wait deadline and expiry",
+      "marker": "deadline",
+      "why": "when patience runs out, and whether it has"
+    },
+    {
+      "reading": "RUNNING",
+      "marker": "RUNNING",
+      "why": "a job observed to be working"
+    },
+    {
+      "reading": "WAITING",
+      "marker": "WAITING",
+      "why": "a named wait outstanding"
+    },
+    {
+      "reading": "STALLED",
+      "marker": "STALLED",
+      "why": "named as unestablishable by one reading, with the module that answers it"
+    },
+    {
+      "reading": "SILENT_IDLE",
+      "marker": "SILENT_IDLE",
+      "why": "work to do and nothing outstanding"
+    },
+    {
+      "reading": "ORPHANED",
+      "marker": "ORPHANED",
+      "why": "finished with a result nobody took up"
+    },
+    {
+      "reading": "SUPERSEDED",
+      "marker": "SUPERSEDED",
+      "why": "a wait a later one replaced"
+    },
+    {
+      "reading": "COMPLETE",
+      "marker": "COMPLETE",
+      "why": "a job observed finished"
+    },
+    {
+      "reading": "UNKNOWN",
+      "marker": "UNKNOWN",
+      "why": "could not be established, never rendered as healthy"
+    },
+    {
+      "reading": "completed but not consumed",
+      "marker": "COMPLETED_NOT_CONSUMED",
+      "why": "the state four of five recurrences were in"
+    },
+    {
+      "reading": "durable output",
+      "marker": "durable worker output",
+      "why": "what a worker has written that survives it"
+    },
+    {
+      "reading": "partial output recovery",
+      "marker": "partial",
+      "why": "chunks awaiting recovery before any retry"
+    },
+    {
+      "reading": "retries and reason",
+      "marker": "attempt",
+      "why": "which try this is and why the last one ended"
+    },
+    {
+      "reading": "provider, model and effort",
+      "marker": "executor",
+      "why": "what is actually running the job"
+    },
+    {
+      "reading": "routing qualification",
+      "marker": "routing qualification",
+      "why": "how the route was qualified, or UNKNOWN"
+    },
+    {
+      "reading": "capacity observation",
+      "marker": "capacity",
+      "why": "what a provider window last reported"
+    },
+    {
+      "reading": "reset horizon",
+      "marker": "reset",
+      "why": "when a window refills, if observable"
+    },
+    {
+      "reading": "reserve",
+      "marker": "reserve",
+      "why": "what is held back for the coordinator and the result"
+    },
+    {
+      "reading": "budgets used and remaining",
+      "marker": "budget",
+      "why": "with who raised a ceiling"
+    },
+    {
+      "reading": "HITL row",
+      "marker": "row ",
+      "why": "which row of the matrix a blocker sits on"
+    },
+    {
+      "reading": "what each HITL blocks",
+      "marker": "blocked",
+      "why": "the obligations a blocker names"
+    },
+    {
+      "reading": "unrelated work still actionable",
+      "marker": "outstanding",
+      "why": "what remains runnable behind a scoped blocker"
+    },
+    {
+      "reading": "latest audit verdict",
+      "marker": "latest_audit",
+      "why": "what the last reading concluded"
+    },
+    {
+      "reading": "stale-audit warning",
+      "marker": "audit subject vs candidate",
+      "why": "an audit of another tree is named as such"
+    },
+    {
+      "reading": "deterministic gate status",
+      "marker": "gates",
+      "why": "whether the shipped gates pass"
+    },
+    {
+      "reading": "failure-mode closure status",
+      "marker": "closure",
+      "why": "the matrix position"
+    },
+    {
+      "reading": "recurrence-class status",
+      "marker": "recurrence",
+      "why": "the mandated classes"
+    },
+    {
+      "reading": "real-consumer compatibility",
+      "marker": "real_consumers",
+      "why": "the projects that pin this pack"
+    },
+    {
+      "reading": "adapter qualification",
+      "marker": "adapters",
+      "why": "files and executables, separately"
+    },
+    {
+      "reading": "continuation health",
+      "marker": "continuation",
+      "why": "whether a fresh coordinator can reconstruct"
+    },
+    {
+      "reading": "context reconstruction",
+      "marker": "reconstruct",
+      "why": "the rehearsal's standing result"
+    },
+    {
+      "reading": "public-safety state",
+      "marker": "public_safety",
+      "why": "history scanning and publication readiness"
+    },
+    {
+      "reading": "outstanding evolution candidates",
+      "marker": "evolution_candidates",
+      "why": "what is declared and not closed"
+    },
+    {
+      "reading": "last meaningful progress",
+      "marker": "last progress",
+      "why": "when the job last did something observable"
+    },
+    {
+      "reading": "age since progress",
+      "marker": "min ago",
+      "why": "how long ago, because existence is not progress"
+    },
+    {
+      "reading": "freshness of the reading",
+      "marker": "freshness",
+      "why": "how old the record itself is"
+    },
+    {
+      "reading": "projection versus authority",
+      "marker": "THIS is the defect",
+      "why": "which side loses a disagreement"
+    }
+  ]
+}

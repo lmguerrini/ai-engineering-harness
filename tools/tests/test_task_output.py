@@ -548,3 +548,68 @@ def test_a_symlinked_completion_marker_declares_nothing_about_this_root(tmp_path
         alpha.output_root / task_output.COMPLETION_MARKER)
 
     assert task_output.classify(beta).state == task_output.RecoveryState.UNKNOWN
+
+
+def test_two_roots_are_never_confused_which_is_the_guarantee_that_is_true(tmp_path):
+    """The bounded guarantee, stated as what it is.
+
+    **MAKES:** a recovery report never describes a root other than the one its
+    contract names. Beta's contract over alpha's root is UNKNOWN, whatever the
+    bytes.
+
+    **DOES NOT MAKE:** that the bytes inside a root were computed by the task
+    that owns it. A filesystem clone (`cp -c`) puts alpha's bytes in beta's root
+    with `st_nlink == 1` on both, and nothing on disk distinguishes that from
+    bytes beta wrote — nor could anything, since a worker that copies plausible
+    output is indistinguishable from one that produced it.
+
+    **Unsafe acceptance?** No. What is accepted is beta's own root, correctly
+    claimed and correctly marked. A dishonest worker's content is a worker
+    problem; the recovery contract is about not confusing two roots.
+    """
+    import subprocess
+
+    alpha = task_output.OutputContract("alpha", tmp_path / "alpha", 64, expected_chunks=1)
+    task_output.claim_root(alpha)
+    source = task_output.materialise(alpha, 0, "alpha bytes")
+    task_output.complete(alpha, 1)
+
+    beta = task_output.OutputContract("beta", tmp_path / "beta", 64, expected_chunks=1)
+    task_output.claim_root(beta)
+    cloned = subprocess.run(["cp", "-c", str(source), str(beta.chunk_path(0))],
+                            capture_output=True)
+    if cloned.returncode != 0:
+        pytest.skip("this filesystem does not clone")
+    task_output.complete(beta, 1)
+
+    # Its own root, its own markers: accepted, and that is correct.
+    assert task_output.classify(beta).state == \
+        task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT
+    # The guarantee that IS made, and it holds:
+    across = task_output.OutputContract("beta", tmp_path / "alpha", 64, expected_chunks=1)
+    assert task_output.classify(across).state == task_output.RecoveryState.UNKNOWN
+
+
+def test_the_link_count_check_errs_only_towards_refusing(tmp_path):
+    """The bounded guarantee for the false positive.
+
+    **MAKES:** bytes reachable under more than one name are never attributed.
+    **DOES NOT MAKE:** that every such file is another task's — a task that
+    hard-links its own product into its own root is caught too.
+    **Unsafe acceptance?** No: the error is UNKNOWN, and `resume_plan` refuses to
+    act on UNKNOWN, so nothing is retried and nothing is discarded.
+    **Revisit when:** a real worker is observed hard-linking its own products, at
+    which point the cost of the refusal exceeds the cost of the check.
+    """
+    import os
+
+    contract = task_output.OutputContract("alpha", tmp_path / "alpha", 64, expected_chunks=1)
+    task_output.claim_root(contract)
+    source = task_output.materialise(contract, 0, "x")
+    os.link(source, contract.output_root / "product-copy.json")
+    task_output.complete(contract, 1)
+
+    report = task_output.classify(contract)
+    assert report.state == task_output.RecoveryState.UNKNOWN
+    with pytest.raises(PreconditionError):
+        task_output.resume_plan(report)
