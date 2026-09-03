@@ -1644,3 +1644,52 @@ One of those tests failed for the wrong reason on first writing — a substring
 test over the whole render matched a timestamp — and is now scoped to the panel
 it is about. **Fifth appearance in this release of a check that passed for a
 reason it did not state.**
+
+## The live rehearsal against the two real consumers, read-only
+
+The suite's consumer-compatibility tests run against fixtures. This ran the
+shipped commands against the **two projects that actually pin this pack**,
+read-only, mutating nothing.
+
+| | `consumer-c-v1` | `consumer-a-v0.1.0-baseline` |
+|---|---|---|
+| `project_contract.py` | 0 | 0 |
+| `pack_migration.py --index <real index>` | 0, **VERIFIED_PIN** | 0, **VERIFIED_PIN** |
+| `adapter_pin.py` | 0, 4 adapter files verified | **2 — reported and refused** |
+
+`VERIFIED_PIN` on both is the result that matters: the migration path reads the
+real release index, finds each project's real pin, and verifies it against the
+release itself rather than believing the index. Neither project was offered
+2.3.0, correctly — the index lists only `QUALIFIED_AND_FROZEN` roots and this
+candidate is neither frozen nor in it.
+
+**The `adapter_pin` refusal is the tool working, not failing.** Consumer-A
+declares no `adapters` key, and the answer is not *no adapters*: *"this is not
+the same as declaring none: write `adapters: []` to state that this project
+dispatches through no adapter, and this will verify that claim instead of
+refusing to guess."* It names the one-line fix and it is a finding about that
+project, not about this pack — **and nothing here changed it.** A release that
+edited a real consumer to make its own rehearsal green would have proved
+nothing.
+
+`consumer-c-v1`'s adapter row is worth reading closely too: four adapter *files*
+verified, and **zero executables**, reported as *"executable NOT verified (none
+declared)"*. That is the adapter-drift gap this release named and did not close,
+saying so on live data rather than in a limitation nobody reads.
+
+## Backward compatibility, measured rather than asserted
+
+`surface_diff.py . <2.2.0> HEAD` over the whole consumer surface: **121
+entries, and every one an addition** — 105 public names, 6 star exports, 3
+methods, 1 optional parameter on `gitread.probe`.
+
+The two `removed_public_name` entries are the two tautological digest tests this
+release deleted. **A test function is not consumer surface**, and the honest
+thing is that the tool cannot tell — it compares module-level names and says so
+in its own disclosure, which also lists what it does not compare (class-level
+attributes, dataclass field types, base classes, anything done at import time).
+The optional fields added to `Wait` and `ContinuationRecord` fall in that
+uncompared region; they carry defaults, and their compatibility rests on the
+save/load round-trip tests rather than on this diff.
+
+Additions only, with one explained removal, is what MINOR means (D11, D24).
