@@ -499,10 +499,25 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
                                        f"{target} exists and cannot be read: {exc}")
         return WaitObservation(wait.job_id, True, f"{target} exists{detail}")
 
-    contract = task_output.OutputContract(
-        task_id=wait.task_id, output_root=target,
-        max_bytes_per_write=int(wait.max_bytes_per_write),
-    )
+    # The SAME defect as the process id, one field over, and the pid repair did
+    # not generalise because it was written as a repair for the pid. A saved
+    # record's `max_bytes_per_write` of `"not-an-int"` raised a bare ValueError
+    # out of a function whose contract is a state.
+    try:
+        bound = wait.max_bytes_per_write
+        if isinstance(bound, bool) or not (
+                isinstance(bound, int)
+                or (isinstance(bound, str) and bound.strip().isdigit())):
+            raise ValueError(repr(bound))
+        contract = task_output.OutputContract(
+            task_id=wait.task_id, output_root=target, max_bytes_per_write=int(bound),
+        )
+    except (TypeError, ValueError, OverflowError):
+        return WaitObservation(
+            wait.job_id, None,
+            f"this wait declares a write bound of {wait.max_bytes_per_write!r}, which is not a "
+            f"number of bytes, so its output root cannot be classified and the record needs repair",
+        )
     report = task_output.classify(contract)
     if report.state == task_output.RecoveryState.UNKNOWN:
         return WaitObservation(wait.job_id, None, f"the output root is UNKNOWN: {report.why}")

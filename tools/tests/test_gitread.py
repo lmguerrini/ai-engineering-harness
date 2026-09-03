@@ -807,3 +807,60 @@ def test_a_deadline_the_caller_set_is_the_callers_own_refusal(tmp_path):
     answer = gitread.probe(repo, "status", timeout=1e-9, negative_statuses=())
     assert not answer.answered
     assert "timed out" in answer.cause
+
+
+def test_the_inspection_guard_is_per_thread_and_not_per_module(tmp_path):
+    """A blind reader held one thread inside the inspection and issued a second
+    public read from another. The guard was a module-level flag, so the second
+    read skipped its inspection entirely and ran against a repository nobody had
+    checked.
+
+    **A guard against a function calling itself became a guard against anyone
+    calling it** — a different and much larger claim, made by accident."""
+    import threading
+
+    repo = _repo_setting(tmp_path, "merge.m.driver")
+    entered, release = threading.Event(), threading.Event()
+    original = gitread._program_valued_config
+
+    def slow(repository, fnmatch, timeout):
+        entered.set()
+        release.wait(5)
+        return original(repository, fnmatch, timeout)
+
+    gitread._program_valued_config = slow
+    def _held():
+        # This read refuses too, once released — expected, and swallowed so the
+        # thread does not surface it as an unhandled exception that reads like a
+        # defect in the test.
+        try:
+            gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+        except _IntegrityError:
+            pass
+
+    held = threading.Thread(target=_held)
+    held.start()
+    try:
+        assert entered.wait(5), "the first read never reached the inspection"
+        with pytest.raises(_IntegrityError):
+            gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    finally:
+        release.set()
+        held.join()
+        gitread._program_valued_config = original
+
+
+def test_a_commit_message_is_part_of_the_history(tmp_path):
+    """Commits are skipped by the blob walk because they are not blobs, so a
+    private term written into a commit message scanned CLEAN — close to the most
+    likely place for one to be."""
+    repo = tmp_path / "messages"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "f").write_text("ordinary\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a message nobody scanned")
+
+    messages = gitread.commit_messages(repo, "HEAD")
+    assert len(messages) == 1
+    assert "a message nobody scanned" in messages[0][1]

@@ -422,3 +422,17 @@ def test_a_branch_name_and_a_tag_message_are_history_too(repo):
     locations = {o.location for o in report.occurrences}
     assert "ref" in locations, "a branch name is published"
     assert "tag" in locations, "an annotated tag's message is published"
+
+
+def test_a_private_term_in_a_commit_message_is_found(repo):
+    """The blob walk skips commits because they are not blobs. A commit message
+    is published with the repository and was the one place a complete-history
+    scan still did not look."""
+    (repo / "f").write_text("ordinary\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "needlecommit and nothing else holds it")
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needlecommit",))))
+    assert [o.location for o in report.occurrences] == ["commit"]
+    assert report.complete

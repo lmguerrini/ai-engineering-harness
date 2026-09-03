@@ -240,6 +240,20 @@ def scan_complete_history(
         for leak in scanner.scan_name(refname, location="ref", subject=refname):
             report.occurrences.append(
                 Occurrence(finding=leak.detail, object_sha="", path=refname, location="ref"))
+    seen_commits: set[str] = set()
+    for name in names:
+        try:
+            messages = gitread.commit_messages(repository, name)
+        except Exception as exc:
+            report.skipped.append(f"the commit messages on {name} could not be read: {exc}")
+            continue
+        for sha, body in messages:
+            if sha in seen_commits:
+                continue
+            seen_commits.add(sha)
+            for leak in scanner.scan(body, location="commit", subject=sha[:12]):
+                report.occurrences.append(
+                    Occurrence(finding=leak.detail, object_sha=sha, path="", location="commit"))
     for sha, kind in gitread.annotated_tags(repository):
         try:
             body = outgoing_scan._decoded(gitread.object_bytes(repository, sha))

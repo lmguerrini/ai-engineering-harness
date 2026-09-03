@@ -566,3 +566,22 @@ def test_a_saved_record_that_names_work_that_is_not_a_name_is_refused(tmp_path, 
     path.write_text(json.dumps(body))
     with pytest.raises(PreconditionError):
         continuation.load(path)
+
+
+@pytest.mark.parametrize("bound", ["not-an-int", None, 1.5, True, [], "  "])
+def test_a_write_bound_that_is_not_a_number_of_bytes_is_a_state_not_a_traceback(tmp_path, bound):
+    """The same defect as the process id, one field over — and the pid repair did
+    not generalise, because it was written as a repair for the pid rather than
+    for the class. Every integer a saved record carries is untrusted input."""
+    body = {"capability": "cap", "updated_at": continuation.now(),
+            "waits": [{"job_id": "w", "kind": "output_root", "expects": "output",
+                       "not_beyond_seconds": 60, "declared_at": continuation.now(),
+                       "path": str(tmp_path / "root"), "task_id": "w",
+                       "max_bytes_per_write": bound}]}
+    path = tmp_path / "C.json"
+    path.write_text(json.dumps(body))
+    try:
+        record = continuation.load(path)
+    except PreconditionError:
+        return  # refused at the boundary, which is also a named refusal
+    assert continuation.derive(record).state == State.RECOVERY_REQUIRED

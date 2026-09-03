@@ -169,5 +169,8 @@ discarded finding is evidence about the oracle.
 | RP3-64 | the general check failed open when a repository broke its own configuration | the discriminator needed Git, and Git was what the repository had broken |
 | RP3-65 | the general check re-entered itself and never finished | a guard on the verb was a guard on one of the paths the function takes |
 | RP3-66 | the general check hijacked a timeout and a parse error belonging to the caller | a precondition answering a question the caller did not ask |
+| RP3-67 | a second thread's read skipped the inspection a first thread was inside | a guard against self-recursion written as a guard against everyone |
+| RP3-68 | a private term in a commit message scanned clean | the blob walk skips commits because they are not blobs |
+| RP3-69 | a write bound that was not a number raised out of the derivation | the pid repair was written for the pid rather than for the class |
 
 *(appended as each capability reproduces its own)*

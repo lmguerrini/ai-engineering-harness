@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import os
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -414,7 +415,7 @@ def _run(
     # entitled to the refusal that names the real problem rather than to this
     # check's opinion about it. Hijacking that refusal turned "your config does
     # not parse" into a security finding about a repository nobody could read.
-    if not _INSPECTING_CONFIG and verb != "config":
+    if not _inspecting() and verb != "config":
         executable = program_valued_config(repository, timeout=timeout)
         if executable:
             raise IntegrityError(
@@ -753,7 +754,15 @@ CLOSED_PROGRAM_KEYS = {
 }
 
 
-#: Re-entrancy guard for the config inspection below.
+#: Re-entrancy guard for the config inspection below. **Thread-local, and a
+#: module-level flag was the first version.**
+#:
+#: A blind reader held one thread inside the inspection and issued a second
+#: public read from another: the flag was set, so the second read skipped its
+#: inspection entirely and ran against a repository nobody had checked. A guard
+#: against a function calling ITSELF became a guard against anyone calling it,
+#: which is a different and much larger claim.
+
 #:
 #: The inspection runs Git, and every Git run is inspected — so the first
 #: version guarded only on the verb `config`, and its own fallback probe
@@ -761,7 +770,11 @@ CLOSED_PROGRAM_KEYS = {
 #: DIFFERENT verb and re-entered. Two test modules that take ten seconds ran for
 #: over six minutes without finishing. A guard on the verb was a guard on one
 #: of the paths the function takes.
-_INSPECTING_CONFIG = False
+_INSPECTION = threading.local()
+
+
+def _inspecting() -> bool:
+    return getattr(_INSPECTION, "active", False)
 
 
 def program_valued_config(
@@ -774,14 +787,13 @@ def program_valued_config(
     """
     import fnmatch
 
-    global _INSPECTING_CONFIG
-    if _INSPECTING_CONFIG:
+    if _inspecting():
         return []
-    _INSPECTING_CONFIG = True
+    _INSPECTION.active = True
     try:
         return _program_valued_config(repository, fnmatch, timeout)
     finally:
-        _INSPECTING_CONFIG = False
+        _INSPECTION.active = False
 
 
 def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
@@ -839,6 +851,28 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
             continue
         found.append(lowered)
     return sorted(set(found))
+
+
+def commit_messages(
+    repository: str | Path,
+    ref: str,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[tuple[str, str]]:
+    """``(sha, message)`` for every commit reachable from ``ref``.
+
+    A commit message is published with the repository and is not reachable
+    through the object walk this module's blob scan performs — commits are
+    skipped there because they are not blobs. A private term written into a
+    commit message therefore scanned CLEAN, which is close to the most likely
+    place for one to be.
+    """
+    output = _run(repository, "rev-list", "--format=%B%x00", "--no-commit-header", ref,
+                  timeout=timeout, text=False)
+    assert isinstance(output, bytes)
+    shas = _run(repository, "rev-list", ref, timeout=timeout).split()
+    bodies = [part for part in nul_paths(output)]
+    return list(zip(shas, bodies))
 
 
 def annotated_tags(

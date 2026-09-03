@@ -1850,3 +1850,58 @@ the two kinds already adjudicated in prose — absolute paths of the `/tmp` and
 tested against. **No personal path and no real credential**, re-verified
 directly. The disposition is unchanged: declared, not remediated, and the input
 to a publication decision rather than a substitute for one.
+
+## Closure audit — round 8, the last authorised cycle, also killed by its provider
+
+The final release-authority read was **terminated mid-run by the provider's
+content filter**, like round 6, after 286K tokens and a zero-byte report. Its
+stderr held 650KB of durable partial output, and four probes were recovered from
+it before anything was retried. Three were real.
+
+**The reader had gone straight at the structural change**, which is what the
+brief asked it to do, and it found the two things wrong with it.
+
+### The inspection guard was a module-level flag
+
+One thread held inside the inspection, a second public read issued from another
+— and the second **skipped its inspection entirely** and ran against a
+repository nobody had checked. A guard against a function calling itself had
+become a guard against anyone calling it, which is a different and much larger
+claim, made by accident. Thread-local now.
+
+That is the second defect in the general defence found by a reader, after the
+fail-open on an unreadable config, and the fourth in it overall. **The check
+that replaced five route-by-route patches needed four repairs of its own** —
+worth recording plainly, because "we closed the class instead of the route" is
+the kind of sentence that sounds like an ending.
+
+### A commit message is not a blob
+
+The blob walk skips commits because they are not blobs, so a private term
+written into a **commit message** scanned CLEAN — close to the most likely place
+for one to be, and the last place a complete-history scan still did not look
+after ref names and tag messages were added one round earlier.
+
+### And the same integer defect, one field over again
+
+`max_bytes_per_write: "not-an-int"` raised a bare `ValueError` out of `derive`.
+The pid repair two rounds earlier did not generalise **because it was written as
+a repair for the pid rather than for the class** — every integer a saved record
+carries is untrusted input, and now every one of them is checked.
+
+### What was NOT a defect
+
+An output root reached through a symlinked alias classifies normally when the
+contract names the task that owns it, and returns UNKNOWN when it does not. The
+owner marker still governs; an alias is a second path to the same root, not a
+second owner. Checked rather than assumed, because the previous three findings
+in this area were all real.
+
+### The routing fact, twice now
+
+Two of eight cross-vendor readings were ended by the provider's content policy
+rather than by capacity or by a hang, and **both times the findings were
+recovered from stderr and both times they mattered**. An auditor that dies is
+still evidence if its working output is durable — which is the recovery contract
+this release ships, applied to the release's own audits. Recorded as
+`environmental_failure`; it charges no budget.
