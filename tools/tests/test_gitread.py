@@ -861,6 +861,43 @@ def test_a_commit_message_is_part_of_the_history(tmp_path):
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "a message nobody scanned")
 
-    messages = gitread.commit_messages(repo, "HEAD")
-    assert len(messages) == 1
-    assert "a message nobody scanned" in messages[0][1]
+    # MORE THAN ONE COMMIT, and that is the whole repair to this test. An
+    # independent reader replaced `commit_messages` with one that reads only the
+    # named tip and no ancestors, and the test still passed: with a one-commit
+    # fixture, HEAD IS the whole history, and the test could not tell traversal
+    # from a single read. It did not state that it was relying on that.
+    (repo / "f").write_text("second\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a later message")
+    _git(repo, "checkout", "-q", "-b", "side", "HEAD~1")
+    (repo / "g").write_text("branch\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a message on a side branch")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "merge", "-q", "--no-ff", "side", "-m", "a merge message")
+
+    bodies = [body for _sha, body in gitread.commit_messages(repo, "HEAD")]
+    assert "a message nobody scanned\n" in bodies, "an ancestor was not traversed"
+    assert "a message on a side branch\n" in bodies, "a merge parent was not traversed"
+    assert "a merge message\n" in bodies
+    # Exact, not `in`: the previous reader returned every non-tip body with a
+    # leading newline, and a pattern anchored to the start of a message stopped
+    # matching while `in` kept passing.
+    assert all(not b.startswith("\n") for b in bodies), "a body carries a leading newline"
+
+
+def test_a_commit_message_is_read_by_its_byte_count_and_not_by_a_delimiter(tmp_path):
+    """Three shapes the format-string reader got wrong, in one test: an empty
+    message came back as a newline, a message containing the delimiter byte was
+    truncated at it, and every non-tip body carried a leading newline."""
+    repo = tmp_path / "shapes"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "f").write_text("x")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "first")
+    _git(repo, "commit", "-q", "--allow-empty", "--allow-empty-message", "-m", "")
+
+    bodies = dict(gitread.commit_messages(repo, "HEAD"))
+    assert "" in bodies.values(), "an empty message is empty, not a newline"
+    assert "first\n" in bodies.values()

@@ -443,6 +443,20 @@ def gate(dispatch: Dispatch, pool: Pool, reserve: Reserve) -> Decision:
                 f"{pool.active_workers} dispatch(es) already draw on the coordinator's own window; "
                 "eight in two waves on one shared window returned two results and lost eighty-one "
                 "records"))
+        if unknowns:
+            # THE RESERVE EXISTS FOR THE RESULT, so an unknown cost of reading
+            # it is not a detail the arithmetic may step over. The gate computed
+            # production against the reserve, found room, and answered DISPATCH
+            # while carrying `what reading the result would cost` as unknown —
+            # a confident answer about work whose result may be unaffordable to
+            # consume. Found by an independent reader, and it is the failure
+            # this whole module was built from: eight dispatches on one window
+            # returned two results and lost eighty-one records.
+            return Decision(**common, verdict=Verdict.DISPATCH_SERIALLY, why=(
+                f"{after_production:g} {pool.unit} would remain against a reserve of "
+                f"{reserve.total:g} — but {len(unknowns)} thing(s) are not established, so this "
+                f"proceeds one at a time. Arithmetic that skipped an unknown is not arithmetic "
+                f"that cleared it"))
         return Decision(**common, verdict=Verdict.DISPATCH, why=(
             f"{after_production:g} {pool.unit} would remain, above the declared reserve of "
             f"{reserve.total:g}"))

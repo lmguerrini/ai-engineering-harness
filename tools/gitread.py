@@ -862,17 +862,51 @@ def commit_messages(
     """``(sha, message)`` for every commit reachable from ``ref``.
 
     A commit message is published with the repository and is not reachable
-    through the object walk this module's blob scan performs — commits are
-    skipped there because they are not blobs. A private term written into a
-    commit message therefore scanned CLEAN, which is close to the most likely
-    place for one to be.
+    through the object walk this module's blob scan performs, because a commit
+    is not a blob. A private term written into one therefore scanned clean.
+
+    **Read from the raw commit objects, by byte count.** The first version asked
+    Git to format them — ``rev-list --format=%B%x00`` — and split the result on
+    NUL, and an independent reader took it apart three ways in one paragraph:
+
+    *   Git emits a newline after each formatted record, so **every message
+        except the tip came back with a leading newline**. A pattern anchored to
+        the start of a message stopped matching, and the scan reported clean.
+    *   A message containing a NUL byte was **truncated at it**, which is
+        precisely the byte the delimiter was.
+    *   An empty message came back as ``"\n"`` rather than ``""``.
+
+    `cat-file --batch` states each object's size and then emits exactly that
+    many bytes, so the boundary is counted rather than searched for. Nothing in
+    a message can be mistaken for the end of it.
     """
-    output = _run(repository, "rev-list", "--format=%B%x00", "--no-commit-header", ref,
-                  timeout=timeout, text=False)
-    assert isinstance(output, bytes)
-    shas = _run(repository, "rev-list", ref, timeout=timeout).split()
-    bodies = [part for part in nul_paths(output)]
-    return list(zip(shas, bodies))
+    revisions = _run(repository, "rev-list", ref, timeout=timeout).split()
+    if not revisions:
+        return []
+    raw = _run(repository, "cat-file", "--batch", timeout=timeout, text=False,
+               input_value=("\n".join(revisions) + "\n").encode())
+    assert isinstance(raw, bytes)
+
+    found: list[tuple[str, str]] = []
+    at = 0
+    while at < len(raw):
+        newline = raw.find(b"\n", at)
+        if newline < 0:
+            break
+        header = raw[at:newline].decode("utf-8", "surrogateescape").split()
+        at = newline + 1
+        if len(header) != 3 or header[1] != "commit":
+            # `<sha> missing` has two fields and no body to skip.
+            continue
+        size = int(header[2])
+        body = raw[at:at + size]
+        at += size + 1  # the newline Git writes after the object
+        # A commit object is headers, one blank line, then the message. Split
+        # once on the FIRST blank line: a message may contain blank lines of its
+        # own, and the header block may not.
+        _, _, message = body.partition(b"\n\n")
+        found.append((header[0], message.decode("utf-8", "surrogateescape")))
+    return found
 
 
 def annotated_tags(

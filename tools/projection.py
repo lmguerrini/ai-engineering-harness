@@ -48,17 +48,77 @@ __all__ = ["Panel", "Projection", "project"]
 UNKNOWN = "UNKNOWN"
 
 
+#: How a line should READ, not how it should look. A tone is a statement about
+#: the fact — *this is the thing to do next*, *this could not be established* —
+#: and the two renderers below decide separately what that means in a terminal
+#: and in a browser.
+#:
+#: Set by the panel that knows the fact. The alternative was for the HTML
+#: renderer to recognise `"UNKNOWN:"` and `"EXPIRED"` in the text, which is a
+#: presentation layer inferring meaning from prose — the same
+#: passes-for-a-reason-it-does-not-state shape this release has now found seven
+#: times, one layer up.
+class Tone:
+    PLAIN = "plain"
+    #: An established good state. Never used for an absence.
+    GOOD = "good"
+    #: Something a reader should look at, that is not yet wrong.
+    WARN = "warn"
+    #: A defect, an expiry, a blocked state.
+    BAD = "bad"
+    #: Could not be established. NEVER rendered as healthy.
+    UNKNOWN = "unknown"
+    #: The next authorised action.
+    ACTION = "action"
+    #: Provenance and detail: true, and not what a reader scans for.
+    MUTED = "muted"
+
+    ALL = (PLAIN, GOOD, WARN, BAD, UNKNOWN, ACTION, MUTED)
+
+
+@dataclass
+class Line:
+    text: str
+    tone: str = Tone.PLAIN
+    #: Rendered as a key beside the value where a renderer can.
+    label: str = ""
+    #: Indentation depth, for facts that belong to the fact above them.
+    depth: int = 0
+
+    def __post_init__(self) -> None:
+        if self.tone not in Tone.ALL:
+            raise ValueError(f"unknown tone {self.tone!r}")
+
+
 @dataclass
 class Panel:
     """One section of the view, and what it could not establish."""
 
     title: str
-    lines: list[str] = field(default_factory=list)
+    lines: list = field(default_factory=list)
     unknown: list[str] = field(default_factory=list)
+    #: A one-phrase answer for this panel, shown beside its title.
+    summary: str = ""
+    summary_tone: str = Tone.PLAIN
+
+    def say(self, text: str, tone: str = Tone.PLAIN, label: str = "", depth: int = 0) -> None:
+        self.lines.append(Line(text, tone, label, depth))
+
+    def rows(self) -> "list[Line]":
+        """Every line as a `Line`, including the ones appended as bare strings.
+
+        Bare strings are still accepted because most of this module's panels
+        predate tones and say nothing a reader must scan for. A string is
+        `PLAIN`, which is the honest default: the panel did not say the fact was
+        good, and nothing else should say it for it.
+        """
+        return [line if isinstance(line, Line) else Line(str(line)) for line in self.lines]
 
     def render(self) -> str:
         out = [f"── {self.title} " + "─" * max(0, 58 - len(self.title))]
-        out.extend(f"  {line}" for line in self.lines)
+        for line in self.rows():
+            out.append("  " + "  " * line.depth
+                       + (f"{line.label}: " if line.label else "") + line.text)
         out.extend(f"  {UNKNOWN}: {item}" for item in self.unknown)
         if not self.lines and not self.unknown:
             out.append(f"  {UNKNOWN}: nothing to read")

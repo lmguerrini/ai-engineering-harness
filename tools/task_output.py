@@ -487,6 +487,23 @@ def classify(contract: OutputContract) -> RecoveryReport:
             if entry.is_symlink():
                 undescribed.append(f"{CHUNK_DIRECTORY}/{entry.name} (a symbolic link)")
                 continue
+            # A HARD LINK IS A SECOND NAME FOR ONE FILE, and `is_file()` cannot
+            # tell it from the first. An independent reader linked another
+            # task's finished chunk into this root, wrote a valid completion
+            # marker, and read alpha's artifact back as beta's — the symlink
+            # repair one round earlier closed the shape it could see.
+            #
+            # A worker writes its chunks by rename from its own `.part`, so a
+            # legitimate chunk has exactly one name. More than one cannot be
+            # established as this root's alone, and unknown is the answer.
+            try:
+                if entry.stat().st_nlink > 1:
+                    undescribed.append(
+                        f"{CHUNK_DIRECTORY}/{entry.name} (also exists under another name)")
+                    continue
+            except OSError as exc:
+                undescribed.append(f"{CHUNK_DIRECTORY}/{entry.name} ({exc})")
+                continue
             if not entry.is_file():
                 undescribed.append(f"{CHUNK_DIRECTORY}/{entry.name}")
                 continue

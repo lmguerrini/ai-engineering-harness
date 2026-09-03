@@ -476,3 +476,44 @@ def test_a_chunk_directory_that_is_a_link_holds_nobody_this_root_can_vouch_for(t
     report = task_output.classify(beta)
     assert report.state == task_output.RecoveryState.UNKNOWN
     assert "symbolic link" in report.why
+
+
+def test_a_hard_linked_chunk_is_a_second_name_for_another_tasks_file(tmp_path):
+    """`is_file()` cannot tell a hard link from the first name for a file. An
+    independent reader linked alpha's finished chunk into beta's root, wrote a
+    valid completion marker, and read alpha's artifact back as beta's — the
+    symlink repair one round earlier closed only the shape it could see.
+
+    A worker writes its chunks by rename from its own `.part`, so a legitimate
+    chunk has exactly one name.
+
+    **The check is symmetric, and that is correct rather than over-broad.** A
+    hard link makes both names report `st_nlink == 2`, so alpha is flagged too —
+    and nothing on disk distinguishes the root that wrote the bytes from the
+    root that linked to them. What is true of both is what the check says: these
+    bytes are also somewhere else, so which task's result they are cannot be
+    established here. `UNKNOWN` loses nothing; `resume_plan` refuses to act on
+    it and a person looks.
+    """
+    import os
+
+    alpha = task_output.OutputContract("alpha", tmp_path / "alpha", 64, expected_chunks=1)
+    task_output.claim_root(alpha)
+    source = task_output.materialise(alpha, 0, "alpha artifact")
+    task_output.complete(alpha, 1)
+    # Before anyone links to it, alpha's own chunk has one name and classifies.
+    assert task_output.classify(alpha).state == \
+        task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT
+
+    beta = task_output.OutputContract("beta", tmp_path / "beta", 64, expected_chunks=1)
+    task_output.claim_root(beta)
+    os.link(source, beta.chunk_path(0))
+    task_output.complete(beta, 1)
+
+    report = task_output.classify(beta)
+    assert report.state == task_output.RecoveryState.UNKNOWN
+    assert any("another name" in entry for entry in report.undescribed)
+    with pytest.raises(PreconditionError):
+        task_output.resume_plan(report)
+    # And alpha, now that its bytes are in two places, is UNKNOWN as well.
+    assert task_output.classify(alpha).state == task_output.RecoveryState.UNKNOWN

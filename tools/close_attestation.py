@@ -350,6 +350,16 @@ def close_gate(
     being closed. Supply it and evidence gathered about a DIFFERENT tree stops
     the close.
 
+    **The property is not universal, and an independent reader was right to say
+    so.** `against=UNSTATED` closes: a caller that cannot name the tree records
+    that it cannot, and the close proceeds. The claim this module can make is
+    narrower than *evidence cannot close a tree it was not gathered from* — it
+    is that **a mismatch is always caught, and the only way past the check is to
+    write the words down in the caller's own code**, where a reader of that code
+    sees them. That is a disclosed gap rather than a silent default, which is
+    the whole difference from the version before it, and it is not the same as
+    no gap.
+
     It exists because a blind cross-vendor audit of this release returned eight
     findings and six of them were already repaired: the auditor had read a
     snapshot taken before two repair rounds, and its report never said which

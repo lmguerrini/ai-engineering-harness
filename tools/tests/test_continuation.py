@@ -585,3 +585,36 @@ def test_a_write_bound_that_is_not_a_number_of_bytes_is_a_state_not_a_traceback(
     except PreconditionError:
         return  # refused at the boundary, which is also a named refusal
     assert continuation.derive(record).state == State.RECOVERY_REQUIRED
+
+
+def test_a_deadline_is_validated_whatever_kind_of_wait_carries_it(tmp_path):
+    """The constructor validates the bound only for OBSERVABLE kinds, so a HUMAN
+    wait carrying `"not-a-number"` loaded, skipped that check, and raised a bare
+    ValueError out of `derive`. A deadline nobody can read has passed."""
+    body = {"capability": "cap", "updated_at": continuation.now(),
+            "waits": [{"job_id": "human", "kind": "human", "expects": "a decision",
+                       "not_beyond_seconds": "not-a-number",
+                       "declared_at": "2020-01-01T00:00:00+00:00"}]}
+    path = tmp_path / "C.json"
+    path.write_text(json.dumps(body))
+    assert continuation.derive(continuation.load(path)).state == State.RECOVERY_REQUIRED
+
+
+@pytest.mark.parametrize("bound", [0, -5, "0"])
+def test_a_write_bound_of_zero_or_less_is_a_state_not_a_refusal_from_another_layer(tmp_path, bound):
+    """Zero and negative are integers, so the type check passed them into
+    `OutputContract`, which refused with a PreconditionError that escaped
+    `derive`. A refusal from the wrong layer is still an exception where the
+    contract is a state."""
+    body = {"capability": "cap", "updated_at": continuation.now(),
+            "waits": [{"job_id": "w", "kind": "output_root", "expects": "output",
+                       "not_beyond_seconds": 60, "declared_at": continuation.now(),
+                       "path": str(tmp_path / "root"), "task_id": "w",
+                       "max_bytes_per_write": bound}]}
+    path = tmp_path / "C.json"
+    path.write_text(json.dumps(body))
+    try:
+        record = continuation.load(path)
+    except PreconditionError:
+        return
+    assert continuation.derive(record).state == State.RECOVERY_REQUIRED

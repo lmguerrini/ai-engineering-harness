@@ -206,7 +206,16 @@ class Wait:
         started, current = _moment(self.declared_at), _moment(now)
         if started is None or current is None:
             return True
-        return (current - started).total_seconds() > float(self.not_beyond_seconds)
+        try:
+            bound = float(self.not_beyond_seconds)
+        except (TypeError, ValueError):
+            # The same rule one field over, and reachable because the
+            # constructor validates the bound only for OBSERVABLE kinds: a HUMAN
+            # wait carrying `"not-a-number"` loaded, skipped that check, and
+            # raised out of here. Found by an independent reader. A deadline
+            # nobody can read has passed.
+            return True
+        return (current - started).total_seconds() > bound
 
     def __post_init__(self) -> None:
         if not _ID.fullmatch(self.job_id or ""):
@@ -508,6 +517,12 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
         if isinstance(bound, bool) or not (
                 isinstance(bound, int)
                 or (isinstance(bound, str) and bound.strip().isdigit())):
+            raise ValueError(repr(bound))
+        # POSITIVE. Zero and negative are integers, so the type check passed
+        # them straight into `OutputContract`, which refused with a
+        # `PreconditionError` that escaped `derive` — a refusal from the wrong
+        # layer is still an exception where the contract is a state.
+        if int(bound) <= 0:
             raise ValueError(repr(bound))
         contract = task_output.OutputContract(
             task_id=wait.task_id, output_root=target, max_bytes_per_write=int(bound),

@@ -377,3 +377,27 @@ def test_the_moment_a_reading_was_taken_has_to_be_readable(moment):
     for good in ("2026-09-03T12:00:00Z", "2026-09-03T12:00:00+02:00", "2026-09-03T12:00:00"):
         assert capacity.Pool(pool_id="p", remaining=100, kind=capacity.PoolKind.INDEPENDENT,
                              observed_at=good).remaining == 100
+
+
+def test_an_unknown_consumption_cost_cannot_produce_a_confident_dispatch():
+    """The reserve exists FOR the result, so an unknown cost of reading it is
+    not a detail the arithmetic may step over. The gate computed production
+    against the reserve, found room, and answered DISPATCH while carrying *what
+    reading the result would cost* as unknown — a confident answer about work
+    whose result may be unaffordable to consume.
+
+    That is the failure this module was built from: eight dispatches on one
+    window returned two results and lost eighty-one records."""
+    decision = capacity.gate(
+        _dispatch(estimated_cost=20), _pool(remaining=100, kind=capacity.PoolKind.INDEPENDENT),
+        Reserve(coordinator=10, result_consumption=0, repair_and_audit=0))
+    assert decision.verdict == Verdict.DISPATCH_SERIALLY
+    assert decision.unknowns
+
+    # The bound: with the cost known and the room there, it is still DISPATCH.
+    known = capacity.gate(
+        _dispatch(estimated_cost=20, result_consumption_cost=5),
+        _pool(remaining=100, kind=capacity.PoolKind.INDEPENDENT),
+        Reserve(coordinator=10, result_consumption=0, repair_and_audit=0))
+    assert known.verdict == Verdict.DISPATCH
+    assert not known.unknowns

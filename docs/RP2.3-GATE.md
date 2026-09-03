@@ -1905,3 +1905,80 @@ recovered from stderr and both times they mattered**. An auditor that dies is
 still evidence if its working output is durable — which is the recovery contract
 this release ships, applied to the release's own audits. Recorded as
 `environmental_failure`; it charges no budget.
+
+## Cycle 9 — the founder-authorised ninth reading
+
+Granted specifically to audit round 8's repairs. **NOT READY: five properties
+did not hold, plus a test that could not fail** — and the first finding is that
+round 8's own commit-message repair was broken three ways.
+
+### The repair from one round earlier was wrong three times over
+
+`commit_messages` asked Git to format the bodies — `rev-list --format=%B%x00` —
+and split on NUL. The reader took that apart in a paragraph:
+
+*   Git writes a newline after each formatted record, so **every message except
+    the tip came back with a leading newline.** A pattern anchored to the start
+    of a message stopped matching and the scan reported clean.
+*   A message containing a NUL byte was **truncated at it** — precisely the byte
+    chosen as the delimiter.
+*   An empty message came back as `"\n"` rather than `""`.
+
+It also cost one full history walk per ref.
+
+Now read from the raw commit objects through `cat-file --batch`, which states
+each object's size and then emits exactly that many bytes: **the boundary is
+counted rather than searched for**, so nothing inside a message can be mistaken
+for the end of it. One pass, and the merge-parent, empty-message and NUL cases
+each have a test.
+
+**The test that was supposed to cover this could not fail.** Its fixture had one
+commit, so `HEAD` *was* the whole history and it could not tell traversal from a
+single read — the reader proved it by replacing the function with one that reads
+only the tip. Seventh instance in this release of a check passing for a reason
+it does not state; the fixture now has an ancestor, a side branch and a merge.
+
+### A deadline the constructor never looked at
+
+`Wait.__post_init__` validates `not_beyond_seconds` **only for observable
+kinds**, so a `human` wait carrying `"not-a-number"` loaded, skipped the check,
+and raised a bare `ValueError` out of `expired_at`. And a `max_bytes_per_write`
+of `0` or `-5` is an integer, so it passed the type check and reached
+`OutputContract`, which refused with a `PreconditionError` that escaped
+`derive`. **A refusal from the wrong layer is still an exception where the
+contract is a state.**
+
+### A hard link, after the symlink
+
+The symlink repair one round earlier closed the shape it could see. A regular
+hard link into another task's finished chunk is indistinguishable from a first
+name by `is_file()`, and alpha's artifact read back as beta's.
+
+The check is `st_nlink > 1`, and **it is symmetric — which is correct rather
+than over-broad.** Both names report two links, so alpha is flagged too, and
+nothing on disk distinguishes the root that wrote the bytes from the root that
+linked to them. What is true of both is exactly what the check says: these bytes
+are also somewhere else. `UNKNOWN` loses nothing, because `resume_plan` refuses
+to act on it. The first version of the test asserted alpha was still fine, and
+that assertion was the thing that was wrong.
+
+### Arithmetic that skipped an unknown is not arithmetic that cleared it
+
+`capacity.gate` computed production against the reserve, found room, and
+answered a confident `DISPATCH` while carrying *what reading the result would
+cost* as unknown. **The reserve exists for the result.** That is the failure
+this module was built from — eight dispatches on one window returned two results
+and lost eighty-one records — reappearing as a skipped term. Any remaining
+unknown now yields `DISPATCH_SERIALLY`.
+
+### The claim that was too strong
+
+`close_gate(against=UNSTATED)` closes, and the reader was right that the literal
+property *evidence cannot close a tree it was not gathered from* therefore does
+not hold universally. The escape is deliberate and stays. **The claim was
+narrowed instead:** a mismatch is always caught, and the only way past the check
+is to write the words in the caller's own code where a reader of that code sees
+them. A disclosed gap is not the same as no gap, and it was being described as
+if it were.
+
+Five mutants over these repairs, all killed.

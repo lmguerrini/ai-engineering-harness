@@ -172,5 +172,11 @@ discarded finding is evidence about the oracle.
 | RP3-67 | a second thread's read skipped the inspection a first thread was inside | a guard against self-recursion written as a guard against everyone |
 | RP3-68 | a private term in a commit message scanned clean | the blob walk skips commits because they are not blobs |
 | RP3-69 | a write bound that was not a number raised out of the derivation | the pid repair was written for the pid rather than for the class |
+| RP3-70 | every commit message but the tip carried a leading newline, a NUL truncated one, an empty one became a newline | the delimiter was searched for instead of the length being counted |
+| RP3-71 | a one-commit fixture made HEAD the whole history, so the traversal test could not fail | the test relied on a property of its fixture that it did not state |
+| RP3-72 | a deadline on a human wait was never validated and raised from the comparison | the constructor checked the bound only for observable kinds |
+| RP3-73 | a write bound of zero escaped as a refusal from a lower layer | zero is an integer, so the type check passed it on |
+| RP3-74 | a hard-linked chunk read as this task's completed work | the symlink repair closed the shape it could see |
+| RP3-75 | a confident dispatch with the cost of reading the result unknown | the reserve exists for the result and the term was skipped |
 
 *(appended as each capability reproduces its own)*
