@@ -2035,3 +2035,49 @@ release and calling it covered would have been the drift.
     outside the vocabulary     0
     reproductions with no closure trace   0   (74 checked)
     recurrence classes proved against an executing oracle   39 of 39
+
+## The projection in a browser, and what rendering it actually found
+
+The projection was terminal text, which is not something a person can be handed
+a picture of. It now renders the **same reading** as a self-contained page:
+`projection.py <root> --html`. One file, no network — the pack is stdlib-only,
+and a page that fetched a stylesheet would fail differently depending on where
+it was opened.
+
+The structure it gained is a `Tone` on each line: a statement about the fact
+(*this is the next action*, *this could not be established*) that the two
+renderers interpret separately. **The alternative was for the HTML to recognise
+`"UNKNOWN:"` and `"EXPIRED"` in the prose** — a presentation layer inferring
+meaning from text, which is this release's most-repeated defect one layer up.
+
+### Rendering it found three things reading it would not have
+
+*   **The page had no `<head>` or `<body>`.** It parsed, and then rendered at an
+    enormous scale in a real browser.
+*   **Every UNKNOWN read `UNKNOWN UNKNOWN:`** — a CSS pseudo-element prefix on
+    top of the explicit label.
+*   **The fixtures were wrong in two ways that only rendering exposed**: they
+    used a fixed synthetic clock while `derive` compares against the real one,
+    so every deadline read as long expired; and they used the fixture builder's
+    own process id, which is gone by the time anything renders, so every
+    *running* state rendered as finished.
+
+### Eight mutants, seven killed on the first run
+
+The survivor was mine again: `assert "v-bad" in page`, where `.v-bad` is defined
+**in the stylesheet at the top of that same page** — so the assertion was true
+whatever the code did, and it survived a mutant that mapped `SILENT_IDLE` to a
+calm tone. Scoped to the verdict block now, and it dies.
+
+Eighth instance in this release of a check passing for a reason it does not
+state. Four were found by independent readers, four by mutation passes, and none
+by writing them.
+
+### The boundary is unchanged
+
+The page authorises nothing, schedules nothing, wakes nothing, stores nothing,
+and no runtime module imports it — the same tests that held for the text
+renderer are re-asserted over the second one, including hashing the whole tree
+around a render. Content that looks like markup is escaped, because a capability
+name is prose somebody wrote and a page a reader trusts must not be a page that
+record's author controls.

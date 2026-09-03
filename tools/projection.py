@@ -43,7 +43,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-__all__ = ["Panel", "Projection", "project"]
+__all__ = ["Line", "Panel", "Projection", "Tone", "project", "render_html"]
 
 UNKNOWN = "UNKNOWN"
 
@@ -209,59 +209,69 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
         panel.unknown.append(f"the continuation record could not be derived: {exc}")
         return panel, None
 
-    panel.lines.append(f"capability: {record.capability}")
-    panel.lines.append(f"state: {report.state}")
-    panel.lines.append(f"  {report.why}")
+    panel.say(record.capability, label="capability")
+    panel.say(report.state, Tone.BAD if report.is_defect else Tone.PLAIN, label="state")
+    panel.say(report.why, Tone.MUTED, depth=1)
+    panel.summary, panel.summary_tone = report.state, (Tone.BAD if report.is_defect else Tone.PLAIN)
     if report.wake_required:
-        panel.lines.append("  COORDINATOR_WAKE_REQUIRED")
+        panel.say("COORDINATOR_WAKE_REQUIRED", Tone.WARN, depth=1)
     if report.is_defect:
-        panel.lines.append("  ^ this state is a DEFECT, not a resting place")
+        panel.say("this state is a DEFECT, not a resting place", Tone.BAD, depth=1)
     by_id = {wait.job_id: wait for wait in record.waits}
     for observation in report.observations:
         mark = ("COMPLETE" if observation.finished
                 else (UNKNOWN if observation.unobservable else "RUNNING"))
-        panel.lines.append(f"job {observation.job_id}: {mark} — {observation.how}")
+        panel.say(f"{mark} — {observation.how}",
+                  {"COMPLETE": Tone.GOOD, UNKNOWN: Tone.UNKNOWN}.get(mark, Tone.PLAIN),
+                  label=f"job {observation.job_id}")
         wait = by_id.get(observation.job_id)
         if wait is None:
             continue
-        panel.lines.append(f"    expects: {wait.expects}")
+        panel.say(wait.expects, Tone.MUTED, label="expects", depth=1)
         if wait.obligation and wait.obligation != wait.job_id:
-            panel.lines.append(f"    obligation: {wait.obligation}")
+            panel.say(wait.obligation, Tone.MUTED, label="obligation", depth=1)
         if wait.executor:
-            panel.lines.append(f"    executor: {wait.executor}")
+            panel.say(wait.executor, Tone.MUTED, label="executor", depth=1)
         # The subject's identity, because evidence is about ONE tree and a
         # reader who cannot see which one cannot tell current evidence from
         # evidence two repair rounds old. That is not hypothetical here.
         if wait.subject_revision or wait.subject_digest:
-            panel.lines.append(
-                f"    subject: {wait.subject_revision[:12] or UNKNOWN}"
-                f" / {wait.subject_digest[:16] or UNKNOWN}")
+            panel.say(f"{wait.subject_revision[:12] or UNKNOWN} / "
+                      f"{wait.subject_digest[:16] or UNKNOWN}",
+                      Tone.MUTED, label="subject", depth=1)
         elif wait.kind != continuation.WaitKind.HUMAN:
             panel.unknown.append(
                 f"{observation.job_id} does not state the revision it is about, so evidence it "
                 f"returns cannot be matched to a tree")
-        panel.lines.append(f"    {_deadline_line(wait)}")
-    for label, values in (("unconsumed results", report.unconsumed),
-                          ("waits nobody can observe", report.unobservable),
-                          ("PAST THE DECLARED DEADLINE", report.expired),
-                          ("obligations held by more than one wait", report.duplicated),
-                          ("superseded waits, retire them", report.superseded),
-                          ("blocked", report.blockers)):
+        deadline = _deadline_line(wait)
+        panel.say(deadline,
+                  Tone.BAD if "EXPIRED" in deadline else
+                  (Tone.MUTED if "no deadline" in deadline else Tone.PLAIN), depth=1)
+    for label, values, tone in (
+            ("unconsumed results", report.unconsumed, Tone.WARN),
+            ("waits nobody can observe", report.unobservable, Tone.UNKNOWN),
+            ("PAST THE DECLARED DEADLINE", report.expired, Tone.BAD),
+            ("obligations held by more than one wait", report.duplicated, Tone.BAD),
+            ("superseded waits, retire them", report.superseded, Tone.WARN),
+            ("blocked", report.blockers, Tone.WARN)):
         if values:
-            panel.lines.append(f"{label}: {', '.join(values)}")
+            panel.say(", ".join(values), tone, label=label)
     if report.actionable:
-        panel.lines.append(f"authorised and outstanding: {len(report.actionable)} item(s)")
-        panel.lines.extend(f"  - {item}" for item in report.actionable)
+        panel.say(f"{len(report.actionable)} item(s)", label="authorised and outstanding")
+        blocked_names = {n for b in record.blockers for n in b.blocks}
+        for item in report.actionable:
+            panel.say(item, Tone.MUTED if item in blocked_names else Tone.PLAIN, depth=1)
     # THE NEXT AUTHORISED ACTION, said last so it is the line nearest the eye.
     # It is the record's own first outstanding item, not a choice made here.
     unblocked = [i for i in report.actionable
                  if i not in {n for b in record.blockers for n in b.blocks}]
     if unblocked:
-        panel.lines.append(f"NEXT AUTHORISED ACTION: {unblocked[0]}")
+        panel.say(unblocked[0], Tone.ACTION, label="NEXT AUTHORISED ACTION")
     elif report.state in (continuation.State.WAITING_ON_IDENTIFIED_JOB,):
-        panel.lines.append("NEXT AUTHORISED ACTION: wait — see the deadline above")
+        panel.say("wait — see the deadline above", Tone.ACTION, label="NEXT AUTHORISED ACTION")
     elif report.blockers:
-        panel.lines.append("NEXT AUTHORISED ACTION: none; every outstanding item is blocked")
+        panel.say("none; every outstanding item is blocked", Tone.WARN,
+                  label="NEXT AUTHORISED ACTION")
     return panel, record
 
 
@@ -296,10 +306,11 @@ def _budget_panel(record) -> Panel:
     for counter, position in sorted(record.budgets.items()):
         used, ceiling = position.get("used"), position.get("ceiling")
         left = (ceiling - used) if isinstance(used, int) and isinstance(ceiling, int) else UNKNOWN
-        line = f"{counter}: {used}/{ceiling} used, {left} remaining"
+        spent = isinstance(left, int) and left <= 0
+        text = f"{used}/{ceiling} used, {left} remaining"
         if position.get("authorised_by"):
-            line += f"  (raised by {position['authorised_by']})"
-        panel.lines.append(line)
+            text += f"  (raised by {position['authorised_by']})"
+        panel.say(text, Tone.WARN if spent else Tone.PLAIN, label=counter)
     if not record.evidence:
         panel.unknown.append(
             "the record declares no standing evidence — suite, gates, latest audit verdict and "
@@ -355,11 +366,17 @@ def _pack_panel(here: Path) -> Panel:
     except (OSError, ValueError) as exc:
         panel.unknown.append(f"the manifest could not be read: {exc}")
         return panel
-    panel.lines.append(f"version {document.get('version', UNKNOWN)}  "
-                       f"state {document.get('state', UNKNOWN)}")
-    panel.lines.append(f"digest {str(document.get('tree_digest_sha256', UNKNOWN))[:16]}…")
-    if document.get("state") != "QUALIFIED_AND_FROZEN":
-        panel.lines.append("  NOT ADOPTABLE: only QUALIFIED_AND_FROZEN may be pinned by a project")
+    state = document.get("state", UNKNOWN)
+    panel.say(str(document.get("version", UNKNOWN)), label="version")
+    panel.say(str(state), Tone.GOOD if state == "QUALIFIED_AND_FROZEN" else Tone.WARN,
+              label="state")
+    panel.say(f"{str(document.get('tree_digest_sha256', UNKNOWN))[:16]}…", Tone.MUTED,
+              label="digest")
+    panel.summary = f"{document.get('version', UNKNOWN)} {state}"
+    panel.summary_tone = Tone.GOOD if state == "QUALIFIED_AND_FROZEN" else Tone.WARN
+    if state != "QUALIFIED_AND_FROZEN":
+        panel.say("NOT ADOPTABLE: only QUALIFIED_AND_FROZEN may be pinned by a project",
+                  Tone.WARN, depth=1)
     return panel
 
 
@@ -478,6 +495,125 @@ def project(
     )
 
 
+# --- the same reading, in a browser ------------------------------------------------
+#
+# One file, no network. The pack is stdlib-only and a projection that fetched a
+# stylesheet would be a projection that fails differently depending on where it
+# is opened — and it must render the same on a laptop with no route to anywhere
+# as it does anywhere else.
+#
+# It writes nothing, exactly as the text renderer writes nothing: the HTML goes
+# to stdout, and a caller redirecting that to a file is the caller writing.
+
+_STYLE = """
+:root{--ink:#12161c;--dim:#5b6675;--rule:#dde3ea;--card:#fff;--bg:#f4f6f9;
+--good:#1a7f4b;--warn:#8a5a00;--bad:#b3261e;--unknown:#5b4b8a;--action:#0b4fa8;
+--goodbg:#e8f5ee;--warnbg:#fdf3e0;--badbg:#fdeceb;--unknownbg:#efecf8;--actionbg:#e8f0fc}
+@media(prefers-color-scheme:dark){:root{--ink:#e6ebf2;--dim:#98a4b4;--rule:#2a3340;
+--card:#161b22;--bg:#0d1117;--good:#5ed09a;--warn:#e3b341;--bad:#ff7b72;--unknown:#b9a6ff;
+--action:#79b8ff;--goodbg:#12261c;--warnbg:#2a2010;--badbg:#2d1513;--unknownbg:#1e1a2e;
+--actionbg:#111d2e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{padding:20px 20px 16px;border-bottom:1px solid var(--rule);background:var(--card)}
+h1{margin:0 0 4px;font-size:15px;letter-spacing:.14em;text-transform:uppercase}
+.sub{color:var(--dim);font-size:12px;max-width:70ch}
+.verdict{margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;
+border-left:4px solid var(--dim);background:var(--bg)}
+.verdict b{display:block;font-size:12px;letter-spacing:.1em;margin-bottom:3px}
+.v-bad{border-left-color:var(--bad);background:var(--badbg);color:var(--bad)}
+.v-warn{border-left-color:var(--warn);background:var(--warnbg);color:var(--warn)}
+.v-good{border-left-color:var(--good);background:var(--goodbg);color:var(--good)}
+.v-unknown{border-left-color:var(--unknown);background:var(--unknownbg);color:var(--unknown)}
+main{display:grid;gap:14px;padding:16px 20px 40px;
+grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start}
+section{background:var(--card);border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.head{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+padding:10px 14px;border-bottom:1px solid var(--rule)}
+.head h2{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.chip{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--dim);
+white-space:nowrap}
+.chip.good{background:var(--goodbg);color:var(--good)}
+.chip.warn{background:var(--warnbg);color:var(--warn)}
+.chip.bad{background:var(--badbg);color:var(--bad)}
+.chip.unknown{background:var(--unknownbg);color:var(--unknown)}
+ul{list-style:none;margin:0;padding:6px 0}
+li{padding:3px 14px;display:flex;gap:8px;flex-wrap:wrap;word-break:break-word}
+li .k{color:var(--dim);flex:0 0 auto}
+li .k::after{content:":"}
+li.d1{padding-left:32px}li.d2{padding-left:50px}
+li.good .v{color:var(--good)}li.warn .v{color:var(--warn)}li.bad .v{color:var(--bad);font-weight:600}
+li.muted{color:var(--dim)}li.muted .v{color:var(--dim)}
+li.unknown{background:var(--unknownbg)}li.unknown .v{color:var(--unknown)}
+li.action{background:var(--actionbg)}li.action .v{color:var(--action);font-weight:600}
+li.unknown>.k{color:var(--unknown);font-weight:600}
+.empty{padding:8px 14px;color:var(--unknown);background:var(--unknownbg)}
+footer{padding:0 20px 30px;color:var(--dim);font-size:12px;max-width:78ch}
+@media(max-width:700px){main{padding:12px;gap:12px}header{padding:14px}
+li{padding-left:12px;padding-right:12px}li.d1{padding-left:24px}li.d2{padding-left:36px}}
+"""
+
+
+def _escape(text: str) -> str:
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def render_html(view: "Projection", title: str = "Runtime Pack — projection") -> str:
+    """The same panels, for a browser. Derives nothing the text renderer does not."""
+    verdict_class = {
+        Tone.BAD: "v-bad", Tone.WARN: "v-warn", Tone.GOOD: "v-good",
+        Tone.UNKNOWN: "v-unknown",
+    }.get(_verdict_tone(view.headline), "")
+    out = ["<!doctype html>", "<html lang=\"en\">", "<head>", "<meta charset=\"utf-8\">",
+           "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
+           f"<title>{_escape(title)}</title>", f"<style>{_STYLE}</style>", "</head>", "<body>",
+           "<header><h1>Runtime Pack — projection</h1>",
+           "<p class=sub>Read-only. Rebuilt from durable state on every invocation, and it "
+           "stores nothing. Where this and the governance record disagree, THIS is the defect.</p>"]
+    if view.headline:
+        out.append(f"<div class='verdict {verdict_class}'><b>coordinator</b>"
+                   f"{_escape(view.headline)}</div>")
+    if view.unknowns:
+        out.append(f"<div class='verdict v-unknown'><b>not established</b>"
+                   f"{len(view.unknowns)} thing(s) could not be read. They are listed in their "
+                   f"panels, and an absence is never rendered as a resting state.</div>")
+    out.append("</header><main>")
+    for panel in view.panels:
+        chip = (f"<span class='chip {panel.summary_tone}'>{_escape(panel.summary)}</span>"
+                if panel.summary else "")
+        out.append(f"<section><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>")
+        for line in panel.rows():
+            key = f"<span class=k>{_escape(line.label)}</span>" if line.label else ""
+            out.append(f"<li class='{line.tone} d{min(line.depth, 2)}'>{key}"
+                       f"<span class=v>{_escape(line.text)}</span></li>")
+        for item in panel.unknown:
+            out.append(f"<li class='unknown d0'><span class=k>{UNKNOWN}</span>"
+                       f"<span class=v>{_escape(item)}</span></li>")
+        if not panel.lines and not panel.unknown:
+            out.append(f"<li class='unknown d0'><span class=v>nothing to read</span></li>")
+        out.append("</ul></section>")
+    out.append("</main><footer>Every answer here is delegated to the module that owns it. "
+               "This page authorises nothing, schedules nothing, wakes nothing and stores "
+               "nothing; deleting it breaks no checker.</footer></body></html>")
+    return "\n".join(out)
+
+
+def _verdict_tone(headline: str) -> str:
+    """The tone of the headline, from the state name the owner produced."""
+    import continuation
+
+    S = continuation.State
+    first = (headline or "").split(":")[0].strip()
+    return {
+        S.SILENT_IDLE: Tone.BAD, S.RECOVERY_REQUIRED: Tone.BAD,
+        S.BLOCKED_ON_HUMAN: Tone.WARN, S.BLOCKED_ON_CAPACITY: Tone.WARN,
+        S.COMPLETED_NOT_CONSUMED: Tone.WARN,
+        S.WAITING_ON_IDENTIFIED_JOB: Tone.PLAIN, S.ACTIONABLE_WORK_READY: Tone.PLAIN,
+        S.TERMINAL: Tone.GOOD, UNKNOWN: Tone.UNKNOWN,
+    }.get(first, Tone.UNKNOWN)
+
+
 def _headline(record) -> str:
     """One line: is useful progress occurring, and if not, what is in the way.
 
@@ -528,12 +664,15 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--contract", default="PROJECT.yaml")
     parser.add_argument("--continuation", default="CONTINUATION.json")
     parser.add_argument("--capacity", default="CAPACITY.json")
+    parser.add_argument("--html", action="store_true",
+                        help="render as a self-contained page on stdout instead of text")
+    parser.add_argument("--title", default="Runtime Pack — projection")
     args = parser.parse_args(argv)
 
     view = project(args.project_root, contract=args.contract,
                    continuation_record=args.continuation,
                    capacity_observation=args.capacity)
-    print(view.render())
+    print(render_html(view, args.title) if args.html else view.render())
     return 1 if view.unknowns else 0
 
 

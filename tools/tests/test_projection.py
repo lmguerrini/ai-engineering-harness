@@ -417,3 +417,109 @@ def test_the_projection_still_writes_nothing_with_every_panel_populated(tmp_path
     before = fingerprint()
     projection.project(tmp_path).render()
     assert fingerprint() == before
+
+
+# --- the same reading, in a browser ---------------------------------------------------
+
+
+def test_the_page_is_self_contained_and_reaches_no_network(tmp_path):
+    """A projection that fetched a stylesheet would fail differently depending on
+    where it is opened, and must render the same on a machine with no route to
+    anywhere."""
+    _record(tmp_path, actionable=("something",))
+    page = projection.render_html(projection.project(tmp_path))
+    for reach in ("http://", "https://", "//cdn", "<script", "@import", "<link"):
+        assert reach not in page, f"the page reaches for {reach!r}"
+    assert page.startswith("<!doctype html>")
+    assert "<body>" in page and "</body></html>" in page
+
+
+def test_rendering_the_page_writes_nothing(tmp_path):
+    """The same invariant as the text renderer, over a second renderer."""
+    import hashlib
+
+    _record(tmp_path, actionable=("x",), budgets={"c": {"used": 1, "ceiling": 2}},
+            evidence={"suite": "green"})
+
+    def fingerprint():
+        digest = hashlib.sha256()
+        for path in sorted(p for p in tmp_path.rglob("*") if p.is_file()):
+            digest.update(str(path.relative_to(tmp_path)).encode())
+            digest.update(path.read_bytes())
+        return digest.hexdigest()
+
+    before = fingerprint()
+    projection.render_html(projection.project(tmp_path))
+    assert fingerprint() == before
+
+
+def test_every_line_the_text_view_shows_the_page_shows_too(tmp_path):
+    """Two renderers over one reading. If the page can omit a line, a reader of
+    the page is reading something else."""
+    _record(tmp_path, actionable=("a thing to do",),
+            blockers=(_continuation.Blocker(kind="human", detail="a person decides",
+                                            hitl_row=4, blocks=("a thing to do",)),),
+            budgets={"cycles": {"used": 6, "ceiling": 8}}, evidence={"suite": "412 passing"})
+    view = projection.project(tmp_path)
+    page = projection.render_html(view)
+    for panel in view.panels:
+        for line in panel.rows():
+            assert projection._escape(line.text) in page, f"the page dropped {line.text!r}"
+        for item in panel.unknown:
+            assert projection._escape(item) in page, f"the page dropped an UNKNOWN: {item!r}"
+
+
+def test_an_unknown_is_marked_in_the_page_and_not_merely_written(tmp_path):
+    """Absence of telemetry must never render as healthy. In text it is prefixed
+    `UNKNOWN:`; in the page it carries a class a stylesheet colours, and losing
+    that class would make an absence look like any other line."""
+    _record(tmp_path, actionable=("x",))
+    page = projection.render_html(projection.project(tmp_path))
+    assert "class='unknown" in page or 'class="unknown' in page
+    assert "not established" in page
+
+
+def test_the_headline_tone_comes_from_the_state_and_not_from_its_wording(tmp_path):
+    """A defect state must not be able to render calm because someone reworded
+    its sentence."""
+    def verdict_class(page):
+        # The class on the VERDICT BLOCK, not anywhere in the document. The first
+        # version searched the whole page — and every one of these names is
+        # defined in the stylesheet above it, so the assertion was true whatever
+        # the code did. It survived a mutant that mapped SILENT_IDLE to GOOD.
+        import re
+        return re.search(r"<div class='verdict ([a-z-]*)'><b>coordinator</b>", page).group(1)
+
+    _record(tmp_path, actionable=("work nobody is doing",))
+    assert verdict_class(projection.render_html(projection.project(tmp_path))) == "v-bad"
+
+    sentinel = tmp_path / "done"
+    sentinel.write_text("ok")
+    _record(tmp_path, waits=(_continuation.Wait(
+        job_id="j", kind=_continuation.WaitKind.PATH_EXISTS, path=str(sentinel),
+        expects="a result", not_beyond_seconds=3600, declared_at=_continuation.now()),))
+    assert verdict_class(projection.render_html(projection.project(tmp_path))) == "v-warn"
+
+
+def test_a_malformed_record_still_produces_a_page_that_says_so(tmp_path):
+    (tmp_path / "CONTINUATION.json").write_text("{ not json")
+    page = projection.render_html(projection.project(tmp_path))
+    assert "</html>" in page
+    assert "UNKNOWN" in page
+
+
+def test_content_that_looks_like_markup_is_escaped(tmp_path):
+    """A capability name is prose somebody wrote. If it can close a tag, the page
+    a reader trusts is a page that record's author controls."""
+    _record(tmp_path, capability="<script>alert(1)</script> & <b>bold</b>",
+            actionable=("x",))
+    page = projection.render_html(projection.project(tmp_path))
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;" in page and "&amp;" in page
+
+
+def test_the_page_declares_a_viewport_so_a_phone_gets_the_narrow_layout(tmp_path):
+    _record(tmp_path, actionable=("x",))
+    page = projection.render_html(projection.project(tmp_path))
+    assert "width=device-width" in page
+    assert "@media(max-width:700px)" in page

@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "bc5da3b17cdc62107a9f2cb829fa55c27fd79592786ef8c7090865d37d61b4ef",
+  "tree_digest_sha256": "e21b55b25aa67e844e1fa50ba4961c00694fd3b1dc5cd33ee69baa553bcd8b43",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 1214
+    "passed": 1222
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -49,7 +49,7 @@
     "THE FAILURE-MODE CLOSURE MATRIX IS THE RELEASE'S OWN CLAIM AND IS NOT INDEPENDENTLY AUDITED AS A WHOLE. Each row cites a test or a rehearsal that can be run, and the auditors of round 1 exercised many of them individually, but no auditor has been asked to falsify the matrix as a document. Its five open residues are stated in it rather than in a summary.",
     "THE PACK'S OWN COMPLETE HISTORY HAS 253 UNADJUDICATED OCCURRENCES. The capability that reads it ships in this release and had never been run over this history before. Re-run after the scanner learned to read ref names and annotated tag messages: 253 occurrences over 1179 objects and ZERO UNSCANNED, so the finding list is now known to be the whole finding list. No personal path or real credential is among them — verified directly, and this evolution's own commits introduce none — but individual adjudication has not been performed, and it is the input to a publication decision rather than a substitute for one. Remediating any historical object is a rewrite: HITL rows 2 and 4.",
     "A PATH-BASED WAIT CANNOT NAME A PRODUCER. An unrelated writer satisfies a PATH_EXISTS or EXIT_FILE wait, and no property of a bare filesystem path distinguishes who wrote it. The observation is strengthened as far as a filesystem permits — a regular file that does not predate its own wait — and OUTPUT_ROOT, whose owner marker is now checked on read as well as on write, is the kind that establishes a producer. A test pins both halves.",
-    "THE PROJECTION IS A READER AND HAS NEVER BEEN WATCHED DURING A REAL MULTI-HOUR RUN. Its fields are exercised against fixtures and against this session's own live record, where it correctly reported a stale record and an undeclared audit subject. Whether the information architecture is the right one for someone watching a Consumer-A run for six hours is not established, and cannot be until someone does.",
+    "THE PROJECTION IS A READER AND HAS NEVER BEEN WATCHED DURING A REAL MULTI-HOUR RUN. It now renders as a page as well as as text, and both were falsified against twelve synthetic states, but nobody has yet watched either during a long run. Its fields are exercised against fixtures and against this session's own live record, where it correctly reported a stale record and an undeclared audit subject. Whether the information architecture is the right one for someone watching a Consumer-A run for six hours is not established, and cannot be until someone does.",
     "THE PROGRAM-VALUED CONFIG LIST IS NOT COMPLETE AND CANNOT BE. It enumerates the shapes of Git config keys whose value is executed; Git may add another, and a key that matches no shape is not inspected. What the design buys is that an unrecognised key MATCHING a shape refuses rather than waiting to be found — the population of routes is open-ended and the population of shapes is smaller and slower-moving, not closed. It also costs two extra Git processes per repository per invocation, about 17 seconds on a 110-second suite.",
     "ONE MECHANISM IS DEFERRED RATHER THAN COVERED: contract, classification and sandbox gaps, inherited from 2.2.0 with no discriminating oracle demonstrated in this release. Recurrence is bounded because the 2.2.0 contract checks ship unchanged and their tests still run, but that is inheritance rather than a demonstration made here, and the final evidence-closure check reclassified it rather than let it read as covered."
   ],
