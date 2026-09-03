@@ -237,17 +237,30 @@ a project that never moves is correctly pinned rather than out of date.
 ## READY_FOR_FOUNDER_FREEZE
 
     version   2.3.0
-    revision  f416e07e4d269162619b09072d93135cfd2040de
-    digest    b9f8de7315dea8ef1555cf343d89496ad79e98d896650a22634ad1dfc5014348
-    state     IN_PROGRESS  — and it stays there until a person moves it
-    tests     1207 passing
+    revision  NOT WRITTEN HERE, deliberately — see below
+    digest    PACK_MANIFEST.json, `tree_digest_sha256`
+    state     IN_PROGRESS — and it stays there until a person moves it
+    tests     PACK_MANIFEST.json, `tests.passed`
 
-Verified by the shipped mechanism, not by this document:
+**The revision is absent for the same reason the manifest gives for its own:** a
+document cannot name the commit that contains it, any more than it can contain
+its own hash. The first draft of this section wrote one in, and committing the
+draft made it wrong — which is the drift this release spent eight rounds
+teaching itself to refuse, arriving at the last page.
 
+The identity is version + revision + digest + state. Two of those are in the
+tree, the third is the commit you are reading, and the consuming project records
+it in its own pin and verifies rather than copies:
+
+    cd <this checkout>
     python3 tools/pack_pin.py . --version 2.3.0 \
-        --sha f416e07e4d269162619b09072d93135cfd2040de \
-        --digest b9f8de7315dea8ef1555cf343d89496ad79e98d896650a22634ad1dfc5014348 \
+        --sha "$(git rev-parse HEAD)" \
+        --digest "$(python3 -c "import json;print(json.load(open('PACK_MANIFEST.json'))['tree_digest_sha256'])")" \
         --state IN_PROGRESS
+    python3 -m pytest tools/tests/ -q
+
+If both exit zero, the tree in front of you is the candidate this document
+describes. If either does not, believe them and not this.
 
 ### What is green
 
