@@ -1292,3 +1292,46 @@ What actually held is the thing that did not depend on understanding the cause:
 **every observable wait carries a deadline**, so a route that never starts costs
 the deadline rather than the afternoon. The next cause will be different and
 will also not be understood at the time.
+
+## The pack's own complete history, scanned with the capability it ships
+
+`publication_history.py` did not exist before this release, so this history had
+never been read end to end. Run over the complete reachable history of the
+evolution branch — 3 refs, 1027 objects — it reports **218 occurrences to
+adjudicate**, and its own last line is the disposition: *this is a finding list,
+NOT a remediation list.*
+
+**Exit 1 means there is something to adjudicate. It does not mean there is a
+leak, and the distinction is the capability.** A checker that decided for you
+which absolute path is innocent would be adjudicating, and adjudicating is what
+this one refuses to do.
+
+What the occurrences are, checked rather than assumed:
+
+- **No personal username or home path exists in the tree or in any commit this
+  evolution made.** A recursive grep for this machine's home directory over the
+  whole checkout returns one line, in the worktree's `.git` pointer file —
+  machine-local plumbing that is never committed and is outside the digest.
+  Counting the added lines across the whole evolution's patch that mention a
+  home directory returns **0**. (Neither command is written out here with its
+  real argument: `test_no_tracked_file_carries_a_real_machine_path` refuses a
+  tracked file containing one, and it caught this paragraph on the first
+  attempt to write it — which is the guard doing exactly its job.)
+- The 165 *local filesystem path* occurrences are absolute paths of the
+  `/tmp/...`, `/dev/null`, `/usr/bin/...` kind, in tests and templates.
+- The 41 *credential-shaped token* occurrences are **the scanner's own test
+  fixtures** — synthetic keys that exist so the credential detector has
+  something to detect. A scanner tested with no credential-shaped string in its
+  fixtures is a scanner nobody has run.
+
+**Disposition: declared, not blocking, and not remediated.** Nothing in this
+release is published, and remediating a historical object is a history rewrite —
+HITL rows 2 and 4, and frozen decision D says this release detects, classifies,
+prepares and verifies while execution stays with a person. The finding list is
+what a publication decision would start from, and producing it is the
+capability closing, not failing.
+
+The obligation that *does* bind now is the one about what this evolution wrote,
+and it is satisfied: zero personal paths, zero credentials, zero private project
+material in twenty-two commits, with the commit gate run against the pack's own
+published vocabulary before each one.
