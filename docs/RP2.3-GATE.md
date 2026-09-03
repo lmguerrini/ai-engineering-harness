@@ -59,9 +59,9 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1553
+    in-release (skills/core/*.md + policy/*.md)   1563
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2576   28.8% over the ~2,000
+    total against a ~2,000 target                 2586   29.3% over the ~2,000
 
 **The breach is inherited, and its composition is the part 2.2.0's disclosure
 did not separate.** 1553 lines are in-release and **that half is under the
@@ -1011,8 +1011,8 @@ as owed.
 
 Recorded because it is the most informative half of a report. The suite and the
 manifest's test count agreed exactly. The release identity verified. **Every
-held-prose number recomputed correctly** — 1553 in-release, 1023 adapters, 2576,
-28.8% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
+held-prose number recomputed correctly** — 1563 in-release, 1023 adapters, 2586,
+29.3% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
 frozen manifest. Every `D<n> clause <m>` citation in every file was parsed
 against `DECISIONS.md` and matched: **zero dangling pointers**, which one auditor
 said it had expected to find. No AI attribution anywhere in sixteen commit
