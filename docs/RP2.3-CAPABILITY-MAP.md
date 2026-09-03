@@ -139,5 +139,7 @@ discarded finding is evidence about the oracle.
 | RP3-34 | a wait completed on `/dev/null` for a worker that never existed | the declaration-time refusal was right and unreachable: the record was built directly, so the observation had to ask again |
 | RP3-35 | a wait completed on any pre-existing regular file | a path last written before the wait was declared did not come from the job being waited on |
 | RP3-36 | a close gate accepted evidence gathered from a different tree | six of one audit's eight findings were about a snapshot two repair rounds old, and nothing in the gate could tell |
+| RP3-37 | a dispatched auditor read stdin and waited forever, twice, for a total of 12h21m | the two hangs were the dispatcher's defect and not the route's; the deadline bounded them anyway, which is the property that survives the next unknown cause |
+| RP3-38 | a coordinator's state lived only in a context window | the seven-step rehearsal reconstructs it in a separate process given a path and nothing else |
 
 *(appended as each capability reproduces its own)*

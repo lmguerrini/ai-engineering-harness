@@ -1246,3 +1246,49 @@ come from the job being waited on, whatever it contains.
 The bound is a test of its own: a sentinel the job actually wrote still
 completes the wait, which is what keeps a fail-closed repair from becoming a
 refusal to ever finish.
+
+## The controlled continuation rehearsal
+
+Seven steps, executed as `tools/tests/test_continuation_rehearsal.py`, because a
+rehearsal that is described rather than run is a plan.
+
+**The reconstruction runs in a separate process.** This is the whole design of
+the test and not an implementation detail: a reconstruction inside the same
+interpreter shares imports, module state and live objects with the thing it is
+reconstructing from, so it cannot demonstrate the property under test — that
+nothing but the file crosses the boundary. The child gets `sys.executable`, a
+`sys.path` entry and two paths.
+
+Step 6 is the one the rehearsal exists for. The job is still running and the
+coordinator that dispatched it is gone; a reconstruction that reports
+`ACTIONABLE_WORK_READY` there sends a second auditor after an obligation that
+already has one. It reports `WAITING_ON_IDENTIFIED_JOB`, and a record that
+somehow acquires two workers under one obligation reports `RECOVERY_REQUIRED` —
+two workers is a defect to name, not a tidier way of waiting.
+
+Step 7 writes a `SUMMARY.md` beside the record saying the audit finished and
+everything passed, in the place a compaction summary would live, and asserts the
+derived state does not move. Conversation, summaries and task UI are not
+governance authority, and this is the check that they are not *needed*.
+
+And the rehearsal is bounded by a test that breaks it: with the record's waits
+and blockers removed, the reconstruction must stop saying
+`WAITING_ON_IDENTIFIED_JOB`. Every other assertion in the module passes
+trivially if `derive` ignores its input.
+
+## The dispatch that failed twice, and what it was
+
+Two cross-vendor dispatches held a named wait for **5h39m and 6h42m** at roughly
+a third of a second of CPU. The third — same brief, same model, same sandbox,
+**stdin redirected from `/dev/null`** — wrote 120KB of progress in three minutes.
+`codex exec` had been reading stdin and waiting for input that was never coming.
+
+Worth stating plainly because the release was about to record *cross-vendor is
+an unreliable route* as field evidence. It was the dispatcher, both times. A
+routing table that had learned from those two runs would have learned something
+false about somebody else's software.
+
+What actually held is the thing that did not depend on understanding the cause:
+**every observable wait carries a deadline**, so a route that never starts costs
+the deadline rather than the afternoon. The next cause will be different and
+will also not be understood at the time.
