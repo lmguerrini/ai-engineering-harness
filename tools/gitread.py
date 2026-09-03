@@ -929,6 +929,51 @@ def commit_messages(
     return found
 
 
+def commit_objects(
+    repository: str | Path,
+    ref: str,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[tuple[str, str]]:
+    """``(sha, the whole commit object)`` for every commit reachable from ``ref``.
+
+    The message is only part of what a commit publishes. **The header carries
+    the author and committer identities** — a name and an email address, written
+    by whoever made the commit — and a scan that split the object and read only
+    the message reported clean about a repository whose author name was the
+    private term it was looking for.
+
+    Same byte-counted read as `commit_messages`; this one simply does not
+    discard the half above the blank line.
+    """
+    revisions = _run(repository, "rev-list", ref, timeout=timeout).split()
+    if not revisions:
+        return []
+    raw = _run(repository, "cat-file", "--batch", timeout=timeout, text=False,
+               input_value=("\n".join(revisions) + "\n").encode())
+    assert isinstance(raw, bytes)
+    found: list[tuple[str, str]] = []
+    at = 0
+    while at < len(raw):
+        newline = raw.find(b"\n", at)
+        if newline < 0:
+            break
+        header = raw[at:newline].decode("utf-8", "surrogateescape").split()
+        at = newline + 1
+        if len(header) == 2 and header[1] == "missing":
+            raise IntegrityError(
+                "this repository named a commit its object store cannot produce, so the history "
+                "cannot be read completely",
+                repository=str(repository), object=header[0],
+            )
+        if len(header) != 3 or header[1] != "commit":
+            continue
+        size = int(header[2])
+        found.append((header[0], raw[at:at + size].decode("utf-8", "surrogateescape")))
+        at += size + 1
+    return found
+
+
 def annotated_tags(
     repository: str | Path,
     *,

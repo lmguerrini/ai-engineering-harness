@@ -394,6 +394,14 @@ def close_gate(
     # `UNSTATED` exists so a caller with genuinely no identity to compare must
     # SAY so rather than reach it by omission. That is the difference between a
     # disclosed gap and a silent one.
+    if isinstance(against, tuple) and not all(str(part).strip() for part in against):
+        # An empty component matches an attestation whose own field is empty, so
+        # a claim with no identity in it closed against a tree with no identity
+        # in it. A blank is not a revision and not a digest.
+        problems.append(
+            "THIS GATE WAS GIVEN AN EMPTY IDENTITY to compare against. A blank is not a revision "
+            "and not a digest, and comparing one blank with another establishes nothing")
+        against = None
     if against is None:
         problems.append(
             "THIS GATE WAS NOT TOLD WHICH TREE IT IS CLOSING, so it cannot tell current evidence "

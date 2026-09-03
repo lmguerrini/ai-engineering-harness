@@ -196,5 +196,9 @@ discarded finding is evidence about the oracle.
 | RP3-91 | a marker test removed every line containing its marker and asserted it was gone | true by construction, and unable to detect its own failure mode |
 | RP3-92 | the contract's guard checked everything about the readings except how many | a reading could be dropped and the file would simply require less |
 | RP3-93 | two guards over one field read different syntax | the presence check accepted what the parser skipped |
+| RP3-94 | a third comparison of an expression with itself, unread by twelve audits | the shape is invisible at the moment of writing and only a sweep finds it |
+| RP3-95 | an empty parameter set collects, skips, and reports green | pytest does not drop it, so the run passes with nothing run |
+| RP3-96 | a private term in a commit's author name scanned clean | the scan read the half of the object below the blank line |
+| RP3-97 | an attestation with an empty digest closed against an empty digest | a blank compared equal to a blank |
 
 *(appended as each capability reproduces its own)*

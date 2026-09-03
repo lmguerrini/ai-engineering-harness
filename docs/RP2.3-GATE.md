@@ -2520,3 +2520,64 @@ Not chosen: any visual identity. Type scale, spacing and grouping were set
 structurally, and colour is functional only — one hue per tone. Twenty-four real
 screenshots exist so that decision can be made by looking rather than by
 imagining.
+
+## Overnight hardening — the meta-classes, swept rather than audited
+
+Not a thirteenth audit. A property-driven sweep across the shapes that recurred,
+asking of each repair *what boundary permitted this, and what adjacent route
+reaches the same boundary.*
+
+### The suite now reads itself
+
+Eleven vacuous checks were found in this release — four by independent readers,
+seven by mutation passes, **none by writing them.** So the shapes are swept for
+mechanically: a comparison of an expression with itself, an asserted constant,
+and a parametrisation whose set computes to empty.
+
+The sweep found **a third self-comparison** nobody had read: the routing view's
+purity test was `grades_from_observations(log) == grades_from_observations(log)`,
+which calls a pure function twice and tests the language. It now asserts what it
+stood for — the view depends on the log and on nothing else: order does not
+change it, an unrelated row does not move another task class's grade, and one
+new row produces exactly one new grade. A mutation that let a later row
+overwrite an earlier one dies against it.
+
+**The empty parametrisation is the interesting one.** pytest does not drop it —
+it collects one item, ids it `[NOTSET]`, and *skips* it, so the run is green and
+nothing ran. Seven parametrisations in this suite take a computed set, each
+correct today and each one policy-file edit from being a silent no-op. That is
+how three matrix selectors and three recurrence selectors came to report green
+by selecting nothing.
+
+All three shapes were planted deliberately and all three were caught. The sweep
+is bounded by a check that it read the suite at all — the very shape it hunts.
+
+It also parametrised per *test* at first, adding some two thousand cases to a
+suite of fourteen hundred. A sweep that more than doubles the number the release
+publishes about itself is misrepresenting the suite, so it runs per module and
+names the offending function in the failure.
+
+### Two adjacent routes, both open
+
+**A private term in a commit's AUTHOR NAME scanned clean.** The scan read ref
+names, tag messages, paths, blobs and commit *messages* — and a commit message
+is the half of the object below the blank line. The header carries the author
+and committer identities, which somebody wrote and which publish with the
+repository. The scan reads the whole commit object now.
+
+The boundary is *everything a commit publishes*, and the message was simply the
+part that had already been thought of — the same shape as the pid check that did
+not generalise to the write bound, arriving in the one place this release had
+called complete.
+
+**An attestation with an empty tree digest closed.** `against=("a"*40, "")`
+matched an attestation whose own digest was `""`, so a claim with no identity in
+it compared equal to a tree with no identity in it. A blank is not a digest.
+
+### What did not break
+
+A repository setting four program-valued keys that all have named closures is
+still readable, and one unrecognised shape still refuses. A chunk directory
+replaced by a file is `UNKNOWN`. An empty signals dict is `UNKNOWN` rather than a
+stall. A boolean `remaining` is refused before it can be compared. Duplicate
+declared profiles are refused. A private term in a git note is found.

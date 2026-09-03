@@ -243,7 +243,12 @@ def scan_complete_history(
     seen_commits: set[str] = set()
     for name in names:
         try:
-            messages = gitread.commit_messages(repository, name)
+            # THE WHOLE COMMIT OBJECT, header included. The header carries the
+            # author and committer identities, and a scan that read only the
+            # message reported clean about a repository whose AUTHOR NAME was
+            # the private term — found by sweeping the adjacent material rather
+            # than by another reading.
+            messages = gitread.commit_objects(repository, name)
         except IntegrityError:
             # NOT a skip. An `IntegrityError` from the reader is a fact about the
             # REPOSITORY — an object it names and its store cannot produce — and

@@ -453,7 +453,12 @@ def test_a_repository_whose_objects_cannot_be_produced_stops_the_scan(repo, monk
     def missing(*_args, **_kw):
         raise IntegrityError("named object missing from object store")
 
-    monkeypatch.setattr(publication_history.gitread, "commit_messages", missing)
+    # Patches the reader the scan ACTUALLY CALLS. It called `commit_messages`
+    # until the author-name finding moved it to `commit_objects`, and a test
+    # patching the old name would have gone green while exercising nothing —
+    # the same vacuous shape, arriving through a refactor rather than through a
+    # bad assertion.
+    monkeypatch.setattr(publication_history.gitread, "commit_objects", missing)
     with pytest.raises(IntegrityError):
         publication_history.scan_complete_history(
             repo, outgoing_scan.Scanner(TermSet(terms=("secretword",))))
@@ -476,3 +481,29 @@ def test_a_blob_the_store_cannot_produce_stops_the_scan_too(repo, monkeypatch):
     with pytest.raises(IntegrityError):
         publication_history.scan_complete_history(
             repo, outgoing_scan.Scanner(TermSet(terms=("secretword",))))
+
+
+def test_a_private_term_in_an_author_name_is_found(repo):
+    """The message is only part of what a commit publishes. **The header carries
+    the author and committer identities** — a name and an email somebody wrote —
+    and the scan split the object and read only the half below the blank line.
+
+    Found by sweeping adjacent material rather than by another reading: the
+    boundary is *everything a commit publishes*, and the message was the part
+    that had already been thought of."""
+    import os
+    import subprocess
+
+    (repo / "f").write_text("entirely ordinary content\n")
+    _git(repo, "add", "-A")
+    subprocess.run(["git", "commit", "-qm", "an ordinary message"], cwd=repo, check=True,
+                   capture_output=True,
+                   env={**os.environ, "GIT_AUTHOR_NAME": "needleprivate",
+                        "GIT_AUTHOR_EMAIL": "someone@example.invalid",
+                        "GIT_COMMITTER_NAME": "needleprivate",
+                        "GIT_COMMITTER_EMAIL": "someone@example.invalid"})
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))))
+    assert [o.location for o in report.occurrences] == ["commit"]
+    assert report.complete

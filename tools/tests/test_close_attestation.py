@@ -336,3 +336,17 @@ def test_a_premise_whose_command_failed_did_not_produce_a_measurement():
     ok = close_attestation.re_derive(close_attestation.Premise(
         decision="a decision", measured="42", command=(_sys.executable, "-c", "print(42)")))
     assert ok.reproduced is True
+
+
+@pytest.mark.parametrize("against", [("", ""), ("a" * 40, ""), ("", "b" * 64), ("  ", "  ")])
+def test_an_empty_identity_compares_nothing_with_nothing(against):
+    """An empty component matches an attestation whose own field is empty, so a
+    claim with no identity in it closed against a tree with no identity in it.
+    A blank is not a revision and not a digest."""
+    clean = close_attestation.attest(
+        "cap", ("focused",),
+        {"focused": ProfileOutcome("focused", ProfileState.PASSED, exit_status=0)},
+        head_revision=against[0] or "a" * 40, tree_digest=against[1] or "b" * 64)
+    problems = close_attestation.close_gate(clean, against=against)
+    assert problems
+    assert any("EMPTY IDENTITY" in p for p in problems)
