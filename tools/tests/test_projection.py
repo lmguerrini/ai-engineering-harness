@@ -523,3 +523,78 @@ def test_the_page_declares_a_viewport_so_a_phone_gets_the_narrow_layout(tmp_path
     page = projection.render_html(projection.project(tmp_path))
     assert "width=device-width" in page
     assert "@media(max-width:700px)" in page
+
+
+def test_an_evidence_reading_nobody_declared_is_an_explicit_unknown(tmp_path):
+    """An absent key simply did not appear, which makes *nobody declared this*
+    and *this is fine* look identical — the one thing this projection may never
+    do. The readings a long run needs are listed whether or not the record
+    carries them."""
+    _record(tmp_path, actionable=("x",), evidence={"suite": "412 passing"})
+    out = projection.project(tmp_path).render()
+    assert "suite: 412 passing" in out
+    for absent in ("public safety", "evolution candidates", "real consumers", "adapters"):
+        assert f"the record declares no {absent}" in out
+
+
+def test_the_state_vocabulary_is_shown_with_the_current_one_marked(tmp_path):
+    """A reader who sees WAITING needs to know what the alternatives were.
+    Without the vocabulary in front of them an absent state and an impossible
+    state look identical."""
+    _record(tmp_path, actionable=("work nobody is doing",))
+    out = projection.project(tmp_path).render()
+    assert "SILENT_IDLE: THIS ONE" in out
+    assert "TERMINAL: not now" in out
+
+
+def test_a_stall_is_reported_as_unestablishable_rather_than_absent(tmp_path):
+    """Two of the states a reader asks about cannot be answered by one reading.
+    Saying which module answers them is the honest form."""
+    _record(tmp_path, actionable=("x",))
+    out = projection.project(tmp_path).render()
+    assert "STALLED" in out and "cannot establish it" in out
+    assert "progress.classify" in out
+
+
+def test_an_audit_whose_subject_is_not_the_candidate_is_named_as_such(tmp_path):
+    """An audit of revision A must never look current for revision B. It
+    happened in this release and cost six findings' worth of re-execution."""
+    stale = _continuation.Wait(job_id="auditor", kind=_continuation.WaitKind.PROCESS, pid=1,
+                               expects="a verdict", subject_revision="a" * 40,
+                               not_beyond_seconds=3600, declared_at=_continuation.now())
+    _record(tmp_path, waits=(stale,), evidence={"candidate": "2.3.0 at bbbbbbbbbbbb digest x"})
+    out = projection.project(tmp_path).render()
+    assert "NOT the candidate this record declares" in out
+
+    current = _continuation.Wait(job_id="auditor", kind=_continuation.WaitKind.PROCESS, pid=1,
+                                 expects="a verdict", subject_revision="b" * 40,
+                                 not_beyond_seconds=3600, declared_at=_continuation.now())
+    _record(tmp_path, waits=(current,), evidence={"candidate": "2.3.0 at bbbbbbbbbbbb digest x"})
+    assert "NOT the candidate" not in projection.project(tmp_path).render()
+
+
+def test_a_live_process_with_nothing_written_does_not_report_progress(tmp_path):
+    """Process existence is never proof of progress, and this is the line where
+    a reader would most easily be misled into thinking otherwise."""
+    _record(tmp_path, waits=(_continuation.Wait(
+        job_id="j", kind=_continuation.WaitKind.PROCESS, pid=1, expects="a result",
+        not_beyond_seconds=3600, declared_at=_continuation.now()),))
+    out = projection.project(tmp_path).render()
+    assert "a live process is not progress" in out
+
+
+def test_a_retry_says_which_attempt_it_is(tmp_path):
+    """A retry that looks like a first dispatch hides the thing worth seeing."""
+    _record(tmp_path, waits=(_continuation.Wait(
+        job_id="j", kind=_continuation.WaitKind.PROCESS, pid=1, expects="a result",
+        attempt=3, retry_reason="ended without writing anything",
+        not_beyond_seconds=3600, declared_at=_continuation.now()),))
+    out = projection.project(tmp_path).render()
+    assert "attempt 3" in out and "ended without writing anything" in out
+
+
+def test_the_pack_says_its_revision_is_not_in_the_tree_rather_than_omitting_it(tmp_path):
+    """A manifest cannot name the commit that contains it. Leaving the field out
+    made a reader wonder whether it was missing or unknowable."""
+    out = projection.project(tmp_path).render()
+    assert "not in the tree" in out and "git rev-parse HEAD" in out

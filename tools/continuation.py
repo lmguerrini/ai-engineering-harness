@@ -178,6 +178,14 @@ class Wait:
     subject_digest: str = ""
     #: The executor, for a reader deciding whether a route is behaving.
     executor: str = ""
+    #: Which try this is, and why the previous one ended. A reader looking at a
+    #: long run needs to know that the third attempt is the third attempt: a
+    #: retry that looks like a first dispatch hides the thing worth seeing.
+    attempt: int = 1
+    retry_reason: str = ""
+    #: How the route was qualified for this task class, if it was. UNKNOWN is
+    #: the ordinary answer and is rendered as one.
+    routing_qualification: str = ""
     declared_at: str = ""
     #: Set once the coordinator has taken the result up. An unconsumed
     #: completion is the state this whole module exists to name.

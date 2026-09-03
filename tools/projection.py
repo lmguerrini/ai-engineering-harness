@@ -228,6 +228,14 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
         if wait is None:
             continue
         panel.say(wait.expects, Tone.MUTED, label="expects", depth=1)
+        if wait.attempt and wait.attempt > 1:
+            panel.say(f"attempt {wait.attempt}"
+                      + (f" — the previous one {wait.retry_reason}" if wait.retry_reason else
+                         " — no reason recorded for the previous one"),
+                      Tone.WARN, depth=1)
+        panel.say(wait.routing_qualification or UNKNOWN,
+                  Tone.MUTED if wait.routing_qualification else Tone.UNKNOWN,
+                  label="routing qualification", depth=1)
         if wait.obligation and wait.obligation != wait.job_id:
             panel.say(wait.obligation, Tone.MUTED, label="obligation", depth=1)
         if wait.executor:
@@ -243,6 +251,7 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
             panel.unknown.append(
                 f"{observation.job_id} does not state the revision it is about, so evidence it "
                 f"returns cannot be matched to a tree")
+        panel.say(_progress_line(wait, observation), Tone.MUTED, label="last progress", depth=1)
         deadline = _deadline_line(wait)
         panel.say(deadline,
                   Tone.BAD if "EXPIRED" in deadline else
@@ -273,6 +282,102 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
         panel.say("none; every outstanding item is blocked", Tone.WARN,
                   label="NEXT AUTHORISED ACTION")
     return panel, record
+
+
+def _progress_line(wait, observation) -> str:
+    """When this job last did something a reader could see, and how long ago.
+
+    **Process existence is not progress**, so a live process with nothing to show
+    reports the age of its declaration and says that is all it has. For an output
+    root the newest artifact is a real event; for a sentinel, its mtime is.
+    Everything else is UNKNOWN, and UNKNOWN is what it says.
+    """
+    from datetime import datetime, timezone
+    import continuation
+
+    newest, what = None, ""
+    if wait.path:
+        target = Path(wait.path)
+        candidates = ([target] if target.is_file() else
+                      [p for p in target.rglob("*") if p.is_file()] if target.is_dir() else [])
+        if candidates:
+            newest = max(p.stat().st_mtime for p in candidates)
+            what = "an artifact it wrote"
+    if newest is None:
+        declared = continuation._moment(wait.declared_at) if wait.declared_at else None
+        if declared is None:
+            return f"{UNKNOWN} — nothing dates this job"
+        age = (datetime.now(timezone.utc) - declared).total_seconds()
+        return (f"{UNKNOWN} — nothing observable has been written; the job was declared "
+                f"{age / 60:.0f} min ago and a live process is not progress")
+    age = (datetime.now(timezone.utc) - datetime.fromtimestamp(newest, tz=timezone.utc)).total_seconds()
+    return f"{age / 60:.0f} min ago ({what})"
+
+
+def _states_panel(record, report) -> Panel:
+    """Every state this projection can report, and which one is true now.
+
+    A reader who sees `WAITING` needs to know what the alternatives were. Without
+    the vocabulary in front of them, an absent state and an impossible state look
+    identical — and two of these, `STALLED` and `ORPHANED`, are states this
+    single reading genuinely cannot establish. Saying so is the point of the
+    panel.
+    """
+    import continuation
+
+    panel = Panel("the states this reading can report")
+    if report is None:
+        panel.unknown.append("no derived state, so none of the vocabulary applies")
+        return panel
+    S = continuation.State
+    current = report.state
+    for state in (S.WAITING_ON_IDENTIFIED_JOB, S.COMPLETED_NOT_CONSUMED, S.ACTIONABLE_WORK_READY,
+                  S.BLOCKED_ON_HUMAN, S.BLOCKED_ON_CAPACITY, S.RECOVERY_REQUIRED,
+                  S.SILENT_IDLE, S.TERMINAL):
+        here = state == current
+        panel.say("THIS ONE" if here else "not now",
+                  (Tone.BAD if state in continuation.State.DEFECTS else Tone.PLAIN) if here
+                  else Tone.MUTED, label=state)
+    panel.say("this reading cannot establish it: a stall needs two independently observed "
+              "flat signals over time and this is one reading. `progress.classify` is the "
+              "module that answers it", Tone.UNKNOWN, label="STALLED")
+    orphans = [o.job_id for o in report.observations
+               if o.finished and o.job_id in report.unconsumed]
+    panel.say(", ".join(orphans) + " — finished with a result nobody has taken up"
+              if orphans else "no job finished without its result being consumed",
+              Tone.WARN if orphans else Tone.MUTED, label="ORPHANED")
+    panel.say(", ".join(report.superseded) if report.superseded else "none",
+              Tone.WARN if report.superseded else Tone.MUTED, label="SUPERSEDED")
+    return panel
+
+
+def _audit_freshness_panel(record) -> Panel:
+    """Whether any audit in flight is about the tree this record calls the
+    candidate. An audit of revision A must never look current for revision B —
+    it happened in this release and cost six findings' worth of re-execution."""
+    panel = Panel("audit subject vs candidate")
+    if record is None:
+        panel.unknown.append("no record, so no audit subject is declared")
+        return panel
+    declared = str(record.evidence.get("candidate", ""))
+    if not declared:
+        panel.unknown.append(
+            "the record does not state which revision is the candidate, so no audit's subject "
+            "can be compared against it")
+    audits = [w for w in record.waits if w.subject_revision or w.subject_digest]
+    if not audits:
+        panel.say("no outstanding job states a subject revision", Tone.MUTED)
+        return panel
+    for wait in audits:
+        short = wait.subject_revision[:12]
+        if not declared:
+            panel.say(f"{short or UNKNOWN} — cannot be compared", Tone.UNKNOWN, label=wait.job_id)
+        elif short and short in declared:
+            panel.say(f"{short} — the candidate", Tone.GOOD, label=wait.job_id)
+        else:
+            panel.say(f"{short or UNKNOWN} — NOT the candidate this record declares. Findings "
+                      f"from it describe a different tree", Tone.BAD, label=wait.job_id)
+    return panel
 
 
 def _deadline_line(wait) -> str:
@@ -311,16 +416,22 @@ def _budget_panel(record) -> Panel:
         if position.get("authorised_by"):
             text += f"  (raised by {position['authorised_by']})"
         panel.say(text, Tone.WARN if spent else Tone.PLAIN, label=counter)
-    if not record.evidence:
-        panel.unknown.append(
-            "the record declares no standing evidence — suite, gates, latest audit verdict and "
-            "closure position are not readable from here")
-    for name in ("candidate", "suite", "gates", "latest_audit", "closure"):
+    # THE READINGS A LONG RUN NEEDS, listed whether or not the record carries
+    # them. An absent key simply did not appear before, which makes *nobody
+    # declared this* and *this is fine* look identical — the one thing this
+    # projection may never do. Named here so absence is a visible UNKNOWN.
+    for name in ("candidate", "suite", "gates", "latest_audit", "closure",
+                 "recurrence_classes", "real_consumers", "adapters", "continuation",
+                 "public_safety", "evolution_candidates"):
         if name in record.evidence:
-            panel.lines.append(f"{name}: {record.evidence[name]}")
+            panel.say(str(record.evidence[name]), label=name)
+        else:
+            panel.unknown.append(f"the record declares no {name.replace('_', ' ')}")
     for name, value in sorted(record.evidence.items()):
-        if name not in ("candidate", "suite", "gates", "latest_audit", "closure"):
-            panel.lines.append(f"{name}: {value}")
+        if name not in ("candidate", "suite", "gates", "latest_audit", "closure",
+                        "recurrence_classes", "real_consumers", "adapters", "continuation",
+                        "public_safety", "evolution_candidates"):
+            panel.say(str(value), Tone.MUTED, label=name)
     return panel
 
 
@@ -372,6 +483,12 @@ def _pack_panel(here: Path) -> Panel:
               label="state")
     panel.say(f"{str(document.get('tree_digest_sha256', UNKNOWN))[:16]}…", Tone.MUTED,
               label="digest")
+    # Absent from the tree BY DESIGN, and said rather than left blank: a manifest
+    # cannot name the commit that contains it. The identity is version + revision
+    # + digest + state, and the consuming project records the revision in its own
+    # pin. A reader who needs it runs the command.
+    panel.say("not in the tree — `git rev-parse HEAD`, because a manifest cannot name the "
+              "commit that contains it", Tone.MUTED, label="revision")
     panel.summary = f"{document.get('version', UNKNOWN)} {state}"
     panel.summary_tone = Tone.GOOD if state == "QUALIFIED_AND_FROZEN" else Tone.WARN
     if state != "QUALIFIED_AND_FROZEN":
@@ -487,6 +604,8 @@ def project(
             _pack_panel(Path(__file__).resolve().parent.parent),
             contract_panel,
             liveness_panel,
+            _states_panel(record, _report_or_none(record, record_path)),
+            _audit_freshness_panel(record),
             _output_panel(record, base),
             _budget_panel(record),
             _capacity_panel(base / capacity_observation),
@@ -612,6 +731,17 @@ def _verdict_tone(headline: str) -> str:
         S.WAITING_ON_IDENTIFIED_JOB: Tone.PLAIN, S.ACTIONABLE_WORK_READY: Tone.PLAIN,
         S.TERMINAL: Tone.GOOD, UNKNOWN: Tone.UNKNOWN,
     }.get(first, Tone.UNKNOWN)
+
+
+def _report_or_none(record, record_path: Path):
+    if record is None:
+        return None
+    try:
+        import continuation
+
+        return continuation.derive(record, relative_to=Path(record_path).parent)
+    except Exception:
+        return None
 
 
 def _headline(record) -> str:
