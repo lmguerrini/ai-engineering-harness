@@ -26,6 +26,33 @@ about the work, and it stays here.
     even when it succeeds: a delegated task that leaves the coordinator unable
     to read the result has cost more than it produced. Keep a reserve.
 
+## What this release does at a dispatch, and what it does not
+
+**Nothing here launches a worker.** A reader adopting the release looked for the
+command that dispatches one and correctly found none. The boundary is
+deliberate — how a worker is invoked is the project's adapter's business, and a
+pack that ran them would be a pack that has to know about every provider — but
+it was nowhere stated, so a new coordinator could reasonably conclude the
+command was missing rather than absent by design.
+
+What the release does around a dispatch:
+
+*   `task_output.py … --brief` prints the durable-output clause to put in the
+    frozen task brief. It creates nothing and claims nothing.
+*   The **adapter** the project declares invokes the worker. The pack never
+    does, and never ends one either: classifying a stalled worker is shipped,
+    and terminating it is a human decision.
+*   `continuation.save(...)` records the wait **before** the worker is
+    launched, not after. A worker running with no declared wait is invisible to
+    every reading of the position, which is how a coordinator ends up believing
+    nothing is outstanding while something is.
+*   `task_output.claim_root(...)` takes ownership of the output root, so a
+    second worker for the same obligation is refused at the root rather than
+    discovered later by its wreckage.
+*   `projection.py <project>` reads the position back, in a separate process,
+    from disk.
+
+
 ## The delegation floor
 
 Below some size, setting up and reviewing a delegation costs more than doing the

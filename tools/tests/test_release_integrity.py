@@ -852,7 +852,24 @@ def test_no_document_restates_a_count_of_things_the_repository_can_count():
         # found by an outside reader, not by this guard.
         r"|\b\d+\s+(?:verified\s+)?failure\s+mechanisms\b"
         r"|\b\d+\s+(?:mandated\s+)?recurrence\s+classes\b"
-        r"|\b\d+\s+(?:blind\s+)?closure\s+audits\b",
+        r"|\b\d+\s+(?:blind\s+)?closure\s+audits\b"
+        # SPELLED OUT, TOO — but only where the sentence asserts a RUNNING
+        # TOTAL. `Eight blind closure audits` and `what eight independent
+        # readings cost` sailed past a guard that only knew digits, in the
+        # heading of the section about how many there had been; found by the
+        # second reader to adopt the release in a clean room.
+        #
+        # Deliberately not every spelled-out number near the word `audit`. A
+        # release record is full of true sentences about the past — *unread by
+        # twelve audits*, *abandoned after four audit rounds* — and those do not
+        # go stale when another one runs. A guard that forbade them would be
+        # turned off, which is worse than a guard that catches three shapes.
+        r"|\b(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)\s+"
+        r"blind\s+closure\s+audits\b"
+        r"|\bwhat\s+(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+"
+        r"(?:independent\s+)?readings\b"
+        r"|\b(?:one|two|three|\d+)\s+of\s+the\s+"
+        r"(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+readings\b",
         re.IGNORECASE,
     )
     #: The documents THIS release is responsible for. Gate records of previous

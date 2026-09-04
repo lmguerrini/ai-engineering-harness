@@ -112,11 +112,14 @@ published vocabulary — is closed rather than worked around.
     informatively, and repairing it is that project's to do.
 *   **The 2.2.0 and 2.1.1 releases are untouched.** Both still verify.
 
-## What eight independent readings cost, and what they say about the ninth
+## What the independent readings cost, and what the arithmetic says
 
-Eight blind closure audits, each against an immutable snapshot, each barred from
-the design documents, each instructed to falsify. **All eight returned NOT
-READY**, and the arithmetic is the most decision-relevant fact in this packet.
+Every closure audit was blind: an immutable snapshot at a named revision, a
+reader barred from the design documents, and an instruction to falsify. **Every
+one returned NOT READY**, and the arithmetic is the most decision-relevant fact
+in this packet. The rounds below are the ones this table was written for; the
+gate record carries the later ones, and `PACK_MANIFEST.json` records how many
+cycles have run.
 
 | Round | Reader | Findings | Of which were defects in the PREVIOUS round's repairs |
 |---|---|---|---|
@@ -128,13 +131,23 @@ READY**, and the arithmetic is the most decision-relevant fact in this packet.
 | 6 | cross-vendor — **killed by its provider mid-run** | 5, recovered from its stderr | 3 of 5 |
 | 7 | cross-vendor property read | 8 + a vacuous test | 2 |
 | 8 | cross-vendor, final | *see the gate record* | — |
+| 9 onwards | cross-vendor, delta-bounded | *see the gate record* | — |
 
 **A repair has been about as likely to carry a defect as the code it repaired.**
-Thirteen of roughly fifty findings were defects in the previous round's repairs.
-That is not an argument for a ninth round; it is the reason this release records
-that its own final repairs are unaudited by construction, and the reason a
-reader should treat *all findings closed* as a statement about what was looked
-for.
+About a quarter of all findings were defects in the previous round's repairs,
+and that ratio never improved across the rounds. It is not an argument for one
+more round: it is the reason this release treats *all findings closed* as a
+statement about what was looked for, and the reason each later cycle was
+delta-bounded to the repairs the one before it made.
+
+**The later rounds found what the earlier ones could not.** A published
+submodule reference certified a history clean; a record field of the wrong
+shape made the view raise; two of the forty-nine dashboard markers matched the
+sentence that denies them; a sweep for oracles that cannot fail missed a shape;
+and a reader adopting the release in a clean room found that it shipped a
+reader for the coordinator's record and no way to write one. Each is repaired
+at the boundary it arrived through, with an oracle that fails without the
+repair.
 
 Two patterns are worth more than the count.
 
@@ -143,7 +156,7 @@ its choosing**, found in rounds 4, 5, 6 and 7 — each closed where the previous
 repair could not see it. Round 7's response was not a sixth patch but a check on
 the *shape* of the config key, so the sixth route refuses without anyone having
 traced it. Whether that holds is the single most load-bearing question left, and
-round 8 was pointed at it.
+every round from the eighth was pointed at it.
 
 **Six tests that passed for reasons they did not state**, four found by someone
 other than their author and two by mutation passes over 25 guards. One searched
@@ -317,7 +330,7 @@ fifty findings across eight rounds were defects in the previous round's
 repairs.** On that base rate, a ninth reading would probably find something. It
 is the founder's call whether the marginal finding is worth the cycle.
 
-**Two of the eight readings were killed mid-run by their provider's content
+**Two readings were killed mid-run by their provider's content
 filter** and wrote nothing; their findings were recovered from stderr, and both
 sets mattered. Neither completed its sweep, so rounds 6 and 8 are partial by
 construction.

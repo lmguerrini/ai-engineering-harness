@@ -59,12 +59,12 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1589
+    in-release (skills/core/*.md + policy/*.md)   1652
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2612   30.6% over the ~2,000
+    total against a ~2,000 target                 2675   33.8% over the ~2,000
 
 **The breach is inherited, and its composition is the part 2.2.0's disclosure
-did not separate.** 1589 lines are in-release and **that half is under the
+did not separate.** 1652 lines are in-release and **that half is under the
 ~2,000 target**; the 1023 that put the total over are the two installed adapters,
 which this pack did not write, cannot freeze, and counts anyway because they are
 loaded every session. Both figures are stated because `policy/BUDGETS.md` already
@@ -1011,8 +1011,8 @@ as owed.
 
 Recorded because it is the most informative half of a report. The suite and the
 manifest's test count agreed exactly. The release identity verified. **Every
-held-prose number recomputed correctly** — 1589 in-release, 1023 adapters, 2612,
-30.6% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
+held-prose number recomputed correctly** — 1652 in-release, 1023 adapters, 2675,
+33.8% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
 frozen manifest. Every `D<n> clause <m>` citation in every file was parsed
 against `DECISIONS.md` and matched: **zero dangling pointers**, which one auditor
 said it had expected to find. No AI attribution anywhere in sixteen commit
@@ -2471,7 +2471,7 @@ it is a second implementation of the thing it is checking.
 
 ## FUNCTIONALLY_READY_FOR_VISUAL_POLISH
 
-Twelve blind closure audits, every one of which returned NOT READY, and the
+Every blind closure audit returned NOT READY, and the
 twelfth's repairs closed without changing a release guarantee. The semantics and
 the information architecture are frozen for the visual pass: what a panel means,
 which readings exist, what each state is called and what a checker refuses are
@@ -2484,7 +2484,7 @@ required-reading contract, real-consumer compatibility read-only, both prior
 releases' verification, the continuation rehearsal, the complete-history scan
 with nothing unscanned, and the candidate's identity against its own manifest.
 
-### What twelve readings actually cost, and what they bought
+### What the readings actually cost, and what they bought
 
 Roughly seventy-five findings. **About a quarter of them were defects in the
 previous round's repairs**, and that ratio did not improve as the release
