@@ -1018,19 +1018,67 @@ def test_two_entries_for_one_repository_are_counted_once_and_said_so(tmp_path, t
         "the table lists a duplicate without saying it is one")
 
 
-def test_the_calendar_and_the_summary_state_the_same_total(with_repository):
-    """**Source agreement.** The cells carry per-day counts and the summary
-    carries a total; a page where they disagree is a page with two answers."""
+def _history_block(page: str) -> str:
+    block = page[page.index("data-view='history'"):]
+    return block[:block.index("data-view=", 40)]
+
+
+def test_every_temporal_representation_states_the_same_total(with_repository):
+    """**Source agreement, once per aggregation.** Four pictures of one reading
+    is four chances to disagree, and a page with two answers has none.
+
+    Each representation is summed on its own — the year's cells, the month
+    grids' cells, the week's day columns — and every one must equal the total
+    the summary states. They are rendered three times, once per activity mode,
+    so each is divided by three.
+    """
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three))
+    block = _history_block(page)
+    stated = re.search(r"<i>local commits</i><em>(\d+)</em>", block)
+    assert stated, "the summary states no local total"
+    total = int(stated.group(1))
+    assert total, "the fixture has no commits, so this proves nothing"
+
+    counted = {
+        "year": re.findall(r"<i class='cell s\d k-[a-z]+[^']*' data-day='[^']+' "
+                           r"data-local='(\d+)'", block),
+        "month": re.findall(r"<i class='mcell cell s\d k-[a-z]+[^']*' data-day='[^']+' "
+                            r"data-local='(\d+)'", block),
+        "week": re.findall(r"<div class='daycol k-[a-z]+' data-day='[^']+' "
+                           r"data-local='(\d+)'", block),
+    }
+    for name, found in counted.items():
+        assert found, f"the {name} representation drew no day at all"
+        assert sum(int(n) for n in found) // 3 == total, (
+            f"the {name} representation counts "
+            f"{sum(int(n) for n in found) // 3} where the summary states {total}")
+
+
+def test_the_hours_of_a_day_total_the_day_on_the_page(with_repository):
+    """The finest aggregation is the easiest to let drift: an hour bar is drawn
+    from a series the day's own count never checks."""
     three, _repo = with_repository
     sites = console.survey(three)
     page = console.render_console(sites)
-    block = page[page.index("data-view='history'"):]
-    block = block[:block.index("data-view=", 40)]
-    per_day = sum(int(n) for n in re.findall(r"data-local='(\d+)'", block)) // 3  # three modes
-    stated = re.search(r"<i>local commits</i><em>(\d+)</em>", block)
-    assert stated, "the summary states no local total"
-    assert per_day == int(stated.group(1)), (
-        f"{per_day} in the cells and {stated.group(1)} in the summary")
+    block = _history_block(page)
+    hours = re.findall(r"data-hour='(\d+)' title='(\d{4}-\d{2}-\d{2}) (\d{2}):00 UTC — "
+                       r"(\d+) local, (\d+) represented'", block)
+    assert hours, "the day representation drew no hour at all"
+    by_day: dict = {}
+    for _h, date, _hh, local, _rep in hours:
+        by_day[date] = by_day.get(date, 0) + int(local)
+    # THE SAME AGGREGATE THE PAGE DREW, deduplicated by repository identity.
+    # Summing per site instead gave 8 for a date the page draws as 4, because
+    # the fixture registers one repository twice — which is the containment
+    # rule working, and the first version of this test getting it wrong.
+    import activity as activity_module
+
+    truth = {day.date: day.local for day in activity_module.aggregate(
+        [console._activity_of(site) for site in sites])}
+    for date, counted in by_day.items():
+        assert counted // 3 == truth[date], (
+            f"{date}: the hour bars total {counted // 3}, the reading says {truth[date]}")
 
 
 def test_every_calendar_cell_carries_its_exact_counts(with_repository):

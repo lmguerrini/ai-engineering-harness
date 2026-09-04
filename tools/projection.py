@@ -1085,6 +1085,7 @@ _STYLE = """
   --pad-y:2px;            /* the vertical rhythm inside a list */
   --gap:1px;              /* between zones */
   --rail:216px;
+  --seam:0 0 0 1px var(--rule);
 
   /* ---- the DEFAULT lens: MONOCHROME ------------------------------------
      The founder reviewed five lenses against real states and chose this one,
@@ -1097,9 +1098,9 @@ _STYLE = """
   --ground:#000; --panel:#0e0d0c; --panel-2:#171614; --panel-3:#1f1d1a;
   --rule:#282521; --rule-strong:#3b3831;
   --ink:#f5f2ed; --dim:#b0aba3; --faint:#807b73;
-  --accent:#f0c68a; --select:#2b2620;
+  --accent:#dcc4a2; --select:#241f19;
   --bad:#f2635c; --warn:#c9821f; --unknown:#7d8f9c; --good:#54b98a;
-  --action:#f0c68a;
+  --action:#dcc4a2;
   --bad-bg:#1e100e; --warn-bg:#1d1408; --unknown-bg:#141b21; --good-bg:#0b1d16;
   --action-bg:#241d13;
 }
@@ -1136,7 +1137,7 @@ _STYLE = """
      against these, in Python and again from the browser's own computed values,
      because a hue check says nothing about how bright a filled table is. */
   --ground:#010402; --panel:#040c06; --panel-2:#07130a; --panel-3:#0a1a0d;
-  --rule:#12331a; --rule-strong:#1d5229;
+  --rule:#0f2a15; --rule-strong:#18441f;
   --ink:#8df56a; --dim:#4fbf3a; --faint:#38912a;
   --accent:#62f542; --select:#0a2a07;
   --bad:#ff6a5e; --warn:#ffc33f; --unknown:#7d8f9c; --good:#23a52a;
@@ -1176,19 +1177,56 @@ _STYLE = """
   --action-bg:#062731;
 }
 
-@media(prefers-color-scheme:light){
-  :root:not([data-theme]){
-    color-scheme:light;
-    --ground:#eceff2; --panel:#fff; --panel-2:#f5f7f9; --panel-3:#eceff3;
-    --rule:#d6dade; --rule-strong:#b6bcc4;
-    --ink:#0e1114; --dim:#525a63; --faint:#79828c;
-    --accent:#1a44a0; --select:#dde6f8;
-    --bad:#a81f16; --warn:#7a4e00; --unknown:#33707d; --good:#0e6145;
-    --action:#1a44a0;
-    --bad-bg:#fcecea; --warn-bg:#fbf3e0; --unknown-bg:#e6f1f7; --good-bg:#e6f5ef;
-    --action-bg:#e7f2f8;
-  }
+/* ---- presentation identity, which is not the same as a recolour ----------
+   Five lenses that differ only in hue are five names for one design, and the
+   painted-area measurement said so: every lens covered the screen in the same
+   three surfaces at the same three luminances. What separates them now is
+   also rhythm, framing and weight — while the words, the order, the marks and
+   the semantics stay identical, because a lens moves surfaces and never
+   meanings. */
+
+/* TERMINAL — a technical console. Tight, framed, utilitarian: the hierarchy is
+   carried by boxes and rules, which is what a terminal actually looks like. */
+:root[data-theme="terminal"]{
+  --lh:1.4; --pad-y:1px; --pad-x:13px; --gap:1px;
+  --seam:0 0 0 1px var(--rule-strong);
 }
+:root[data-theme="terminal"] .head{border-bottom:1px solid var(--rule-strong)}
+:root[data-theme="terminal"] .head h2,:root[data-theme="terminal"] th{letter-spacing:.26em}
+:root[data-theme="terminal"] section{border-left:2px solid var(--rule-strong)}
+
+/* MINIMAL — a contemporary developer tool. Room instead of boxes: the seams go
+   quiet, the type grows, and hierarchy is carried by space. */
+:root[data-theme="minimal"]{
+  --lh:1.7; --pad-y:6px; --pad-x:24px; --gap:0px; --fs:13px; --fs-micro:9.5px;
+  --seam:0 0 0 1px var(--rule);
+}
+:root[data-theme="minimal"] .head{background:none;border-bottom:1px solid var(--rule)}
+:root[data-theme="minimal"] th{background:none;letter-spacing:.1em}
+:root[data-theme="minimal"] td{border-bottom:1px solid var(--rule)}
+
+/* FUTURISTIC — instrumentation. Hairlines, wide labels and a lit edge on the
+   panel head: an instrument panel, not a science-fiction poster. */
+:root[data-theme="futuristic"]{
+  --lh:1.5; --pad-y:3px; --gap:1px;
+  --seam:0 0 0 1px var(--rule);
+}
+:root[data-theme="futuristic"] .head{border-bottom:1px solid var(--rule-strong)}
+:root[data-theme="futuristic"] .head h2{letter-spacing:.3em;color:var(--dim)}
+:root[data-theme="futuristic"] .head::before{content:"";display:block;height:1px;
+background:linear-gradient(90deg,var(--accent),transparent 40%);
+position:absolute;left:0;right:0;top:0}
+:root[data-theme="futuristic"] .head{position:relative}
+:root[data-theme="futuristic"] th{letter-spacing:.24em}
+
+/* MATRIX — a phosphor terminal in a dark room. Darkness dominates the AREA;
+   phosphor green dominates the INFORMATION. */
+:root[data-theme="matrix"]{
+  --lh:1.48; --pad-y:2px; --gap:1px;
+  --seam:0 0 0 1px var(--rule);
+}
+:root[data-theme="matrix"] .head{border-bottom:1px solid var(--rule-strong)}
+:root[data-theme="matrix"] .head h2{letter-spacing:.22em}
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);
 font:var(--fs)/var(--lh) var(--font);font-variant-numeric:tabular-nums;
@@ -1228,8 +1266,9 @@ border:1px solid var(--action);border-left-width:3px}
 .next span{font-size:calc(var(--fs) + 2px);font-weight:600;color:var(--ink);word-break:break-word}
 
 /* the situation grid: level-1 readings as cells, never as sentences */
+.sit>*{box-shadow:var(--seam)}
 .sit{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:1px;
-background:var(--rule);border:1px solid var(--rule)}
+background:var(--ground);border:1px solid var(--rule)}
 .sit>div{background:var(--panel-2);padding:6px 9px;min-width:0}
 .sit i{display:block;font-size:var(--fs-micro);letter-spacing:.14em;text-transform:uppercase;
 color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1263,8 +1302,9 @@ font-size:var(--fs-forensic);font-weight:700;margin-left:5px;letter-spacing:0;bo
 .count.good{background:var(--good-bg);color:var(--good)}
 
 /* ============ LEVEL 2 — TELEMETRY ===================================== */
+.strip>*{box-shadow:var(--seam)}
 .strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(163px,1fr));gap:1px;
-background:var(--rule);border-bottom:1px solid var(--rule-strong)}
+background:var(--ground);border-bottom:1px solid var(--rule-strong)}
 .fact{background:var(--panel);padding:6px 10px 7px;min-width:0}
 .fact i{display:block;font-size:var(--fs-micro);letter-spacing:.13em;text-transform:uppercase;
 color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1309,7 +1349,8 @@ bottom:-1px;width:1px;background:var(--ink);opacity:.55}
 .legend .unknown b{color:var(--unknown)} .legend .good b{color:var(--good)}
 
 /* ============ LEVEL 3 — ZONES AND PANELS ============================== */
-main{display:grid;grid-template-columns:1fr;gap:var(--gap);background:var(--rule)}
+main{display:grid;grid-template-columns:1fr;gap:var(--gap);background:var(--ground)}
+main>*{box-shadow:var(--seam)}
 @media(min-width:900px){main{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}}
 @media(min-width:1320px){main{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr)}}
 .zone{background:var(--ground);min-width:0;padding-bottom:14px}

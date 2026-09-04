@@ -304,7 +304,8 @@ border-color:var(--accent);font-weight:700}
 .filters .t{color:var(--faint);text-transform:uppercase;letter-spacing:.13em;font-size:var(--fs-micro)}
 
 /* ---- the custom view builder ---------------------------------------------- */
-.builder{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule)}
+.builder{display:grid;grid-template-columns:1fr;gap:1px;background:var(--ground)}
+.builder>*{box-shadow:var(--seam)}
 @media(min-width:1000px){.builder{grid-template-columns:262px 1fr}}
 .catalog{background:var(--panel);padding:10px 14px;max-height:78vh;overflow-y:auto}
 .catalog details>summary{cursor:pointer;list-style:none;font-size:var(--fs-forensic);color:var(--dim);
@@ -335,7 +336,8 @@ overflow:auto;min-height:0;min-width:0}
 border:1px dashed var(--rule-strong);text-align:center}
 
 /* ---- settings: a control surface, not a debug form ------------------------- */
-.settings{display:grid;gap:var(--gap);background:var(--rule);
+.settings>*{box-shadow:var(--seam)}
+.settings{display:grid;gap:var(--gap);background:var(--ground);
 grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));align-items:start}
 .setgroup{background:var(--panel);min-width:0}
 .setbody{padding:8px var(--pad-x) 12px}
@@ -367,14 +369,16 @@ label.set button:hover{color:var(--ink);border-color:var(--accent)}
 
 
 /* ---- one page for everything, and one screen to leave up ------------------- */
-.stack{display:grid;gap:var(--gap);background:var(--rule)}
+.stack{display:grid;gap:var(--gap);background:var(--ground)}
+.stack>*{box-shadow:var(--seam)}
 .filters.index{gap:4px}
 /* a section's own answer, before its rows */
 .summary{display:flex;flex-wrap:wrap;gap:0 14px;padding:6px var(--pad-x) 7px;
 border-bottom:1px solid var(--rule);font-size:var(--fs-forensic);color:var(--dim)}
 .summary span{white-space:nowrap}
 /* ---- the instrument band ---------------------------------------------------- */
-.instruments{display:grid;gap:var(--gap);background:var(--rule);
+.instruments>*{box-shadow:var(--seam)}
+.instruments{display:grid;gap:var(--gap);background:var(--ground);
 grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));
 border-bottom:1px solid var(--rule)}
 .instruments-wide .instruments{border-bottom:0}
@@ -405,12 +409,14 @@ td .jump{font-weight:700}
 .filters .jump{border-color:var(--rule-strong);color:var(--dim);padding:3px 9px;
 font-size:var(--fs-forensic);letter-spacing:.08em;text-transform:uppercase}
 .filters .jump:hover{color:var(--ink);border-color:var(--accent)}
-.guide{display:grid;gap:var(--gap);background:var(--rule);
+.guide>*{box-shadow:var(--seam)}
+.guide{display:grid;gap:var(--gap);background:var(--ground);
 grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start}
 .guide .setgroup ul{padding:6px 0 10px}
 .guide table td:first-child{white-space:normal;max-width:26ch}
 
-.room{display:grid;gap:var(--gap);background:var(--rule);grid-template-columns:1fr;
+.room>*{box-shadow:var(--seam)}
+.room{display:grid;gap:var(--gap);background:var(--ground);grid-template-columns:1fr;
 align-items:start}
 .room-wide{grid-column:1/-1}
 .room .sit{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
@@ -528,6 +534,47 @@ var(--unknown) 3px 4px);border-color:transparent}
 var(--ink) 50% 100%)}
 .calendar-legend .k-unknown i{background:repeating-linear-gradient(45deg,var(--unknown-bg)
 0 3px,var(--unknown) 3px 4px)}
+/* ---- the four temporal representations -------------------------------------
+   Each answers a different question, so each is a different picture. They share
+   the reading, the modes, the window and the semantics — and nothing else. */
+.scaleview{display:none}
+.scaleview.on{display:block}
+.months-grid{display:flex;flex-wrap:wrap;gap:18px;padding:10px var(--pad-x) 12px}
+.month h4{margin:0 0 5px;font-size:var(--fs-micro);letter-spacing:.16em;
+text-transform:uppercase;color:var(--faint);font-weight:700}
+.month .weekdays,.month .mgrid{display:grid;grid-template-columns:repeat(7,26px);gap:2px}
+.month .weekdays span{font-size:var(--fs-micro);color:var(--faint);text-align:center}
+.mcell{width:26px;height:26px;display:flex;flex-direction:column;align-items:center;
+justify-content:center;line-height:1.05;border-radius:1px}
+.mcell.pad{background:none!important}
+.mcell b{font-size:var(--fs-micro);font-weight:700;opacity:.75}
+.mcell em{font-size:var(--fs-micro);font-weight:700}
+.daycols{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(190px,1fr);
+gap:1px;overflow-x:auto;background:var(--ground);padding:1px 0}
+.daycol{background:var(--panel);padding:8px var(--pad-x) 10px;min-width:0;
+border-top:3px solid var(--rule)}
+.daycol.k-local{border-top-color:var(--ink)}
+.daycol.k-remote{border-top-color:var(--good)}
+.daycol.k-split{border-top-color:var(--accent)}
+.daycol.k-unknown{border-top-color:var(--unknown)}
+.daycol h4{margin:0 0 4px;font-size:var(--fs);letter-spacing:.1em;text-transform:uppercase}
+.daycol h4 span{color:var(--faint);font-weight:400}
+.daynums{display:flex;flex-direction:column;gap:1px;font-size:var(--fs-forensic);
+color:var(--dim);margin-bottom:6px}
+.dayevents{font-size:var(--fs-forensic)}
+.dayevents>li{padding:2px 0;border-bottom:0}
+.dayhours{padding:8px var(--pad-x) 12px;border-bottom:1px solid var(--rule)}
+.dayhours h4{margin:0 0 6px;font-size:var(--fs);letter-spacing:.08em}
+.dayhours h4 span{color:var(--faint);font-size:var(--fs-micro);letter-spacing:.2em}
+.hours{position:relative}
+.hbars{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;align-items:end;height:64px}
+.hbars .hbar{background:var(--ink);min-height:2px;border-radius:1px 1px 0 0}
+.hunder{position:absolute;inset:0}
+.hunder .hbar{background:var(--good);opacity:.9}
+.hticks{display:grid;grid-template-columns:repeat(8,1fr);font-size:var(--fs-micro);
+color:var(--faint);padding-top:2px}
+.hexact{margin:6px 0 4px;font-size:var(--fs-forensic);color:var(--dim)}
+.hexact b{color:var(--ink)}
 .calendar.recent{padding:2px 0 6px;overflow-x:auto}
 .calendar.recent .grid{grid-template-rows:repeat(7,11px);grid-auto-columns:11px;gap:2px}
 .calendar.recent .cell{width:11px;height:11px}
@@ -862,6 +909,177 @@ def _calendar(days, *, mode: str, most: int, label: str) -> str:
             f"<div class=grid>{''.join(cells)}</div></div>")
 
 
+#: How far back hourly detail is kept. A commit carries a full instant, so the
+#: hour is always readable — but rendering 24 bars for every day of a year is a
+#: quarter of a megabyte nobody asked for. The horizon is stated on the page
+#: rather than implied, and a range older than it falls back to days and says so.
+HOURLY_DAYS = 62
+
+
+def _mode_counts(day, mode: str):
+    """`(shown, exact, kind)` for one day under one reading.
+
+    One place, so the year, the month, the week and the day cannot disagree
+    about what *combined* means. Local contains remote; they are never summed.
+    """
+    unknown = bool(day.remote_unknown)
+    if mode == "remote":
+        return (0 if unknown else day.remote), day.remote, ("unknown" if unknown else "remote")
+    if mode == "local":
+        return day.local, day.local, "local"
+    kind = ("split" if day.remote and day.local_only else
+            ("remote" if day.remote else ("unknown" if unknown and not day.local else "local")))
+    return day.local, day.local, kind
+
+
+def _told(day) -> str:
+    return (f"{day.date}: {day.local} local"
+            + (f", {day.remote} represented by the remote" if not day.remote_unknown else
+               ", the remote has never been observed here")
+            + (f", {day.local_only} only here" if day.local_only else ""))
+
+
+def _month_grid(days, *, mode: str, most: int) -> str:
+    """Months, as months. A year answers *what has the shape of this year been*;
+    a month answers *which days, and how did they compare* — and comparing two
+    days in an eleven-pixel cell is not something a reader can do."""
+    if not days:
+        return _nothing_here()
+    by_date = {day.date: day for day in days}
+    first = datetime.date.fromisoformat(min(by_date))
+    last = datetime.date.fromisoformat(max(by_date))
+    blocks = []
+    at = datetime.date(first.year, first.month, 1)
+    while at <= last:
+        if at.month == 12:
+            following = datetime.date(at.year + 1, 1, 1)
+        else:
+            following = datetime.date(at.year, at.month + 1, 1)
+        cells = ["<i class='mcell pad' aria-hidden=true></i>"] * at.weekday()
+        walk = at
+        while walk < following:
+            key = walk.isoformat()
+            day = by_date.get(key) or activity.Day(date=key)
+            shown, exact, kind = _mode_counts(day, mode)
+            step = _activity_scale(shown, most)
+            told = _told(day)
+            cells.append(
+                f"<i class='mcell cell s{step} k-{kind}"
+                f"{' q' if day.remote_unknown else ''}' data-day='{key}' "
+                f"data-local='{day.local}' data-remote='{day.remote}' "
+                f"data-only='{day.local_only}' title='{_ESC(told)}' role=img "
+                f"aria-label='{_ESC(told)}' tabindex=0>"
+                f"<b>{walk.day}</b><em>{exact if exact else ''}</em></i>")
+            walk += datetime.timedelta(days=1)
+        blocks.append(
+            f"<div class=month data-month='{at.isoformat()[:7]}'>"
+            f"<h4>{at.strftime('%B %Y')}</h4>"
+            "<div class=weekdays>"
+            + "".join(f"<span>{name}</span>" for name in
+                      ("M", "T", "W", "T", "F", "S", "S"))
+            + f"</div><div class=mgrid>{''.join(cells)}</div></div>")
+        at = following
+    return f"<div class=months-grid>{''.join(blocks)}</div>"
+
+
+def _day_columns(days, events, *, mode: str) -> str:
+    """One column per day: the operational week. What happened on Tuesday, and
+    how does Tuesday compare with Wednesday — which is a question a calendar
+    cell cannot answer and a column can."""
+    if not days:
+        return _nothing_here()
+    by_day: dict = {}
+    for event in events:
+        if event.day:
+            by_day.setdefault(event.day, []).append(event)
+    columns = []
+    for day in days:
+        shown, exact, kind = _mode_counts(day, mode)
+        here = by_day.get(day.date, [])
+        rows = "".join(
+            f"<li data-tone='{e.tone}'><span class='nw t'>{_ESC(_clock(e.when))}</span>"
+            f"<span class='s {e.tone} nw'>{_ESC(e.kind)}</span>"
+            f"<span class=what>{_ESC(e.project)}</span></li>" for e in here[:8])
+        remote = (f"<span class='s unknown'>{UNKNOWN}</span>" if day.remote_unknown
+                  else f"<b>{day.remote}</b>")
+        when = datetime.date.fromisoformat(day.date)
+        columns.append(
+            f"<div class='daycol k-{kind}' data-day='{day.date}' data-local='{day.local}' "
+            f"data-remote='{day.remote}' data-only='{day.local_only}' "
+            f"title='{_ESC(_told(day))}' tabindex=0>"
+            f"<h4>{when.strftime('%a')} <span>{day.date[5:]}</span></h4>"
+            f"<div class=daynums><span><b>{day.local}</b> local</span>"
+            f"<span>{remote} represented</span>"
+            f"<span class='{'warn' if day.local_only else ''}'><b>{day.local_only}</b> "
+            f"only here</span></div>"
+            + (f"<ul class='rows dayevents'>{rows}</ul>" if rows else
+               "<p class=nodata>no dated event</p>")
+            + "</div>")
+    return f"<div class=daycols>{''.join(columns)}</div>"
+
+
+def _day_hours(days, events, *, mode: str) -> str:
+    """Inside a day, by UTC hour — read from the commit's own instant and never
+    invented. A day with no readable hour draws no bar rather than a bar at
+    midnight."""
+    recent = [day for day in days if day.local]
+    if not recent:
+        return _nothing_here()
+    horizon = (datetime.date.today() - datetime.timedelta(days=HOURLY_DAYS - 1)).isoformat()
+    recent = [day for day in recent if day.date >= horizon]
+    if not recent:
+        return ("<p class=none>Nothing in the last " + str(HOURLY_DAYS) + " days. Hourly detail "
+                "is kept for that long; before it, the day is the finest reading this page "
+                "offers.</p>")
+    by_day: dict = {}
+    for event in events:
+        if event.day:
+            by_day.setdefault(event.day, []).append(event)
+    blocks = []
+    for day in recent:
+        series = (day.remote_hours if mode == "remote" else
+                  day.local_only_hours if mode == "combined" else day.hours)
+        label = ("represented by the remote" if mode == "remote" else
+                 "only here" if mode == "combined" else "commits")
+        peak = max(max(day.hours), 1)
+        bars = "".join(
+            f"<i class='hbar' style='height:{max(2, round(100 * day.hours[h] / peak))}%' "
+            f"data-hour='{h}' title='{day.date} {h:02d}:00 UTC — {day.hours[h]} local, "
+            f"{day.remote_hours[h]} represented'></i>" for h in range(24))
+        under = "".join(f"<i class='hbar hsub' "
+                        f"style='height:{max(0, round(100 * series[h] / peak))}%'></i>"
+                        for h in range(24))
+        exact = ", ".join(f"{h:02d}:00 <b>{day.hours[h]}</b>" for h in range(24)
+                          if day.hours[h]) or "no commit carries an hour on this day"
+        here = by_day.get(day.date, [])
+        rows = "".join(
+            f"<li data-tone='{e.tone}'><span class='nw t'>{_ESC(_clock(e.when))}</span>"
+            f"<span class='nw who'>{_ESC(e.project)}</span>"
+            f"<span class='s {e.tone} nw'>{_ESC(e.kind)}</span>"
+            f"<span class=what>{_ESC(e.subject)}</span></li>" for e in here)
+        blocks.append(
+            f"<div class=dayhours data-day='{day.date}'>"
+            f"<h4>{day.date} <span>UTC</span></h4>"
+            f"<div class=hours><div class=hbars>{bars}</div>"
+            f"<div class='hbars hunder'>{under}</div>"
+            "<div class=hticks>"
+            + "".join(f"<span>{h:02d}</span>" for h in range(0, 24, 3))
+            + "</div></div>"
+            f"<p class=hexact><span class=t>{_ESC(label)} by hour</span> {exact}</p>"
+            + (f"<ul class='rows dayevents'>{rows}</ul>" if rows else
+               "<p class=nodata>no durable artifact dates an event on this day</p>")
+            + "</div>")
+    return (f"<p class=nodata>Hourly detail is kept for the last {HOURLY_DAYS} days. Every hour "
+            f"is read from the commit's own timestamp; a commit whose instant cannot be read "
+            f"is counted in the day and drawn in no hour.</p>"
+            + "".join(blocks))
+
+
+def _nothing_here() -> str:
+    return ("<p class=none>No commit in this period. That is a reading of this "
+            "repository, not a claim about anybody's week.</p>")
+
+
 def _activity_legend(mode: str) -> str:
     if mode == "remote":
         parts = [("represented by the remote", "remote"),
@@ -1121,16 +1339,33 @@ def _history_view(sites: list) -> str:
         # buttons and two date boxes can disagree about which one is chosen;
         # a sentence cannot.
         "<span class=t>showing</span><b id=history-period>year</b>"
-        f"<span class=t>days are {activity.TIMEZONE}</span></div>"
+        "<span class=t>as</span><b id=history-aggregation>weeks of days</b>"
+        f"<span class=t>days are {activity.TIMEZONE}</span>"
+        f"<span class=t>hourly since <b id=history-hourly-from>"
+        f"{(datetime.date.today() - datetime.timedelta(days=HOURLY_DAYS - 1)).isoformat()}"
+        f"</b></span></div>"
         "<div class=stack>"
         + f"<section class=setgroup id=history-repository><div class=head>"
         f"<h2>repository activity</h2>"
         f"<span class=chip>{len(activities)} repositories</span></div>"
         f"<div class=setbody>{_repository_summary(activities, days)}</div>"
+        # FOUR REPRESENTATIONS, not one filtered four ways. A year answers
+        # *what shape has this year had*; a month answers *which days, and how
+        # do they compare*; a week answers *what happened on Tuesday*; a day
+        # answers *when in the day*. Hiding cells from one grid answers the
+        # first question four times. Every one is rendered from the same
+        # reading, server-side, so the page still arranges and never computes.
         + "".join(
             f"<div class=actmode data-actmode='{mode}'>"
+            + f"<div class=scaleview data-scaleview=year>"
             + _calendar(days, mode=mode, most=most,
-                        label=f"repository activity, {mode}")
+                        label=f"repository activity, {mode}") + "</div>"
+            + f"<div class=scaleview data-scaleview=month>"
+            + _month_grid(days, mode=mode, most=most) + "</div>"
+            + f"<div class=scaleview data-scaleview=week>"
+            + _day_columns(days, events, mode=mode) + "</div>"
+            + f"<div class=scaleview data-scaleview=day>"
+            + _day_hours(days, events, mode=mode) + "</div>"
             + _activity_legend(mode) + "</div>"
             for mode in ("local", "remote", "combined"))
         + _repository_table(activities) + "</section>"
@@ -2164,6 +2399,9 @@ _SCRIPT = r"""
   });
 
   var SPAN = { year: 366, month: 31, week: 7, day: 1 };
+  var AGGREGATION = { year: 'weeks of days', month: 'days in a month grid',
+                      week: 'one column per day', day: 'hours of one day' };
+  var HOURLY_FROM = (document.getElementById('history-hourly-from') || {}).textContent || '';
   var period = { scale: 'year', from: '', to: '' };
   var fromBox = document.getElementById('history-from');
   var toBox = document.getElementById('history-to');
@@ -2175,9 +2413,9 @@ _SCRIPT = r"""
   function applyPeriod() {
     var custom = !!(period.from || period.to);
     var from = period.from, to = period.to;
+    var days = [].slice.call(document.querySelectorAll('.calendar .cell[data-day]'))
+      .map(function (c) { return c.dataset.day; }).filter(Boolean).sort();
     if (!custom) {
-      var days = [].slice.call(document.querySelectorAll('.calendar .cell[data-day]'))
-        .map(function (c) { return c.dataset.day; }).filter(Boolean).sort();
       var last = days[days.length - 1];
       if (last) {
         var end = new Date(last + 'T00:00:00Z');
@@ -2185,10 +2423,36 @@ _SCRIPT = r"""
         from = end.toISOString().slice(0, 10);
       }
     }
-    [].forEach.call(document.querySelectorAll('.calendar .cell[data-day]'), function (cell) {
-      var day = cell.dataset.day;
-      cell.hidden = !!(from && day < from) || !!(to && day > to);
+    [].forEach.call(document.querySelectorAll('#history-repository [data-day]'),
+      function (cell) {
+        var day = cell.dataset.day;
+        cell.hidden = !!(from && day < from) || !!(to && day > to);
+      });
+    // WHICH PICTURE, not only which days. A year, a month, a week and a day are
+    // four different questions, and filtering one grid four ways answers the
+    // first one four times.
+    var span = 0;
+    if (from) {
+      var a = new Date(from + 'T00:00:00Z');
+      var b = new Date((to || (days && days[days.length - 1]) || from) + 'T00:00:00Z');
+      span = Math.round((b - a) / 86400000) + 1;
+    }
+    var picked = period.scale, why = '';
+    if (custom) {
+      if (span <= 2) { picked = 'day'; }
+      else if (span <= 31) { picked = 'week'; }
+      else if (span <= 120) { picked = 'month'; }
+      else { picked = 'year'; }
+      if (picked === 'day' && from && from < HOURLY_FROM) {
+        picked = 'week';
+        why = ' (hourly detail is not kept that far back)';
+      }
+    }
+    [].forEach.call(document.querySelectorAll('.scaleview'), function (v) {
+      v.classList.toggle('on', v.dataset.scaleview === picked);
     });
+    var says2 = document.getElementById('history-aggregation');
+    if (says2) { says2.textContent = AGGREGATION[picked] + why; }
     [].forEach.call(document.querySelectorAll('button[data-scale]'), function (b) {
       // `most recent` is an action and not a period: it never reads as chosen.
       b.setAttribute('aria-pressed',
@@ -2299,7 +2563,7 @@ _SCRIPT = r"""
     pack.textContent = 'runtime pack: ' + listed;
     host.appendChild(title); host.appendChild(repo); host.appendChild(pack);
   }
-  [].forEach.call(document.querySelectorAll('.calendar .cell[data-day]'), function (cell) {
+  [].forEach.call(document.querySelectorAll('#history-repository [data-day]'), function (cell) {
     cell.addEventListener('click', function () { inspect(cell.dataset.day); });
     cell.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inspect(cell.dataset.day); }
@@ -2657,6 +2921,15 @@ _QUESTIONS = (
      "counts in, and either one on its own is an open end: a start with no end runs to the "
      "most recent day, an end with no start runs from the beginning. Choosing a scale clears "
      "them, and the page always says which window is in force.", "history"),
+    ("Why does the picture change when I change the scale?",
+     "Because the questions are different. A year asks what shape the year had; a month asks "
+     "which days, and how they compare; a week asks what happened on Tuesday; a day asks when "
+     "in the day. Filtering one grid four ways answers the first question four times. The page "
+     "names the aggregation it is using beside the controls.", "history"),
+    ("Where do the hours come from?",
+     "A commit carries a full instant, so the hour is read from it and never invented. A commit "
+     "whose instant cannot be read is counted in the day and drawn in no hour. Hourly detail is "
+     "kept for a bounded number of recent days, and the page says since when.", "history"),
     ("Does a busy calendar mean a good week?",
      "No. A count is evidence that commits happened. It is not pace, not quality and not a "
      "verdict on anybody's week, and nothing here scores it.", "history"),
@@ -3545,8 +3818,8 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                                    ("resets", "resets"), ("observed", "observed")],
                                   "No project declares a capacity observation."), "global")))
     body.append(_view("history", "History & public safety",
-                      "when did code change, what was the run doing, and what would "
-                      "publishing this expose?",
+                      "when did code change, at what hour, what was the run doing, and "
+                      "what would publishing this expose?",
                       _widget("global:history", "History & public safety",
                               _history_view(sites), "global")))
     body.append(_view("identity", "Identity & release",

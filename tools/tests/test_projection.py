@@ -1093,8 +1093,6 @@ def _theme_tokens(name: str) -> dict:
     style = projection._STYLE
     if name in projection.LENSES and name:
         block = style[style.index(f'[data-theme="{name}"]'):]
-    elif name == "light":
-        block = style[style.index("prefers-color-scheme:light"):]
     else:
         block = style[style.index(":root{"):]
     block = block[:block.index("}")]
@@ -1122,7 +1120,7 @@ def _contrast(fg: str, bg: str) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
-@pytest.mark.parametrize("theme", list(projection.LENSES) + ["light"])
+@pytest.mark.parametrize("theme", list(projection.LENSES))
 def test_every_pairing_the_console_actually_paints_is_legible(theme):
     """Contrast, measured rather than eyeballed.
 
@@ -1153,7 +1151,7 @@ def test_every_pairing_the_console_actually_paints_is_legible(theme):
             f"{theme or 'default'}: --{fg} on --{bg} is {ratio:.2f}:1, below AA for a label")
 
 
-@pytest.mark.parametrize("theme", list(projection.LENSES) + ["light"])
+@pytest.mark.parametrize("theme", list(projection.LENSES))
 def test_the_theme_moves_the_ground_and_not_the_meanings(theme):
     """A green console, not a green everything: the four semantic hues stay
     separable from each other AND from the theme's own accent, in every theme."""
@@ -1314,7 +1312,7 @@ def _hue_and_luminance(colour: str):
     return hue, 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
 
 
-@pytest.mark.parametrize("theme", list(projection.LENSES) + ["light"])
+@pytest.mark.parametrize("theme", list(projection.LENSES))
 def test_no_two_semantic_tones_merely_differ_in_their_hex(theme):
     """**Distinct is not the same as distinguishable.**
 
@@ -1354,7 +1352,7 @@ def test_the_visual_system_holds_no_purple():
     """
     import re
 
-    for theme in list(projection.LENSES) + ["light"]:
+    for theme in list(projection.LENSES):
         for name, colour in _theme_tokens(theme).items():
             if not re.fullmatch(r"#[0-9a-f]{6}", colour):
                 continue
@@ -1596,3 +1594,100 @@ def test_a_medium_green_panel_would_be_caught():
             f"{value} is not bright enough to be a useful counterexample")
         if token == "ground":
             assert brightness > 0.010, value
+
+
+# --- every lens is a dark lens, and the rule is a hairline --------------------------
+
+
+def test_every_lens_is_a_dark_lens_and_no_operating_system_can_change_that():
+    """The founder's rule after reviewing the rendered set.
+
+    A light palette behind `prefers-color-scheme` was a sixth lens nobody
+    chose, reachable only by an OS setting, and reviewed by nobody: the default
+    lens turned white on a machine set to light. It is gone, and this refuses
+    its return — both the media query and, more importantly, the property it
+    would have to violate.
+    """
+    style = projection._STYLE
+    assert "prefers-color-scheme:light" not in style, (
+        "a light palette is back; every lens in this release is a dark lens")
+    for lens in projection.LENSES:
+        tokens = _theme_tokens(lens)
+        for surface in ("ground", "panel", "panel-2", "panel-3"):
+            light = _hue_and_luminance(tokens[surface])[1]
+            assert light < 0.05, (
+                f"{lens or 'monochrome'} --{surface} is {tokens[surface]} at luminance "
+                f"{light:.4f}: that is not a dark-mode surface")
+        assert _hue_and_luminance(tokens["ink"])[1] > 0.25, (
+            f"{lens or 'monochrome'} draws its type at {tokens['ink']}, which is not "
+            f"information on a dark ground")
+
+
+def test_no_container_paints_the_rule_across_everything_its_children_miss():
+    """A grid whose own background is `--rule` paints the rule over every area
+    its children do not cover. Where one column is shorter than its row that is
+    not a hairline, it is a field — several hundred square pixels of mid-green
+    in the ultrawide Matrix capture, under a short column, which is exactly
+    what *large panels must not look filled with medium-strength colour* means.
+
+    The containers are the ground now and the 1px gap is painted by the
+    children's own spread shadows, which meet inside it.
+    """
+    import re
+
+    for name, sheet in (("projection", projection._STYLE), ("console", _console_style())):
+        for rule in re.findall(r"([^{}]*)\{([^{}]*)\}", sheet):
+            selector, body = rule[0].strip().splitlines()[-1].strip(), rule[1]
+            if "background:var(--rule)" not in body.replace(" ", ""):
+                continue
+            assert "display:grid" not in body.replace(" ", ""), (
+                f"{name}: `{selector}` is a grid that paints --rule behind everything its "
+                f"children do not cover")
+    assert "--seam:0 0 0 1px var(--rule)" in projection._STYLE, "the hairline token is gone"
+
+
+def _console_style() -> str:
+    import console
+
+    return console._SHELL_STYLE
+
+
+def test_the_lenses_differ_in_rhythm_and_not_only_in_hue():
+    """Five lenses that differ only in colour are five names for one design,
+    and the painted-area measurement said so: every lens covered the screen in
+    the same three surfaces at the same three luminances.
+
+    A lens may move the substrate — rhythm, framing, weight. It may never move
+    a word, an order, a mark or a meaning, which the tests above already hold.
+    """
+    import re
+
+    style = projection._STYLE
+    substrate = ("--lh", "--pad-y", "--pad-x", "--gap", "--fs", "--fs-micro")
+    shapes = {}
+    for lens in projection.LENSES:
+        if not lens:
+            continue
+        block = style[style.index(f':root[data-theme="{lens}"]{{'):]
+        # every block for this lens, palette and substrate alike
+        blocks = re.findall(rf':root\[data-theme="{lens}"\]\{{([^}}]*)\}}', style)
+        found = {}
+        for chunk in blocks:
+            for token in substrate:
+                match = re.search(rf"{re.escape(token)}:\s*([^;}}]+)", chunk)
+                if match:
+                    found[token] = match.group(1).strip()
+        shapes[lens] = found
+        assert block
+
+    moved = [lens for lens, found in shapes.items() if found]
+    assert len(moved) >= 3, (
+        f"only {moved} move the substrate at all; the rest are recolours: {shapes}")
+    #: and no two of the ones that move it move it identically
+    seen: dict = {}
+    for lens, found in shapes.items():
+        if not found:
+            continue
+        key = tuple(sorted(found.items()))
+        assert key not in seen, f"{lens} and {seen[key]} have the same rhythm as well as..."
+        seen[key] = lens
