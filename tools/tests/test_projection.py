@@ -556,7 +556,7 @@ def test_the_page_declares_a_viewport_so_a_phone_gets_the_narrow_layout(tmp_path
     _record(tmp_path, actionable=("x",))
     page = projection.render_html(projection.project(tmp_path))
     assert "width=device-width" in page
-    assert "@media(max-width:700px)" in page
+    assert "@media(max-width:720px)" in page
 
 
 def test_an_evidence_reading_nobody_declared_is_an_explicit_unknown(tmp_path):
@@ -783,3 +783,110 @@ def test_a_panel_that_cannot_be_built_says_so_rather_than_vanishing(tmp_path, mo
     capacity = [p for p in view.panels if p.title == "capacity"]
     assert capacity, "the panel vanished instead of reporting"
     assert any("could not be built" in u for u in capacity[0].unknown)
+
+
+# --- TERMINAL MISSION CONTROL: theming is presentation and nothing else --------------
+
+
+def _themed(tmp_path, **kw):
+    return projection.render_html(projection.project(tmp_path), **kw)
+
+
+def test_a_theme_changes_no_state_and_no_classification(tmp_path):
+    """The whole boundary in one test. A theme may move every surface colour and
+    no semantic one, and it may not change a single word the projection derived
+    — a state that reads differently under a theme is a theme that decided what
+    the state is."""
+    import re
+
+    # A fixture that reaches EVERY part of the page, including the status bar
+    # and the operational strip. Without budgets the strip renders empty for
+    # both themes, and a mutant that dropped the strip under one of them
+    # survived — the comparison was real and the fixture had nothing to compare.
+    _record(tmp_path, actionable=("work nobody is doing",),
+            budgets={"cycles": {"used": 6, "ceiling": 8, "authorised_by": "a person"}},
+            evidence={"suite": "412 passing", "candidate": "demo at abcdef123456"},
+            waits=(_continuation.Wait(job_id="j", kind=_continuation.WaitKind.HUMAN,
+                                      expects="a decision"),))
+    plain = _themed(tmp_path)
+    matrix = _themed(tmp_path, theme="matrix")
+    assert "class=strip" in plain, "the fixture does not reach the operational strip"
+
+    def body(page):
+        return re.sub(r"<style>.*?</style>", "", page, flags=re.S)
+
+    assert body(plain).replace('<html lang="en">', '') == \
+        body(matrix).replace('<html lang="en" data-theme="matrix">', ''), \
+        "the theme changed something other than the stylesheet"
+
+
+@pytest.mark.parametrize("theme", ["", "matrix"])
+def test_every_semantic_tone_keeps_its_own_colour_under_every_theme(theme):
+    """Matrix mode is a green console, not a green everything. **A warning that
+    turned green would be a theme deciding what a warning is** — so the theme
+    moves ground, panel, rule, ink and one accent, and re-tones the semantics
+    for contrast without merging them."""
+    import re
+
+    style = projection._STYLE
+    block = style if not theme else style[style.index('[data-theme="matrix"]'):]
+    block = block[:block.index("}")] if theme else block
+
+    colours = {}
+    for name in ("bad", "warn", "unknown", "good"):
+        found = re.search(rf"--{name}:(#[0-9a-f]{{6}})", block)
+        assert found, f"the {theme or 'default'} theme does not define --{name}"
+        colours[name] = found.group(1)
+    assert len(set(colours.values())) == 4, (
+        f"two semantic tones share a colour under {theme or 'default'}: {colours}")
+
+
+@pytest.mark.parametrize("theme", ["", "matrix"])
+@pytest.mark.parametrize("what,record,marker", [
+    ("SILENT_IDLE", {"actionable": ["work nobody is doing"]}, "SILENT_IDLE"),
+    ("an unknown", {}, "UNKNOWN"),
+    ("a human blocker", {"actionable": ["x"], "blockers": [
+        {"kind": "human", "detail": "a person decides", "hitl_row": 2, "blocks": ["x"]}]},
+     "BLOCKED_ON_HUMAN"),
+])
+def test_styling_cannot_hide_a_state_under_either_theme(tmp_path, theme, what, record, marker):
+    """Visual hierarchy may not change authority. Each of these must be present
+    in the page's text under both themes — not merely coloured, present."""
+    import json as _json
+
+    (tmp_path / "CONTINUATION.json").write_text(_json.dumps(
+        {"capability": "c", "updated_at": _continuation.now(), **record}))
+    page = _themed(tmp_path, theme=theme)
+    assert marker in page, f"{what} is not in the page under theme {theme or 'default'}"
+
+
+def test_the_accent_is_configurable_without_touching_governance(tmp_path):
+    """One variable, set at render time. It reaches no record, no classification
+    and no file — a presentation preference that needed authoritative state to
+    hold it would be a dashboard storing governance."""
+    _record(tmp_path, actionable=("x",))
+    page = _themed(tmp_path, accent="#ff00aa")
+    assert "--accent:#ff00aa" in page
+    assert "#ff00aa" not in _themed(tmp_path)
+
+
+def test_the_status_bar_lifts_values_it_does_not_invent(tmp_path):
+    """Identity at a glance, and every cell of it is a line some panel also
+    shows. A bar that computed its own values would be a second reading."""
+    _record(tmp_path, actionable=("x",))
+    view = projection.project(tmp_path)
+    bar = projection._status_bar(view)
+    assert "2.3.0" in bar and "IN_PROGRESS" in bar
+    text = view.render()
+    for shown in ("2.3.0", "IN_PROGRESS"):
+        assert shown in text, f"the bar shows {shown!r} and no panel does"
+
+
+def test_a_budget_with_no_ceiling_gets_no_bar(tmp_path):
+    """The strip renders figures, never estimates. A meter needs a denominator
+    and a budget without one is shown as text rather than as a guessed fraction."""
+    _record(tmp_path, actionable=("x",), budgets={"counted": {"used": 6, "ceiling": 8},
+                                                  "uncounted": {"used": 3}})
+    page = projection.render_html(projection.project(tmp_path))
+    assert "6/8" in page and "class=meter" in page
+    assert "3/None" not in page and "3/0" not in page

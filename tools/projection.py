@@ -469,7 +469,15 @@ def _budget_panel(record) -> Panel:
         used, ceiling = position.get("used"), position.get("ceiling")
         left = (ceiling - used) if isinstance(used, int) and isinstance(ceiling, int) else UNKNOWN
         spent = isinstance(left, int) and left <= 0
-        text = f"{used}/{ceiling} used, {left} remaining"
+        if isinstance(used, int) and isinstance(ceiling, int):
+            text = f"{used}/{ceiling} used, {left} remaining"
+        elif isinstance(used, int):
+            # NOT `3/None`. A missing ceiling printed as `None` reads like a
+            # value, and a reader scanning a strip of ratios would take it for
+            # one. A counter with no ceiling has been counted and not bounded.
+            text = f"{used} used against no declared ceiling"
+        else:
+            text = f"{UNKNOWN}: this counter records {used!r} used and {ceiling!r} as a ceiling"
         if position.get("authorised_by"):
             text += f"  (raised by {position['authorised_by']})"
         panel.say(text, Tone.WARN if spent else Tone.PLAIN, label=counter)
@@ -732,92 +740,162 @@ def _panel(build, *args, title: str, group: str) -> Panel:
 # to stdout, and a caller redirecting that to a file is the caller writing.
 
 _STYLE = """
-/* --- the structural pass -------------------------------------------------
-   A reader of a long run asks four things in order: what is happening, is
-   anything wrong, what happens next, and then everything else. The page is
-   laid out in that order and the type sizes follow it. Detail is preserved
-   in full and put behind a disclosure rather than deleted, because the
-   forensic reading is the second reading and both have to be possible.      */
-.state{font-size:26px;line-height:1.15;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
-.said{font-size:13px;color:var(--dim);max-width:78ch;margin:0}
-.next{margin-top:14px;padding:12px 14px;border-radius:8px;background:var(--actionbg);
-border-left:4px solid var(--action)}
-.next b{display:block;font-size:11px;letter-spacing:.12em;color:var(--action);margin-bottom:3px}
-.next span{font-size:15px;font-weight:600}
-.attn{margin-top:14px;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
-.attn>summary{cursor:pointer;padding:9px 14px;font-size:12px;letter-spacing:.08em;
-text-transform:uppercase;color:var(--dim);background:var(--bg);list-style:none}
-.attn>summary::-webkit-details-marker{display:none}
-.attn>summary::before{content:"▸ ";color:var(--dim)}
-.attn[open]>summary::before{content:"▾ "}
-.attn ul{padding:4px 0}
-.attn li{font-size:12.5px}
-.count{display:inline-block;min-width:20px;text-align:center;padding:1px 7px;border-radius:99px;
-font-size:11px;font-weight:700;margin-left:6px}
-.count.bad{background:var(--badbg);color:var(--bad)}
-.count.warn{background:var(--warnbg);color:var(--warn)}
-.count.unknown{background:var(--unknownbg);color:var(--unknown)}
-.count.good{background:var(--goodbg);color:var(--good)}
-h3.group{grid-column:1/-1;margin:10px 2px 0;font-size:11px;letter-spacing:.16em;
-text-transform:uppercase;color:var(--dim);font-weight:700}
-h3.group:first-of-type{margin-top:0}
-section>details>summary{cursor:pointer;padding:6px 14px 8px;font-size:11.5px;color:var(--dim);
-letter-spacing:.06em;list-style:none;border-top:1px solid var(--rule)}
-section>details>summary::-webkit-details-marker{display:none}
-section>details>summary::before{content:"▸ ";}
-section>details[open]>summary::before{content:"▾ ";}
+/* TERMINAL MISSION CONTROL
+   ------------------------------------------------------------------
+   Two layers, kept apart on purpose.
 
-:root{--ink:#12161c;--dim:#5b6675;--rule:#dde3ea;--card:#fff;--bg:#f4f6f9;
---good:#1a7f4b;--warn:#8a5a00;--bad:#b3261e;--unknown:#5b4b8a;--action:#0b4fa8;
---goodbg:#e8f5ee;--warnbg:#fdf3e0;--badbg:#fdeceb;--unknownbg:#efecf8;--actionbg:#e8f0fc}
-@media(prefers-color-scheme:dark){:root{--ink:#e6ebf2;--dim:#98a4b4;--rule:#2a3340;
---card:#161b22;--bg:#0d1117;--good:#5ed09a;--warn:#e3b341;--bad:#ff7b72;--unknown:#b9a6ff;
---action:#79b8ff;--goodbg:#12261c;--warnbg:#2a2010;--badbg:#2d1513;--unknownbg:#1e1a2e;
---actionbg:#111d2e}}
+   SEMANTIC tokens say what a fact IS — bad, warn, unknown, good, action.
+   They are the same hue family in every theme, because a state that reads
+   differently under a theme is a theme that changed the meaning.
+
+   THEME tokens say what the surface looks like — ground, panel, rule, ink,
+   and one accent. A theme may move all of those and none of the semantics.
+
+   The accent is a single variable so it can be set without touching either.  */
+
+:root{
+  color-scheme:dark;
+  /* theme: default terminal */
+  --ground:#0a0c10; --panel:#11151b; --panel-2:#161b23; --rule:#242c38;
+  --ink:#dfe6ef; --dim:#8b98a9; --faint:#5b6675;
+  --accent:#4ea1ff;
+  /* semantics — never overridden by a theme, only re-toned for contrast */
+  --bad:#ff6b63; --warn:#e8b339; --unknown:#b79dff; --good:#4ed6a0; --action:#66b3ff;
+  --bad-bg:#2a1210; --warn-bg:#2a2109; --unknown-bg:#1e1930; --good-bg:#0d2620;
+  --action-bg:#0f1e33;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"DejaVu Sans Mono",Consolas,monospace;
+}
+:root[data-theme="matrix"]{
+  /* Matrix: a green operations console, built from FIVE luminance steps rather
+     than one green. Semantics keep their hue — a warning that turned green
+     would be a theme deciding what a warning is. */
+  --ground:#02120a; --panel:#041c10; --panel-2:#062616; --rule:#0b4a2b;
+  --ink:#8affc1; --dim:#3fbf82; --faint:#1f7a52;
+  --accent:#37ff9b;
+  --bad:#ff7a6e; --warn:#ffd257; --unknown:#9df0ff; --good:#5cff9f; --action:#37ff9b;
+  --bad-bg:#2a0f0c; --warn-bg:#2a2408; --unknown-bg:#04252b; --good-bg:#053a22;
+  --action-bg:#05301c;
+}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme]){
+    color-scheme:light;
+    --ground:#eef1f5; --panel:#fff; --panel-2:#f5f7fa; --rule:#d6dde6;
+    --ink:#111820; --dim:#5a6675; --faint:#8a95a3;
+    --bad:#b3261e; --warn:#8a5a00; --unknown:#5b3fa8; --good:#12694a; --action:#0b4fa8;
+    --bad-bg:#fdecea; --warn-bg:#fdf4e3; --unknown-bg:#f0ecfb; --good-bg:#e7f6ef;
+    --action-bg:#e9f1fd;
+  }
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);
-font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-header{padding:20px 20px 16px;border-bottom:1px solid var(--rule);background:var(--card)}
-h1{margin:0 0 4px;font-size:15px;letter-spacing:.14em;text-transform:uppercase}
-.sub{color:var(--dim);font-size:12px;max-width:70ch}
-.verdict{margin-top:14px;padding:12px 14px;border-radius:8px;font-size:14px;
-border-left:4px solid var(--dim);background:var(--bg)}
-.verdict b{display:block;font-size:12px;letter-spacing:.1em;margin-bottom:3px}
-.v-bad{border-left-color:var(--bad);background:var(--badbg);color:var(--bad)}
-.v-warn{border-left-color:var(--warn);background:var(--warnbg);color:var(--warn)}
-.v-good{border-left-color:var(--good);background:var(--goodbg);color:var(--good)}
-.v-unknown{border-left-color:var(--unknown);background:var(--unknownbg);color:var(--unknown)}
-main{display:grid;gap:14px 14px;padding:16px 20px 40px;
-grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));align-items:start}
-@media(min-width:1250px){main{grid-template-columns:repeat(3,1fr)}}
-section{background:var(--card);border:1px solid var(--rule);border-radius:8px;overflow:hidden}
-.head{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
-padding:10px 14px;border-bottom:1px solid var(--rule)}
-.head h2{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
-.chip{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--dim);
-white-space:nowrap}
-.chip.good{background:var(--goodbg);color:var(--good)}
-.chip.warn{background:var(--warnbg);color:var(--warn)}
-.chip.bad{background:var(--badbg);color:var(--bad)}
-.chip.unknown{background:var(--unknownbg);color:var(--unknown)}
-ul{list-style:none;margin:0;padding:6px 0}
-li{padding:3px 14px;display:flex;gap:8px;flex-wrap:wrap;word-break:break-word}
-li .k{color:var(--dim);flex:0 0 auto}
-/* The value shares the label's line and wraps inside its own column. Without
-   this a long value wrapped BELOW its key, and the key read as having no
-   value at all -- found by rendering, not by reading. */
-li .v{flex:1 1 14rem;min-width:0}
+body{margin:0;background:var(--ground);color:var(--ink);font:13px/1.5 var(--mono);
+-webkit-font-smoothing:antialiased}
+
+/* --- top status bar: identity, always, in one scan ---------------------- */
+.bar{display:flex;flex-wrap:wrap;gap:0 18px;align-items:baseline;
+padding:7px 18px;background:var(--panel-2);border-bottom:1px solid var(--rule);
+font-size:11.5px;letter-spacing:.02em}
+.bar b{color:var(--faint);font-weight:400;text-transform:uppercase;letter-spacing:.1em;
+margin-right:5px;font-size:10px}
+.bar span+b{margin-left:0}
+.bar .id{color:var(--accent)}
+
+header{padding:18px 18px 16px;background:var(--panel);border-bottom:1px solid var(--rule)}
+h1{margin:0 0 12px;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;
+color:var(--faint);font-weight:600}
+
+.state{font-size:27px;line-height:1.1;font-weight:700;letter-spacing:-.015em;margin:0 0 5px}
+.said{font-size:12.5px;color:var(--dim);max-width:80ch;margin:0}
+.verdict{border-left:3px solid var(--dim);padding-left:13px}
+.v-bad{border-left-color:var(--bad)} .v-bad .state{color:var(--bad)}
+.v-warn{border-left-color:var(--warn)} .v-warn .state{color:var(--warn)}
+.v-good{border-left-color:var(--good)} .v-good .state{color:var(--good)}
+.v-unknown{border-left-color:var(--unknown)} .v-unknown .state{color:var(--unknown)}
+
+.next{margin-top:13px;padding:11px 13px;border-radius:5px;background:var(--action-bg);
+border:1px solid var(--action)}
+.next b{display:block;font-size:9.5px;letter-spacing:.16em;color:var(--action);margin-bottom:4px}
+.next span{font-size:14.5px;font-weight:600;color:var(--ink)}
+
+/* --- the operational strip: established facts as figures, not paragraphs -- */
+.strip{display:flex;flex-wrap:wrap;gap:7px;margin-top:13px}
+.fact{display:flex;align-items:baseline;gap:7px;padding:4px 10px;border-radius:4px;
+background:var(--panel-2);border:1px solid var(--rule);font-size:11.5px}
+.fact i{font-style:normal;color:var(--faint);text-transform:uppercase;letter-spacing:.09em;
+font-size:9.5px}
+.fact em{font-style:normal;font-weight:700;color:var(--ink)}
+.fact.good em{color:var(--good)} .fact.warn em{color:var(--warn)}
+.fact.bad em{color:var(--bad)} .fact.unknown em{color:var(--unknown)}
+.meter{display:block;width:52px;height:3px;background:var(--rule);border-radius:2px;
+overflow:hidden;margin-top:3px}
+.meter i{display:block;height:100%;background:var(--accent)}
+.meter i.warn{background:var(--warn)} .meter i.bad{background:var(--bad)}
+
+.attn{margin-top:13px;border:1px solid var(--rule);border-radius:5px;overflow:hidden;
+background:var(--panel-2)}
+.attn>summary{cursor:pointer;padding:8px 13px;font-size:10.5px;letter-spacing:.13em;
+text-transform:uppercase;color:var(--dim);list-style:none;user-select:none}
+.attn>summary::-webkit-details-marker{display:none}
+.attn>summary::before{content:"▸ "} .attn[open]>summary::before{content:"▾ "}
+.attn ul{padding:2px 0 6px} .attn li{font-size:12px}
+.count{display:inline-block;min-width:17px;text-align:center;padding:1px 6px;border-radius:9px;
+font-size:10px;font-weight:700;margin-left:5px;letter-spacing:0}
+.count.bad{background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad)}
+.count.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn)}
+.count.unknown{background:var(--unknown-bg);color:var(--unknown);border:1px solid var(--unknown)}
+.count.good{background:var(--good-bg);color:var(--good);border:1px solid var(--good)}
+
+main{display:grid;gap:11px;padding:14px 18px 36px;
+grid-template-columns:repeat(auto-fit,minmax(min(100%,370px),1fr));align-items:start}
+@media(min-width:1240px){main{grid-template-columns:repeat(3,1fr)}}
+h3.group{grid-column:1/-1;margin:8px 1px -2px;font-size:9.5px;letter-spacing:.2em;
+text-transform:uppercase;color:var(--faint);font-weight:700}
+h3.group:first-of-type{margin-top:0}
+
+section{background:var(--panel);border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+.head{display:flex;justify-content:space-between;gap:9px;align-items:baseline;
+padding:8px 13px;background:var(--panel-2);border-bottom:1px solid var(--rule)}
+.head h2{margin:0;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);
+font-weight:600}
+.chip{font-size:10px;padding:1px 7px;border-radius:9px;background:var(--ground);
+color:var(--dim);white-space:nowrap;border:1px solid var(--rule)}
+.chip.good{color:var(--good);border-color:var(--good)}
+.chip.warn{color:var(--warn);border-color:var(--warn)}
+.chip.bad{color:var(--bad);border-color:var(--bad)}
+.chip.unknown{color:var(--unknown);border-color:var(--unknown)}
+
+ul{list-style:none;margin:0;padding:5px 0}
+li{padding:2.5px 13px;display:flex;gap:8px;flex-wrap:wrap;word-break:break-word;
+line-height:1.45}
+li .k{color:var(--faint);flex:0 0 auto}
 li .k::after{content:":"}
-li.d1{padding-left:32px}li.d2{padding-left:50px}
-li.good .v{color:var(--good)}li.warn .v{color:var(--warn)}li.bad .v{color:var(--bad);font-weight:600}
-li.muted{color:var(--dim)}li.muted .v{color:var(--dim)}
-li.unknown{background:var(--unknownbg)}li.unknown .v{color:var(--unknown)}
-li.action{background:var(--actionbg)}li.action .v{color:var(--action);font-weight:600}
+li .v{flex:1 1 13rem;min-width:0}
+li.d1{padding-left:28px;border-left:1px solid var(--rule);margin-left:13px}
+li.d2{padding-left:42px;border-left:1px solid var(--rule);margin-left:13px}
+li.good .v{color:var(--good)} li.warn .v{color:var(--warn)}
+li.bad .v{color:var(--bad);font-weight:600}
+li.muted,li.muted .v,li.muted .k{color:var(--faint)}
+li.unknown{background:var(--unknown-bg)} li.unknown .v{color:var(--unknown)}
 li.unknown>.k{color:var(--unknown);font-weight:600}
-.empty{padding:8px 14px;color:var(--unknown);background:var(--unknownbg)}
-footer{padding:0 20px 30px;color:var(--dim);font-size:12px;max-width:78ch}
-@media(max-width:700px){main{padding:12px;gap:12px}header{padding:14px}
-li{padding-left:12px;padding-right:12px}li.d1{padding-left:24px}li.d2{padding-left:36px}}
+li.action{background:var(--action-bg)} li.action .v{color:var(--action);font-weight:600}
+
+section>details>summary{cursor:pointer;padding:5px 13px 7px;font-size:10.5px;color:var(--faint);
+letter-spacing:.05em;list-style:none;border-top:1px solid var(--rule);user-select:none}
+section>details>summary::-webkit-details-marker{display:none}
+section>details>summary::before{content:"▸ "}
+section>details[open]>summary::before{content:"▾ "}
+summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+footer{padding:0 18px 26px;color:var(--faint);font-size:11px;max-width:82ch}
+
+@media(max-width:720px){
+  .bar{gap:0 12px;padding:6px 12px;font-size:11px}
+  header{padding:13px 12px} main{padding:11px 12px 30px;gap:9px}
+  .state{font-size:22px}
+  li{padding-left:12px;padding-right:12px}
+  li.d1{padding-left:22px;margin-left:10px} li.d2{padding-left:30px;margin-left:10px}
+  li .v{flex:1 1 100%}
+  .strip{gap:5px} .fact{font-size:11px;padding:3px 8px}
+}
 """
 
 
@@ -825,7 +903,8 @@ def _escape(text: str) -> str:
     return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def render_html(view: "Projection", title: str = "Runtime Pack — projection") -> str:
+def render_html(view: "Projection", title: str = "Runtime Pack — projection", *,
+                theme: str = "", accent: str = "") -> str:
     """The same panels, for a browser. Derives nothing the text renderer does not.
 
     Laid out in the order a reader of a long run actually asks: **what is
@@ -841,10 +920,15 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection") 
     counts = {t: sum(1 for line in attention if line.tone == t)
               for t in (Tone.BAD, Tone.WARN, Tone.UNKNOWN)}
 
-    out = ["<!doctype html>", "<html lang=\"en\">", "<head>", "<meta charset=\"utf-8\">",
+    root_attrs = f' data-theme="{_escape(theme)}"' if theme else ""
+    accent_rule = (f"<style>:root{{--accent:{_escape(accent)}}}</style>" if accent else "")
+    out = ["<!doctype html>", f"<html lang=\"en\"{root_attrs}>", "<head>",
+           "<meta charset=\"utf-8\">",
            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
-           f"<title>{_escape(title)}</title>", f"<style>{_STYLE}</style>", "</head>", "<body>",
-           "<header>", "<h1>Runtime Pack — projection</h1>",
+           f"<title>{_escape(title)}</title>", f"<style>{_STYLE}</style>", accent_rule,
+           "</head>", "<body>",
+           _status_bar(view),
+           "<header>", "<h1>Runtime Pack — mission control</h1>",
            f"<div class='verdict {verdict_class}'>",
            f"<p class=state>{_escape(state.strip())}</p>",
            f"<p class=said>{_escape(sentence.strip() or view.headline)}</p>", "</div>"]
@@ -852,6 +936,10 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection") 
     if view.next_action:
         out.append("<div class=next><b>NEXT AUTHORISED ACTION</b>"
                    f"<span>{_escape(view.next_action)}</span></div>")
+
+    strip = _operational_strip(view)
+    if strip:
+        out.append(strip)
 
     if attention:
         badge = "".join(
@@ -913,6 +1001,74 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection") 
                "This page authorises nothing, schedules nothing, wakes nothing and stores "
                "nothing; deleting it breaks no checker.</footer></body></html>")
     return "\n".join(out)
+
+
+#: Readings that belong in the top bar rather than in a panel: a reader wants
+#: identity at a glance and does not want to hunt for it.
+def _status_bar(view: "Projection") -> str:
+    """Identity, always, in one line. Never a summary — every value here is
+    lifted verbatim from a panel that also shows it."""
+    def find(title, label):
+        for panel in view.panels:
+            if panel.title != title:
+                continue
+            for line in panel.rows():
+                if line.label == label:
+                    return line.text
+        return ""
+
+    version = find("the pack this projection ships in", "version")
+    state = find("the pack this projection ships in", "state")
+    digest = find("the pack this projection ships in", "digest")
+    fresh = find("freshness of this reading", "") or ""
+    cells = [("pack", f"{version or UNKNOWN} {state or UNKNOWN}", "id"),
+             ("digest", digest or UNKNOWN, "")]
+    for panel in view.panels:
+        if panel.title == "project and pin":
+            pin = next((l.text for l in panel.rows() if "pin" in (l.label or "")), "")
+            cells.append(("project", pin or (UNKNOWN if panel.unknown else "declared"), ""))
+            break
+    freshness = next((p for p in view.panels if p.title == "freshness of this reading"), None)
+    if freshness is not None:
+        age = next((l.text for l in freshness.rows() if l.label == "" and "ago" in l.text), "")
+        cells.append(("read", age or UNKNOWN, ""))
+    return ("<div class=bar>" + "".join(
+        f"<b>{_escape(k)}</b><span class='{cls}'>{_escape(v)}</span>" for k, v, cls in cells)
+        + "</div>")
+
+
+def _operational_strip(view: "Projection") -> str:
+    """Established figures as figures.
+
+    Budgets and standing evidence are counts and ratios, and a reader scanning a
+    long run should not have to read a sentence to get one. **Nothing is
+    computed here** — every value is a line some panel already produced, shown
+    as a figure instead of as prose, and a budget with no ceiling shows no bar
+    rather than a guessed one.
+    """
+    import re
+
+    facts = []
+    for panel in view.panels:
+        if panel.title != "budgets and standing evidence":
+            continue
+        for line in panel.rows():
+            if not line.label:
+                continue
+            used = re.match(r"^(\d+)/(\d+) used", line.text)
+            if used:
+                spent, ceiling = int(used.group(1)), int(used.group(2))
+                share = min(100, round(100 * spent / ceiling)) if ceiling else 0
+                tone = "bad" if spent >= ceiling else ("warn" if share >= 75 else "")
+                facts.append(
+                    f"<span class='fact {tone}'><i>{_escape(line.label[:26])}</i>"
+                    f"<em>{spent}/{ceiling}</em>"
+                    f"<span class=meter><i class='{tone}' style='width:{share}%'></i></span>"
+                    f"</span>")
+            elif line.tone != Tone.MUTED and len(line.text) < 44:
+                facts.append(f"<span class=fact><i>{_escape(line.label[:22])}</i>"
+                             f"<em>{_escape(line.text)}</em></span>")
+    return f"<div class=strip>{''.join(facts)}</div>" if facts else ""
 
 
 def _row(line: "Line") -> str:
@@ -1016,12 +1172,17 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--html", action="store_true",
                         help="render as a self-contained page on stdout instead of text")
     parser.add_argument("--title", default="Runtime Pack — projection")
+    parser.add_argument("--theme", default="", choices=["", "matrix"],
+                        help="presentation only; it changes no state and no classification")
+    parser.add_argument("--accent", default="",
+                        help="a CSS colour for the presentation accent, e.g. '#37ff9b'")
     args = parser.parse_args(argv)
 
     view = project(args.project_root, contract=args.contract,
                    continuation_record=args.continuation,
                    capacity_observation=args.capacity)
-    print(render_html(view, args.title) if args.html else view.render())
+    print(render_html(view, args.title, theme=args.theme, accent=args.accent)
+          if args.html else view.render())
     return 1 if view.unknowns else 0
 
 
