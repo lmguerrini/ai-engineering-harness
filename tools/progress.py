@@ -387,8 +387,16 @@ def waiter_command(run_id: str, pid: int, *, sentinel: str, poll_seconds: int = 
     release's own session.
 
     This watches a process NUMBER, which nothing else can accidentally be, and a
-    sentinel path. `kill -0` asks whether the number exists without signalling
-    anything, so the wait is an observation and not an act.
+    sentinel path. Asking `ps` for that number's state is an observation and not
+    an act: nothing is signalled.
+
+    **A ZOMBIE IS ENDED.** The first version asked `kill -0`, which succeeds for
+    a process that has exited and not yet been reaped — and the commonest
+    topology there is puts the worker and the waiter under one coordinator
+    shell, so the worker exits, nobody reaps it, and the waiter sleeps on
+    against a promise that it terminates *even after the worker exited*. Found
+    by executing this waiter against a real short-lived worker rather than by
+    reading the string it generates.
     """
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         raise IntegrityError("a waiter watches a real process number", run_id=run_id, pid=repr(pid))
@@ -403,8 +411,15 @@ def waiter_command(run_id: str, pid: int, *, sentinel: str, poll_seconds: int = 
     # code, shipped in the repair for a hand-written waiter, carrying a hole the
     # hand-written one did not have. Found by an auditor in the same pass.
     quoted = shlex.quote(str(sentinel))
+    # `ps -o stat=` prints nothing for a number that is gone and a state
+    # beginning with `Z` for one that has exited and not been reaped. The `${s#Z}`
+    # test is POSIX prefix removal — no pattern is matched against any command
+    # line, so this still cannot match the waiter itself, which is the property
+    # the whole tool exists for.
     return ["sh", "-c",
-            f"while kill -0 {pid} 2>/dev/null && [ ! -s {quoted} ]; do sleep {poll_seconds}; done"]
+            f"while s=$(ps -o stat= -p {pid} 2>/dev/null); "
+            f"[ -n \"$s\" ] && [ \"${{s#Z}}\" = \"$s\" ] && [ ! -s {quoted} ]; "
+            f"do sleep {poll_seconds}; done"]
 
 
 def retire_waiters(waiters: Sequence[Waiter], *, finished_runs: Sequence[str]) -> tuple[Waiter, ...]:

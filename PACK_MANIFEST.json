@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "7d79b49828db7b1973b615d29d6715cb59de42c320b0f67f717ed5cd5400504d",
+  "tree_digest_sha256": "1246746185d3311244ff13c4ea104feef687fc53715f3f54012a4bd0d2624a7e",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 2029
+    "passed": 2031
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -67,7 +67,8 @@
     "THE DESIGN GATE CANNOT STOP A CALLER WHO DECLARES A MATERIAL CHANGE TRIVIAL. The change class is an input because Core cannot know which of a project's changes are material, and `TRIVIAL` resolves to NOT_REQUIRED. The declaration is recorded in the readiness report, so it is a visible claim an auditor can dispute rather than a silent omission — but it is detection by disclosure, not prevention, and D25 says so.",
     "THE DESIGN GATE CHECKS THAT A DESIGN WAS MADE, NEVER THAT IT WAS GOOD. It reads a record and answers whether that record states alternatives, a rejection with a reason, failure modes, authority boundaries and frozen oracles. Whether the selected design is the right one is product meaning, which Core does not adjudicate. A well-formed record of a bad design verifies.",
     "PERSISTENCE ACROSS A COLD BROWSER RESTART IS NOT VERIFIED ON THIS HOST. A preference surviving a reload is verified in the browser; surviving a NEW BROWSER PROCESS is not, because headless Chrome hangs on this machine whenever `--user-data-dir` names a fresh profile, and the alternative — writing into the operator's own default profile — is a side effect on their browser. What is established instead: the page holds no state outside `localStorage`, re-reads it on every load, and falls back to the default for a stored value that is corrupt, unknown or unusable. Storage outliving a process is the browser's guarantee, not this page's, and this release does not claim to have tested it.",
-    "A SEMANTIC AND A NEUTRAL CAN STILL BE CLOSE AS TEXT. Separation is enforced across what the charts PAINT — ink, bad, warn, unknown, good — because those are areas a reader has to tell from the area beside them. As text, monochrome's warn sits near its dim, and every lens's restrained accent sits near its ink deliberately. Forcing those apart would contradict the brief the palettes were built to: UNKNOWN is steel in every lens, and the accent is meant to be quiet. Every state's text also carries a glyph, so colour is not the only channel — but colour alone does not distinguish them, and this says so."
+    "A SEMANTIC AND A NEUTRAL CAN STILL BE CLOSE AS TEXT. Separation is enforced across what the charts PAINT — ink, bad, warn, unknown, good — because those are areas a reader has to tell from the area beside them. As text, monochrome's warn sits near its dim, and every lens's restrained accent sits near its ink deliberately. Forcing those apart would contradict the brief the palettes were built to: UNKNOWN is steel in every lens, and the accent is meant to be quiet. Every state's text also carries a glyph, so colour is not the only channel — but colour alone does not distinguish them, and this says so.",
+    "THE LIVENESS MODEL GOVERNS DECLARED WAITS AND NOTHING ELSE. A wait recorded in the continuation record must name a deadline, and past it the state is RECOVERY_REQUIRED whatever the process is doing. A waiter a coordinator writes by hand and never records is outside that: the model cannot see it, and acquiring the power to see it would mean policing the coordinator's own shell. Measured in this release's own session — five undeclared waiters survived ninety-five minutes after their workers had exited. The pack ships `progress.waiter_command` so that a coordinator need not hand-write one; using it is discipline, not enforcement."
   ],
   "deferred": {
     "RP2.3 DEFER_WITH_TRIGGER": "see docs/RP2.3-CAPABILITY-MAP.md for each item and the observation that reopens it: the full routing-evidence schema; the clean-clone reproducibility gate; a commit-subject length ceiling; publication readiness beyond the profile declaration; a write-ceiling runtime for delegation scope.",

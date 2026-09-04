@@ -194,7 +194,7 @@ def test_the_shipped_waiter_cannot_match_itself_and_the_handwritten_one_did():
     terminate — not even after the worker exited."""
     generated = " ".join(progress.waiter_command("delta-audit", 2776, sentinel="/tmp/report.md"))
     assert "pgrep" not in generated
-    assert "kill -0 2776" in generated
+    assert "-p 2776" in generated, "the waiter does not name the process number it watches"
 
     with pytest.raises(PreconditionError):
         progress.Waiter(waiter_id="w", run_id="delta-audit",

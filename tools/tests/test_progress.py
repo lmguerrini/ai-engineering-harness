@@ -7,6 +7,8 @@ and it was measured four minutes after the stall rule was written.
 
 import pathlib
 
+import sys
+import tempfile
 import pytest
 
 import progress
@@ -375,14 +377,22 @@ def test_the_shipped_waiter_command_watches_a_number_and_cannot_match_itself():
     terminate even after its worker exited. Measured live."""
     command = progress.waiter_command("delta-audit", 2776, sentinel="/private/tmp/report.md")
     joined = " ".join(command)
-    assert "kill -0 2776" in joined
     assert "pgrep" not in joined, "a pattern matches whatever looks like it, including the watcher"
     assert "/private/tmp/report.md" in joined
+    assert "-p 2776" in joined, "the waiter does not name the process number it watches"
 
     # The decisive property: the waiter's own command line does not contain
-    # anything that would make it look like the thing it waits on.
-    assert "2776" in joined
-    assert joined.count("kill -0") == 1
+    # anything that would make it look like the thing it waits on. No pattern is
+    # matched against any command line — the only thing asked about the number
+    # is its own process state.
+    for pattern_matcher in ("pgrep", "pkill", "ps -ef", "ps aux", "grep -f"):
+        assert pattern_matcher not in joined, f"{pattern_matcher} matches whatever looks like it"
+
+    #: THAT IT ENDS is asserted by running it, not by reading it — see
+    #: `test_the_shipped_waiter_ends_when_its_worker_ends_even_if_nothing_is_written`.
+    #: A string assertion about termination is a claim about the author's
+    #: intent, and a mutant that turned the conjunction into a disjunction left
+    #: this test and its sibling green.
 
 
 def test_a_waiter_command_needs_a_real_process_number_and_a_sentinel():
@@ -464,3 +474,71 @@ def test_a_sample_taken_at_no_measurable_time_is_refused():
         with pytest.raises(IntegrityError):
             progress.Sample(moment, {"log_bytes": 1})
     assert progress.Sample(0.0, {"log_bytes": 1}).at_seconds == 0.0
+
+
+def test_the_shipped_waiter_ends_when_its_worker_ends_even_if_nothing_is_written():
+    """**The property the whole tool exists for, executed rather than read.**
+
+    Both tests of `waiter_command` inspected the generated string. The claim
+    they were written for is behavioural — *it terminates even after the worker
+    exited* — and a mutant turning the conjunction into a disjunction left both
+    of them green; it was caught only incidentally, by an unrelated injection
+    test hanging until its own timeout.
+
+    This is not hypothetical. Five hand-written waiters in this release's own
+    session watched output content instead of a process, and when their workers
+    exited without ever writing the string those waiters were looking for, they
+    slept on. Three of them for over ninety-five minutes, on 0.3 seconds of
+    processor time, while the interface showed them as live work. A live
+    process satisfies a liveness question forever: that is the failure class
+    this release was built to close, and this is the executable statement of
+    the closure.
+    """
+    import subprocess as sub
+    import time
+
+    sentinel = pathlib.Path(tempfile.mkdtemp()) / "never-written"
+    worker = sub.Popen([sys.executable, "-c", "import time; time.sleep(1.5)"])
+    try:
+        command = progress.waiter_command("r", worker.pid, sentinel=str(sentinel),
+                                          poll_seconds=1)
+        started = time.monotonic()
+        waiter = sub.run(command, capture_output=True, timeout=25)
+        elapsed = time.monotonic() - started
+    finally:
+        worker.wait(timeout=30)
+
+    assert waiter.returncode == 0
+    assert not sentinel.exists(), "the sentinel was written, so this proved nothing"
+    assert elapsed < 20, (
+        f"the waiter ran {elapsed:.1f}s after a worker that lived 1.5s and wrote nothing: "
+        f"it is watching for something that will never arrive")
+    #: and it really did wait for the worker rather than returning at once
+    assert elapsed >= 1.0, (
+        f"the waiter returned in {elapsed:.1f}s, before its worker had finished — it is not "
+        f"waiting on the process at all")
+
+
+def test_the_shipped_waiter_ends_the_moment_the_sentinel_appears():
+    """The other half. A waiter that only ended when the process died would make
+    every completion wait for a teardown, and a worker that writes its result
+    and lingers would look like a worker still working."""
+    import subprocess as sub
+    import time
+
+    sentinel = pathlib.Path(tempfile.mkdtemp()) / "written"
+    sentinel.write_text("the result")
+    worker = sub.Popen([sys.executable, "-c", "import time; time.sleep(20)"])
+    try:
+        started = time.monotonic()
+        waiter = sub.run(progress.waiter_command("r", worker.pid, sentinel=str(sentinel),
+                                                 poll_seconds=1),
+                         capture_output=True, timeout=25)
+        elapsed = time.monotonic() - started
+    finally:
+        worker.kill()
+        worker.wait(timeout=30)
+
+    assert waiter.returncode == 0
+    assert elapsed < 3, (
+        f"the result was already on disk and the waiter took {elapsed:.1f}s to notice")

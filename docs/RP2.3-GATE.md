@@ -2963,3 +2963,50 @@ gate adds no HITL row, removes none, changes none. Cold reconstruction recovers
 the decision and its rationale. The exemplar design record's base is the
 immediate parent of the commit that adds the module — **the design genuinely
 preceded the implementation.**
+
+## The failure class, caught happening, in this release's own session
+
+Five waiters were left in the interface, three of them for over ninety-five
+minutes. Reconciled from disk and from the process table rather than from the
+chips: **zero workers were alive**, every subject had terminated and written
+`[exited with code 0]`, and every result had already been consumed. The waiters
+were `ORPHANED`; one of them was also `SUPERSEDED`, watching a run whose subject
+revision (`30db7d308b12`) was three commits behind the candidate.
+
+Every one of them waited for `grep -c "stages:" <subject> -ge 2`. The assembled
+smoke prints `stages: 23/23 pass`; the clean room prints `12/12 clean-room
+stages pass` — **no colon after `stages`**. The count was one and stayed one
+after the worker exited. 0.3 to 0.8 seconds of processor time across ninety-five
+minutes, and the interface showing live work.
+
+The predicate was hand-written against the shape of an output instead of the
+producer's own completion signal, which was sitting in the same file. This is
+the failure the release documents having closed, arriving through the one door
+the closure does not cover: **a waiter the coordinator never declared**. The
+governed model has no jurisdiction over a wait that is not in the record, and
+cannot acquire one without policing the coordinator's own shell.
+
+### And the shipped waiter had the same hole, in a plausible topology
+
+`progress.waiter_command` exists precisely because a hand-written waiter could
+never terminate. Both of its tests read the string it generates. Written as an
+executable property instead — run the generated waiter against a real worker
+that lives 1.5 seconds and writes nothing — **it hung.**
+
+`kill -0` succeeds for a process that has exited and not yet been reaped. The
+commonest topology puts the worker and the waiter under one coordinator shell,
+so the worker exits, nobody reaps it, and the waiter sleeps on — against a
+docstring promising it terminates *even after the worker exited*. The waiter
+asks `ps -o stat=` now and treats a `Z` state as ended; no pattern is matched
+against any command line, so it still cannot match itself.
+
+Both string tests were restated as the properties they were written for, and
+the property that matters is executed: a waiter ends when its worker ends
+though nothing was ever written, and ends at once when the result is already
+there though its worker lingers. A mutant turning the conjunction into a
+disjunction had left both string tests green — it was caught only incidentally,
+by an unrelated injection test hanging until its own timeout.
+
+**The lesson is the one this release keeps relearning, from the other side.**
+The tool was correct in its intent, shipped for exactly this failure, and its
+guarantee was held by a string. Nobody had run it.
