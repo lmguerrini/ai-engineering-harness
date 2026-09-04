@@ -6,6 +6,18 @@ below — not a silent edit.
 
 ## Goal
 
+## Design
+
+For a MATERIAL capability, the frozen design record — `DESIGN-<id>.md`, from
+`templates/DESIGN.md.template` — is written **before** the first mutation and
+named here. `capability_open` reads it at the open and refuses to report the
+capability ready without it (`skills/core/design-falsification.md`, D25).
+`ROUTINE` needs the mechanism and its oracles; `TRIVIAL` needs no record.
+
+| Change class | Design record | Frozen at revision |
+|---|---|---|
+|   |   |   |
+
 ## Acceptance criteria
 
 Each stated as a property that must be true, with the observation that would

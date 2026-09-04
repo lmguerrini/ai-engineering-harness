@@ -75,10 +75,25 @@ class Day:
     #: day is not zero remote activity; it is an unanswered question, and the
     #: view must not paint it as an empty cell.
     remote_unknown: bool = False
+    #: THE SAME COMMITS, BY UTC HOUR. A git commit carries a full timestamp, so
+    #: an hour is read and not invented; anything without one is not counted
+    #: here at all rather than being placed at midnight. `sum(hours) == local`
+    #: and `sum(remote_hours) == remote`, asserted, because two views of one
+    #: reading that disagree are two readings.
+    hours: list = field(default_factory=lambda: [0] * 24)
+    remote_hours: list = field(default_factory=lambda: [0] * 24)
 
     @property
     def local_only(self) -> int:
         return max(0, self.local - self.remote)
+
+    @property
+    def local_only_hours(self) -> list:
+        return [max(0, a - b) for a, b in zip(self.hours, self.remote_hours)]
+
+    @property
+    def busiest_hour(self) -> int:
+        return max(range(24), key=lambda h: self.hours[h]) if self.local else -1
 
 
 @dataclass
@@ -136,8 +151,8 @@ class RepositoryActivity:
         return max((day.date for day in self.days if day.remote), default="")
 
 
-def _utc_day(stamp: str) -> str:
-    """The UTC date of an ISO-8601 instant, or `''` when it cannot be read.
+def _utc_moment(stamp: str):
+    """`(date, hour)` in UTC for an ISO-8601 instant, or `("", -1)`.
 
     Bucketing in the committer's own offset would put two commits a minute apart
     on different days depending on where each was made; bucketing in the
@@ -146,14 +161,20 @@ def _utc_day(stamp: str) -> str:
     try:
         moment = datetime.fromisoformat(stamp.strip())
     except (TypeError, ValueError):
-        return ""
+        return "", -1
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc).date().isoformat()
+    moment = moment.astimezone(timezone.utc)
+    return moment.date().isoformat(), moment.hour
+
+
+def _utc_day(stamp: str) -> str:
+    """The UTC date of an ISO-8601 instant, or `''` when it cannot be read."""
+    return _utc_moment(stamp)[0]
 
 
 def _walk(repository, *selectors: str, timeout: float) -> dict:
-    """`{sha: utc date}` for every commit the selectors reach, each counted once.
+    """`{sha: (utc date, utc hour)}` for every commit the selectors reach.
 
     Deduplicated by sha, so a commit reachable from a branch, a tag and three
     remote-tracking refs is one commit — which is what it is.
@@ -167,9 +188,9 @@ def _walk(repository, *selectors: str, timeout: float) -> dict:
         sha, _, stamp = line.strip().partition(" ")
         if len(sha) < 7 or not stamp:
             continue
-        day = _utc_day(stamp)
+        day, hour = _utc_moment(stamp)
         if day:
-            found[sha] = day
+            found[sha] = (day, hour)
     return found
 
 
@@ -294,11 +315,15 @@ def repository_activity(repository, *, name: str = "", timeout: float = 60.0,
                     "updated, so how current they are cannot be established")
 
     counted: dict = {}
-    for sha, day in local.items():
+    for sha, (day, hour) in local.items():
         entry = counted.setdefault(day, Day(date=day))
         entry.local += 1
+        if 0 <= hour < 24:
+            entry.hours[hour] += 1
         if sha in remote:
             entry.remote += 1
+            if 0 <= hour < 24:
+                entry.remote_hours[hour] += 1
         if activity.remote_state in (Remote.NEVER_OBSERVED, Remote.UNREADABLE):
             entry.remote_unknown = True
     activity.days = [counted[day] for day in sorted(counted)]
@@ -321,6 +346,9 @@ def aggregate(activities) -> list:
             entry = days.setdefault(day.date, Day(date=day.date))
             entry.local += day.local
             entry.remote += day.remote
+            for hour in range(24):
+                entry.hours[hour] += day.hours[hour]
+                entry.remote_hours[hour] += day.remote_hours[hour]
             entry.remote_unknown = entry.remote_unknown or day.remote_unknown
     return [days[day] for day in sorted(days)]
 

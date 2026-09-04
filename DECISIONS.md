@@ -657,3 +657,63 @@ than the other way round.**
 **Reverses on:** an adopting project demonstrating that it can produce an
 attestation that omits a declared profile — which would mean the generator, not
 this rule, is wrong.
+
+## D25 — a material change begins with a falsified design, not with a repair loop (RP2.3)
+
+**Question the founder put:** does this release actually *ship and enforce*
+pre-implementation design falsification for future projects, or was that only
+how this session happened to be run?
+
+**Answered mechanically against the candidate, and the answer was no.**
+`SCOPE_FROZEN` was a lifecycle point named in two rows of
+`policy/hitl-matrix.md` and enforced by nothing. `skills/core/oracle-discipline.md`
+described freezing an oracle's domain at scope freeze. `skills/core/repair.md`
+required an invariant, a discriminating oracle and a mutation check before a
+fix — but only once a defect already existed, which is the second half of the
+loop and not the first. No template asked for a design, no artifact recorded
+one, no tool read one, no test detected its absence, and cold reconstruction
+preserved no design rationale. **DOCUMENTED_ONLY.**
+
+**Decided: composed into the readiness path, not built as a new authority.**
+
+*   **The transition is the capability open.** `capability_open.open_capability`
+    is already the one deterministic path run before a governed capability
+    opens; it already composes delegated components, already distinguishes
+    *required* from *blocking*, and already fails closed on `UNKNOWN`. The
+    design becomes one more component of it. Four alternatives were considered
+    and rejected in writing before any of it was implemented — an intercepting
+    gate process, a template-and-skill with no detector, a check in the commit
+    gate, and a new blocking lifecycle state — and the record of that is
+    `rp2.3-session/DESIGN-C31-design-gate.md`, which is itself the first thing
+    the mechanism was run against.
+*   **It reports and authorises nothing.** It reads a file and answers whether
+    that file states what it claims to state. It never judges whether the
+    selected design is good — that is product meaning, and Core does not
+    adjudicate product meaning. It adds no HITL row, removes none, and weakens
+    none.
+*   **Risk-scaled, and the class is an input.** `TRIVIAL` requires no record at
+    all. `ROUTINE` requires the mechanism and acceptance plus negative oracles.
+    `MATERIAL` requires at least two candidate designs, at least one rejected
+    with a reason, exactly one selected, its failure modes, its authority
+    boundaries, and a mutation oracle. Core cannot know which of a project's
+    changes are material — that is a property of the project, exactly as
+    `requires.project_context` already is, and a project may declare
+    `requires.design: true` to make it unconditional.
+*   **Freezing is bound to a revision.** The base revision must resolve and be
+    an ancestor of `HEAD`, and a strict ancestor of the revision where mutation
+    began when the caller can name it. A design frozen against a tree that
+    already contains the work it governs is refused, because backdating is the
+    obvious cheat and the only one worth building for.
+*   **This bounds the repair loop rather than adding an audit loop.** It adds
+    no round, no auditor and no budget counter. It moves the falsification
+    earlier, where the cheapest thing to change is still a paragraph.
+
+**The bound, stated rather than dressed up:** a caller who declares a material
+change `TRIVIAL` gets no record and no block. The declaration is recorded in
+the readiness report, so it is a visible claim somebody can dispute rather than
+a silent omission — but it is not prevention, and this decision does not claim
+it is.
+
+**Reverses on:** an adopting project showing that the record is being written
+after the fact and passing, which would mean the revision binding is
+insufficient rather than that the rule is wrong.

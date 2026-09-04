@@ -501,9 +501,16 @@ def test_a_non_boolean_requirement_is_refused(tmp_path, release, context_tree):
 
 
 def test_a_project_declaring_no_requirements_gets_the_permissive_default():
-    assert capability_open.requirements_from(None) == {"project_context": False}
-    assert capability_open.requirements_from({}) == {"project_context": False}
+    # EVERY known requirement, permissive — stated as the property rather than
+    # as a literal dict, so adding a requirement cannot break this test while
+    # adding one that defaults to *blocking* still does. Every real consumer
+    # omits the block.
+    for declared in (None, {}):
+        defaults = capability_open.requirements_from(declared)
+        assert set(defaults) == set(capability_open.REQUIREMENT_KEYS)
+        assert all(value is False for value in defaults.values()), defaults
     assert capability_open.requirements_from({"project_context": True})["project_context"] is True
+    assert capability_open.requirements_from({"design": True})["design"] is True
 
 
 # --- undeclared is not declared-none ------------------------------------------

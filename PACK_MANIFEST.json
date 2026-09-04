@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "986dea07debf2ab23ae1cbf90887259a1b633e9e8c139374630118a120a20f35",
+  "tree_digest_sha256": "143dcb29eac0fd284515de14c08df40bfe2e7f171b7071dabead5e51c1b0e9ec",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 1987
+    "passed": 2018
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -63,7 +63,9 @@
     "THE EVENT HISTORY IS DELIBERATELY INCOMPLETE AND SAYS SO. Seven event classes ship because seven are what durable artifacts date; a capability opening, an audit being dispatched and a finding being recorded are not among them, because nothing writes their time down. One class, `deadline passed`, is arithmetic over durable fields and the clock rather than a recorded fact, and is marked `derived` and filterable for that reason. A durable event log is recorded as an Evolution Candidate, not shipped.",
     "THE REMOTE SIDE OF REPOSITORY ACTIVITY IS AS OF SOMEBODY ELSE'S LAST FETCH. This release never contacts a network, so `REMOTE-REPRESENTED` is read from remote-tracking refs and is exactly as current as the last fetch performed outside it — which the view reports where the repository records it and declines to guess where it does not. A declared remote nobody has fetched reads REMOTE NEVER OBSERVED, which is not the same as a remote with nothing on it.",
     "REPOSITORY ACTIVITY READS 366 DAYS BY DEFAULT, NOT A COMPLETE HISTORY. The window is a render-cost decision, `window_days=0` reads all of it, and the view names the window it read. A multi-year calendar is an Evolution Candidate.",
-    "NEITHER HISTORY IS EVIDENCE OF QUALITY, AND ONLY A TEST KEEPS IT THAT WAY. A commit count measures that commits happened. No productivity, velocity, developer or good-day figure is derived anywhere, and the guard that holds this is a vocabulary refusal over the rendered page rather than anything structural: a future contributor who wanted such a figure would have to delete a test to get it, which is the point."
+    "NEITHER HISTORY IS EVIDENCE OF QUALITY, AND ONLY A TEST KEEPS IT THAT WAY. A commit count measures that commits happened. No productivity, velocity, developer or good-day figure is derived anywhere, and the guard that holds this is a vocabulary refusal over the rendered page rather than anything structural: a future contributor who wanted such a figure would have to delete a test to get it, which is the point.",
+    "THE DESIGN GATE CANNOT STOP A CALLER WHO DECLARES A MATERIAL CHANGE TRIVIAL. The change class is an input because Core cannot know which of a project's changes are material, and `TRIVIAL` resolves to NOT_REQUIRED. The declaration is recorded in the readiness report, so it is a visible claim an auditor can dispute rather than a silent omission — but it is detection by disclosure, not prevention, and D25 says so.",
+    "THE DESIGN GATE CHECKS THAT A DESIGN WAS MADE, NEVER THAT IT WAS GOOD. It reads a record and answers whether that record states alternatives, a rejection with a reason, failure modes, authority boundaries and frozen oracles. Whether the selected design is the right one is product meaning, which Core does not adjudicate. A well-formed record of a bad design verifies."
   ],
   "deferred": {
     "RP2.3 DEFER_WITH_TRIGGER": "see docs/RP2.3-CAPABILITY-MAP.md for each item and the observation that reopens it: the full routing-evidence schema; the clean-clone reproducibility gate; a commit-subject length ceiling; publication readiness beyond the profile declaration; a write-ceiling runtime for delegation scope.",
@@ -75,6 +77,6 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 148,
+  "digest_file_count": 152,
   "failure_mode_closure": "docs/RP2.3-FAILURE-MODE-CLOSURE.md"
 }

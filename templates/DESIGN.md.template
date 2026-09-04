@@ -1,0 +1,68 @@
+# DESIGN — <capability id>
+
+**Change class:** TRIVIAL | ROUTINE | MATERIAL
+**Base revision:** <the full 40-character revision this design was frozen against>
+**Frozen:** yes
+
+Written **before** the implementation it governs, and read by
+`tools/design_record.py`, which is composed into `capability_open.py`. It
+reports; it authorises nothing.
+
+Pick the class honestly, and note that the class is the whole scaling rule:
+
+| Class | What it means | What this file must state |
+|---|---|---|
+| `TRIVIAL` | reversible, local, promising nothing new | nothing — no record required |
+| `ROUTINE` | real work inside a design that already exists | the mechanism, and acceptance + negative oracles |
+| `MATERIAL` | a new promise, authority or boundary, or a change to one | all of it |
+
+A `MATERIAL` record with one candidate design is refused, because a single
+candidate is a decision nobody made.
+
+## The mechanism
+
+One sentence, in terms of what the machine actually does — not the symptom, not
+the file. `skills/core/oracle-discipline.md` is the same rule applied to
+oracles, and it is the same rule for the same reason.
+
+## Designs considered
+
+| # | Design | Verdict | Why |
+|---|---|---|---|
+| 1 |  | REJECTED |  |
+| 2 |  | SELECTED |  |
+
+Exactly one `SELECTED`, at least one `REJECTED`. A rejected design with no
+reason is not a rejection; it is a list.
+
+## Failure modes of the selected design
+
+| # | Failure mode | What keeps it from being silent |
+|---|---|---|
+| 1 |  |  |
+
+The failure modes are what the oracles are for. A mode you cannot make
+non-silent is a bounded limitation — say so here rather than omitting it.
+
+## Authority boundaries
+
+What this may decide, and — more importantly — what it must never decide. A
+mechanism that does not say what it must never decide will eventually decide
+it. State explicitly that it does not weaken any row of
+`policy/hitl-matrix.md`, or state which row it touches and why that is a
+governance change (HITL row 7).
+
+## Oracles, frozen before implementation
+
+| ID | Kind | The property it settles | Selector |
+|---|---|---|---|
+| O1 | ACCEPTANCE |  |  |
+| O2 | NEGATIVE |  |  |
+| O3 | MUTATION |  |  |
+
+`ACCEPTANCE` — what must hold. `NEGATIVE` — what must be refused.
+`MUTATION` — the guard, deliberately broken, demonstrated to fail.
+`REHEARSAL` — a sequence, run end to end.
+
+A named oracle that selects no real test is a wish. Fill the selector in as
+soon as the test exists, and check it the way the closure matrix already does.

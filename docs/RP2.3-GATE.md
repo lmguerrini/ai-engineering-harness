@@ -59,12 +59,12 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1652
+    in-release (skills/core/*.md + policy/*.md)   1737
     installed adapters, outside the envelope      1023
     total against a ~2,000 target                 2675   33.8% over the ~2,000
 
 **The breach is inherited, and its composition is the part 2.2.0's disclosure
-did not separate.** 1652 lines are in-release and **that half is under the
+did not separate.** 1737 lines are in-release and **that half is under the
 ~2,000 target**; the 1023 that put the total over are the two installed adapters,
 which this pack did not write, cannot freeze, and counts anyway because they are
 loaded every session. Both figures are stated because `policy/BUDGETS.md` already
@@ -1011,7 +1011,7 @@ as owed.
 
 Recorded because it is the most informative half of a report. The suite and the
 manifest's test count agreed exactly. The release identity verified. **Every
-held-prose number recomputed correctly** — 1652 in-release, 1023 adapters, 2675,
+held-prose number recomputed correctly** — 1737 in-release, 1023 adapters, 2675,
 33.8% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
 frozen manifest. Every `D<n> clause <m>` citation in every file was parsed
 against `DECISIONS.md` and matched: **zero dangling pointers**, which one auditor

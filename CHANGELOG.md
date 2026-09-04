@@ -238,6 +238,27 @@ stronger one.
 - **An absence is unknown, never a resting state**, and the exit status
   distinguishes a complete reading from a partial one.
 
+### A material change begins with a falsified design
+
+- **`tools/design_record.py`** reads a design frozen before the implementation
+  it governs: the mechanism, the designs considered, which was rejected and
+  why, which was selected, the failure modes of that choice, the authority
+  boundaries, and the acceptance, negative and mutation oracles — all named
+  before there is anything for them to judge.
+- **Composed into `capability_open`**, which is already the one deterministic
+  path run before a governed capability opens. It reports; it authorises
+  nothing, adds no HITL row and weakens none.
+- **Risk-scaled.** `TRIVIAL` needs no record; `ROUTINE` needs the mechanism and
+  its oracles; `MATERIAL` needs the whole thing. The class is the caller's
+  declaration, because Core cannot know which of a project's changes are
+  material — a project may declare `requires.design: true` instead.
+- **Freezing is bound to a revision.** The base must resolve, be an ancestor of
+  `HEAD`, and be a strict ancestor of where mutation began. A design frozen
+  against a tree that already holds the work it governs is refused.
+- **`skills/core/design-falsification.md`** is the discipline;
+  `skills/core/repair.md` remains the other half. One governs what must exist
+  before there is a defect; the other what happens once there is one.
+
 ### A console over every project, and two histories that score nothing
 
 - **`tools/console.py`** renders one read-only page over every project that has

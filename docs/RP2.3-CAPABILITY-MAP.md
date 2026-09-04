@@ -45,6 +45,7 @@ session. Each carries the observation that reopens it.
 | C15 | Closing ACTIONABLE_WORK + SILENT_IDLE | MUST | C4, C5, C12 |
 | C16 | The multi-project console | SHOULD | C12 |  *(presentation; decides nothing)*
 | C17 | Repository activity and pack event history | SHOULD | C16 |  *(read-only, offline; never a score)*
+| C18 | Pre-implementation design falsification | MUST | C4 |  *(composed into the capability open; reports, decides nothing)*
 
 **C2 comes second, and the ordering is the point.** The rehearsal obligations
 this release must satisfy are unconditional about it: *every rehearsal's own

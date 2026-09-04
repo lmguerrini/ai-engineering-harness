@@ -507,3 +507,67 @@ def test_every_event_is_recorded_or_says_it_is_derived(tmp_path):
         else:
             assert event.kind in activity.DERIVED, f"{event.kind} is derived and undeclared"
             assert "nothing recorded it" in event.source
+
+
+# --- the hour a commit was actually made -----------------------------------------------
+
+
+def test_an_hour_is_read_from_the_timestamp_and_never_invented(repo):
+    """A day scale that draws hours has to have them. A git commit carries a
+    full instant, so the hour is read; nothing places a commit at midnight
+    because midnight is what a date without a time looks like."""
+    _commit(repo, "dawn", when="2026-03-04T03:12:00+00:00")
+    _commit(repo, "noon", when="2026-03-04T12:47:00+00:00")
+    _commit(repo, "late", when="2026-03-04T23:05:00+00:00")
+
+    reading = activity.repository_activity(repo, window_days=0)
+    day = next(d for d in reading.days if d.date == "2026-03-04")
+
+    assert day.local == 3
+    assert [h for h, n in enumerate(day.hours) if n] == [3, 12, 23], day.hours
+    assert day.hours[0] == 0, "a commit was placed at midnight it was not made at"
+    assert day.busiest_hour in (3, 12, 23)
+
+
+def test_the_hours_of_a_day_are_the_same_reading_as_the_day(repo, tmp_path):
+    """Two views of one reading that disagree are two readings. The hour
+    buckets must total the day, on the local side and on the represented side,
+    and the local-only hours must be the difference and never a second walk."""
+    bare = _origin(tmp_path, repo)
+    _commit(repo, "pushed-a", when="2026-03-04T05:00:00+00:00")
+    _commit(repo, "pushed-b", when="2026-03-04T05:40:00+00:00")
+    _git(repo, "push", "-q", "origin", "main")
+    _commit(repo, "ahead", when="2026-03-04T18:00:00+00:00")
+    assert bare.is_dir()
+
+    reading = activity.repository_activity(repo, window_days=0)
+    for day in reading.days:
+        assert sum(day.hours) == day.local, f"{day.date}: hours total {sum(day.hours)}"
+        assert sum(day.remote_hours) == day.remote, f"{day.date}: represented hours disagree"
+        assert sum(day.local_only_hours) == day.local_only, f"{day.date}: only-here disagrees"
+
+    day = next(d for d in reading.days if d.date == "2026-03-04")
+    assert day.hours[5] == 2 and day.remote_hours[5] == 2
+    assert day.hours[18] == 1 and day.remote_hours[18] == 0
+    assert day.local_only_hours[18] == 1
+
+
+def test_aggregating_repositories_aggregates_their_hours_too(repo, tmp_path):
+    """The calendar sums days across projects; anything drawn from hours has to
+    be summed the same way or the day scale and the year scale disagree."""
+    other = tmp_path / "second"
+    other.mkdir()
+    _git(other, "init", "--quiet", "--initial-branch", "main")
+    for key, value in (("user.name", "T"), ("user.email", "t@e.invalid"),
+                       ("commit.gpgsign", "false")):
+        _git(other, "config", key, value)
+    _commit(repo, "one", when="2026-03-04T09:00:00+00:00")
+    _commit(other, "two", when="2026-03-04T09:30:00+00:00")
+    _commit(other, "three", when="2026-03-04T21:00:00+00:00")
+
+    days = activity.aggregate([activity.repository_activity(repo, window_days=0),
+                               activity.repository_activity(other, window_days=0)])
+    day = next(d for d in days if d.date == "2026-03-04")
+    assert day.local == 3
+    assert sum(day.hours) == day.local
+    assert day.hours[9] == 2 and day.hours[21] == 1

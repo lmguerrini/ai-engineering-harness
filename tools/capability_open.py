@@ -107,7 +107,7 @@ ADOPTABLE_STATE = "QUALIFIED_AND_FROZEN"
 #: What a project may declare it requires. Unknown keys are refused rather than
 #: ignored: a requirement nobody reads is worse than no requirement, because
 #: the project believes it is enforced.
-REQUIREMENT_KEYS = frozenset({"project_context"})
+REQUIREMENT_KEYS = frozenset({"project_context", "design"})
 
 
 @dataclass(frozen=True)
@@ -212,7 +212,7 @@ def requirements_from(raw: object) -> dict:
     project names in Core. Core cannot know which products have durable semantic
     authority, and a Core that decided would be adjudicating product meaning.
     """
-    requirements = {"project_context": False}
+    requirements = {"project_context": False, "design": False}
     if raw is None:
         return requirements
     if not isinstance(raw, dict):
@@ -509,6 +509,90 @@ def _capability_component(contract: ProjectContract, capability: str | None) -> 
     )
 
 
+def _design_component(contract: ProjectContract, capability: str | None,
+                      change_class: str | None, required: bool,
+                      record_path: str | Path | None,
+                      mutation_begins_at: str) -> ComponentResult:
+    """Whether a design was frozen before the implementation this opens.
+
+    The whole point is the ORDER. `skills/core/repair.md` governs what happens
+    once a defect exists; this governs what has to exist before there is
+    anything to defect. It reports and never authorises: the aggregate answer
+    is this report's, and the decision to open is the coordinator's.
+
+    Risk-scaled by the caller's declared change class, because a rule that
+    demands a design document for a typo is a rule that gets routed around.
+    """
+    import design_record
+
+    declared = (change_class or "").strip().upper() or None
+    if declared is not None and declared not in design_record.CHANGE_CLASSES:
+        return ComponentResult(
+            name="design",
+            state=UNKNOWN,
+            required=True,
+            findings=(f"the change class {change_class!r} is not one of "
+                      f"{', '.join(design_record.CHANGE_CLASSES)}. An unrecognised class is not "
+                      f"a small one: this refuses rather than choosing the lenient reading",),
+        )
+
+    where = Path(record_path) if record_path else None
+    if where is None:
+        beside = Path(contract.path).parent if getattr(contract, "path", None) else Path(".")
+        for candidate in ([beside / f"DESIGN-{capability}.md"] if capability else []) + \
+                [beside / "DESIGN.md"]:
+            if candidate.is_file():
+                where = candidate
+                break
+
+    # A DECLARED record that cannot be read blocks whether or not it was
+    # required — D22, and the same rule adapters and Project Context already
+    # follow. Something in this project points at it.
+    if record_path and not Path(record_path).is_file():
+        return ComponentResult(
+            name="design",
+            state=UNVERIFIABLE,
+            required=True,
+            findings=(f"a design record was named at {record_path} and there is no file there",),
+        )
+
+    must = required or (declared is not None and design_record.required_for(declared))
+    if declared == design_record.TRIVIAL and not required:
+        return ComponentResult(
+            name="design", state=NOT_REQUIRED, required=False, blocking=False,
+            notes=("the caller declared this change TRIVIAL — reversible, local, and promising "
+                   "nothing new. That declaration is recorded here rather than checked: Core "
+                   "cannot know which of a project's changes are material",))
+    if where is None:
+        if not must:
+            return ComponentResult(
+                name="design", state=NOT_REQUIRED, required=False, blocking=False,
+                notes=("no design record, and none required: the project does not declare "
+                       "`requires.design` and no change class was declared",))
+        return ComponentResult(
+            name="design", state=NOT_PRESENT, required=True,
+            findings=(f"this change is declared {declared or 'required by the contract'} and no "
+                      f"design record exists. Implementation is not authorised by this report: "
+                      f"the alternatives, the failure modes and the oracles are what a material "
+                      f"change states before it mutates anything",))
+
+    record = design_record.read(where)
+    problems = record.problems(mutation_begins_at=mutation_begins_at,
+                               repository=Path(where).parent)
+    chosen = record.selected.name if record.selected else ""
+    notes = [f"design record: {where}"]
+    if chosen:
+        notes.append(f"selected: {chosen}")
+        notes.append(f"{len(record.rejected)} alternative(s) rejected, "
+                     f"{len(record.failure_modes)} failure mode(s) stated, "
+                     f"{len(record.oracles)} oracle(s) frozen")
+    if problems:
+        return ComponentResult(name="design", state=UNVERIFIABLE, required=bool(must),
+                               findings=tuple(problems), notes=tuple(notes))
+    return ComponentResult(name="design", state=VERIFIED, required=bool(must),
+                           notes=tuple(notes))
+
+
 def _update_component(
     contract: ProjectContract, release_index: str | Path | None
 ) -> ComponentResult:
@@ -652,6 +736,9 @@ def open_capability(
     proposed_release: object | None = None,
     at_capability_boundary: bool | None = None,
     home: str | Path | None = None,
+    change_class: str | None = None,
+    design: str | Path | None = None,
+    mutation_begins_at: str = "",
 ) -> ReadinessReport:
     """Whether a governed capability may open against this project, and why not.
 
@@ -682,6 +769,8 @@ def open_capability(
         _adapter_component(contract, home),
         _context_component(contract, requirements["project_context"]),
         _capability_component(contract, capability),
+        _design_component(contract, capability, change_class, requirements["design"],
+                          design, mutation_begins_at),
         _update_component(contract, release_index),
     ]
 
@@ -749,6 +838,15 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--release-index", help="path to a release index, to report availability")
     parser.add_argument("--home", help="override the home directory adapters resolve against")
     parser.add_argument("--json", action="store_true", help="emit the report as JSON")
+    parser.add_argument("--change-class", default=None,
+                        help="TRIVIAL, ROUTINE or MATERIAL — what this capability is about to "
+                             "change. Scales what a design record must state; the caller "
+                             "declares it because only the caller knows")
+    parser.add_argument("--design", default=None,
+                        help="path to the frozen design record, if it is not beside the contract")
+    parser.add_argument("--mutation-begins-at", default="",
+                        help="the revision at which this capability first mutated anything, so "
+                             "a design frozen after it can be refused")
     args = parser.parse_args(argv)
 
     report = open_capability(
@@ -756,6 +854,9 @@ def _cli(argv: list[str]) -> int:
         capability=args.capability,
         release_index=args.release_index,
         home=args.home,
+        change_class=args.change_class,
+        design=args.design,
+        mutation_begins_at=args.mutation_begins_at,
     )
     print(json.dumps(report.as_dict(), indent=2) if args.json else report.render())
     return 0 if report.ready else 1

@@ -318,6 +318,143 @@ def test_a_private_project_does_not_inherit_publication_ceremony():
     assert set(publication_history.UNIVERSAL_OBLIGATIONS) <= set(undeclared)
 
 
+# --- 17. a material change begins with a design, or it does not begin ----------------
+
+
+def _designed_project(root: Path, *, design: bool, capability: str = "C1") -> Path:
+    """A project at a capability boundary, with or without a frozen design."""
+    subprocess.run(["git", "-C", str(root), "init", "--quiet", "--initial-branch", "main"],
+                   check=True, capture_output=True, timeout=120)
+    for key, value in (("user.name", "T"), ("user.email", "t@e.invalid"),
+                       ("commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(root), "config", key, value], check=True,
+                       capture_output=True, timeout=120)
+    (root / "seed.txt").write_text("seed")
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "seed"], check=True,
+                   capture_output=True, timeout=120)
+    base = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True,
+                          text=True, check=True, timeout=60).stdout.strip()
+    (root / "PROJECT.yaml").write_text(
+        f'project:\n  name: "designed"\n  publication_intent: "internal"\n'
+        f'pack:\n  root_path: "{ROOT}"\n  version_adopted: "2.3.0"\n'
+        f'  state_adopted: "IN_PROGRESS"\n  adopted_at: "2026-09-04"\n'
+        f'  adoption_boundary: "at a capability boundary"\n'
+        f'capabilities:\n  - id: "{capability}"\nadapters: []\n', encoding="utf-8")
+    if design:
+        (root / f"DESIGN-{capability}.md").write_text(
+            f"# DESIGN — {capability}\n\n"
+            f"**Change class:** MATERIAL\n**Base revision:** {base}\n**Frozen:** yes\n\n"
+            "## The mechanism\n\nthe store answers a read with a value nobody wrote\n\n"
+            "## Designs considered\n\n"
+            "| # | Design | Verdict | Why |\n|---|---|---|---|\n"
+            "| 1 | lock the whole store | REJECTED | it serialises every reader |\n"
+            "| 2 | version each entry | SELECTED | the readers stay parallel |\n\n"
+            "## Failure modes of the selected design\n\n"
+            "| # | Failure mode | What keeps it from being silent |\n|---|---|---|\n"
+            "| 1 | a version that wraps | the counter is checked at the boundary |\n\n"
+            "## Authority boundaries\n\nit reports; it weakens no HITL row\n\n"
+            "## Oracles, frozen before implementation\n\n"
+            "| ID | Kind | The property it settles | Selector |\n|---|---|---|---|\n"
+            "| O1 | ACCEPTANCE | a versioned read never sees a torn value | t_read |\n"
+            "| O2 | NEGATIVE | an unversioned write is refused | t_write |\n"
+            "| O3 | MUTATION | removing the check fails O1 | mutants |\n",
+            encoding="utf-8")
+    return base
+
+
+def test_a_material_change_reaches_authorised_only_through_a_frozen_design(tmp_path):
+    """The sequence, end to end and in order:
+
+        material change → design gate → design selected → oracles frozen
+        → implementation authorised
+
+    and the other direction, which is the one that matters:
+
+        material change → immediate implementation, no design
+
+    cannot silently close. It does not merely warn; the component that answers
+    at the open is `NOT_PRESENT`, required, blocking, and named in the report's
+    own list of what stops it.
+    """
+    import capability_open
+
+    # (a) THE WRONG ORDER. Nothing about this project is malformed — it is a
+    #     perfectly good project whose coordinator started typing.
+    straight = tmp_path / "straight-to-code"
+    straight.mkdir()
+    _designed_project(straight, design=False)
+    report = capability_open.open_capability(straight / "PROJECT.yaml", capability="C1",
+                                             change_class="MATERIAL")
+    gate = report.component("design")
+    assert gate.state == capability_open.NOT_PRESENT
+    assert gate.required and gate.blocking
+    assert gate in report.blocking, "the design gate does not stop the open it answers at"
+    assert not report.ready
+    assert any("not authorised" in finding for finding in gate.findings)
+
+    # (b) THE RIGHT ORDER, and each step separately visible in the report.
+    designed = tmp_path / "designed-first"
+    designed.mkdir()
+    base = _designed_project(designed, design=True)
+    report = capability_open.open_capability(designed / "PROJECT.yaml", capability="C1",
+                                             change_class="MATERIAL",
+                                             mutation_begins_at="")
+    gate = report.component("design")
+    assert gate.state == capability_open.VERIFIED, gate.findings
+    assert gate.satisfied and gate not in report.blocking
+    assert any("selected: version each entry" in note for note in gate.notes), gate.notes
+    assert any("oracle(s) frozen" in note for note in gate.notes), gate.notes
+
+    # (c) AND IT IS THE ORDER, not the paperwork. The same complete record,
+    #     against a mutation that already happened before it was frozen.
+    (designed / "implemented.txt").write_text("the work")
+    subprocess.run(["git", "-C", str(designed), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(designed), "commit", "-qm", "work"], check=True,
+                   capture_output=True, timeout=120)
+    backdated = capability_open.open_capability(
+        designed / "PROJECT.yaml", capability="C1", change_class="MATERIAL",
+        mutation_begins_at=base)
+    late = backdated.component("design")
+    assert late.state == capability_open.UNVERIFIABLE, late.notes
+    assert any("already contains the work" in f for f in late.findings), late.findings
+
+
+def test_the_design_decision_survives_the_process_that_made_it(tmp_path):
+    """Cold reconstruction. A design nobody can recover after the session that
+    made it is a decision that has to be made again — which is the loop this
+    exists to break."""
+    root = tmp_path / "cold"
+    root.mkdir()
+    _designed_project(root, design=True)
+    _save(root, capability="C1 — the capability under rehearsal",
+          actionable=("implement the selected design",),
+          evidence={"design": "DESIGN-C1.md — version each entry; 1 rejected; 3 oracles frozen"})
+
+    script = (
+        "import json,sys;sys.path.insert(0,sys.argv[1]);"
+        "import design_record;r=design_record.read(sys.argv[2]);"
+        "print(json.dumps({'class':r.change_class,'selected':r.selected.name,"
+        "'why':r.selected.why,'rejected':[c.name for c in r.rejected],"
+        "'modes':r.failure_modes,'oracles':[o.ident for o in r.oracles],"
+        "'problems':r.problems(repository=sys.argv[3])}))")
+    out = subprocess.run([sys.executable, "-c", script, str(ROOT / "tools"),
+                          str(root / "DESIGN-C1.md"), str(root)],
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr
+    seen = json.loads(out.stdout)
+    assert seen["class"] == "MATERIAL"
+    assert seen["selected"] == "version each entry"
+    assert seen["why"] == "the readers stay parallel", "the rationale did not survive"
+    assert seen["rejected"] == ["lock the whole store"], "the alternative did not survive"
+    assert seen["modes"] == ["a version that wraps"]
+    assert seen["oracles"] == ["O1", "O2", "O3"]
+    assert seen["problems"] == []
+    #: and the record points at it, so a reader arriving cold finds it at all
+    assert "DESIGN-C1.md" in continuation.load(root / "CONTINUATION.json").evidence["design"]
+    _renders(root)
+
+
 # --- the property the whole file exists for ------------------------------------------
 
 
