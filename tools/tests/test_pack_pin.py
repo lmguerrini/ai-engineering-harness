@@ -16,6 +16,7 @@ after the fact.
 
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -410,3 +411,69 @@ def test_writing_the_digest_leaves_exactly_one_spelling_behind(pack):
     rewritten = json.loads((pack / pack_pin.MANIFEST_NAME).read_text())
     assert pack_pin.LEGACY_COUNT_KEY not in rewritten
     assert rewritten[pack_pin.DIGEST_COUNT_KEY] == pack_pin.tree_digest(pack)[1]
+
+
+def test_a_copy_that_is_not_a_checkout_cannot_be_decided_rather_than_failed(tmp_path):
+    """**Found by unpacking the release into a clean room and adopting it.**
+
+    The digest is defined over the TRACKED tree, so outside a checkout there is
+    no way to know which files belong to the release. A copy delivered as an
+    archive, or vendored into another repository, reported `PIN DOES NOT
+    VERIFY` — the same sentence a tampered pack reports — and a consumer was
+    left choosing between alarm and learning to ignore the check.
+
+    *Cannot be decided here* and *decided, and wrong* are different answers.
+    """
+    root = Path(__file__).resolve().parents[2]
+    archive = tmp_path / "vendored"
+    archive.mkdir()
+    tar = subprocess.run(["git", "archive", "--format=tar", "HEAD"], cwd=root,
+                         capture_output=True, timeout=600)
+    assert tar.returncode == 0
+    subprocess.run(["tar", "-x", "-f", "-", "-C", str(archive)], input=tar.stdout, check=True,
+                   timeout=600)
+    assert not (archive / ".git").exists()
+
+    manifest = json.loads((archive / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    problems = pack_pin.verify_pin(
+        archive, expect_version=manifest["version"],
+        expect_digest=manifest["tree_digest_sha256"], expect_state=manifest["state"])
+    assert problems, "an unverifiable copy reported nothing at all"
+    assert any(p.startswith(pack_pin.UNESTABLISHED) for p in problems), problems
+    assert not any("is not the pinned pack" in p for p in problems), (
+        "a copy that could not be checked was reported as one that failed the check")
+
+
+def test_a_real_mismatch_is_still_reported_as_one(tmp_path):
+    """The other half. If *could not be decided* swallowed *decided and wrong*,
+    the repair above would have turned the identity check off."""
+    root = Path(__file__).resolve().parents[2]
+    problems = pack_pin.verify_pin(root, expect_version="2.3.0",
+                                   expect_digest="0" * 64, expect_state="IN_PROGRESS")
+    assert any("does not match" in p or "pinned digest" in p for p in problems), problems
+    assert not any(p.startswith(pack_pin.UNESTABLISHED) for p in problems), problems
+
+
+def test_the_projection_shows_an_undecidable_pin_as_unknown_and_not_as_a_defect(tmp_path):
+    """A view that renders *could not be checked* in the colour of *checked and
+    wrong* has decided something the checker declined to."""
+    import projection
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "PROJECT.yaml").write_text(
+        'project:\n  name: "p"\n  publication_intent: "internal"\n'
+        'pack:\n  root_path: "%s"\n  version_adopted: "2.3.0"\n'
+        '  sha_adopted: "%s"\n  tree_digest_sha256: "%s"\n  state_adopted: "IN_PROGRESS"\n'
+        '  adopted_at: "2026-09-04"\n'
+        '  adoption_boundary: "at a capability boundary"\nadapters: []\n'
+        % (tmp_path / "not-a-checkout", "a" * 40, "b" * 64))
+    (tmp_path / "not-a-checkout").mkdir()
+    (tmp_path / "not-a-checkout" / "PACK_MANIFEST.json").write_text(json.dumps({
+        "version": "2.3.0", "state": "IN_PROGRESS", "tree_digest_sha256": "b" * 64,
+        "digest_algorithm": "sha256-framed-v1", "digest_file_count": 1,
+        "tests": {"passed": 1}}))
+    view = projection.project(project)
+    pin = next(l for panel in view.panels for l in panel.rows() if l.label == "pin")
+    assert pin.tone == projection.Tone.UNKNOWN, f"{pin.tone}: {pin.text[:90]}"
+    assert "PIN DOES NOT VERIFY" not in view.render()

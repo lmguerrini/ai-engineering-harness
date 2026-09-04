@@ -323,8 +323,16 @@ def _contract_panel(contract_path: Path) -> tuple[Panel, object | None]:
                 expect_sha=pack.get("sha_adopted"), expect_digest=pack.get("tree_digest_sha256"),
                 expect_state=pack.get("state_adopted"),
             )
-            panel.lines.append("pin verifies" if not problems
-                               else f"PIN DOES NOT VERIFY: {problems[0]}")
+            if not problems:
+                panel.say("pin verifies", Tone.GOOD, label="pin")
+            elif any(p.startswith(pack_pin.UNESTABLISHED) for p in problems):
+                # Could not be checked is not the same as checked and wrong, and
+                # a projection that renders the first as the second is the fail-
+                # closed-but-mislabelled shape this pack refuses elsewhere.
+                panel.say(next(p for p in problems if p.startswith(pack_pin.UNESTABLISHED)),
+                          Tone.UNKNOWN, label="pin")
+            else:
+                panel.say(f"PIN DOES NOT VERIFY: {problems[0]}", Tone.BAD, label="pin")
         except Exception as exc:
             panel.unknown.append(f"the pin could not be checked: {exc}")
     intent = getattr(contract, "publication_intent", None)

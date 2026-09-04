@@ -244,6 +244,13 @@ def _manifest_problems(root: Path, manifest: dict) -> list[str]:
     return problems
 
 
+#: The prefix of a problem that means *this check could not be performed*,
+#: rather than *this check failed*. Named rather than matched as prose, because
+#: a caller distinguishing the two by reading a sentence is a caller that
+#: stops distinguishing them the day the sentence is reworded.
+UNESTABLISHED = "IDENTITY COULD NOT BE ESTABLISHED"
+
+
 def verify_pin(
     root: str | Path,
     *,
@@ -274,7 +281,21 @@ def verify_pin(
     try:
         actual_digest, actual_count = tree_digest(root)
     except (OSError, subprocess.CalledProcessError) as exc:
-        return problems + [f"the tracked tree could not be digested: {exc}"]
+        # NOT A MISMATCH. The digest is defined over the TRACKED tree, so
+        # outside a checkout there is no way to know which files belong to the
+        # release — and the answer to *is this the pinned pack* is that it
+        # cannot be established here, which is a different sentence from *this
+        # is not the pinned pack*.
+        #
+        # It read as the second. A copy delivered as an archive or vendored
+        # into another repository reported PIN DOES NOT VERIFY, which is what a
+        # tampered pack reports, so a consumer had to choose between alarm and
+        # learning to ignore the check. Found by unpacking the release into a
+        # clean room and adopting it the way a consumer would.
+        return problems + [
+            f"{UNESTABLISHED}: the tracked tree could not be digested here, so whether this "
+            f"copy is the pinned pack cannot be decided. Identity is defined over the tracked "
+            f"tree and is checkable in a checkout of the release ({exc})"]
 
     if actual_digest != manifest.get("tree_digest_sha256"):
         problems.append(
