@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "5de364a2c33df8a1b4cb312554712e86b9af23d44b53b01020534dce0e0e9be4",
+  "tree_digest_sha256": "ca9610c5f99d248c7b2b112110991d29687f32337455989c0f32035f4726919b",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 2019
+    "passed": 2020
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -65,7 +65,8 @@
     "REPOSITORY ACTIVITY READS 366 DAYS BY DEFAULT, NOT A COMPLETE HISTORY. The window is a render-cost decision, `window_days=0` reads all of it, and the view names the window it read. A multi-year calendar is an Evolution Candidate.",
     "NEITHER HISTORY IS EVIDENCE OF QUALITY, AND ONLY A TEST KEEPS IT THAT WAY. A commit count measures that commits happened. No productivity, velocity, developer or good-day figure is derived anywhere, and the guard that holds this is a vocabulary refusal over the rendered page rather than anything structural: a future contributor who wanted such a figure would have to delete a test to get it, which is the point.",
     "THE DESIGN GATE CANNOT STOP A CALLER WHO DECLARES A MATERIAL CHANGE TRIVIAL. The change class is an input because Core cannot know which of a project's changes are material, and `TRIVIAL` resolves to NOT_REQUIRED. The declaration is recorded in the readiness report, so it is a visible claim an auditor can dispute rather than a silent omission — but it is detection by disclosure, not prevention, and D25 says so.",
-    "THE DESIGN GATE CHECKS THAT A DESIGN WAS MADE, NEVER THAT IT WAS GOOD. It reads a record and answers whether that record states alternatives, a rejection with a reason, failure modes, authority boundaries and frozen oracles. Whether the selected design is the right one is product meaning, which Core does not adjudicate. A well-formed record of a bad design verifies."
+    "THE DESIGN GATE CHECKS THAT A DESIGN WAS MADE, NEVER THAT IT WAS GOOD. It reads a record and answers whether that record states alternatives, a rejection with a reason, failure modes, authority boundaries and frozen oracles. Whether the selected design is the right one is product meaning, which Core does not adjudicate. A well-formed record of a bad design verifies.",
+    "PERSISTENCE ACROSS A COLD BROWSER RESTART IS NOT VERIFIED ON THIS HOST. A preference surviving a reload is verified in the browser; surviving a NEW BROWSER PROCESS is not, because headless Chrome hangs on this machine whenever `--user-data-dir` names a fresh profile, and the alternative — writing into the operator's own default profile — is a side effect on their browser. What is established instead: the page holds no state outside `localStorage`, re-reads it on every load, and falls back to the default for a stored value that is corrupt, unknown or unusable. Storage outliving a process is the browser's guarantee, not this page's, and this release does not claim to have tested it."
   ],
   "deferred": {
     "RP2.3 DEFER_WITH_TRIGGER": "see docs/RP2.3-CAPABILITY-MAP.md for each item and the observation that reopens it: the full routing-evidence schema; the clean-clone reproducibility gate; a commit-subject length ceiling; publication readiness beyond the profile declaration; a write-ceiling runtime for delegation scope.",

@@ -1645,6 +1645,21 @@ def test_no_container_paints_the_rule_across_everything_its_children_miss():
                 f"children do not cover")
     assert "--seam:0 0 0 1px var(--rule)" in projection._STYLE, "the hairline token is gone"
 
+    # AND EVERY CONVERTED CONTAINER STILL DRAWS ITS SEAM. Moving a grid to the
+    # ground without giving its children the hairline does not leave a fainter
+    # divider, it leaves none — and a mutant that emptied `main>*` survived the
+    # first version of this test, which asked only that the token existed.
+    for name, sheet in (("projection", projection._STYLE), ("console", _console_style())):
+        flat = sheet.replace(" ", "")
+        containers = re.findall(r"\n([.\w-]+)\{[^{}]*display:grid[^{}]*"
+                                r"background:var\(--ground\)[^{}]*\}",
+                                sheet.replace("\n", "\n"))
+        for selector in set(containers):
+            assert f"{selector}>*{{box-shadow:var(--seam)}}".replace(" ", "") in flat, (
+                f"{name}: `{selector}` was moved to the ground and its children were never "
+                f"given the seam, so it has no dividers at all")
+        assert containers or name == "projection", f"{name}: no container was converted"
+
 
 def _console_style() -> str:
     import console
@@ -1680,14 +1695,30 @@ def test_the_lenses_differ_in_rhythm_and_not_only_in_hue():
         shapes[lens] = found
         assert block
 
-    moved = [lens for lens, found in shapes.items() if found]
-    assert len(moved) >= 3, (
-        f"only {moved} move the substrate at all; the rest are recolours: {shapes}")
-    #: and no two of the ones that move it move it identically
+    # WHAT EACH LENS RESOLVES TO, against what the default resolves to. Two
+    # earlier versions of this counted declarations instead: one asked for
+    # three lenses to declare anything, and one asked each to declare two
+    # tokens. A mutant that renamed Terminal's `--lh` and `--pad-y` survived
+    # both, because the block still *declared* two other tokens — one of which
+    # was the default's own value.
+    base = {}
+    root = style[style.index(":root{"):]
+    root = root[:root.index("}")]
+    for token in substrate:
+        match = re.search(rf"{re.escape(token)}:\s*([^;}}]+)", root)
+        if match:
+            base[token] = match.group(1).strip()
+    assert len(base) >= 4, f"the default declares no substrate to differ from: {base}"
+
     seen: dict = {}
     for lens, found in shapes.items():
-        if not found:
-            continue
-        key = tuple(sorted(found.items()))
-        assert key not in seen, f"{lens} and {seen[key]} have the same rhythm as well as..."
+        differs = {k: v for k, v in found.items() if base.get(k) != v}
+        assert len(differs) >= 2, (
+            f"{lens} resolves to the default's rhythm except for {sorted(differs)}: that is a "
+            f"recolour, not a presentation identity. It declares {sorted(found)} and the "
+            f"default is {base}")
+        key = tuple(sorted(differs.items()))
+        assert key not in seen, (
+            f"{lens} and {seen[key]} have identical rhythm as well as identical structure")
         seen[key] = lens
+    assert len(seen) == len(shapes) >= 4, f"only {sorted(shapes)} are named lenses"

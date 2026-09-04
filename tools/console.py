@@ -549,6 +549,7 @@ justify-content:center;line-height:1.05;border-radius:1px}
 .mcell.pad{background:none!important}
 .mcell b{font-size:var(--fs-micro);font-weight:700;opacity:.75}
 .mcell em{font-size:var(--fs-micro);font-weight:700}
+.daycols>*{box-shadow:var(--seam)}
 .daycols{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(190px,1fr);
 gap:1px;overflow-x:auto;background:var(--ground);padding:1px 0}
 .daycol{background:var(--panel);padding:8px var(--pad-x) 10px;min-width:0;

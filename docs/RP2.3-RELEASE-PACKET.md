@@ -242,8 +242,15 @@ neither. Both are read-only, both are offline, and both refuse rather than
 guess.
 
 **Repository activity — when the code actually changed.** Local commits by UTC
-day, drawn as a contribution calendar at year, month, week and day scales, or
-between two dates a reader picks — either bound on its own is an open end,
+day, and **each scale is a different picture, because each is a different
+question**: a year as a contribution calendar, a month as a month, a week as
+seven day-columns carrying that day's events beside its counts, a day as
+twenty-four hourly bars read from each commit's own instant. Filtering one grid
+four ways answers the first question four times. A custom range picks its
+aggregation from how long it is and the page says which one is in force. All of
+it is rendered from one reading, server-side, so the page still arranges and
+never computes. Drawn at year, month, week and day scales, or between two dates
+a reader picks — either bound on its own is an open end,
 choosing a scale clears them, and the page says in words which window is in
 force. Both histories narrow to the same window together, because two
 histories on one page that disagree about the period are two pages. The
@@ -288,6 +295,40 @@ that changes shape when you open it somewhere else is not a history.
 happened. There is no productivity figure, no velocity, no developer
 comparison, no good day and no bad day, and a test refuses the vocabulary that
 would introduce one.
+
+## A material change begins with a design, not with a repair loop
+
+The founder asked one question of this candidate: does it *ship and enforce*
+pre-implementation design falsification for a project like Consumer-B, or was
+that only how this session happened to be run? Answered mechanically against
+the tree, the answer was **DOCUMENTED_ONLY** — `SCOPE_FROZEN` was a lifecycle
+point named in two rows of the HITL matrix and enforced by nothing, the repair
+discipline required an oracle before a fix but only once a defect existed, and
+no artifact, tool, test or reconstruction carried a design decision at all.
+
+It is enforced now, and it is composed rather than added. `tools/design_record.py`
+reads a design frozen before the implementation it governs; `capability_open`
+— already the one deterministic path run *before a governed capability opens* —
+reports it as one more component. A `MATERIAL` change states at least two
+candidate designs, at least one rejected with a reason, exactly one selected,
+the failure modes of that choice, its authority boundaries, and acceptance,
+negative and mutation oracles, all named before there is anything for them to
+judge. `ROUTINE` states the mechanism and its oracles. `TRIVIAL` states
+nothing, because a rule that demands a design document for a typo is a rule
+that gets routed around.
+
+Freezing is bound to a revision: the base must resolve, be an ancestor of
+`HEAD`, and be a strict ancestor of where mutation began. **It reports and
+authorises nothing** — it adds no HITL row, removes none, weakens none, and has
+no opinion about whether the selected design is good, which is product meaning
+and not Core's to adjudicate.
+
+The mechanism's own design was falsified before it was written, against four
+rejected alternatives, and is the first record it was run on:
+`rp2.3-session/DESIGN-C31-design-gate.md`. **The bound is stated rather than
+dressed up:** a caller who declares a material change `TRIVIAL` gets no record
+and no block. The declaration is visible in the readiness report, which makes
+it a claim somebody can dispute — not prevention, and D25 says so.
 
 ## Evolution Candidates, deferred out of this release
 

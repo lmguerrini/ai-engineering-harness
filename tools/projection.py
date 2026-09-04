@@ -1208,7 +1208,7 @@ _STYLE = """
 /* FUTURISTIC — instrumentation. Hairlines, wide labels and a lit edge on the
    panel head: an instrument panel, not a science-fiction poster. */
 :root[data-theme="futuristic"]{
-  --lh:1.5; --pad-y:3px; --gap:1px;
+  --lh:1.56; --pad-y:3px; --pad-x:19px; --fs-micro:9px; --gap:1px;
   --seam:0 0 0 1px var(--rule);
 }
 :root[data-theme="futuristic"] .head{border-bottom:1px solid var(--rule-strong)}
@@ -1222,7 +1222,7 @@ position:absolute;left:0;right:0;top:0}
 /* MATRIX — a phosphor terminal in a dark room. Darkness dominates the AREA;
    phosphor green dominates the INFORMATION. */
 :root[data-theme="matrix"]{
-  --lh:1.48; --pad-y:2px; --gap:1px;
+  --lh:1.45; --pad-y:1px; --pad-x:14px; --gap:1px;
   --seam:0 0 0 1px var(--rule);
 }
 :root[data-theme="matrix"] .head{border-bottom:1px solid var(--rule-strong)}

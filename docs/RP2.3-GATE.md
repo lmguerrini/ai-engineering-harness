@@ -2789,3 +2789,78 @@ property, and **87 of 87 interactive properties hold**, nine of them new. The
 pairing was proved rather than assumed: dropping the upper bound from the
 delivered page's own script leaves the source test passing and fails exactly
 one browser property — *the timeline narrows to the same range*.
+
+
+## The architectural question the founder put last, and the answer
+
+*Does this release ship and enforce pre-implementation design falsification, or
+was that only how this session happened to be run?*
+
+Answered against the tree rather than against the session. `SCOPE_FROZEN` was a
+lifecycle point named in two rows of `policy/hitl-matrix.md` and enforced by
+nothing. `skills/core/oracle-discipline.md` described freezing an oracle's
+domain at that point. `skills/core/repair.md` required an invariant, a
+discriminating oracle and a mutation check before a fix — the second half of
+the loop, once a defect already exists. No template asked for a design, no
+artifact recorded one, no tool read one, no test detected its absence, and cold
+reconstruction preserved no rationale. **DOCUMENTED_ONLY**, and the founder
+called that release-blocking.
+
+Four architectures were considered and rejected in writing before anything was
+implemented — an intercepting gate process (this release ships nothing that
+runs), a template and a skill (that is the state being replaced), a check in the
+commit gate (wrong domain: the gate's question is the message's vocabulary, and
+a capability is many commits), and a new blocking lifecycle state (a second
+authority). The selected one composes a `design` component into
+`capability_open`, which is already the deterministic path run before a
+governed capability opens.
+
+**The record of that reasoning is itself the first thing the mechanism was run
+on**, at `rp2.3-session/DESIGN-C31-design-gate.md`, and a test asserts it
+satisfies the rule it introduced — because a rule nobody has ever met is a rule
+nobody will meet.
+
+**Fifteen mutants over the new guards, fifteen killed**, against a green
+baseline in the real checkout. The first attempt ran them in a disposable copy
+of `tools/`, whose baseline was already red because the copy is not a git
+checkout and the readiness path asks git real questions; every verdict from it
+was a comparison against a broken baseline and no evidence at all. That is the
+same lesson as the smoke run's stage-2 refusal, arriving from the other side.
+
+Two rehearsals hold the property end to end: a material change reaches an
+authorised report only through a frozen design, and a material change with no
+design reports `NOT_PRESENT`, required and blocking, named in the report's own
+list of what stops it. A third proves the decision and its rationale survive a
+fresh interpreter reading only what is on disk.
+
+**What it does not do**, recorded rather than glossed: a caller who declares a
+material change `TRIVIAL` gets no record and no block. The class is an input
+because Core cannot know which of a project's changes are material. The
+declaration lands in the readiness report, which makes it disputable — it is
+detection by disclosure, and not prevention.
+
+## The adversarial pass over the finished product
+
+Fourteen mutants across the visual system, the temporal representations and the
+two histories, against a green baseline: matrix panels painted mid-green, matrix
+semantics collapsed into the accent, matrix type as dark as its ground, a grid
+painting the rule behind everything its children miss, the hairline seam
+dropped, Terminal stripped of its own rhythm, the month view replaced by the
+year view, the week view replaced by the year view, month cells stripped of
+their counts, every commit placed at midnight, a represented commit added to the
+local total, a linked worktree counted twice, a derived deadline reading as
+recorded, and an undatable stamp given a date. **Fourteen killed, none
+survived** — but only on the third attempt, and the two survivors of the second
+were both real:
+
+*   **The seam guard asked only that the token existed.** Emptying `main>*`
+    left every converted container with no dividers at all and nothing noticed.
+    It now checks that every grid moved to the ground gives its children the
+    seam — and that immediately found a second gap, the day columns, which had
+    none.
+*   **The rhythm guard counted declarations instead of differences.** Renaming
+    two of Terminal's substrate tokens left it declaring two others, one of
+    which was the default's own value. It now compares each lens's *resolved*
+    substrate against the default's and requires two real differences — which
+    found that Futuristic and Matrix were still very close to recolours, and
+    both were given rhythm of their own.

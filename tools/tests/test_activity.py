@@ -571,3 +571,45 @@ def test_aggregating_repositories_aggregates_their_hours_too(repo, tmp_path):
     assert day.local == 3
     assert sum(day.hours) == day.local
     assert day.hours[9] == 2 and day.hours[21] == 1
+
+
+def test_a_derived_event_is_marked_derived_and_a_recorded_one_is_not(tmp_path):
+    """`deadline passed` is true, determined, and written down by nothing: it is
+    arithmetic over two durable fields and the clock. A timeline that mixes it
+    with events an artifact actually dates, without saying which is which, is
+    the misleading part — an independent reader said so.
+
+    A mutant emptying `DERIVED` survived the first version of this file: the
+    only check on the distinction lived in a browser script, so the suite could
+    not see a release that stopped making it.
+    """
+    root = tmp_path / "late"
+    root.mkdir()
+    record = continuation.ContinuationRecord(
+        capability="C1",
+        updated_at=continuation.now(),
+        waits=(continuation.Wait(job_id="survey", kind=continuation.WaitKind.HUMAN,
+                                 expects="a decision", not_beyond_seconds=60,
+                                 declared_at="2020-01-01T00:00:00+00:00"),),
+    )
+    continuation.save(record, root / "CONTINUATION.json")
+
+    events = activity.pack_events(root)
+    kinds = {event.kind for event in events}
+    assert "deadline passed" in kinds, "the fixture produced no derived event at all"
+    assert "wait declared" in kinds, "the fixture produced no recorded event at all"
+
+    for event in events:
+        if not event.when:
+            continue
+        expected = "derived" if event.kind in activity.DERIVED else "recorded"
+        assert event.basis == expected, (
+            f"{event.kind!r} is {event.basis!r} and belongs to {expected}")
+        assert event.source, f"{event.kind!r} names no artifact"
+
+    assert activity.DERIVED, "nothing is marked derived any more, so the distinction is gone"
+    assert activity.DERIVED <= set(activity.EVIDENCED), (
+        "a derived class is not in the evidence map, so nothing says where it comes from")
+    #: and the two sets are not the same set — if every class were derived the
+    #: assertions above would hold while the distinction meant nothing.
+    assert set(activity.EVIDENCED) - activity.DERIVED
