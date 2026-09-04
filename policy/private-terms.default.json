@@ -2,7 +2,7 @@
   "policy_schema": 2,
   "description": "Default private-term set inherited by an ordinary governed project. A project EXTENDS this in PROJECT.yaml; it never replaces it. This is a default, never a universal hard-coded list: a vocabulary built for one project silently fails to protect another.",
   "applies_to": "outgoing commit messages, branch and tag names, author and committer identities, repository paths, and blob content",
-  "tiering_rationale": "Measured on a real project: four scan findings, zero true positives, one of which cost a history rebuild. `claude` matched Jean-Claude Martin in committed prose; `terra` matched Italian for 'ground'; `envelope` matched the ordinary English sense in a source comment. A rule that fires constantly on benign content does not merely annoy — it manufactures pressure to exempt whole directories, which is how a precise control becomes a hole. So bare common words apply where a person writes deliberately (commit messages, ref and tag names, identities, paths) and not to blob content, while distinctive multi-word terms apply everywhere. A worker name leaking in a commit message matters; matching it inside ordinary prose is noise.",
+  "tiering_rationale": "Measured on a real project: four scan findings, zero true positives, one of which cost a history rebuild. `claude` matched Jean-Claude Martin in committed prose; `terra` matched Italian for 'ground'; `envelope` matched the ordinary English sense in a source comment. A rule that fires constantly on benign content does not merely annoy \u2014 it manufactures pressure to exempt whole directories, which is how a precise control becomes a hole. So bare common words apply where a person writes deliberately (commit messages, ref and tag names, identities, paths) and not to blob content, while distinctive multi-word terms apply everywhere. A worker name leaking in a commit message matters; matching it inside ordinary prose is noise.",
   "terms": [
     "audit capsule",
     "audit session",
@@ -20,7 +20,6 @@
     "fencing token",
     "finding registry",
     "fresh-context audit",
-    "gpt-5",
     "hitl",
     "human-in-the-loop",
     "mlx",
@@ -59,12 +58,13 @@
     "terra"
   ],
   "patterns": [
-    "\\btask[ _-]?(?:id|uuid)\\b",
+    "\\b(?:blocking|non-blocking)[ _-]?event\\b",
+    "\\b(?:chat)?gpt[\\s._-]?\\d+(?:\\.\\d+)*(?:[-_][a-z0-9]+)*\\b",
     "\\bT\\d+\\.\\d+\\b",
+    "\\bauditor?[ _-]?(?:verdict|session)\\b",
     "\\bcapability[ _-]?\\d+\\b",
     "\\bfeat\\([a-z0-9]+-t\\d+\\)",
-    "\\bauditor?[ _-]?(?:verdict|session)\\b",
-    "\\b(?:blocking|non-blocking)[ _-]?event\\b"
+    "\\btask[ _-]?(?:id|uuid)\\b"
   ],
   "identity_patterns": [
     "\\b(?:part|phase|step|milestone|roadmap)[ _-]?\\d+\\b"
@@ -74,5 +74,6 @@
       "\\b[A-Z]{2,4}-\\d{1,4}\\b"
     ]
   },
-  "optional_patterns_rationale": "`\\b[A-Z]{2,4}-\\d{1,4}\\b` is intended to catch ticket identifiers such as PROJ-123. Compiled case-insensitively on an ordinary Python project it matches utf-8, SHA-256, post-2011 and nearly every entry in a lockfile: measured at 7 findings, 0 true positives, on one project's first six commits. It is opt-in via private_terms.optional_pattern_groups, and a project adopting it should first verify it against its own tracked tree — the step that turned a noisy rule into a working one when this project derived its own identifier patterns instead (0 false positives, 1 true positive: a branch named for a capability)."
+  "optional_patterns_rationale": "`\\b[A-Z]{2,4}-\\d{1,4}\\b` is intended to catch ticket identifiers such as PROJ-123. Compiled case-insensitively on an ordinary Python project it matches utf-8, SHA-256, post-2011 and nearly every entry in a lockfile: measured at 7 findings, 0 true positives, on one project's first six commits. It is opt-in via private_terms.optional_pattern_groups, and a project adopting it should first verify it against its own tracked tree \u2014 the step that turned a noisy rule into a working one when this project derived its own identifier patterns instead (0 false positives, 1 true positive: a branch named for a capability).",
+  "generation_pattern_rationale": "REPLACES THE LITERAL `gpt-5`, which aged the moment a new generation appeared: it matched `gpt-5.6-terra` and did not match `gpt-6-astra`, so the vocabulary silently stopped covering the models actually in use. A literal per slug means a release per slug, which is the failure this pattern exists to end. It sits in `patterns` rather than `identity_patterns` because that is the tier the literal was in, so coverage is generalised and not widened by tier. PRECISION IS THE CONSTRAINT, not an afterthought: it requires the vendor prefix AND a digit, so ordinary prose about the technology is untouched \u2014 `a GPT model`, `GPTs are useful`, `the ChatGPT subscription`, `Egypt-5`, `encrypt-5` and `gptcache` all scan clean, while `gpt-5`, `gpt-5.6-terra`, `gpt-6-astra`, `ChatGPT-5`, `GPT 6`, `gpt_6` and a synthetic `gpt-7.1-vega` are all caught. Measured against a corpus in `test_scan_vocabulary.py::test_the_generation_pattern_*`, which also asserts it covers everything the literal covered. WHAT IT DOES NOT COVER, deliberately: a bare codename with no vendor prefix. `terra` already demonstrated why \u2014 it matched Italian for `ground` on a real project, which is the measurement the whole tiering rationale rests on, and a bare codename is an ordinary word in some language. Such a name is covered where it appears with its prefix and is otherwise a literal a project adds to its own vocabulary."
 }

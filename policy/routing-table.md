@@ -1,11 +1,24 @@
-# Routing table — DERIVED VIEW, regenerated
+# Routing table — FAMILY-LEVEL PRIOR, derived, regenerated
 
-**Not a record.** Regenerated wholesale from `policy/observations.jsonl` at every
-capability boundary — the full log each time, never patched, never a rolling
-summary that overwrites adverse evidence. If this file and `observations.jsonl`
-disagree, the log wins and this file is due for regeneration.
+**Not a record, and from 2.4.0 not a qualification either.** Every grade below is
+keyed on `(family, task class)`, which means it describes a FAMILY and cannot
+answer about a configuration. Read it as **prior evidence: advisory, never a
+track record.** What answers about a configuration is
+`tools/qualification.py`, keyed on the nine evidence-relevant dimensions, and a
+model with no observations of its own is `unprobed` there however strong the
+family row here (`DECISIONS.md` D26).
 
-Regenerated 2026-09-03 at the RP2.3 evolution boundary from **41** observations.
+The distinction is not stylistic. Executed against this log before 2.4.0, a model
+that had never been dispatched returned `confirmed` at
+`blind_closure_audit_cross_vendor` on seven observations, none of which recorded
+any observed model at all.
+
+Regenerated wholesale from `policy/observations.jsonl` at every capability
+boundary — the full log each time, never patched, never a rolling summary that
+overwrites adverse evidence. If this file and `observations.jsonl` disagree, the
+log wins and this file is due for regeneration.
+
+Regenerated 2026-09-05 at the RP2.4 evolution boundary from **45** observations.
 The observation count,
 every grade and **every count in the evidence column** are compared against the
 log by `test_the_routing_table_grades_are_the_derived_ones` and
@@ -68,3 +81,16 @@ So this file is a **reading aid over a computation**, and the log remains the
 record. Where they disagree the log wins — and
 `test_the_routing_table_grades_are_the_derived_ones` fails when they do, which is
 what "checkable rather than promised" has to mean.
+
+## What this file may not be used for
+
+`tools/qualification.py` derives the same log at the configuration level and
+prints both tables side by side:
+
+    python3 tools/qualification.py
+
+A grade here **never** ranks a candidate, satisfies an eligibility test or breaks
+a tie in `tools/routing.py`. It is printed beside an `unprobed` answer so a
+coordinator is not left with nothing, and a prior that could rank would be the
+family bucket back under a new name — which is what two independent readings of
+the 2.4.0 design said, from opposite directions, before it was built.

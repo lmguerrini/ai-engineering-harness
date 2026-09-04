@@ -385,3 +385,113 @@ def test_the_staged_scan_reads_the_index_not_the_working_tree(repo):
 
     scanner = outgoing_scan.Scanner(TermSet.of(terms=["runtime pack"]))
     assert outgoing_scan.scan_staged(repo, scanner=scanner).clean
+
+
+# --- the vocabulary must not need a release per model generation --------------
+
+#: Slugs a scan MUST catch: those in use, plus ones no release has heard of.
+#: Written as a corpus rather than as today's names, because a test written
+#: against today's names ages exactly the way the literal it replaces aged.
+GENERATION_HITS = (
+    "gpt-5",
+    "gpt-5.6-terra",
+    "gpt-5.3-codex-spark",
+    "gpt-6-astra",
+    "gpt-6-astra-max",
+    "gpt-7",
+    "GPT-7.1-vega",
+    "gpt-8-nova-preview",
+    "gpt-11",
+    "gpt_6",
+    "GPT 6",
+    "ChatGPT-5",
+)
+
+#: Legitimate public prose a scan MUST leave alone. A rule that fires constantly
+#: on benign content manufactures pressure to exempt whole directories, which is
+#: how a precise control becomes a hole — the measured reason the tiering exists.
+GENERATION_MISSES = (
+    "the ChatGPT subscription covers this",
+    "a GPT model was used",
+    "GPT is a transformer architecture",
+    "GPTs are useful for summarisation",
+    "Egypt-5 was the working title",
+    "encrypt-5 rounds of the cipher",
+    "gptcache is a caching layer",
+    "the gpt directory holds the notes",
+    "budget-5 line item",
+    "chatgpt account settings",
+)
+
+
+def _default_terms():
+    import json
+    import pathlib
+
+    from commit_gate import TermSet
+
+    source = pathlib.Path(__file__).resolve().parent.parent.parent
+    raw = json.loads((source / "policy" / "private-terms.default.json").read_text())
+    return TermSet(
+        terms=tuple(raw["terms"]),
+        identity_terms=tuple(raw["identity_terms"]),
+        patterns=tuple(raw["patterns"]),
+        identity_patterns=tuple(raw["identity_patterns"]),
+    )
+
+
+@pytest.mark.parametrize("text", GENERATION_HITS)
+def test_the_generation_pattern_catches_a_slug_no_release_has_heard_of(text):
+    """Including on blob content: the literal it replaces was in the tier that
+    applies everywhere, so generalising it must not quietly demote it."""
+    offenders = _default_terms().offenders(text, content_surface=True)
+    assert offenders, f"{text!r} scans clean; the vocabulary has aged again"
+
+
+@pytest.mark.parametrize("text", GENERATION_MISSES)
+def test_the_generation_pattern_leaves_legitimate_public_prose_alone(text):
+    offenders = _default_terms().offenders(text, content_surface=True)
+    generation = [rule for rule in offenders if "gpt" in rule.lower()]
+    assert not generation, f"{text!r} fired {generation}; precision is the constraint"
+
+
+def test_the_generation_pattern_covers_everything_the_literal_covered():
+    """Deleting a rule is only safe if the replacement is a superset.
+
+    The literal `gpt-5` was word-boundary matched, so it fired on `gpt-5` and on
+    anything continuing with a non-word character. Every string it would have
+    matched must still be caught.
+    """
+    import re
+
+    literal = re.compile(r"(?<!\w)gpt\-5(?!\w)", re.IGNORECASE)
+    terms = _default_terms()
+    assert "gpt-5" not in terms.terms, "the literal is still declared; it was meant to be replaced"
+    for text in GENERATION_HITS + GENERATION_MISSES:
+        if literal.search(text):
+            assert terms.offenders(text, content_surface=True), (
+                f"the replaced literal matched {text!r} and the pattern does not: coverage lost"
+            )
+
+
+def test_a_new_generation_slug_needs_no_release(repo, tmp_path, pack_defaults):
+    """End to end through the real gate, on a slug invented for this test.
+
+    The whole claim of this change, run rather than reasoned about: a model
+    identifier no release has ever heard of is caught by the shipped default
+    vocabulary, with no edit to it.
+    """
+    (repo / "notes.txt").write_text(
+        "the run used gpt-9-unheardof at high effort\n", encoding="utf-8")
+    _git(repo, "add", "notes.txt")
+    _git(repo, "commit", "--quiet", "-m", "add a note")
+
+    contract = ProjectContract.load(_contract(tmp_path, repo), pack_root=pack_defaults)
+    scanner = outgoing_scan.Scanner(
+        TermSet.of(
+            contract.default_terms, contract.default_patterns,
+            contract.default_identity_terms, contract.default_identity_patterns,
+        )
+    )
+    report = outgoing_scan.scan_outgoing(repo, ref=_head(repo), baseline=None, scanner=scanner)
+    assert not report.clean, "a slug from a generation nobody has shipped scanned clean"
