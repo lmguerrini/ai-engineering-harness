@@ -1258,3 +1258,34 @@ def test_a_lens_is_a_stylesheet_and_never_a_reading(tmp_path, lens):
     assert body(plain).replace('<html lang="en">', "") == \
         body(themed).replace(f'<html lang="en" data-theme="{lens}">', ""), \
         f"the {lens} lens changed something other than the stylesheet"
+
+
+@pytest.mark.parametrize("state,expected,tone", [
+    ("QUALIFIED_AND_FROZEN", "may be pinned", projection.Tone.GOOD),
+    ("IN_PROGRESS", "NO — only QUALIFIED_AND_FROZEN", projection.Tone.WARN),
+    ("WITHDRAWN", "NO — only QUALIFIED_AND_FROZEN", projection.Tone.WARN),
+])
+def test_adoptability_is_stated_in_both_directions(tmp_path, state, expected, tone):
+    """**A mutant survived here.** Making the panel state adoptability only when
+    the answer is no changed nothing that any test could see, because the pack
+    under test is never frozen and the positive branch was therefore never
+    rendered by anything.
+
+    A reading that only exists in one of its two states is a reading a reader
+    cannot rely on: with a frozen pack in front of them they would see silence
+    where the release says *this may be adopted*, and silence is what an
+    unstated fact looks like.
+    """
+    import json as _json
+
+    root = tmp_path / "pack"
+    root.mkdir()
+    (root / "PACK_MANIFEST.json").write_text(_json.dumps({
+        "version": "2.3.0", "state": state, "tree_digest_sha256": "a" * 64,
+        "digest_algorithm": "sha256-framed-v1", "digest_file_count": 1,
+        "tests": {"passed": 1}}))
+    panel = projection._pack_panel(root)
+    said = next((l for l in panel.rows() if l.label == "adoptability"), None)
+    assert said is not None, "the panel does not state adoptability at all"
+    assert expected in said.text, said.text
+    assert said.tone == tone, f"{state} is toned {said.tone}"

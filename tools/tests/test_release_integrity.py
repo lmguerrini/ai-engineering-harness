@@ -821,68 +821,88 @@ def test_every_pointer_at_the_decision_layer_reaches_the_last_decision():
     )
 
 
+#: The count shapes no release document may restate, and the scan that finds
+#: them. Lifted out of the guard so the guard and the test that proves the guard
+#: can fail read the same code — a bound that reimplemented the pattern would
+#: pass while the guard used a different one.
+_RESTATED = re.compile(
+    r"\b\d+\s+(?:tool\s+)?modules\b"
+    r"|\bacross\s+\d+\s+modules\b"
+    r"|\b\d+\s+CLIs?\b"
+    r"|\b\d+\s+(?:passing\s+)?tests\b"
+    # AND THE THREE THE MATRIX AND THE POLICY FILES COMPUTE. A packet
+    # claiming sixty-three mechanisms beside a matrix holding ninety, and
+    # thirty-nine recurrence classes beside a policy file holding
+    # forty-seven, is the same defect wearing a different noun. Both were
+    # found by an outside reader, not by this guard.
+    r"|\b\d+\s+(?:verified\s+)?failure\s+mechanisms\b"
+    r"|\b\d+\s+(?:mandated\s+)?recurrence\s+classes\b"
+    r"|\b\d+\s+(?:blind\s+)?closure\s+audits\b"
+    # SPELLED OUT, TOO — but only where the sentence asserts a RUNNING
+    # TOTAL. `Eight blind closure audits` and `what eight independent
+    # readings cost` sailed past a guard that only knew digits, in the
+    # heading of the section about how many there had been; found by the
+    # second reader to adopt the release in a clean room.
+    #
+    # Deliberately not every spelled-out number near the word `audit`. A
+    # release record is full of true sentences about the past — *unread by
+    # twelve audits*, *abandoned after four audit rounds* — and those do not
+    # go stale when another one runs. A guard that forbade them would be
+    # turned off, which is worse than a guard that catches three shapes.
+    r"|\b(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)\s+"
+    r"blind\s+closure\s+audits\b"
+    r"|\bwhat\s+(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+"
+    r"(?:independent\s+)?readings\b"
+    r"|\b(?:one|two|three|\d+)\s+of\s+the\s+"
+    r"(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+readings\b",
+    re.IGNORECASE,
+)
+
+
+#: A count of something FROZEN cannot drift, so it is not this rule's business.
+#: The exemption is by the words that make the line say so, which keeps it
+#: visible in the text rather than hidden in a list here.
+_EXEMPT = ("baseline", "frozen", "tests.passed", "collect-only")
+
+
+def _restated_counts(text: str) -> list:
+    """Every restated count in one document, as ``(line number, what)``.
+
+    **Over the whole document, not a line at a time.** `1207` ended one line and
+    `tests` began the next, so the guard written to catch a hand-typed test
+    count could not see one for as long as the sentence happened to wrap there.
+    """
+    found = []
+    for match in _RESTATED.finditer(text):
+        number = text.count("\n", 0, match.start()) + 1
+        spans = text[text.rfind("\n", 0, match.start()) + 1:
+                     text.find("\n", match.end()) + 1 or None].lower()
+        if not any(marker in spans for marker in _EXEMPT):
+            found.append((number, match.group(0)))
+    return found
+
+
 def test_no_document_restates_a_count_of_things_the_repository_can_count():
     """The unbound-figure class, closed structurally rather than corrected again.
 
-    This release has now shipped four figures of this shape: a divergence count,
-    a routing-table audit count, a held-prose percentage quoted from the wrong
-    release, and a module count that said 19 when there were 20. Every one was
-    typed by hand beside a fact the repository can compute, and every one went
-    stale the moment the thing it counted changed.
+    This release has now shipped seven figures of this shape: a divergence
+    count, a routing-table audit count, a held-prose percentage quoted from the
+    wrong release, a module count that said 19 when there were 20, and then a
+    test total, a mechanism total and a recurrence total in the packet a founder
+    reads to decide. Every one was typed by hand beside a fact the repository
+    can compute, and every one went stale the moment the thing it counted
+    changed.
 
-    So no document may restate the number of tool modules, the number of CLIs or
-    the number of tests. Each is one command away, and a reader who wants it
-    should run that command rather than trust a sentence.
+    So no document may restate them. Each is one command away, and a reader who
+    wants the number should run that command rather than trust a sentence.
 
-    Deliberately narrow: it refuses these three phrasings, not numbers in
-    general. A release record is full of legitimate counts — findings, rounds,
-    occurrences — and a guard broad enough to catch those would be turned off.
+    Deliberately narrow. A release record is full of legitimate counts —
+    findings, rounds, occurrences, and true sentences about the past like
+    *unread by twelve audits* — and a guard broad enough to catch those would be
+    turned off, which is worse than one that catches the shapes that drift.
     """
-    import re
-
-    forbidden = re.compile(
-        r"\b\d+\s+(?:tool\s+)?modules\b"
-        r"|\bacross\s+\d+\s+modules\b"
-        r"|\b\d+\s+CLIs?\b"
-        r"|\b\d+\s+(?:passing\s+)?tests\b"
-        # AND THE THREE THE MATRIX AND THE POLICY FILES COMPUTE. A packet
-        # claiming sixty-three mechanisms beside a matrix holding ninety, and
-        # thirty-nine recurrence classes beside a policy file holding
-        # forty-seven, is the same defect wearing a different noun. Both were
-        # found by an outside reader, not by this guard.
-        r"|\b\d+\s+(?:verified\s+)?failure\s+mechanisms\b"
-        r"|\b\d+\s+(?:mandated\s+)?recurrence\s+classes\b"
-        r"|\b\d+\s+(?:blind\s+)?closure\s+audits\b"
-        # SPELLED OUT, TOO — but only where the sentence asserts a RUNNING
-        # TOTAL. `Eight blind closure audits` and `what eight independent
-        # readings cost` sailed past a guard that only knew digits, in the
-        # heading of the section about how many there had been; found by the
-        # second reader to adopt the release in a clean room.
-        #
-        # Deliberately not every spelled-out number near the word `audit`. A
-        # release record is full of true sentences about the past — *unread by
-        # twelve audits*, *abandoned after four audit rounds* — and those do not
-        # go stale when another one runs. A guard that forbade them would be
-        # turned off, which is worse than a guard that catches three shapes.
-        r"|\b(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)\s+"
-        r"blind\s+closure\s+audits\b"
-        r"|\bwhat\s+(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+"
-        r"(?:independent\s+)?readings\b"
-        r"|\b(?:one|two|three|\d+)\s+of\s+the\s+"
-        r"(?:\d+|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+readings\b",
-        re.IGNORECASE,
-    )
-    #: The documents THIS release is responsible for. Gate records of previous
-    #: releases are historical evidence: their counts were true when written and
-    #: rewriting them to satisfy a rule invented afterwards is the one thing
-    #: this pack's own policy forbids.
     owned = (*_owned_release_docs(), "README.md", "CHANGELOG.md", "policy/*.md",
              "templates/*.md", "skills/core/*.md")
-    #: A count of something FROZEN cannot drift, so it is not this rule's
-    #: business. The exemption is by the words that make the line say so, which
-    #: keeps it visible in the text rather than hidden in a list here.
-    exempt_line = ("baseline", "frozen", "tests.passed", "collect-only")
-
     offenders = []
     seen = set()
     for pattern in owned:
@@ -891,29 +911,49 @@ def test_no_document_restates_a_count_of_things_the_repository_can_count():
             if name in seen or not path.is_file():
                 continue
             seen.add(name)
-            # THE WHOLE DOCUMENT, not a line at a time. `1207` ended one line
-            # and `tests` began the next, so the guard written to catch a
-            # hand-typed test count could not see the hand-typed test count in
-            # the release's own decision document — for as long as the sentence
-            # happened to wrap there. Found by a reader adopting the release in
-            # a clean room and comparing what it says against what it ships.
-            text = path.read_text(encoding="utf-8")
-            for match in forbidden.finditer(text):
-                number = text.count("\n", 0, match.start()) + 1
-                # The exemption is read from the lines the match actually spans.
-                spans = text[text.rfind("\n", 0, match.start()) + 1:
-                             text.find("\n", match.end()) + 1 or None].lower()
-                if not any(marker in spans for marker in exempt_line):
-                    offenders.append(f"{name}:{number}: {match.group(0)!r}")
+            for number, what in _restated_counts(path.read_text(encoding="utf-8")):
+                offenders.append(f"{name}:{number}: {what!r}")
     assert len(seen) >= 6, f"only {len(seen)} owned documents scanned; the globs are not matching"
 
     assert not offenders, (
-        "these restate a count the repository can compute, which is how the last four "
+        "these restate a count the repository can compute, which is how the last seven "
         "stale figures got in: " + "; ".join(offenders)
     )
 
 
-# --- qualification is not self-tests --------------------------------------
+@pytest.mark.parametrize("shape,text", [
+    ("a test total", "the suite holds 412 tests and they all pass"),
+    ("a test total that wraps", "the suite holds 412\ntests and they all pass"),
+    ("a module count", "there are 21 tool modules in this release"),
+    ("a mechanism total", "the matrix holds 63 verified failure mechanisms"),
+    ("a mechanism total that wraps", "the matrix holds 63 verified\nfailure mechanisms"),
+    ("a recurrence total", "39 mandated recurrence classes, each with an oracle"),
+    ("a spelled-out running total", "Eight blind closure audits, all NOT READY"),
+    ("a spelled-out heading", "## What eight independent readings cost"),
+])
+def test_the_count_guard_catches_the_shapes_it_claims_to(shape, text):
+    """**The guard had no negative case, and a mutant proved it.**
+
+    Making it read only the first line of every document changed nothing that
+    any test could see, because the documents happen to be clean — a check that
+    finds nothing passes whether it looked everywhere or nowhere. These are the
+    shapes it has actually let through, planted.
+    """
+    assert _restated_counts(text), f"the guard does not catch {shape}"
+
+
+@pytest.mark.parametrize("shape,text", [
+    ("a true sentence about the past", "unread by twelve audits, and found by the thirteenth"),
+    ("a budget ceiling", "four audit rounds per capability, raised only by a person"),
+    ("a finding count", "the round returned 15 findings, 3 of them in the previous repairs"),
+    ("a frozen baseline", "the frozen 2.2.0 baseline recorded 1207 tests"),
+    ("the manifest key", "tests.passed is 1799 in the manifest"),
+])
+def test_the_count_guard_leaves_an_honest_sentence_alone(shape, text):
+    """The other half. A guard that flagged these would be turned off within a
+    week, and a guard nobody runs catches nothing at all."""
+    assert not _restated_counts(text), f"the guard wrongly flags {shape}"
+
 
 def test_qualification_includes_probes_against_representative_consumer_shapes():
     """The failure class this release was caught by, made structural.
