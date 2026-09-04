@@ -96,6 +96,16 @@ class RepositoryActivity:
     identity: str = ""
 
     @property
+    def established(self) -> bool:
+        """Whether these totals are readings at all.
+
+        A repository that would not open has no local count — it has an
+        unanswered question — and rendering `0` there says the opposite of what
+        is known. Found by an independent reader.
+        """
+        return not self.unreadable
+
+    @property
     def total_local(self) -> int:
         return sum(day.local for day in self.days)
 
@@ -193,8 +203,14 @@ def repository_activity(repository, *, name: str = "", timeout: float = 60.0,
         edge = (datetime.now(timezone.utc) - timedelta(days=window_days)).date().isoformat()
         since = (f"--since={edge}",)
     try:
-        activity.identity = gitread._run(where, "rev-parse", "--absolute-git-dir",
+        # THE COMMON DIRECTORY, not this worktree's own. A linked worktree has
+        # its own `.git/worktrees/<name>` directory and shares the object graph,
+        # so identifying by the per-worktree path made one repository look like
+        # two and doubled its year. Found by an independent reader.
+        activity.identity = gitread._run(where, "rev-parse", "--git-common-dir",
                                          timeout=timeout).strip()
+        if not Path(activity.identity).is_absolute():
+            activity.identity = str((where / activity.identity).resolve())
     except Exception as exc:
         # WHICH of the two it is. `git invocation failed` was true and told a
         # reader nothing: a directory that is not a repository and a repository
@@ -325,7 +341,16 @@ class Event:
     #: WHERE THIS CAME FROM, always. An event with no attributable artifact is
     #: an event this module refuses to produce.
     source: str = ""
+    #: RECORDED or DERIVED. A recorded event has an artifact that states its
+    #: time; a derived one is arithmetic over durable fields and the clock —
+    #: true, determined, and not written down anywhere. Mixing the two in one
+    #: timeline without saying which is which is the misleading part, and an
+    #: independent reader said so.
+    basis: str = "recorded"
     tone: str = "plain"
+    #: Which registry entry this belongs to, filled in by the caller that knows.
+    #: Two projects may share a display name; an index cannot be shared.
+    at: str = ""
 
     @property
     def day(self) -> str:
@@ -337,6 +362,11 @@ class Event:
 #: being dispatched, a finding recorded — happens in documents that carry no
 #: durable timestamp for it, and this module will not date them by guessing.
 #: A durable event log is recorded as an Evolution Candidate instead.
+#: The one event class that is DERIVED rather than recorded. It is arithmetic
+#: over two durable fields and the clock: the deadline did pass, and no artifact
+#: says so. The timeline marks it, and the filter can exclude it.
+DERIVED = {"deadline passed"}
+
 EVIDENCED = {
     "reading written": "the continuation record's own updated_at",
     "wait declared": "a wait's declared_at in the continuation record",
@@ -398,8 +428,9 @@ def pack_events(project_root, *, name: str = "", limit: int = 4000) -> list:
                                 when=due.isoformat(timespec="seconds"), kind="deadline passed",
                                 subject=str(wait.job_id),
                                 detail="the declared limit ran out", project=project,
-                                capability=capability, tone="bad",
-                                source="declared_at plus not_beyond_seconds"))
+                                capability=capability, tone="bad", basis="derived",
+                                source="derived from declared_at plus not_beyond_seconds; "
+                                       "nothing recorded it happening"))
                     except (TypeError, ValueError, OverflowError):
                         pass
             root_path = Path(str(wait.path)) if wait.path else None

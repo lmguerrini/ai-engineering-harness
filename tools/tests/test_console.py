@@ -931,6 +931,93 @@ def with_repository(tmp_path, three):
     return three, repo
 
 
+@pytest.fixture
+def with_pushed_repository(tmp_path, three):
+    """A project whose repository has a remote that has actually been observed,
+    with some commits pushed and some not."""
+    import subprocess
+
+    repo = tmp_path / "pushed"
+    bare = tmp_path / "origin.git"
+    repo.mkdir()
+    bare.mkdir()
+    subprocess.run(["git", "-C", str(bare), "init", "--bare", "--quiet"], check=True,
+                   capture_output=True)
+    for command in (("init", "--quiet", "--initial-branch", "main"),
+                    ("config", "user.name", "T"), ("config", "user.email", "t@e.invalid"),
+                    ("config", "commit.gpgsign", "false"),
+                    ("remote", "add", "origin", str(bare))):
+        subprocess.run(["git", "-C", str(repo), *command], check=True, capture_output=True)
+    for n in range(3):
+        (repo / f"p{n}.txt").write_text(str(n))
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", f"p{n}"], check=True,
+                       capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "push", "--quiet", "origin", "main"], check=True,
+                   capture_output=True)
+    for n in range(2):
+        (repo / f"a{n}.txt").write_text(str(n))
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", f"a{n}"], check=True,
+                       capture_output=True)
+    root = three[0][1]
+    (root / "PROJECT.yaml").write_text(
+        'project:\n  name: "a"\n  publication_intent: "internal"\n'
+        f'  repo_path: "{repo}"\n'
+        'pack:\n  root_path: "%s"\n  version_adopted: "2.3.0"\n'
+        '  state_adopted: "IN_PROGRESS"\n  adopted_at: "2026-09-04"\n'
+        '  adoption_boundary: "at a capability boundary"\nadapters: []\n'
+        % Path(__file__).resolve().parents[2], encoding="utf-8")
+    return three, repo
+
+
+def test_a_repository_that_will_not_open_shows_no_totals_on_the_page(three):
+    """`0 local, 0 only here` about a repository nobody could read is an
+    established zero where there is a question."""
+    page = console.render_console(console.survey(three))
+    block = page[page.index("data-view='history'"):]
+    block = block[:block.index("data-view=", 40)]
+    rows = re.findall(r"<tr>(?:(?!</tr>).)*is not a git repository.*?</tr>", block, re.S)
+    assert rows, "the fixture has no unreadable repository"
+    for row in rows:
+        cells = re.findall(r"data-label='(local|only here|represented)'[^>]*>(.*?)</td>", row)
+        for label, body in cells:
+            assert "UNKNOWN" in body, f"{label} reads {body!r} for a repository nobody read"
+
+
+def test_two_entries_for_one_repository_are_counted_once_and_said_so(tmp_path, three):
+    """The calendar deduplicated and the table did not, so the same page gave
+    two answers to *how many commits are there*."""
+    import subprocess
+
+    repo = tmp_path / "shared"
+    repo.mkdir()
+    for command in (("init", "--quiet", "--initial-branch", "main"),
+                    ("config", "user.name", "T"), ("config", "user.email", "t@e.invalid"),
+                    ("config", "commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(repo), *command], check=True, capture_output=True)
+    (repo / "one.txt").write_text("1")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "one"], check=True,
+                   capture_output=True)
+    contract = ('project:\n  name: "%s"\n  publication_intent: "internal"\n'
+                f'  repo_path: "{repo}"\n'
+                'pack:\n  root_path: "%s"\n  version_adopted: "2.3.0"\n'
+                '  state_adopted: "IN_PROGRESS"\n  adopted_at: "2026-09-04"\n'
+                '  adoption_boundary: "at a capability boundary"\nadapters: []\n')
+    for at in (0, 1):
+        root = three[at][1]
+        (root / "PROJECT.yaml").write_text(
+            contract % (f"p{at}", Path(__file__).resolve().parents[2]), encoding="utf-8")
+    page = console.render_console(console.survey(three))
+    block = page[page.index("data-view='history'"):]
+    block = block[:block.index("data-view=", 40)]
+    stated = int(re.search(r"<i>local commits</i><em>(\d+)</em>", block).group(1))
+    assert stated == 1, f"the summary counted the same repository twice: {stated}"
+    assert "the same repository as a row above" in block, (
+        "the table lists a duplicate without saying it is one")
+
+
 def test_the_calendar_and_the_summary_state_the_same_total(with_repository):
     """**Source agreement.** The cells carry per-day counts and the summary
     carries a total; a page where they disagree is a page with two answers."""
@@ -984,10 +1071,16 @@ def test_the_control_room_carries_recent_activity_and_not_a_year(with_repository
     assert "commits in 10 weeks" in room
 
 
-def test_the_history_never_adds_local_and_remote_together(with_repository):
+def test_the_history_never_adds_local_and_remote_together(with_pushed_repository):
     """The relationship, on the page. A summary that added them would show every
-    push as two pieces of work."""
-    three, _repo = with_repository
+    push as two pieces of work.
+
+    **With a remote that has actually been observed.** The first version used a
+    repository with no remote, so `represented` was UNKNOWN and the arithmetic
+    was never exercised: an independent reader made a mutant that adds the two
+    together whenever a remote IS observed, and the test passed.
+    """
+    three, _repo = with_pushed_repository
     sites = console.survey(three)
     page = console.render_console(sites)
     block = page[page.index("data-view='history'"):]
@@ -996,8 +1089,10 @@ def test_the_history_never_adds_local_and_remote_together(with_repository):
     only = int(re.search(r"<i>only here</i><em>(\d+)</em>", block).group(1))
     remote = re.search(r"<i>represented by the remote</i><em>([^<]+)</em>", block).group(1)
     assert only <= local
-    if remote.isdigit():
-        assert int(remote) + only == local, f"{remote} + {only} != {local}"
+    assert remote.isdigit(), f"the fixture's remote was never observed: {remote}"
+    assert int(remote) > 0, "the fixture pushed nothing, so nothing is represented"
+    assert int(remote) + only == local, f"{remote} + {only} != {local}"
+    assert int(remote) <= local, "more commits are represented than exist"
     assert "a subset of the local total, never added to it" in block
 
 

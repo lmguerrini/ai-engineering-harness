@@ -433,3 +433,77 @@ def test_the_window_does_not_change_what_a_day_holds(repo):
     whole = {d.date: d.local for d in activity.repository_activity(repo, window_days=0).days}
     for day, count in bounded.items():
         assert whole[day] == count, f"{day} holds {count} bounded and {whole[day]} unbounded"
+
+
+def test_a_linked_worktree_is_the_same_repository(tmp_path, repo):
+    """**Found by an independent reader.** A linked worktree has its own
+    `.git/worktrees/<name>` directory and shares the object graph. Identifying a
+    repository by that per-worktree path made one repository look like two and
+    doubled its year."""
+    _commit(repo, "a")
+    linked = tmp_path / "linked"
+    _git(repo, "worktree", "add", "--detach", str(linked), "HEAD")
+    first = activity.repository_activity(repo)
+    second = activity.repository_activity(linked)
+    assert first.identity == second.identity, (
+        f"{first.identity} and {second.identity} are the same repository")
+    assert sum(day.local for day in activity.aggregate([first, second])) == 1
+
+
+def test_a_repository_that_will_not_open_has_no_totals(tmp_path):
+    """`0 local, 0 only here` about a repository nobody could read is an
+    established zero where there is an unanswered question."""
+    found = activity.repository_activity(tmp_path / "not-a-repo")
+    assert not found.established
+    assert found.unreadable
+    readable = activity.repository_activity(tmp_path)
+    assert not readable.established or readable.total_local == 0
+
+
+def test_a_derived_event_says_it_is_derived(tmp_path):
+    """**A deadline passing is arithmetic, not a record.**
+
+    Nothing writes it down: it is two durable fields and the clock. That makes
+    it true and it does not make it recorded, and a timeline that mixes the two
+    without saying which is which is the misleading part.
+    """
+    root = _project(tmp_path, waits=(continuation.Wait(
+        job_id="j", kind=continuation.WaitKind.PROCESS, pid=1, expects="a report",
+        not_beyond_seconds=60, declared_at="2020-01-01T00:00:00+00:00"),))
+    events = activity.pack_events(root)
+    passed = [e for e in events if e.kind == "deadline passed"]
+    assert len(passed) == 1
+    assert passed[0].basis == "derived"
+    assert "nothing recorded it" in passed[0].source
+    for other in events:
+        if other.kind != "deadline passed":
+            assert other.basis == "recorded", f"{other.kind} claims to be derived"
+
+
+def test_every_event_is_recorded_or_says_it_is_derived(tmp_path):
+    """The bound on the whole event half, and it is not *the source string is
+    not empty* — an independent reader pointed out that such a check cannot
+    reject an invented event at all."""
+    import task_output
+
+    root = _project(tmp_path)
+    out = root / "worker-output"
+    contract = task_output.OutputContract("survey", out, max_bytes_per_write=64,
+                                          expected_chunks=2)
+    task_output.claim_root(contract)
+    task_output.materialise(contract, 0, "a finding")
+    root = _project(tmp_path, waits=(continuation.Wait(
+        job_id="survey", kind=continuation.WaitKind.OUTPUT_ROOT, path=str(out),
+        task_id="survey", max_bytes_per_write=64, expects="two chunks",
+        not_beyond_seconds=3600, declared_at=continuation.now()),))
+    (root / "observations.jsonl").write_text('{"recorded_at": "2026-05-01"}\n', encoding="utf-8")
+    for event in activity.pack_events(root):
+        assert event.basis in ("recorded", "derived"), event.kind
+        if event.basis == "recorded":
+            #: A recorded event names an artifact: a file, or a field in one.
+            assert ("modification time" in event.source or ".json" in event.source
+                    or "jsonl" in event.source or "updated_at" in event.source
+                    or "declared_at" in event.source), f"{event.kind}: {event.source}"
+        else:
+            assert event.kind in activity.DERIVED, f"{event.kind} is derived and undeclared"
+            assert "nothing recorded it" in event.source

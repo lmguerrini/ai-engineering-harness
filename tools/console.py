@@ -940,21 +940,43 @@ def _repository_summary(activities, days) -> str:
 
 
 def _repository_table(activities) -> str:
-    rows = []
+    """Every repository the registry names, and what each contributes.
+
+    Two things an independent reader found here. A repository that would not
+    open rendered `0` local and `0` only-here — **established zeroes about a
+    reading nobody could take**. And two entries naming one repository each
+    listed their own totals while the calendar above counted them once, so the
+    table and the summary disagreed about the same number.
+    """
+    rows, seen = [], set()
     for one in activities:
+        counted = not (one.identity and one.identity in seen)
+        if one.identity:
+            seen.add(one.identity)
         tone = ("unknown" if one.unreadable or not one.remote_established else "plain")
+
+        def number(value, known=one.established):
+            return (str(value) if known else f"<span class='s unknown'>{UNKNOWN}</span>")
+
+        note = one.unreadable or one.remote_note
+        if not counted:
+            note = ("the same repository as a row above; the calendar and the summary count it "
+                    "once. " + note)
         rows.append(
             "<tr>" + _td("repository", f"<span class=s>{_ESC(one.name)}</span>"
                          f"<small>{_ESC(one.repository)}</small>")
-            + _td("local", str(one.total_local), "num")
+            + _td("local", number(one.total_local),
+                  "num" if one.established else "num unknown")
             + _td("represented",
-                  str(one.total_remote) if one.remote_established
+                  str(one.total_remote) if one.remote_established and one.established
                   else f"<span class='s unknown'>{UNKNOWN}</span>",
-                  "num" if one.remote_established else "num unknown")
-            + _td("only here", str(one.total_local_only), "num")
+                  "num" if one.remote_established and one.established else "num unknown")
+            + _td("only here", number(one.total_local_only),
+                  "num" if one.established else "num unknown")
+            + _td("counted", "yes" if counted else "once, above",
+                  "" if counted else "unknown")
             + _td("remote", f"<span class='s {tone}'>{_ESC(one.remote_state)}</span>", tone)
-            + _td("what is known", f"<span class=clamp>"
-                  f"{_ESC(one.unreadable or one.remote_note)}</span>")
+            + _td("what is known", f"<span class=clamp>{_ESC(note)}</span>")
             + "</tr>")
     if not rows:
         return "<p class=none>No project declares a repository this console can read.</p>"
@@ -969,12 +991,19 @@ def _event_timeline(events, *, limit: int = 400) -> str:
     rows = []
     for event in events[:limit]:
         rows.append(
+            # THE INDEX, not the name. Two registry entries may be called the
+            # same thing, and filtering by the label then showed both projects'
+            # events under either one. Found by an independent reader.
             f"<tr data-tone='{event.tone}' data-kind='{_ESC(event.kind)}' "
-            f"data-project='{_ESC(event.project)}' data-day='{_ESC(event.day)}'>"
+            f"data-project='{_ESC(event.project)}' "
+            f"data-at='{_ESC(str(getattr(event, 'at', '')))}' "
+            f"data-basis='{_ESC(event.basis)}' data-day='{_ESC(event.day)}'>"
             + _td("when", _ESC(event.when or UNKNOWN),
                   "" if event.when else "unknown")
             + _td("project", f"<span class=s>{_ESC(event.project)}</span>")
-            + _td("event", f"<span class='s {event.tone}'>{_ESC(event.kind)}</span>", event.tone)
+            + _td("event", f"<span class='s {event.tone}'>{_ESC(event.kind)}</span>"
+                  + ("<small>derived, not recorded</small>"
+                     if event.basis == "derived" else ""), event.tone)
             + _td("subject", _ESC(event.subject))
             + _td("capability", _ESC(event.capability or "—"))
             + _td("detail", f"<span class=clamp>{_ESC(event.detail)}</span>")
@@ -998,14 +1027,16 @@ def _event_shape(events) -> str:
 def _history_view(sites: list) -> str:
     """Repository activity and governed events, on one calendar."""
     activities, events = [], []
-    for site in sites:
+    for at, site in enumerate(sites):
         pin = site.one("pin")
         where = (pin.fields.get("repository") if pin else "") or ""
         if where and where != UNKNOWN and Path(where).is_dir():
             activities.append(activity.repository_activity(where, name=site.name))
         else:
             activities.append(activity.repository_activity(site.root, name=site.name))
-        events.extend(activity.pack_events(site.root, name=site.name))
+        for event in activity.pack_events(site.root, name=site.name):
+            event.at = str(at)
+            events.append(event)
     events.sort(key=lambda e: (e.when == "", e.when))
     days = activity.aggregate(activities)
     most = max((day.local for day in days), default=0)
@@ -2099,11 +2130,12 @@ _SCRIPT = r"""
   var eventKind = '';
   function filterEvents(cut, scale) {
     var project = document.getElementById('history-project');
-    var only = project && project.value !== 'all' ? project.options[project.selectedIndex]
-      .textContent : '';
+    // BY INDEX. Two projects may share a name, and comparing the label then
+    // showed both of them under either one.
+    var only = project && project.value !== 'all' ? project.value : '';
     [].forEach.call(document.querySelectorAll('#history-events tbody tr'), function (tr) {
       var byKind = !eventKind || tr.dataset.kind === eventKind;
-      var byProject = !only || tr.dataset.project === only;
+      var byProject = !only || tr.dataset.at === only;
       // An event with no readable time is never hidden by a period: it has no
       // period, and dropping it would be the page losing a reading.
       var byDay = !cut || !tr.dataset.day || tr.dataset.day >= cut;
