@@ -624,9 +624,20 @@ def test_every_instrument_counts_only_rows_the_page_is_showing(three):
     says, so a chart that drifted from its own data fails rather than
     reassuring somebody."""
     sites = console.survey(three)
+    page = console.render_console(sites)
     jobs = [c for s in sites for c in s.figures("job")]
     audits = [c for s in sites for c in s.figures("audit")]
     pools = [c for s in sites for c in s.figures("capacity")]
+
+    #: THE ROWS THE PAGE LISTS, not the collection the instrument reads. Both
+    #: sides came from `figures("audit")`, so an audit missing its kind was
+    #: absent from the table AND from the tally, and the comparison agreed with
+    #: itself. An independent reader found exactly that.
+    def listed(widget):
+        """How many rows the page actually lists in one widget."""
+        block = page[page.index(f"data-widget='{widget}'"):]
+        block = block[:block.index("</section>")]
+        return len(re.findall(r"<tr data-tone=", block))
 
     def counts(html):
         return {name.strip(): int(n) for name, n in
@@ -640,10 +651,18 @@ def test_every_instrument_counts_only_rows_the_page_is_showing(three):
                if k != "stalled — two readings needed") == len(jobs)
 
     audit = counts(console._audit_shape(sites))
+    placed = (audit["about the candidate"] + audit["about another tree"]
+              + audit["cannot be compared"])
+    assert placed == len(audits), f"{placed} audits in the tally, {len(audits)} figures"
+    assert placed == listed("global:audits"), (
+        "the tally and the audits table disagree about how many audits there are")
     assert audit["about another tree"] == len([c for c in audits
                                                if c.tone == projection.Tone.BAD])
+
     capacity = counts(console._capacity_shape(sites))
     assert capacity["measured"] + capacity["unmeasured"] == len(pools)
+    assert capacity["measured"] + capacity["unmeasured"] == listed("global:capacity"), (
+        "the tally and the capacity table disagree about how many pools there are")
 
     states = counts(console._project_states(sites))
     assert sum(states.values()) == len(sites), "a project is missing from the distribution"
@@ -667,14 +686,25 @@ def test_an_unmeasured_window_is_a_band_and_never_an_empty_bar(three):
     """UNKNOWN → empty, UNKNOWN → 0%, UNKNOWN → healthy: three ways to say
     *fine* about something nobody measured. It gets its own segment in its own
     tone."""
-    html = console._capacity_shape(console.survey(three))
-    assert "unmeasured" in html
-    assert "class='unknown'" in html or 'class="unknown"' in html
+    sites = console.survey(three)
+    html = console._capacity_shape(sites)
+    unmeasured = len([c for s in sites for c in s.figures("capacity")
+                      if c.tone == projection.Tone.UNKNOWN])
+    assert unmeasured, "the fixture measures every window, so this proves nothing"
+    #: THE SEGMENT, not the word. Replacing the count with zero left the legend
+    #: text and the class in place and the check passed — an independent reader
+    #: did exactly that.
+    assert re.search(rf"unmeasured\s*<b>{unmeasured}</b>", html), html
+    bar = re.search(r"<div class=dist>(.*?)</div>", html, re.S)
+    assert bar and "class='unknown'" in bar.group(1), (
+        "an unmeasured window has no segment in the bar")
 
 
 @pytest.mark.parametrize("used,ceiling,drawn", [
     (0, 8, True), (1, 8, True), (8, 8, True), (9, 8, True), (10 ** 9, 8, True),
     (0, 0, False), (5, 0, False), (5, -1, False), (-1, 8, False),
+    (5, float("inf"), False), (float("inf"), 8, False), (float("nan"), 8, False),
+    (5, float("nan"), False),
 ])
 def test_a_meter_survives_every_shape_of_fraction(tmp_path, used, ceiling, drawn):
     """Zero, one, over, enormous, no denominator, a negative one. No division by
@@ -781,29 +811,90 @@ def test_a_reading_that_cannot_be_dated_makes_the_oldest_unknown(tmp_path):
     assert "UNKNOWN" in bar, bar
 
 
+#: The colour rule, in Python, so the portable suite can decide whether a value
+#: SHOULD be refused. Whether the page actually refuses it is a different
+#: question, answered by driving a browser — see the note on the third test.
+def _would_refuse(token, value, tokens):
+    from test_projection import _contrast, _hue_and_luminance
+
+    surfaces = [tokens[name] for name in ("panel", "panel-2", "ground")]
+    meanings = [tokens[name] for name in ("bad", "warn", "unknown", "good")]
+    if token in ("ink", "dim", "faint", "accent", "bad", "warn", "unknown", "good"):
+        if any(_contrast(value, surface) < 4.5 for surface in surfaces):
+            return "unreadable on the panels it is drawn on"
+    if token in ("ground", "panel", "panel-2", "panel-3", "select"):
+        drawn = [tokens["ink"], tokens["dim"], tokens["accent"], *meanings]
+        if any(_contrast(value, colour) < 4.5 for colour in drawn):
+            return "what is drawn on it would be unreadable"
+    if token in ("bad", "warn", "unknown", "good", "accent"):
+        for name in ("bad", "warn", "unknown", "good", "accent"):
+            if name == token:
+                continue
+            hue_a, lum_a = _hue_and_luminance(value)
+            hue_b, lum_b = _hue_and_luminance(tokens[name])
+            brighter = (max(lum_a, lum_b) + 0.05) / (min(lum_a, lum_b) + 0.05)
+            if hue_a is None or hue_b is None:
+                apart = brighter >= 1.6
+            else:
+                turn = abs(hue_a - hue_b)
+                apart = min(turn, 360 - turn) >= 22 or brighter >= 1.6
+            if not apart:
+                return f"a reader could not tell it from {name}"
+    return ""
+
+
 @pytest.mark.parametrize("token,value,why", [
     ("panel", "#333333", "a surface the state colours cannot be read on"),
     ("accent", "#f2635c", "an accent that is exactly the defect red"),
     ("ground", "#808080", "a ground nothing readable sits on"),
+    ("ink", "#0a0a0a", "text nobody could read on the panel it sits on"),
+    ("bad", "#c9821f", "a defect colour a reader could not tell from a warning"),
 ])
-def test_the_settings_bounds_reject_what_a_reader_could_not_use(token, value, why):
-    """**Two of these were accepted.** A surface was checked against the two
-    neutral texts and not against the four state colours drawn on it; the accent
-    was checked for contrast and never for confusion, so it could be set to the
-    defect red and every selected control then looked like a defect.
+def test_a_setting_a_reader_could_not_use_is_one_the_rule_rejects(token, value, why):
+    """**Two of these were accepted, and the test meant to catch them searched
+    the script for strings.**
 
-    The bounds live in the page's script, so this reads the script's own rule
-    rather than a copy of it — a duplicate of the arithmetic here would pass
-    while the page used different arithmetic.
+    An independent reader changed `if (why)` to `if (false && why)` — turning
+    the refusal off entirely — and all three cases still passed, because a grep
+    for a phrase is not a check on behaviour.
+
+    This decides the RULE, in Python, against the lens the page actually draws.
+    Whether the page enforces it is a separate question with a separate answer:
+    the browser driver sets each of these through the real control and asserts
+    the value is not applied and a refusal is shown. Neither test is the whole
+    property, and saying which is which is the honest part.
+    """
+    from test_projection import _theme_tokens
+
+    assert _would_refuse(token, value, _theme_tokens("")), f"{why} is not rejected by the rule"
+
+
+@pytest.mark.parametrize("token,value", [
+    ("accent", "#39c0ff"), ("ink", "#f5f2ed"), ("panel", "#0e0d0c"), ("bad", "#ff5a4d"),
+])
+def test_a_setting_a_reader_could_use_is_one_the_rule_accepts(token, value):
+    """The other half. A rule that refuses everything is a settings panel nobody
+    can use, and it would pass the test above."""
+    from test_projection import _theme_tokens
+
+    assert not _would_refuse(token, value, _theme_tokens("")), f"{token}={value} is refused"
+
+
+def test_the_page_wires_the_rule_to_the_control_and_not_only_to_a_comment():
+    """What the portable suite cannot do, named rather than implied.
+
+    This asserts the enforcement path exists and is reached from the control;
+    the browser driver asserts it works, by setting each value through the real
+    input and reading back what the page draws. A machine with no browser gets
+    the first; the release evidence carries both.
     """
     import console as _console
 
     script = _console._SCRIPT
-    if token == "accent":
-        assert "token === 'accent'" in script, (
-            "the accent is not put through the separability check")
-        assert "MEANINGS.concat(['action', 'accent'])" in script
-    else:
-        assert "['ink', 'dim', 'accent'].concat(MEANINGS)" in script, (
-            "a surface is not checked against the state colours drawn on it")
-    assert "4.5" in script
+    assert "function objection(" in script
+    assert "if (why) { refuse(token, why); applyOne(token, null); }" in script, (
+        "the refusal path is not wired to the control")
+    assert "['ink', 'dim', 'accent'].concat(MEANINGS)" in script, (
+        "a surface is not checked against the state colours drawn on it")
+    assert "kind === 'semantic' || token === 'accent'" in script, (
+        "the accent is not put through the separability check")

@@ -166,7 +166,14 @@ class Cell:
             # A DENOMINATOR OF ZERO IS NOT A DENOMINATOR. Nothing is drawn
             # against it: the value is still said, and the picture is left out
             # rather than divided by nothing.
-            if ceiling <= 0 or used < 0 or used != used or ceiling != ceiling:
+            import math
+
+            # FINITE, TOO. Zero, negative and NaN were refused and infinity was
+            # not, so a wait declaring an unbounded deadline drew a bar against
+            # a limit that does not exist — at 0%, which reads as *just
+            # started*. Found by an independent reader.
+            if (ceiling <= 0 or used < 0 or not math.isfinite(used)
+                    or not math.isfinite(ceiling)):
                 self.share = None
         for name in ("label", "value", "note", "kind"):
             value = getattr(self, name)
@@ -609,8 +616,15 @@ def _audit_freshness_panel(record) -> Panel:
                   Tone.MUTED if wait.executor else Tone.UNKNOWN, label="executor", depth=1)
         if not declared:
             panel.say(f"{short or UNKNOWN} — cannot be compared", Tone.UNKNOWN, label=wait.job_id)
+            # `kind` WAS MISSING HERE. An audit whose subject cannot be
+            # compared is still an audit in flight, and without the kind every
+            # view that collects audits counted it as a project with none —
+            # so the one audit nobody could place looked like no audit at all.
+            # Found by an independent reader of the instruments.
             panel.figure(f"audit {wait.job_id}", "cannot be compared", Tone.UNKNOWN,
-                         note=short, band="situation")
+                         note=short, band="situation", kind="audit", audit=wait.job_id,
+                         subject=short or UNKNOWN, candidate=UNKNOWN,
+                         owner=wait.executor or UNKNOWN)
         elif short and short in declared:
             panel.say(f"{short} — the candidate", Tone.GOOD, label=wait.job_id)
             panel.figure(f"audit {wait.job_id}", "the candidate", Tone.GOOD, note=short,
@@ -903,7 +917,13 @@ def _capacity_panel(path: Path) -> Panel:
     import capacity
 
     if not pools:
+        # AN EMPTY POOL LIST IS AN ANSWER, and it was reaching the panel as an
+        # unknown with no figure — so the capacity instrument counted neither a
+        # measured nor an unmeasured window and reported nothing outstanding
+        # about a project whose own table said UNKNOWN.
         panel.unknown.append("the capacity observation declares no pools")
+        panel.figure("capacity", UNKNOWN, Tone.UNKNOWN, note="declares no pools",
+                     band="situation", kind="capacity")
     for entry in pools:
         try:
             pool = capacity.Pool(**entry)

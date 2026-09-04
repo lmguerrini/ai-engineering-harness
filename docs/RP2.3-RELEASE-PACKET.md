@@ -263,6 +263,26 @@ is a reason to skip the gate, which is the failure this would exist to prevent.
 *Layer:* `publication_history`. *Deferred because:* *unchanged since* is a new
 claim and needs an oracle of its own before anything may rely on it.
 
+**Coverage cannot be drawn, because the evidence is sentences.** *Evidence:*
+a project's standing evidence — mechanisms covered, recurrence classes proved,
+consumers verified — is free text the project writes, so `87/87 covered` is a
+sentence and not a fraction. The console shows the sentence. *Value:* those are
+exactly the readings a coverage meter would suit. *Trigger:* a project that
+wants them drawn. *Layer:* the continuation record's evidence shape, which
+would have to carry numbers beside the words. *Deferred because:* the
+alternative is this page parsing prose to find a fraction, which is the shape
+this release removed from its own operational strip after it silently emptied.
+
+**Sizes are pixels, so a browser's default-font-size preference is ignored.**
+*Evidence:* every size is a `px` token. Browser zoom scales them correctly and
+the Settings panel exposes four of them directly, but a reader who has set a
+larger default font in their browser does not get it automatically. *Value:*
+respecting a preference somebody already expressed. *Trigger:* an operator who
+uses that setting. *Layer:* the token declarations. *Deferred because:* moving
+a whole layout from px to rem this late is a change with no test that would
+catch what it breaks, and the measured readability floor plus the in-page
+control cover the need.
+
 ## The freeze, prepared and not performed
 
 Moving the state is the founder's act — HITL row 2, and this session stops
