@@ -238,6 +238,33 @@ stronger one.
 - **An absence is unknown, never a resting state**, and the exit status
   distinguishes a complete reading from a partial one.
 
+### A console over every project, and two histories that score nothing
+
+- **`tools/console.py`** renders one read-only page over every project that has
+  adopted this release: an overview at three densities, an all-systems page, a
+  control room built for a wide display, cross-project workers, audits,
+  capacity, history and identity, a custom-view builder, settings, and help
+  with a question index. Monochrome is the default lens; four others ship.
+- **It decides nothing.** Every answer belongs to the module that owns the
+  question. A figure restates a line, a bar needs a real denominator, UNKNOWN
+  is never an absence, and nothing the attention strip marks can be folded away
+   — each with a test that fails without it.
+- **`tools/activity.py`** reads two histories from what is already on disk.
+  Repository activity: local commits by UTC day as a contribution calendar at
+  four scales or between two dates, with the remote side read from
+  remote-tracking refs and **never from the network**. The relationship is
+  containment — `LOCAL TOTAL ⊇ REMOTE-REPRESENTED ⊍ LOCAL-ONLY` — because a
+  pushed commit is one commit two refs reach.
+- **Four remote states are four different answers**: none configured, never
+  observed, observed, unreadable. An unreadable repository reports UNKNOWN
+  rather than zero, and a linked worktree is the same repository, not a second.
+- **Pack events are rebuilt only from artifacts that carry a time.** Seven
+  classes ship because seven are evidenced; every event names the artifact that
+  dates it, and the one class that is arithmetic rather than a record says so
+  and can be filtered out.
+- **Neither is evidence of quality.** No productivity, velocity, developer or
+  good-day figure exists, and a test refuses the vocabulary that would add one.
+
 ### Close correctness — which gates ran, answered by something other than the runner
 
 - **`tools/close_attestation.py`** generates the closure gate block from the

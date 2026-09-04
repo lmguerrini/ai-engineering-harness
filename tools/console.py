@@ -268,6 +268,16 @@ overflow-wrap:normal;word-break:normal}
 /* Long prose in a table cell: clamped, never cut. The whole string stays in the
    document and in the element's title, so nothing is removed — a row simply
    stops being able to push every other row off the screen. */
+.nw{white-space:nowrap}
+/* an instrument's rows: the same fields a table would carry, flowing across the
+   whole cell instead of into columns none of them fits */
+.rows{list-style:none;margin:0;padding:0;font-size:var(--fs-forensic)}
+.rows>li{display:flex;flex-wrap:wrap;gap:0 10px;align-items:baseline;
+padding:4px var(--pad-x);border-bottom:1px solid var(--rule)}
+.rows>li:last-child{border-bottom:0}
+.rows .t{color:var(--faint);font-variant-numeric:tabular-nums}
+.rows .who{font-weight:700}
+.rows .what{color:var(--dim);flex:1 1 14ch;min-width:0;overflow-wrap:anywhere}
 .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 line-clamp:2}
 .clamp1{-webkit-line-clamp:1;line-clamp:1}
@@ -371,6 +381,13 @@ border-bottom:1px solid var(--rule)}
 .room .instruments-wide{max-height:34vh;overflow:auto}
 .room .instruments{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
 .instrument{min-width:0}
+/* AN INSTRUMENT THAT DRAWS ROWS OR A STRIP NEEDS MORE THAN A LEGEND'S COLUMN.
+   One column of the band gave the event rows ~385px at 3840 and the browser
+   broke words down the middle — `readi/ng writt/en`. Found by looking at the
+   ultrawide screenshot, which is the only place it was visible. The marker is
+   derived from what the instrument actually rendered, not from a list of names
+   somebody has to remember to extend. */
+@media (min-width:1500px){.instruments>[data-wide]{grid-column:span 2}}
 .nodata{margin:2px 0 4px;color:var(--faint);font-size:var(--fs-forensic)}
 .onlyminimal{display:none}
 [data-od="minimal"] .onlyminimal{display:block}
@@ -512,8 +529,8 @@ var(--ink) 50% 100%)}
 .calendar-legend .k-unknown i{background:repeating-linear-gradient(45deg,var(--unknown-bg)
 0 3px,var(--unknown) 3px 4px)}
 .calendar.recent{padding:2px 0 6px;overflow-x:auto}
-.calendar.recent .grid{grid-template-rows:repeat(7,9px);grid-auto-columns:9px;gap:2px}
-.calendar.recent .cell{width:9px;height:9px}
+.calendar.recent .grid{grid-template-rows:repeat(7,11px);grid-auto-columns:11px;gap:2px}
+.calendar.recent .cell{width:11px;height:11px}
 .actmode{display:none}
 .actmode.on{display:block}
 .inspector{padding:8px var(--pad-x) 12px;border-top:1px solid var(--rule);
@@ -1024,17 +1041,49 @@ def _event_shape(events) -> str:
                          "Nothing durable dates an event in these projects.")
 
 
+#: One read per project per page. The history view, the control room's band, the
+#: full overview and each project's own detail all draw the same two histories;
+#: reading them four times would be four chances to disagree, and the page would
+#: be slower for the privilege. Cleared at the top of every render, so nothing
+#: survives into a page that did not read it.
+_READINGS: dict = {}
+
+
+def _repository_of(site) -> str:
+    """The repository a project declares, or the project root it lives in."""
+    pin = site.one("pin")
+    where = (pin.fields.get("repository") if pin else "") or ""
+    return where if where and where != UNKNOWN and Path(where).is_dir() else str(site.root)
+
+
+def _reading(kind: str, site, read):
+    """Cache one project's history for the length of one page.
+
+    The site itself is held beside the reading. `id()` is only unique among
+    objects that are alive, and a cache keyed by the identity of something it
+    does not keep would hand a recycled address somebody else's history.
+    """
+    key = (kind, id(site))
+    if key not in _READINGS:
+        _READINGS[key] = (site, read())
+    return _READINGS[key][1]
+
+
+def _activity_of(site):
+    return _reading("activity", site,
+                    lambda: activity.repository_activity(_repository_of(site), name=site.name))
+
+
+def _events_of(site) -> list:
+    return _reading("events", site, lambda: activity.pack_events(site.root, name=site.name))
+
+
 def _history_view(sites: list) -> str:
     """Repository activity and governed events, on one calendar."""
     activities, events = [], []
     for at, site in enumerate(sites):
-        pin = site.one("pin")
-        where = (pin.fields.get("repository") if pin else "") or ""
-        if where and where != UNKNOWN and Path(where).is_dir():
-            activities.append(activity.repository_activity(where, name=site.name))
-        else:
-            activities.append(activity.repository_activity(site.root, name=site.name))
-        for event in activity.pack_events(site.root, name=site.name):
+        activities.append(_activity_of(site))
+        for event in _events_of(site):
             event.at = str(at)
             events.append(event)
     events.sort(key=lambda e: (e.when == "", e.when))
@@ -1056,10 +1105,22 @@ def _history_view(sites: list) -> str:
 
     return (
         "<div class=filters><span class=t>scale</span>" + scales
+        # A SCALE IS A WINDOW ENDING AT THE MOST RECENT DAY, which is the
+        # question a reader asks most and not the only one. These two are plain
+        # UTC dates compared against the day a cell already carries, so the
+        # range needs no conversion and cannot disagree with the calendar.
+        + "<span class=t>range</span>"
+        "<input type=date id=history-from aria-label='from, UTC'>"
+        "<span class=t>to</span>"
+        "<input type=date id=history-to aria-label='to, UTC'>"
         + "<span class=t>show</span>" + modes
         + f"<span class=t>project</span><select id=history-project>"
         f"<option value=all>all projects</option>{projects}</select>"
         "<button data-scale='year' id=history-today>most recent</button>"
+        # WHICH WINDOW IS IN FORCE, in words, wherever it came from. Four
+        # buttons and two date boxes can disagree about which one is chosen;
+        # a sentence cannot.
+        "<span class=t>showing</span><b id=history-period>year</b>"
         f"<span class=t>days are {activity.TIMEZONE}</span></div>"
         "<div class=stack>"
         + f"<section class=setgroup id=history-repository><div class=head>"
@@ -2103,32 +2164,74 @@ _SCRIPT = r"""
   });
 
   var SPAN = { year: 366, month: 31, week: 7, day: 1 };
-  function activityScale(name) {
-    if (!SPAN[name]) { name = 'year'; }
-    var cells = [].slice.call(document.querySelectorAll('.calendar .cell[data-day]'));
-    var days = cells.map(function (c) { return c.dataset.day; }).filter(Boolean).sort();
-    var last = days[days.length - 1];
-    var cut = '';
-    if (last) {
-      var end = new Date(last + 'T00:00:00Z');
-      end.setUTCDate(end.getUTCDate() - (SPAN[name] - 1));
-      cut = end.toISOString().slice(0, 10);
+  var period = { scale: 'year', from: '', to: '' };
+  var fromBox = document.getElementById('history-from');
+  var toBox = document.getElementById('history-to');
+
+  // ONE WINDOW, whichever control set it. A scale is the last N days ending at
+  // the most recent one; a range is two UTC dates. Both narrow the calendar and
+  // the timeline together, because two histories on one page that disagree
+  // about the period are two pages.
+  function applyPeriod() {
+    var custom = !!(period.from || period.to);
+    var from = period.from, to = period.to;
+    if (!custom) {
+      var days = [].slice.call(document.querySelectorAll('.calendar .cell[data-day]'))
+        .map(function (c) { return c.dataset.day; }).filter(Boolean).sort();
+      var last = days[days.length - 1];
+      if (last) {
+        var end = new Date(last + 'T00:00:00Z');
+        end.setUTCDate(end.getUTCDate() - (SPAN[period.scale] - 1));
+        from = end.toISOString().slice(0, 10);
+      }
     }
-    cells.forEach(function (cell) { cell.hidden = !!cut && cell.dataset.day < cut; });
-    [].forEach.call(document.querySelectorAll('button[data-scale]'), function (b) {
-      b.setAttribute('aria-pressed', String(b.dataset.scale === name));
+    [].forEach.call(document.querySelectorAll('.calendar .cell[data-day]'), function (cell) {
+      var day = cell.dataset.day;
+      cell.hidden = !!(from && day < from) || !!(to && day > to);
     });
+    [].forEach.call(document.querySelectorAll('button[data-scale]'), function (b) {
+      // `most recent` is an action and not a period: it never reads as chosen.
+      b.setAttribute('aria-pressed',
+        String(b.id !== 'history-today' && !custom && b.dataset.scale === period.scale));
+    });
+    var says = document.getElementById('history-period');
+    if (says) {
+      says.textContent = custom
+        ? (from || 'the beginning') + ' to ' + (to || 'the most recent day')
+        : period.scale;
+    }
     // At a day or a week a calendar is the wrong shape; the timeline under it
     // is what a reader wants, so the events narrow to the same window.
-    filterEvents(cut, name);
+    filterEvents(from, to);
+  }
+
+  function activityScale(name) {
+    if (!SPAN[name]) { name = 'year'; }
+    period.scale = name;
+    period.from = period.to = '';
+    if (fromBox) { fromBox.value = ''; }
+    if (toBox) { toBox.value = ''; }
     set('scale', name);
+    set('from', '');
+    set('to', '');
+    applyPeriod();
   }
   [].forEach.call(document.querySelectorAll('button[data-scale]'), function (b) {
     b.addEventListener('click', function () { activityScale(b.dataset.scale); });
   });
+  function activityRange() {
+    period.from = fromBox ? fromBox.value : '';
+    period.to = toBox ? toBox.value : '';
+    set('from', period.from);
+    set('to', period.to);
+    applyPeriod();
+  }
+  [fromBox, toBox].forEach(function (box) {
+    if (box) { box.addEventListener('change', activityRange); }
+  });
 
   var eventKind = '';
-  function filterEvents(cut, scale) {
+  function filterEvents(from, to) {
     var project = document.getElementById('history-project');
     // BY INDEX. Two projects may share a name, and comparing the label then
     // showed both of them under either one.
@@ -2138,7 +2241,8 @@ _SCRIPT = r"""
       var byProject = !only || tr.dataset.at === only;
       // An event with no readable time is never hidden by a period: it has no
       // period, and dropping it would be the page losing a reading.
-      var byDay = !cut || !tr.dataset.day || tr.dataset.day >= cut;
+      var day = tr.dataset.day;
+      var byDay = !day || ((!from || day >= from) && (!to || day <= to));
       tr.hidden = !(byKind && byProject && byDay);
     });
   }
@@ -2148,13 +2252,13 @@ _SCRIPT = r"""
       [].forEach.call(document.querySelectorAll('button[data-eventkind]'), function (o) {
         o.setAttribute('aria-pressed', String(o.dataset.eventkind === eventKind));
       });
-      activityScale(prefs.scale || 'year');
+      applyPeriod();
     });
   });
   var historyProject = document.getElementById('history-project');
   if (historyProject) {
     historyProject.addEventListener('change', function () {
-      activityScale(prefs.scale || 'year');
+      applyPeriod();
       set('historyProject', historyProject.value);
     });
   }
@@ -2215,7 +2319,12 @@ _SCRIPT = r"""
   overviewDensity(typeof prefs.od === 'string' ? prefs.od : 'balanced');
   allDepth(typeof prefs.ad === 'string' ? prefs.ad : 'full');
   activityMode(typeof prefs.actmode === 'string' ? prefs.actmode : 'combined');
-  activityScale(typeof prefs.scale === 'string' ? prefs.scale : 'year');
+  period.scale = typeof prefs.scale === 'string' && SPAN[prefs.scale] ? prefs.scale : 'year';
+  period.from = typeof prefs.from === 'string' ? prefs.from : '';
+  period.to = typeof prefs.to === 'string' ? prefs.to : '';
+  if (fromBox) { fromBox.value = period.from; }
+  if (toBox) { toBox.value = period.to; }
+  applyPeriod();
   chrome(prefs.chrome !== 'off');
   rebuildLayoutPresets();
   paint();
@@ -2543,6 +2652,11 @@ _QUESTIONS = (
      "Its UTC day, wherever in the world it was made. Bucketing by the committer's own offset "
      "would split two commits a minute apart; bucketing by yours would move them when somebody "
      "else opens the page.", "history"),
+    ("How do I look at a period that is not year, month, week or day?",
+     "The two date boxes beside the scales. They are UTC days, the same days the calendar "
+     "counts in, and either one on its own is an open end: a start with no end runs to the "
+     "most recent day, an end with no start runs from the beginning. Choosing a scale clears "
+     "them, and the page always says which window is in force.", "history"),
     ("Does a busy calendar mean a good week?",
      "No. A count is evidence that commits happened. It is not pace, not quality and not a "
      "verdict on anybody's week, and nothing here scores it.", "history"),
@@ -2783,13 +2897,7 @@ def _recent_activity(sites: list, *, weeks: int = 10) -> str:
     anything has happened lately, where, and how much of it is still only here.
     The horizon is stated rather than implied.
     """
-    activities = []
-    for site in sites:
-        pin = site.one("pin")
-        where = (pin.fields.get("repository") if pin else "") or ""
-        activities.append(activity.repository_activity(
-            where if where and where != UNKNOWN and Path(where).is_dir() else site.root,
-            name=site.name))
+    activities = [_activity_of(site) for site in sites]
     days = activity.aggregate(activities)
     if not days:
         return ("<p class=none>No project declares a repository this console can read, so "
@@ -2819,22 +2927,45 @@ def _recent_activity(sites: list, *, weeks: int = 10) -> str:
             "</div></div>")
 
 
+def _clock(when: str) -> str:
+    """A timestamp a narrow column can print on one line.
+
+    The full ISO string is what the timeline and the day inspector show, and
+    it is the right answer there. In a band cell it broke across four lines
+    with a `T` in the middle of one of them, so this drops the year and the
+    zone and keeps the two fields somebody scanning a control room reads.
+    Anything that is not an ISO timestamp is returned as it arrived: guessing
+    at the shape of a string is how a reading becomes a decoration.
+    """
+    text = str(when)
+    if len(text) >= 16 and text[4] == "-" and text[10] == "T":
+        return f"{text[5:10]} {text[11:16]}"
+    return text[:16]
+
+
 def _recent_events(sites: list, *, limit: int = 8) -> str:
     """The last few things any durable artifact can date."""
     events = []
     for site in sites:
-        events.extend(activity.pack_events(site.root, name=site.name))
+        events.extend(_events_of(site))
     dated = sorted((e for e in events if e.when), key=lambda e: e.when, reverse=True)[:limit]
     if not dated:
         return ("<p class=none>Nothing durable in these projects carries a timestamp for "
                 "anything that happened.</p>")
+    # ROWS, NOT A TABLE. Four columns inside a band cell gave each field about
+    # 140 pixels, and `overflow-wrap:anywhere` — which is there so a long path
+    # cannot force the page sideways — then broke words down the middle of
+    # themselves. A row that flows across the whole cell has the same fields in
+    # the same order and does not need a column to be wide enough for its
+    # longest value.
     rows = "".join(
-        f"<tr data-tone='{e.tone}'>" + _td("when", _ESC(e.when[:16]))
-        + _td("project", f"<span class=s>{_ESC(e.project)}</span>")
-        + _td("event", f"<span class='s {e.tone}'>{_ESC(e.kind)}</span>", e.tone)
-        + _td("subject", f"<span class=clamp>{_ESC(e.subject)}</span>") + "</tr>"
+        f"<li data-tone='{e.tone}'>"
+        f"<span class='nw t'>{_ESC(_clock(e.when))}</span>"
+        f"<span class='nw who'>{_ESC(e.project)}</span>"
+        f"<span class='s {e.tone} nw'>{_ESC(e.kind)}</span>"
+        f"<span class=what>{_ESC(e.subject)}</span></li>"
         for e in dated)
-    return f"<div class=tw><table><tbody>{rows}</tbody></table></div>"
+    return f"<ul class='rows events'>{rows}</ul>"
 
 
 def _telemetry(sites: list, *, kinds=()) -> str:
@@ -2853,12 +2984,22 @@ def _telemetry(sites: list, *, kinds=()) -> str:
         "recent-events": ("recent runtime pack events", _recent_events),
     }
     chosen = [key for key in (kinds or every) if key in every]
-    return ("<div class=instruments>" + "".join(
-        f"<section class=setgroup data-widget='global:viz-{key}' "
-        f"data-widget-name='{_ESC(every[key][0])}' data-widget-scope='global'>"
-        f"<div class=head><h2>{_ESC(every[key][0])}</h2></div>"
-        f"<div class=setbody>{every[key][1](sites)}</div></section>"
-        for key in chosen) + "</div>")
+    out = []
+    for key in chosen:
+        title, build = every[key]
+        body = build(sites)
+        # WHAT IT DREW decides how much of the band it gets. A legend of three
+        # counted lines fits a column; a table of rows or a strip of days does
+        # not, and asking each instrument to declare its own width is a list
+        # that goes stale the first time somebody adds one.
+        wide = " data-wide=1" if ("<table" in body or "class=rows" in body
+                                  or "class='rows" in body or "class=calendar" in body
+                                  or "class='calendar" in body) else ""
+        out.append(f"<section class=setgroup data-widget='global:viz-{key}' "
+                   f"data-widget-name='{_ESC(title)}' data-widget-scope='global'{wide}>"
+                   f"<div class=head><h2>{_ESC(title)}</h2></div>"
+                   f"<div class=setbody>{body}</div></section>")
+    return "<div class=instruments>" + "".join(out) + "</div>"
 
 
 def _finder(sites: list) -> str:
@@ -3307,6 +3448,7 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
     root_attrs = f' data-theme="{_ESC(theme)}"' if theme else ""
     accent_rule = f"<style>:root{{--accent:{_ESC(accent)}}}</style>" if accent else ""
     _INDEX.clear()
+    _READINGS.clear()
     for at, site in enumerate(sites):
         _INDEX[id(site)] = at
     body = [_rail(sites), "<div class=surface>", _global_bar(sites, theme), _finder(sites)]
@@ -3427,7 +3569,8 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                 "<main>",
                 "<div class=instruments-wide>"
                 + _telemetry([site], kinds=("workers", "attention", "audits", "capacity",
-                                            "budgets", "freshness", "budget-meters"))
+                                            "budgets", "freshness", "budget-meters",
+                                            "recent-activity", "recent-events"))
                 + "</div><main>", 1)
         body.append(_view(f"project:{index}", site.name,
                           "the whole position of one project", inner))

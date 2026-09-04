@@ -2622,3 +2622,148 @@ The one manual intervention was ending the `sleep` the stall stage started,
 under the scoped row-4 authorisation for fixtures this run creates. **No
 intervention was needed to make the lifecycle progress** — every transition
 happened because the durable state said it should.
+
+## Cycle 13 — the overnight delta, read blind
+
+`da26dd5a2a69ac6dd9c9a937c05e0ae09fff784b`, digest `5e328dcd…`, bounded to
+`10d7145..HEAD`. **NOT READY**, four findings and four tests that were not
+sufficient evidence.
+
+The findings: the complete-history scan certified a superproject clean while
+never reading the history of a submodule that superproject publishes; the
+lifecycle did not converge without intervention, because `derive()` reported
+state and started, consumed, retired and closed nothing; the projection raised
+on a record whose `capability` was a number; and two of the forty-nine
+dashboard markers matched the sentence that denies them. Each is repaired at
+the boundary it arrived through — a typed tree walk that makes a gitlink an
+INCOMPLETE report rather than a clean one, a rehearsal that walks a whole
+capability and asserts no `SILENT_IDLE` appears in the sequence, coercion at
+the record boundary with a seventy-two case generated fixture, and labelled
+readings with a negation guard that immediately found a third.
+
+The four weak tests were more useful than the findings. The vacuity sweep did
+not recognise `assert subject() or True`; the process-boundary rehearsal
+checked five fields and called it *the whole position*; the tone-separation
+test omitted `ACTION`, and a mutant setting Matrix's `--action` equal to its
+`--good` survived it; and the marker-removal test proved removal for one of
+forty-nine readings. All four are now what they claimed to be: the sweep
+recognises a constant that settles a chain, five planted shapes are caught and
+four honest ones are proved unflagged, the rehearsal compares whole records,
+`ACTION` is in the tone matrix, and removal is proved for every marker.
+
+## The presentation reading
+
+`f70dd4cec3e8d372c60570c368c7535c7a51124a`, digest `9eb59402…`. **NOT READY**,
+two findings and two decorative tests.
+
+**Freshness could lie globally.** The page's *oldest reading* took `max()` over
+formatted age strings, so `9 min ago` sorted above `120 min ago` and the
+summary reported the fresher of the two as the oldest. It compares numeric
+minutes now, and a reading nothing can date is UNKNOWN rather than a string
+that happens to sort well.
+
+**The colour bounds did not preserve what they promised.** A stored preference
+of `#333333` for the panel surface was accepted because the validator compared
+a changed surface only against `ink` and `dim`; on the accepted surface, `bad`,
+`warn` and `unknown` were all below the 4.5:1 floor the settings panel says it
+holds. And an accent of `#f2635c` — the default defect red — was accepted,
+because accent was checked for contrast and never for separability. Surfaces
+are now checked against every state colour, and the accent goes through the
+same perceptual separation as the semantics.
+
+Both decorative tests were mine. The folding test never read the rendered page:
+the reader deleted three renderers in memory and it still passed while its
+marked defect line was absent from the document. The density test asserted that
+one literal selector was absent, and the reader appended a different selector
+that hid every project row in minimal mode. Both are written against the
+delivered HTML now.
+
+## The visualisation reading
+
+`5a8c09d5a00793f21180718ce9aa88855d364b56`, digest `60a1ef7e…`. **NOT READY**,
+three findings and four decorative tests.
+
+An audit that could not be compared was counted as no audit at all, because its
+figure carried no `kind`. An empty capacity observation vanished from the
+instrument while the table beside it said UNKNOWN. And a meter was drawn
+against an infinite denominator: zero, negative and NaN were refused, infinity
+was not.
+
+The four tests: the settings-bounds test searched `_SCRIPT` for strings and
+survived `if (false && why)`; the unknown-window test checked that a legend
+existed rather than that a segment did; the instrument-agreement test derived
+its expectation from the very collection that lost the miscounted audit; and
+the meter-shape test omitted infinity. Each now fails without its repair.
+
+## The reading of the two histories
+
+`4d754b41f4ebcd32fa12f96e95fe363a91ba23a3`, digest `82f47972…`. **NOT READY**,
+five findings and three decorative tests. The suite it ran was 363, not the 348
+the brief predicted — the fourth stale count this session has produced, and the
+reason the packet now names commands instead of numbers.
+
+A linked worktree was counted as a second repository, because activity identity
+came from the per-worktree Git directory rather than the common one, and one
+commit in two worktrees reported as two. An unreadable repository rendered
+established zeroes for local and local-only, which is a claim, where the remote
+column already said UNREADABLE. `deadline passed` was invented at read time:
+true, determined, and recorded by no artifact, so it now carries
+`basis="derived"`, is marked in the timeline and can be filtered out. The
+project filter compared an option's display text, so two registry entries
+sharing a name leaked each other's events; it filters by index. And the
+repository table did not deduplicate while the calendar and the summary above
+it did, so a repository registered twice was one commit in the summary and two
+rows in the table; the duplicate row now says *counted once, above*.
+
+Of the three weak tests, one never exercised an observed remote, so a mutant
+that adds `total` to `represented` survived it; one tested the Python function
+while the defect was in the rendered JavaScript filter; and one accepted any
+non-empty source string, so it could not reject an event no artifact evidences.
+
+## The band that broke words down the middle
+
+Not a reading — a screenshot. The ultrawide control-room capture showed the
+recent-events instrument printing `readi/ng writt/en` and `the coordina…` down
+a column about 385 pixels wide, and the mini-calendar beside it as an
+illegible blob. The band sizes its columns for a legend of three counted lines,
+and two of its instruments are not legends.
+
+An instrument is marked wide **from what it rendered** — a table, a strip of
+days, or rows — and a wide instrument takes two of the band's columns above
+1500 pixels. The event instrument stopped being a table: four columns inside a
+band cell gave every field about 140 pixels, and `overflow-wrap:anywhere`,
+which is there so a long path cannot force the page sideways, then broke words
+inside themselves. The same fields flow across the whole cell now, and the
+timestamp is printed as `09-04 14:27` rather than as an ISO string with a `T`
+in the middle of the second line.
+
+**Measured rather than eyeballed.** A word the browser had to split occupies
+more than one client rect, and a `Range` around each word says so without
+touching the document. Before the repair: **136 broken words** across the band
+at 3840, 2560 and 1512. After: **none, at any of the three widths.** Four
+mutants over the three new oracles — the marker removed, the CSS rule removed,
+the raw ISO stamp restored, and the clock made to guess at any string it is
+given — were all killed.
+
+The lesson is the one this release keeps relearning: the source was correct as
+text, the suite was green, and the defect was visible only to something that
+draws.
+
+## A period of the reader's own choosing
+
+Four scales answer *the last N days*, which is the question a reader asks most
+and not the only one. Two UTC date boxes now answer *those days*: either bound
+on its own is an open end, choosing a scale clears them, and a line beside the
+controls says in words which window is in force, because four buttons and two
+boxes can disagree about which one is chosen and a sentence cannot. The
+calendar and the timeline narrow together — one window, whichever control set
+it — and an event nothing can date is never hidden by a period, since it has
+no period and dropping it would be the page losing a reading.
+
+The document's part of that is a test: both bounds exist, they are dates, the
+label exists, every scale is still reachable, and every event the timeline
+could narrow carries a well-formed UTC day. The behaviour is a browser
+property, and **87 of 87 interactive properties hold**, nine of them new. The
+pairing was proved rather than assumed: dropping the upper bound from the
+delivered page's own script leaves the source test passing and fails exactly
+one browser property — *the timeline narrows to the same range*.

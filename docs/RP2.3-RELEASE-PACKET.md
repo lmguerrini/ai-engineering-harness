@@ -235,6 +235,60 @@ overflow probe measuring a 500-pixel window while calling it a phone. The
 release now guards the stylesheet's structure, asks the browser which palette it
 is drawing, and measures narrow widths inside a frame that asserts its own size.
 
+## The two histories, and why neither of them is a score
+
+`tools/activity.py` reads two things that already exist on disk and invents
+neither. Both are read-only, both are offline, and both refuse rather than
+guess.
+
+**Repository activity — when the code actually changed.** Local commits by UTC
+day, drawn as a contribution calendar at year, month, week and day scales, or
+between two dates a reader picks — either bound on its own is an open end,
+choosing a scale clears them, and the page says in words which window is in
+force. Both histories narrow to the same window together, because two
+histories on one page that disagree about the period are two pages. The
+calendar covers all projects at once and one project on its detail page, and
+the range can reach any day inside the window that was read. The remote side is
+read from remote-tracking refs and **never from the network**: this module has
+no fetch, and a remote nobody has fetched reports `REMOTE NEVER OBSERVED`
+rather than empty. The relationship is containment, stated on the page and
+enforced by a test:
+
+    LOCAL TOTAL
+    ├── REMOTE-REPRESENTED   reachable from a remote-tracking ref
+    └── LOCAL-ONLY           reachable from a local ref and no remote one
+
+Not `local + remote`. A pushed commit is one commit two refs reach, and adding
+them would make every push look like work. Four remote states are distinct
+answers — none configured, never observed, observed, unreadable — and an
+unreadable repository reports `UNKNOWN` for every total rather than zero,
+because a repository that could not be read has not been read as empty.
+Repositories are identified by their **common** directory, so a linked worktree
+is the same repository and not a second one; a project registered twice is
+counted once and the table says so where it would otherwise repeat.
+
+**Runtime Pack events — what a governed run left behind.** Rebuilt from
+artifacts that carry their own timestamps, and deliberately incomplete. Seven
+event classes ship because seven are evidenced: a reading written, a wait
+declared, a deadline passed, an output chunk written, an output completed,
+evidence recorded, an observation recorded. Everything else a governed run does
+— a capability opening, an audit dispatched, a finding recorded — happens in
+documents that carry no durable time for it, and this module dates nothing by
+inference from the present state. **Every event names the artifact that dates
+it.** One class, `deadline passed`, is arithmetic over two durable fields and
+the clock rather than something an artifact records; it is marked `derived` in
+the timeline and can be filtered out, because an independent reader pointed out
+that mixing the two without saying which is which is the misleading part.
+
+**Days are UTC, and the page says so.** The reader's local zone would move a
+commit between days depending on which machine opened the page, and a history
+that changes shape when you open it somewhere else is not a history.
+
+**Neither is evidence of quality.** A commit count measures that commits
+happened. There is no productivity figure, no velocity, no developer
+comparison, no good day and no bad day, and a test refuses the vocabulary that
+would introduce one.
+
 ## Evolution Candidates, deferred out of this release
 
 Each is a real observation with the evidence that produced it. None is a defect
@@ -318,6 +372,27 @@ uses that setting. *Layer:* the token declarations. *Deferred because:* moving
 a whole layout from px to rem this late is a change with no test that would
 catch what it breaks, and the measured readability floor plus the in-page
 control cover the need.
+
+**A governed run leaves no durable event log.** *Evidence:* the event history
+ships seven classes because seven are what artifacts date. A capability
+opening, an audit being dispatched and a finding being recorded are the three
+an operator asks for first, and none of them is written down with a time.
+*Value:* a run's actual shape, rather than the parts that happened to leave a
+mtime. *Trigger:* the first operator who asks when a capability opened.
+*Layer:* the coordinator's record — an append-only event line, written as the
+run happens. *Deferred because:* adding a log means adding a writer, and this
+release's projection reads. Inferring the times instead is precisely what the
+module refuses to do, and shipping the refusal is more honest than shipping a
+timeline that is right about the easy half.
+
+**Repository activity reads a bounded year.** *Evidence:* `window_days`
+defaults to 366 and the view says the window it read. A complete traversal on
+every render was measured and is not what a page should cost. *Value:* a
+multi-year calendar. *Trigger:* an operator who wants one. *Layer:*
+`activity.py` — either a wider window on request, or a cached per-day count
+with an invalidation rule. *Deferred because:* a cache is a second copy of a
+fact, and the fact it would copy is cheap to re-derive for the window anyone
+has asked to see.
 
 ## The freeze, prepared and not performed
 
@@ -433,22 +508,40 @@ What holds, in words that cannot go stale:
 *   The assembled system runs end to end against real processes, in a clean room
     built from `git archive` and from a fresh clone, with the console and the
     phone layout measured rather than eyeballed.
+*   The two histories read only what is already on disk. No network call of any
+    kind, no fetch, nothing written, and no figure anywhere that scores the work
+    — the containment arithmetic, the four remote states, the UTC bucketing and
+    the refusal of score vocabulary each have a test that fails without them.
 *   2.2.0 verifies. 2.1.1 verifies. Zero remotes, zero tags, nothing pushed or
     published, no history rewritten, `main` unmoved.
 
 ### What is not, and will not be before a person acts
 
-**Round 8's repairs are unaudited, and the closure ceiling is reached.** The
-founder raised it from 4 to 8 mid-session; all 8 are spent. A ninth reading is
-HITL row 8. The three repairs it would examine are the thread-local inspection
-guard, commit-message scanning, and the write-bound check — each reproduced,
-repaired, regressed and mutation-killed by the coordinator, and none read by
-anybody else.
+**The last repairs are unaudited, and that has been true at every stopping
+point.** Thirteen closure cycles ran against correctness, the ceiling was
+raised twice by recorded human decision, and all thirteen are spent. Three
+further readings ran afterwards, each bounded to the delta of the work that
+preceded it and each authorised in the instruction that scoped that work: the
+presentation delta, the visualisation delta, and the delta of the two
+histories. **All three returned NOT READY** — two findings and two decorative
+tests; three findings and four decorative tests; five findings and three
+decorative tests — and every one is repaired at the boundary it arrived
+through, with an oracle that fails without the repair. Two adoption rehearsals
+also ran, by readers given only the release; the first found no documented way
+to write the record this pack ships a reader for, and the second confirmed that
+closed.
 
-That matters more here than the sentence usually does. **Thirteen of roughly
-fifty findings across eight rounds were defects in the previous round's
-repairs.** On that base rate, a ninth reading would probably find something. It
-is the founder's call whether the marginal finding is worth the cycle.
+The commit that closes the last of those readings has been read by nobody but
+its author. That is not a defect and it is not new: it is the shape of every
+stopping point, and it is why the next paragraph is the one to weigh.
+
+**About a quarter of all findings across every round were defects in the
+previous round's repairs**, and that ratio never improved. On that base rate,
+another reading would probably find something. It is the founder's call whether
+the marginal finding is worth the cycle — and unlike the earlier rounds, what a
+further reading would now examine is a presentation layer that decides nothing:
+the two histories read artifacts that already exist, contact no network, and
+write nothing.
 
 **Two readings were killed mid-run by their provider's content
 filter** and wrote nothing; their findings were recovered from stderr, and both
@@ -464,7 +557,8 @@ projection has never been watched during a real multi-hour run.
 
 ### The remaining human actions
 
-1. **Decide whether to spend a ninth closure cycle** on round 8's repairs. Row 8.
+1. **Decide whether to spend another closure cycle** on the repairs that close
+   the history reading. Row 8.
 2. **Freeze**, if you choose to: the procedure is in *The freeze, prepared and
    not performed* above — five surfaces to make say one thing, two independent
    digest verifications, a commit, then a root nobody works in and only then the

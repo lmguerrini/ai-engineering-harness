@@ -1105,3 +1105,209 @@ def test_no_word_in_the_console_scores_the_work(with_repository):
                  "developer score", "good day", "streak"):
         assert word not in page, f"the console says {word!r}"
     assert "not pace, not quality" in page
+
+
+def _band(page: str) -> list:
+    """Every instrument in the control room's band, as (key, wide, body).
+
+    Sliced by the instruments themselves rather than by guessing where the band
+    ends: the first version bounded it with a selector the page does not always
+    contain and silently read half the document.
+    """
+    import re
+
+    room = page[page.index("data-view='control'"):page.index("data-view='projects'")]
+    band = room[room.index("<div class=instruments>"):]
+    found = re.findall(
+        r"<section class=setgroup data-widget='global:viz-([a-z-]+)'[^>]*?"
+        r"(\sdata-wide=1)?>(.*?)</section>", band, re.S)
+    assert found, "the control room drew no instrument band"
+    return found
+
+
+def test_an_instrument_that_draws_rows_or_a_strip_is_given_room_for_them(with_repository):
+    """The band's columns are sized for a legend, and two of its instruments
+    are not legends.
+
+    At 3840 the event instrument got one column of about 385 pixels and the
+    browser broke words down the middle of themselves — `readi/ng writt/en`.
+    Nothing that reads source text could see it; the ultrawide screenshot
+    could. The repair marks an instrument wide **from what it rendered**, so
+    the eleventh instrument gets the same treatment without anybody
+    remembering to add it to a list.
+    """
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three))
+
+    drawn, legends = [], []
+    for key, wide, body in _band(page):
+        needs = ("<table" in body or "class=rows" in body or "class='rows" in body
+                 or "class=calendar" in body or "class='calendar" in body)
+        (drawn if needs else legends).append(key)
+        assert bool(wide) == needs, (
+            f"instrument {key!r} renders {'rows or a strip' if needs else 'a legend'} "
+            f"and is marked {'wide' if wide else 'narrow'}")
+
+    # NOT VACUOUS IN EITHER DIRECTION: if every instrument were a legend the
+    # assertion above would hold while proving nothing, and if every one were
+    # wide the rule would just be the band's own column width.
+    assert drawn, "no instrument in the band draws rows or a strip"
+    assert legends, "every instrument in the band draws rows or a strip"
+
+    rule = "@media (min-width:1500px){.instruments>[data-wide]{grid-column:span 2}}"
+    assert rule in console._SHELL_STYLE, "nothing gives a wide instrument its second column"
+    assert rule in page, "the rule is declared and never delivered to the page"
+
+
+def test_a_band_cell_never_carries_a_timestamp_it_cannot_print_on_one_line(with_repository):
+    """`2026-09-04T14:27` in a 385-pixel column is four lines with a `T` in the
+    middle of one of them. The timeline and the day inspector show the whole
+    stamp, because they have the width for it."""
+    import re
+
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three))
+    band = "".join(body for _key, _wide, body in _band(page))
+
+    stamps = re.findall(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", band)
+    assert not stamps, f"the instrument band prints full ISO timestamps: {stamps[:3]}"
+    assert re.search(r"class='nw t'>\d{2}-\d{2} \d{2}:\d{2}<", band), \
+        "the band prints no event time at all, so this proves nothing"
+
+
+def test_the_clock_returns_what_it_was_given_when_it_is_not_a_timestamp():
+    """Guessing at the shape of a string is how a reading becomes a decoration."""
+    assert console._clock("2026-09-04T14:27:55.121372+00:00") == "09-04 14:27"
+    assert console._clock("") == ""
+    assert console._clock("not a time") == "not a time"
+    assert console._clock("2026-09-04 14:27:55") == "2026-09-04 14:27"
+
+
+def test_the_history_offers_a_period_of_the_readers_own_choosing(with_repository):
+    """Four scales answer *the last N days*. A range answers *those days*, and
+    the two must not be able to disagree about which is in force.
+
+    The document's part of that is what this asserts: both bounds exist, they
+    are dates rather than free text, the page carries a place to say which
+    window it is showing, and every event the timeline could narrow carries the
+    UTC day it would be narrowed by. The behaviour itself is a browser
+    property, exercised in `rp2.3-session/SMOKE-REPORT.md`.
+    """
+    import re
+
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three))
+    view = page[page.index("data-view='history'"):]
+    view = view[:view.index("<section class=view")] if "<section class=view" in view else view
+
+    assert "<input type=date id=history-from" in view, "no lower bound"
+    assert "<input type=date id=history-to" in view, "no upper bound"
+    assert "id=history-period" in view, "nothing says which window is in force"
+    for scale in ("year", "month", "week", "day"):
+        assert f"data-scale='{scale}'" in view, f"the {scale} scale is gone"
+
+    rows = re.findall(r"<tr data-tone='[a-z]+' data-kind='[^']*' [^>]*data-day='([^']*)'", view)
+    assert rows, "the timeline has no rows, so this proves nothing about narrowing them"
+    dated = [day for day in rows if day]
+    assert dated, "no event carries a day, so no period could ever narrow one"
+    for day in dated:
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", day), f"{day!r} is not a UTC day"
+
+
+def test_a_project_page_carries_its_own_two_histories_and_nobody_elses(with_repository,
+                                                                       tmp_path):
+    """The history view answers *across every project*. A project's own page has
+    to answer *this one*, or a reader has to leave it to find out when its code
+    last changed.
+
+    **Two repositories of different sizes**, because with one the aggregate and
+    the project agree and a band drawn from every site passes anyway. That
+    mutant survived the first version of this test.
+    """
+    import re
+    import subprocess
+
+    three, _repo = with_repository
+    second = tmp_path / "other-code"
+    second.mkdir()
+    for command in (("init", "--quiet", "--initial-branch", "main"),
+                    ("config", "user.name", "T"), ("config", "user.email", "t@e.invalid"),
+                    ("config", "commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(second), *command], check=True, capture_output=True)
+    for n in range(2):
+        (second / f"g{n}.txt").write_text(str(n))
+        subprocess.run(["git", "-C", str(second), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(second), "commit", "-qm", f"g{n}"], check=True,
+                       capture_output=True)
+    (tmp_path / "c" / "PROJECT.yaml").write_text(
+        'project:\n  name: "c"\n  publication_intent: "internal"\n'
+        f'  repo_path: "{second}"\n'
+        'pack:\n  root_path: "%s"\n  version_adopted: "2.3.0"\n'
+        '  state_adopted: "IN_PROGRESS"\n  adopted_at: "2026-09-04"\n'
+        '  adoption_boundary: "at a capability boundary"\nadapters: []\n'
+        % Path(__file__).resolve().parents[2], encoding="utf-8")
+
+    sites = console.survey(three)
+    page = console.render_console(sites)
+
+    totals = {site.name: console._activity_of(site).total_local for site in sites}
+    assert len({n for n in totals.values() if n}) >= 2, (
+        f"the fixture gave every repository the same size: {totals}")
+
+    mine, readable = None, 0
+    for index, site in enumerate(sites):
+        view = page[page.index(f"data-view='project:{index}'"):]
+        view = view[:view.index("<section class=view")] if "<section class=view" in view else view
+        if site.view is None:
+            # A project that could not be read says why, and draws no
+            # instruments over a reading it does not have.
+            assert "global:viz-" not in view, f"{site.name} is unreadable and drew instruments"
+            continue
+        readable += 1
+        assert "global:viz-recent-activity" in view, f"{site.name} has no repository activity"
+        assert "global:viz-recent-events" in view, f"{site.name} has no event history"
+        commits = console._activity_of(site).total_local
+        # EACH PROJECT STATES ITS OWN COUNT, not the registry's. A band drawn
+        # from every site would put the same total on every page, and with one
+        # repository in the fixture that was indistinguishable from the truth.
+        if commits:
+            mine = (site, view)
+            assert re.search(r"<b>%d</b> commits in \d+ weeks" % commits, view), (
+                f"{site.name}'s own page does not state its own {commits} commits")
+        else:
+            # NOT ZERO. A project with no repository this console can read is a
+            # question nobody answered, and an empty calendar would answer it.
+            assert "no repository this console can read" in view.lower() \
+                or "commits in" not in view, (
+                    f"{site.name} has no readable repository and drew a count anyway")
+    assert readable, "every project in the fixture is unreadable, so this proves nothing"
+    assert mine, "no project in the fixture has a repository with any commit in it"
+
+
+def test_one_page_reads_each_project_history_once(with_repository):
+    """The same two histories are drawn in four places. Reading them four times
+    is four chances to disagree, and it is slower for the privilege."""
+    three, _repo = with_repository
+    sites = console.survey(three)
+
+    calls = []
+    real = console.activity.repository_activity
+
+    def counted(where, **rest):
+        calls.append(str(where))
+        return real(where, **rest)
+
+    console.activity.repository_activity = counted
+    try:
+        page = console.render_console(sites)
+    finally:
+        console.activity.repository_activity = real
+
+    # ONE PER PROJECT, not one per repository: two projects may legitimately
+    # point at the same repository, and the aggregate deduplicates them by the
+    # repository's own identity afterwards. What must not happen is the same
+    # project being read again because a second part of the page wanted it.
+    assert len(calls) == len(sites), (
+        f"{len(calls)} reads for {len(sites)} projects: {calls}")
+    # and the page really did draw it in more than one place
+    assert page.count("global:viz-recent-activity") > len(sites)

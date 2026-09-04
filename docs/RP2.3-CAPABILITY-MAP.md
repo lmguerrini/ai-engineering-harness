@@ -43,6 +43,8 @@ session. Each carries the observation that reopens it.
 | C13 | Launch, migration and compatibility | MUST | C3–C11 |
 | C14 | Rehearsal, qualification and release candidate | MUST | all |
 | C15 | Closing ACTIONABLE_WORK + SILENT_IDLE | MUST | C4, C5, C12 |
+| C16 | The multi-project console | SHOULD | C12 |  *(presentation; decides nothing)*
+| C17 | Repository activity and pack event history | SHOULD | C16 |  *(read-only, offline; never a score)*
 
 **C2 comes second, and the ordering is the point.** The rehearsal obligations
 this release must satisfy are unconditional about it: *every rehearsal's own
