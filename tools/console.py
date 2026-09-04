@@ -290,7 +290,14 @@ border-color:var(--accent);font-weight:700}
 /* ---- the custom view builder ---------------------------------------------- */
 .builder{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule)}
 @media(min-width:1000px){.builder{grid-template-columns:262px 1fr}}
-.catalog{background:var(--panel);padding:10px 14px;max-height:none}
+.catalog{background:var(--panel);padding:10px 14px;max-height:78vh;overflow-y:auto}
+.catalog details>summary{cursor:pointer;list-style:none;font-size:11px;color:var(--dim);
+padding:4px 0;border-top:1px solid var(--rule);user-select:none}
+.catalog details>summary::-webkit-details-marker{display:none}
+.catalog details>summary::before{content:"▸ "}
+.catalog details[open]>summary::before{content:"▾ "}
+.catalog details>summary .n{color:var(--faint);font-size:9.5px}
+@media(max-width:999px){.catalog{max-height:none}}
 .catalog h5{margin:9px 0 5px;font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;
 color:var(--faint)}
 .catalog label{display:flex;gap:7px;align-items:baseline;font-size:11.5px;padding:2px 0;
@@ -775,11 +782,16 @@ _SCRIPT = r"""
     var all = prefs.layouts;
     return (all && typeof all === 'object' && !Array.isArray(all)) ? all : {};
   }
+  // An arrangement to start from, used only when this browser has never been
+  // given one. Choosing to have none is a choice and is kept.
+  var OPENING = [{ id: 'global:overview', span: 2 }, { id: 'global:attention', span: 2 }];
   function current() {
     var name = typeof prefs.layout === 'string' ? prefs.layout : 'default';
     var all = layouts();
     var one = all[name];
-    return { name: name, widgets: Array.isArray(one && one.widgets) ? one.widgets : [],
+    var chosen = Array.isArray(one && one.widgets) ? one.widgets
+               : (prefs.layouts === undefined ? OPENING : []);
+    return { name: name, widgets: chosen,
              cols: Math.min(4, Math.max(1, Number(one && one.cols) || 2)) };
   }
   function paint() {
@@ -972,16 +984,32 @@ def _global_bar(sites: list, lens: str) -> str:
 
 
 def _custom_view(sites: list) -> str:
+    #: GROUPED BY SCOPE. A hundred and thirty widgets in one flat list is a
+    #: catalogue nobody reads — found by looking at it. The cross-project ones
+    #: are open; each project folds, because a reader arranging a view is
+    #: thinking about one project at a time.
     catalogue = _widgets(sites)
-    picks = []
+    groups: dict = {}
     for node_id, title, scope in catalogue:
-        picks.append(
-            f"<label><input type=checkbox data-pick='{_ESC(node_id)}'>"
-            f"<span>{_ESC(title)}</span><span class=ord>"
-            f"<button data-move='{_ESC(node_id)}' data-by='-1' title='earlier'>↑</button>"
-            f"<button data-move='{_ESC(node_id)}' data-by='1' title='later'>↓</button>"
-            f"<button data-span='{_ESC(node_id)}' title='width'>⇔</button>"
-            f"</span></label>")
+        groups.setdefault(scope, []).append((node_id, title))
+
+    def pick(node_id, title, scope):
+        label = title[len(scope) + 3:] if scope != "global" and title.startswith(scope) else title
+        return (f"<label><input type=checkbox data-pick='{_ESC(node_id)}'>"
+                f"<span>{_ESC(label)}</span><span class=ord>"
+                f"<button data-move='{_ESC(node_id)}' data-by='-1' title='earlier'>↑</button>"
+                f"<button data-move='{_ESC(node_id)}' data-by='1' title='later'>↓</button>"
+                f"<button data-span='{_ESC(node_id)}' title='width'>⇔</button>"
+                f"</span></label>")
+
+    picks = []
+    for scope, rows in groups.items():
+        inner = "".join(pick(node_id, title, scope) for node_id, title in rows)
+        if scope == "global":
+            picks.append(f"<h5>across every project</h5>{inner}")
+        else:
+            picks.append(f"<details><summary>{_ESC(scope)}"
+                         f"<span class=n> {len(rows)}</span></summary>{inner}</details>")
     return (
         "<div class=filters><span class=t>columns</span>"
         + "".join(f"<button data-cols='{n}'>{n}</button>" for n in (1, 2, 3, 4))
@@ -991,8 +1019,7 @@ def _custom_view(sites: list) -> str:
         + "<button id=layout-delete>delete</button>"
         + "<button id=layout-reset>reset everything</button>"
         + "<span class=t>current</span><span id=layout-name>default</span></div>"
-        "<div class=builder><div class=catalog><h5>widgets</h5>"
-        + "".join(picks) +
+        "<div class=builder><div class=catalog>" + "".join(picks) +
         "<h5>what this is</h5><p class=none style='padding:0'>A layout selects and arranges "
         "sections that are already on this page. It is kept in this browser, under one key, and "
         "it is not part of any project's state: deleting it changes no record, no evidence and "
