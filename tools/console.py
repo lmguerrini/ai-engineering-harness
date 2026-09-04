@@ -983,18 +983,39 @@ def _month_grid(days, *, mode: str, most: int) -> str:
     return f"<div class=months-grid>{''.join(blocks)}</div>"
 
 
+#: How many days back the column representation covers. A week scale needs
+#: seven and a custom range picks something else past thirty-one, so this is
+#: comfortably more than either and small enough to render every day in it —
+#: including the quiet ones, which is the point.
+COLUMN_DAYS = 45
+
+
 def _day_columns(days, events, *, mode: str) -> str:
     """One column per day: the operational week. What happened on Tuesday, and
     how does Tuesday compare with Wednesday — which is a question a calendar
-    cell cannot answer and a column can."""
+    cell cannot answer and a column can.
+
+    **Every day in the window, including the empty ones.** The first version
+    rendered only days the reading had an entry for, so a week with three quiet
+    days showed four columns and looked like a four-day week. A day with no
+    commit is an answer.
+    """
     if not days:
         return _nothing_here()
+    by_date = {day.date: day for day in days}
+    last = datetime.date.fromisoformat(max(by_date))
+    first = max(datetime.date.fromisoformat(min(by_date)),
+                last - datetime.timedelta(days=COLUMN_DAYS - 1))
+    span, walk = [], first
+    while walk <= last:
+        span.append(by_date.get(walk.isoformat()) or activity.Day(date=walk.isoformat()))
+        walk += datetime.timedelta(days=1)
     by_day: dict = {}
     for event in events:
         if event.day:
             by_day.setdefault(event.day, []).append(event)
     columns = []
-    for day in days:
+    for day in span:
         shown, exact, kind = _mode_counts(day, mode)
         here = by_day.get(day.date, [])
         rows = "".join(
@@ -1016,18 +1037,33 @@ def _day_columns(days, events, *, mode: str) -> str:
             + (f"<ul class='rows dayevents'>{rows}</ul>" if rows else
                "<p class=nodata>no dated event</p>")
             + "</div>")
-    return f"<div class=daycols>{''.join(columns)}</div>"
+    covered = sum(day.local for day in span)
+    # ITS OWN TOTAL, because it does not cover the year the summary above does.
+    # A representation bounded to part of the window and compared against the
+    # whole one disagrees by construction, and a reader cannot tell that from a
+    # reading that is simply wrong.
+    return (f"<p class=nodata>One column per day, for the last {COLUMN_DAYS} days of the "
+            f"window — <b class=covered>{covered}</b> local commits between {span[0].date} "
+            f"and {span[-1].date}, of the {sum(day.local for day in days)} in the whole "
+            f"window. A day with no commit keeps its column: an empty day is a reading.</p>"
+            f"<div class=daycols>{''.join(columns)}</div>")
 
 
 def _day_hours(days, events, *, mode: str) -> str:
     """Inside a day, by UTC hour — read from the commit's own instant and never
     invented. A day with no readable hour draws no bar rather than a bar at
     midnight."""
-    recent = [day for day in days if day.local]
-    if not recent:
+    if not days:
         return _nothing_here()
     horizon = (datetime.date.today() - datetime.timedelta(days=HOURLY_DAYS - 1)).isoformat()
-    recent = [day for day in recent if day.date >= horizon]
+    by_date = {day.date: day for day in days}
+    last = datetime.date.fromisoformat(max(by_date))
+    walk = max(datetime.date.fromisoformat(horizon),
+               datetime.date.fromisoformat(min(by_date)))
+    recent = []
+    while walk <= last:
+        recent.append(by_date.get(walk.isoformat()) or activity.Day(date=walk.isoformat()))
+        walk += datetime.timedelta(days=1)
     if not recent:
         return ("<p class=none>Nothing in the last " + str(HOURLY_DAYS) + " days. Hourly detail "
                 "is kept for that long; before it, the day is the finest reading this page "
@@ -1038,6 +1074,16 @@ def _day_hours(days, events, *, mode: str) -> str:
             by_day.setdefault(event.day, []).append(event)
     blocks = []
     for day in recent:
+        if not day.local:
+            # A QUIET DAY KEEPS ITS BLOCK. Rendering only days with commits made
+            # the day scale show nothing at all on a day nothing was committed,
+            # which reads as *this page has no answer* rather than as the answer.
+            blocks.append(
+                f"<div class=dayhours data-day='{day.date}'>"
+                f"<h4>{day.date} <span>UTC</span></h4>"
+                "<p class=nodata>No commit on this day. That is a reading of this "
+                "repository, not a claim about anybody's day.</p></div>")
+            continue
         series = (day.remote_hours if mode == "remote" else
                   day.local_only_hours if mode == "combined" else day.hours)
         label = ("represented by the remote" if mode == "remote" else

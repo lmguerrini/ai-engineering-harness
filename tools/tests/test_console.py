@@ -1045,14 +1045,26 @@ def test_every_temporal_representation_states_the_same_total(with_repository):
                            r"data-local='(\d+)'", block),
         "month": re.findall(r"<i class='mcell cell s\d k-[a-z]+[^']*' data-day='[^']+' "
                             r"data-local='(\d+)'", block),
-        "week": re.findall(r"<div class='daycol k-[a-z]+' data-day='[^']+' "
-                           r"data-local='(\d+)'", block),
     }
     for name, found in counted.items():
         assert found, f"the {name} representation drew no day at all"
         assert sum(int(n) for n in found) // 3 == total, (
             f"the {name} representation counts "
             f"{sum(int(n) for n in found) // 3} where the summary states {total}")
+
+    # THE WEEK VIEW COVERS PART OF THE WINDOW and states its own total for it.
+    # Comparing a bounded representation against the whole window disagrees by
+    # construction, and a reader could not tell that from a reading that is
+    # simply wrong — so it is compared against the number it prints.
+    week = [int(n) for n in re.findall(
+        r"<div class='daycol k-[a-z]+' data-day='[^']+' data-local='(\d+)'", block)]
+    assert week, "the week representation drew no day at all"
+    stated_cover = re.findall(r"<b class=covered>(\d+)</b>", block)
+    assert stated_cover, "the week representation states no total of its own"
+    assert len(set(stated_cover)) == 1, f"it states several: {set(stated_cover)}"
+    assert sum(week) // 3 == int(stated_cover[0]), (
+        f"the week columns total {sum(week) // 3} and the page says {stated_cover[0]}")
+    assert int(stated_cover[0]) <= total
 
 
 def test_the_hours_of_a_day_total_the_day_on_the_page(with_repository):
@@ -1359,3 +1371,57 @@ def test_one_page_reads_each_project_history_once(with_repository):
         f"{len(calls)} reads for {len(sites)} projects: {calls}")
     # and the page really did draw it in more than one place
     assert page.count("global:viz-recent-activity") > len(sites)
+
+
+def test_a_quiet_day_keeps_its_place_in_the_week_and_the_day(with_repository):
+    """A week with three quiet days is still a seven-day week.
+
+    The first version of both representations rendered only days the reading
+    had an entry for, so a quiet Monday simply was not there — and four columns
+    look like a four-day week rather than like a week with three quiet days.
+    An empty day is a reading; UNKNOWN and zero and absent are three different
+    things, and this is the difference between the last two.
+    """
+    import datetime
+    import re
+
+    import subprocess
+
+    three, repo = with_repository
+    # A GAP, deliberately. The fixture commits everything today, so without an
+    # older commit the span is one day long and there is no quiet day to lose.
+    older = (datetime.date.today() - datetime.timedelta(days=4)).isoformat() + "T10:00:00+00:00"
+    (repo / "older.txt").write_text("older")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "older"], check=True,
+                   capture_output=True, timeout=120,
+                   env={"PATH": "/usr/bin:/bin", "HOME": str(repo),
+                        "GIT_AUTHOR_DATE": older, "GIT_COMMITTER_DATE": older,
+                        "GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@e.invalid",
+                        "GIT_COMMITTER_NAME": "T", "GIT_COMMITTER_EMAIL": "t@e.invalid"})
+
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    block = _history_block(page)
+
+    columns = re.findall(r"<div class='daycol k-[a-z]+' data-day='(\d{4}-\d{2}-\d{2})'", block)
+    assert columns, "the week representation drew no column"
+    dates = sorted(set(columns))
+    #: contiguous — every date between the first and the last is present
+    walk = datetime.date.fromisoformat(dates[0])
+    last = datetime.date.fromisoformat(dates[-1])
+    expected = []
+    while walk <= last:
+        expected.append(walk.isoformat())
+        walk += datetime.timedelta(days=1)
+    assert dates == expected, (
+        f"the week representation skips {sorted(set(expected) - set(dates))[:5]}")
+
+    quiet = [d for d in dates if f"data-day='{d}' data-local='0'" in block]
+    assert quiet, "the fixture has no quiet day, so this proves nothing"
+
+    hourly = re.findall(r"<div class=dayhours data-day='(\d{4}-\d{2}-\d{2})'", block)
+    assert hourly, "the day representation drew no block"
+    assert set(quiet) & set(hourly), (
+        "a quiet day has no hourly block at all, so the day scale shows nothing on it")
+    assert "No commit on this day" in block
