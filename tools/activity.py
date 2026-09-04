@@ -86,6 +86,8 @@ class RepositoryActivity:
     repository: str
     name: str = ""
     days: list = field(default_factory=list)
+    #: How far back this reading went. Every total below is *within it*.
+    window_days: int = 0
     remote_state: str = Remote.UNREADABLE
     remote_note: str = ""
     fetched_at: str = ""
@@ -161,9 +163,20 @@ def _walk(repository, *selectors: str, timeout: float) -> dict:
     return found
 
 
-def repository_activity(repository, *, name: str = "", timeout: float = 60.0
-                        ) -> RepositoryActivity:
-    """When this repository changed, and how much of it the remote represents."""
+#: How far back a reading goes by default. The calendar shows a year, so
+#: walking every commit a repository ever had to draw one is work nobody asked
+#: for — and on a large repository it is the difference between a page that
+#: opens and one that does not. The window is stated wherever the numbers are.
+DEFAULT_WINDOW_DAYS = 366
+
+
+def repository_activity(repository, *, name: str = "", timeout: float = 60.0,
+                        window_days: int = DEFAULT_WINDOW_DAYS) -> RepositoryActivity:
+    """When this repository changed, and how much of it the remote represents.
+
+    Bounded to `window_days` back from now: a smaller correct query rather than
+    a complete traversal on every render. `window_days=0` reads all of it.
+    """
     import gitread
 
     where = Path(repository)
@@ -171,7 +184,14 @@ def repository_activity(repository, *, name: str = "", timeout: float = 60.0
         where = where.resolve()
     except OSError:
         pass
-    activity = RepositoryActivity(repository=str(where), name=name or where.name or str(where))
+    activity = RepositoryActivity(repository=str(where), name=name or where.name or str(where),
+                                  window_days=window_days)
+    since = ()
+    if window_days > 0:
+        from datetime import timedelta
+
+        edge = (datetime.now(timezone.utc) - timedelta(days=window_days)).date().isoformat()
+        since = (f"--since={edge}",)
     try:
         activity.identity = gitread._run(where, "rev-parse", "--absolute-git-dir",
                                          timeout=timeout).strip()
@@ -191,7 +211,7 @@ def repository_activity(repository, *, name: str = "", timeout: float = 60.0
         return activity
 
     try:
-        local = _walk(where, "--branches", "--tags", "HEAD", timeout=timeout)
+        local = _walk(where, "--branches", "--tags", "HEAD", *since, timeout=timeout)
     except Exception as exc:
         # An empty repository is not an unreadable one: `rev-list` exits
         # non-zero on a history with nothing in it, and that is an answer.
@@ -238,7 +258,7 @@ def repository_activity(repository, *, name: str = "", timeout: float = 60.0
                 f"fetch: an unfetched remote is an unanswered question, not an empty one")
         else:
             try:
-                remote = _walk(where, "--remotes", timeout=timeout)
+                remote = _walk(where, "--remotes", *since, timeout=timeout)
                 activity.remote_state = Remote.OBSERVED
             except Exception as exc:
                 activity.remote_state = Remote.NEVER_OBSERVED

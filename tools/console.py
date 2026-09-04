@@ -914,7 +914,9 @@ def _repository_summary(activities, days) -> str:
                 + (f"<u>{_ESC(note)}</u>" if note else "") + "</div>")
 
     return ("<div class=sit>"
-            + cell("local commits", total, note="every commit a local ref reaches")
+            + cell("local commits", total,
+                   note=f"every commit a local ref reaches, in the last "
+                        f"{activity.DEFAULT_WINDOW_DAYS} days")
             + cell("represented by the remote",
                    UNKNOWN if unknown_days and not represented else represented,
                    "unknown" if unknown_days and not represented else "plain",

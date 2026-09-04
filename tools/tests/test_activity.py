@@ -405,3 +405,31 @@ def test_an_event_with_no_time_sorts_last_and_keeps_its_reason(tmp_path):
     assert events[-1].kind == "unreadable"
     assert events[-1].when == ""
     assert events[-1].day == ""
+
+
+def test_a_reading_is_bounded_to_its_window_and_says_so(repo):
+    """**A smaller correct query, not a complete traversal on every render.**
+
+    A calendar shows a year, so walking every commit a repository ever had to
+    draw one is work nobody asked for. The bound is real — a commit outside the
+    window is not counted — and the page states the window beside the totals.
+    """
+    _commit(repo, "ancient", when="2019-01-01T12:00:00+00:00")
+    _commit(repo, "recent")
+    year = activity.repository_activity(repo, window_days=366)
+    assert year.total_local == 1, "a commit from years ago is inside a one-year window"
+    assert year.window_days == 366
+    everything = activity.repository_activity(repo, window_days=0)
+    assert everything.total_local == 2, "the unbounded reading lost a commit"
+    assert everything.window_days == 0
+
+
+def test_the_window_does_not_change_what_a_day_holds(repo):
+    """Bounding the walk may drop old days. It may not change a day it keeps."""
+    _commit(repo, "old", when="2019-06-01T12:00:00+00:00")
+    _commit(repo, "a")
+    _commit(repo, "b")
+    bounded = {d.date: d.local for d in activity.repository_activity(repo).days}
+    whole = {d.date: d.local for d in activity.repository_activity(repo, window_days=0).days}
+    for day, count in bounded.items():
+        assert whole[day] == count, f"{day} holds {count} bounded and {whole[day]} unbounded"
