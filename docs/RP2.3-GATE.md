@@ -2581,3 +2581,44 @@ still readable, and one unrecognised shape still refuses. A chunk directory
 replaced by a file is `UNKNOWN`. An empty signals dict is `UNKNOWN` rather than a
 stall. A boolean `remaining` is refused before it can be compared. Duplicate
 declared profiles are refused. A private term in a git note is found.
+
+## The lifecycle, rehearsed as a system
+
+Every module passes its own tests; that is not the same as the lifecycle
+converging. `tools/tests/test_lifecycle_rehearsal.py` asserts the property the
+modules cannot: **a governed run reaches a coherent terminal state without
+anybody waking the reader**, except where a human decision is owed.
+
+Sixteen stages, deterministic and worker-free so every future run keeps the
+property cheaply — bootstrap, pin verification, contract, open, dispatch,
+completion, consumption, partial recovery, stall classification, expiry, cold
+reconstruction in a separate interpreter, scoped human decision, capacity known
+and unknown and spent, audit binding, a malformed record, and the profile split.
+Each renders the dashboard from the same durable state it asserts on, because a
+lifecycle stage nobody can watch is a stage nobody watches.
+
+Its last test walks a whole capability and asserts the sequence of states
+contains no `SILENT_IDLE`.
+
+## The assembled-system smoke run
+
+Sixteen stages against the real entry points with real subprocesses — a worker
+that writes durable chunks and exits, a process that lives and does nothing, a
+git repository built for the history scan. **16 of 16, no defects.** The full
+report is `rp2.3-session/SMOKE-REPORT.md`.
+
+**Its first run failed at stage 2, and that is the more interesting half.** The
+pin refused because the checkout carried an untracked file — the rehearsal
+module, written minutes earlier and not committed. `pack_pin` says *a pinned
+release is a claim about the directory, not only about the index*, and it was
+right. The defect was in how the smoke test was run rather than in the pack: the
+requirement is that it start from a clean, reconstructable state, and it did
+not.
+
+No unit test would have found it. None of them asks whether the working
+directory is the release it claims to be.
+
+The one manual intervention was ending the `sleep` the stall stage started,
+under the scoped row-4 authorisation for fixtures this run creates. **No
+intervention was needed to make the lifecycle progress** — every transition
+happened because the durable state said it should.
