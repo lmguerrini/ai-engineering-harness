@@ -553,3 +553,135 @@ def test_the_overview_offers_three_densities_and_hides_no_project_in_any(three):
     rows = re.findall(r"<tr data-project='\d+'", overview)
     assert len(rows) == len(console.survey(three)), f"{len(rows)} rows"
     assert '[data-od="minimal"] tr' not in page, "a density rule reaches a whole row"
+
+
+# --- the instruments: a picture may transform a value, never derive another one -------
+
+
+def test_every_instrument_counts_only_rows_the_page_is_showing(three):
+    """**Source agreement.** A distribution is a tally of the same figures the
+    tables list — not a second reading, not a computed condition. Each one is
+    recomputed here from the projections and compared against what the bar
+    says, so a chart that drifted from its own data fails rather than
+    reassuring somebody."""
+    sites = console.survey(three)
+    jobs = [c for s in sites for c in s.figures("job")]
+    audits = [c for s in sites for c in s.figures("audit")]
+    pools = [c for s in sites for c in s.figures("capacity")]
+
+    def counts(html):
+        return {name.strip(): int(n) for name, n in
+                re.findall(r"<i></i>([^<]+?)\s*<b>(\d+)</b>", html)}   # `·` is not a count
+
+    workers = counts(console._worker_states(sites))
+    assert workers["complete, unconsumed"] == len([c for c in jobs if c.value == "COMPLETE"])
+    assert workers["nobody can observe"] == len([c for c in jobs
+                                                 if c.value == projection.UNKNOWN])
+    assert sum(v for k, v in workers.items()
+               if k != "stalled — two readings needed") == len(jobs)
+
+    audit = counts(console._audit_shape(sites))
+    assert audit["about another tree"] == len([c for c in audits
+                                               if c.tone == projection.Tone.BAD])
+    capacity = counts(console._capacity_shape(sites))
+    assert capacity["measured"] + capacity["unmeasured"] == len(pools)
+
+    states = counts(console._project_states(sites))
+    assert sum(states.values()) == len(sites), "a project is missing from the distribution"
+
+    attention = counts(console._attention_shape(sites))
+    assert sum(attention.values()) == sum(sum(s.attention.values()) for s in sites)
+
+
+def test_a_stall_is_declined_in_the_instrument_too(three):
+    """One reading cannot establish a stall, so the tally says so rather than
+    saying none. A `0` there would be an answer this page cannot give."""
+    html = console._worker_states(console.survey(three))
+    assert "stalled — two readings needed" in html
+    #: `·`, not `0`. A zero there is an answer, from a page that has just said
+    #: it cannot give one.
+    assert re.search(r"stalled — two readings needed\s*<b>·</b>", html), html
+    assert not re.search(r"stalled[^<]*<b>0</b>", html)
+
+
+def test_an_unmeasured_window_is_a_band_and_never_an_empty_bar(three):
+    """UNKNOWN → empty, UNKNOWN → 0%, UNKNOWN → healthy: three ways to say
+    *fine* about something nobody measured. It gets its own segment in its own
+    tone."""
+    html = console._capacity_shape(console.survey(three))
+    assert "unmeasured" in html
+    assert "class='unknown'" in html or 'class="unknown"' in html
+
+
+@pytest.mark.parametrize("used,ceiling,drawn", [
+    (0, 8, True), (1, 8, True), (8, 8, True), (9, 8, True), (10 ** 9, 8, True),
+    (0, 0, False), (5, 0, False), (5, -1, False), (-1, 8, False),
+])
+def test_a_meter_survives_every_shape_of_fraction(tmp_path, used, ceiling, drawn):
+    """Zero, one, over, enormous, no denominator, a negative one. No division by
+    nothing, no NaN, no bar wider than its track, and the exact value said in
+    every case."""
+    cell = projection.Cell("cycles", f"{used}/{ceiling}", share=(used, ceiling),
+                           sense="consumption")
+    assert (cell.share is not None) == drawn, f"{used}/{ceiling}"
+    html = projection._cell(cell, "fact")
+    assert f"{used}/{ceiling}" in html, "the exact value is not beside the picture"
+    if drawn:
+        width = float(re.search(r"width:([0-9.]+)%", html).group(1))
+        assert 0.0 <= width <= 100.0, width
+    else:
+        assert "class='meter" not in html
+
+
+def test_a_spent_budget_and_complete_coverage_are_not_drawn_the_same(tmp_path):
+    """**Both are full, and they mean opposite things.**
+
+    A console that colours an exhausted budget the way it colours complete
+    coverage is telling an operator that running out is an achievement. The
+    sense decides the bar, and this is the test that says the two senses cannot
+    be merged.
+    """
+    spent = projection._cell(projection.Cell("cycles", "9/9", projection.Tone.WARN,
+                                             share=(9, 9), sense="consumption"), "fact")
+    covered = projection._cell(projection.Cell("chunks", "9/9", projection.Tone.GOOD,
+                                               share=(9, 9), sense="coverage"), "fact")
+    assert re.search(r"<i class='bad'", spent), "a spent budget is not marked as one"
+    assert re.search(r"<i class='good'", covered), "complete coverage is not marked as one"
+    assert spent != covered
+
+
+@pytest.mark.parametrize("sense,at,expected", [
+    ("consumption", (9, 9), "bad"), ("consumption", (7, 8), "warn"),
+    ("coverage", (4, 4), "good"), ("coverage", (1, 4), "plain"),
+    ("age", (3600, 3600), "warn"), ("age", (60, 3600), "plain"),
+    ("deadline", (3600, 3600), "bad"), ("deadline", (3550, 3600), "warn"),
+    ("deadline", (60, 3600), "plain"),
+])
+def test_each_sense_colours_its_bar_by_what_being_full_means(sense, at, expected):
+    html = projection._cell(projection.Cell("x", "v", share=at, sense=sense), "fact")
+    assert f"<i class='{expected}'" in html, html
+
+
+def test_an_instrument_never_becomes_the_only_place_a_number_is(three):
+    """A picture may be the fastest way to a number. It may not be the only
+    way — a reader who distrusts a bar, or cannot see it, reads the count."""
+    sites = console.survey(three)
+    for html in (console._project_states(sites), console._worker_states(sites),
+                 console._attention_shape(sites), console._audit_shape(sites),
+                 console._capacity_shape(sites), console._freshness_shape(sites)):
+        assert "<b>" in html, "a distribution shows a bar and no counts"
+        bar = re.search(r"<div class=dist>(.*?)</div>", html, re.S)
+        if bar:
+            assert len(re.findall(r"<b>\d+</b>", html)) >= len(re.findall(r"<span", bar.group(1)))
+
+
+def test_the_instruments_read_the_same_lens_tokens_as_everything_else():
+    """A chart with its own palette is a chart that stops meaning what the rest
+    of the page means when a lens changes."""
+    style = projection._STYLE + console._SHELL_STYLE
+    block = style[style.index(".dist{"):style.index(".legend b{")]
+    for hard in re.findall(r"#[0-9a-fA-F]{3,6}", block):
+        raise AssertionError(f"an instrument hard-codes {hard} instead of a token")
+    flat = style.replace(" ", "")
+    for tone in ("bad", "warn", "unknown", "good"):
+        assert f".dist.{tone}{{background:var(--{tone})}}" in flat, tone

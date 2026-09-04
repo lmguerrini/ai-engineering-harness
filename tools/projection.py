@@ -126,11 +126,23 @@ class Cell:
     #: fabricated precision in the one place a reader trusts a picture rather
     #: than reading the number.
     share: "tuple | None" = None
+    #: What a full bar MEANS. `consumption` — something is being spent, and full
+    #: is a warning. `coverage` — something is being covered, and full is good.
+    #: `age` — time since, against the threshold at which it goes stale.
     #: A smaller second value: an age, a unit, a subject.
     note: str = ""
     #: ``situation`` for the command band a reader takes in first, ``telemetry``
     #: for the instrument row under it.
     band: str = "telemetry"
+    #: What a full bar MEANS. `consumption` — something is being spent, and full
+    #: is a warning. `coverage` — something is being covered, and full is good.
+    #: `age` — time since, against the threshold at which it goes stale.
+    #: `deadline` — elapsed against a declared limit, and past it is a defect.
+    #:
+    #: **The same picture with the opposite meaning** is how a dashboard tells a
+    #: reader that an exhausted budget is fine because it looks like complete
+    #: coverage. A bar with no sense is drawn neutrally.
+    sense: str = ""
     #: WHAT KIND of thing this is about — ``job``, ``output``, ``audit``,
     #: ``capacity``, ``budget``, ``evidence``. A view that collects every job
     #: across every project needs to recognise one without matching on the text
@@ -145,6 +157,17 @@ class Cell:
             raise ValueError(f"unknown tone {self.tone!r}")
         if self.band not in ("situation", "telemetry", "identity"):
             raise ValueError(f"unknown band {self.band!r}")
+        if self.sense not in ("", "consumption", "coverage", "age", "deadline"):
+            raise ValueError(f"unknown sense {self.sense!r}")
+        if self.share is not None:
+            used, ceiling = self.share
+            if not isinstance(used, (int, float)) or not isinstance(ceiling, (int, float)):
+                raise ValueError(f"a share is two numbers, not {self.share!r}")
+            # A DENOMINATOR OF ZERO IS NOT A DENOMINATOR. Nothing is drawn
+            # against it: the value is still said, and the picture is left out
+            # rather than divided by nothing.
+            if ceiling <= 0 or used < 0 or used != used or ceiling != ceiling:
+                self.share = None
         for name in ("label", "value", "note", "kind"):
             value = getattr(self, name)
             if not isinstance(value, str):
@@ -181,9 +204,10 @@ class Panel:
 
     def figure(self, label: str, value: str, tone: str = Tone.PLAIN, *,
                share=None, note: str = "", band: str = "telemetry", kind: str = "",
-               **fields: str) -> None:
+               sense: str = "", **fields: str) -> None:
         """Say a fact this panel already says, as a figure. Never instead of it."""
-        self.cells.append(Cell(label, value, tone, share, note, band, kind, dict(fields)))
+        self.cells.append(Cell(label, value, tone, share, note, band, sense, kind,
+                               dict(fields)))
 
     def rows(self) -> "list[Line]":
         """Every line as a `Line`, including the ones appended as bare strings.
@@ -430,11 +454,14 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
         # The same job as a lifecycle cell. Its note is the tail of the deadline
         # line above — a slice of a string this panel already produced, not a
         # second reading of the clock.
+        elapsed = _guarded(_deadline_share, wait, default=None)
         panel.figure(f"job {observation.job_id}", mark,
                      Tone.BAD if expired else
                      {"COMPLETE": Tone.GOOD, UNKNOWN: Tone.UNKNOWN}.get(mark, Tone.PLAIN),
                      note=deadline.rpartition(" — ")[2] if " — " in deadline else "",
                      band="situation", kind="job",
+                     share=elapsed if isinstance(elapsed, tuple) else None,
+                     sense="deadline" if isinstance(elapsed, tuple) else "",
                      job=observation.job_id, expects=wait.expects,
                      owner=wait.executor or UNKNOWN,
                      subject=wait.subject_revision[:12] or UNKNOWN,
@@ -600,6 +627,27 @@ def _audit_freshness_panel(record) -> Panel:
     return panel
 
 
+def _deadline_share(wait):
+    """How far through its declared deadline a wait is, as ``(elapsed, limit)``.
+
+    `None` when there is no deadline or no readable declaration time — a bar
+    drawn against a limit nobody set would be a picture of a rule that does not
+    exist. Past the limit the elapsed value is held at it, so the bar is full
+    rather than overflowing, and the TONE is what says it expired.
+    """
+    import continuation
+    from datetime import datetime, timezone
+
+    if wait.not_beyond_seconds is None:
+        return None
+    declared = continuation._moment(wait.declared_at) if wait.declared_at else None
+    limit = float(wait.not_beyond_seconds)
+    if declared is None or limit <= 0:
+        return None
+    age = (datetime.now(timezone.utc) - declared).total_seconds()
+    return (min(max(age, 0.0), limit), limit)
+
+
 def _deadline_line(wait) -> str:
     """When this wait was declared, when it expires, and how far through it is."""
     import continuation
@@ -653,7 +701,8 @@ def _budget_panel(record) -> Panel:
         panel.say(text, Tone.WARN if spent else Tone.PLAIN, label=counter)
         if isinstance(used, int) and isinstance(ceiling, int):
             panel.figure(counter, f"{used}/{ceiling}", Tone.WARN if spent else Tone.PLAIN,
-                         share=(used, ceiling), note=f"{left} remaining", kind="budget")
+                         share=(used, ceiling), note=f"{left} remaining", kind="budget",
+                         sense="consumption")
         elif isinstance(used, int):
             # No denominator, so no bar. A meter here would be a picture of a
             # fraction nobody declared.
@@ -703,8 +752,11 @@ def _freshness_panel(record, record_path: Path) -> Panel:
         return panel
     age = (datetime.now(timezone.utc) - written).total_seconds()
     panel.lines.append(f"record written {age / 60:.0f} min ago ({record.updated_at})")
+    # The bar is age against the hour at which this record is called stale —
+    # a threshold the panel already applies, not a horizon invented here.
     panel.figure("reading age", f"{age / 60:.0f} min ago",
                  Tone.WARN if age > 3600 else Tone.PLAIN,
+                 share=(min(age, 3600), 3600), sense="age",
                  note="STALE" if age > 3600 else "", band="situation", kind="freshness")
     panel.lines.append(f"read from {record_path}")
     if age > 3600:
@@ -801,12 +853,17 @@ def _output_panel(record, base: Path) -> Panel:
         # sent a reader to the record to find out where. Third place the column
         # invariant found the table showing what the panel does not say.
         panel.say(str(root), Tone.MUTED, label="output root", depth=1)
+        expected = getattr(contract, "expected_chunks", None)
+        written = len(getattr(report, "complete", ()) or ())
         panel.figure(f"output {wait.job_id}", report.state,
                      {task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT: Tone.GOOD,
                       task_output.RecoveryState.UNKNOWN: Tone.UNKNOWN,
                       task_output.RecoveryState.FAILED_WITH_PARTIAL_DURABLE_OUTPUT: Tone.WARN,
                       task_output.RecoveryState.FAILED_BEFORE_USEFUL_OUTPUT: Tone.WARN}
                      .get(report.state, Tone.PLAIN), note=str(wait.task_id), kind="output",
+                     share=(written, expected) if isinstance(expected, int) and expected > 0
+                     else None,
+                     sense="coverage" if isinstance(expected, int) and expected > 0 else "",
                      job=wait.job_id, task=str(wait.task_id), root=str(root),
                      examined=report.examined.summary())
         if report.state == task_output.RecoveryState.UNKNOWN:
@@ -1189,10 +1246,36 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fact.warn{box-shadow:inset 2px 0 0 var(--warn)} .fact.bad{box-shadow:inset 2px 0 0 var(--bad)}
 .fact.unknown{box-shadow:inset 2px 0 0 var(--unknown)}
 .fact.good{box-shadow:inset 2px 0 0 var(--good)}
+/* ---- the instruments -------------------------------------------------------
+   A bar is drawn only where a denominator exists, and its colour comes from
+   what the fraction MEANS. Consumption fills toward a warning; coverage fills
+   toward an established good; an age fills toward stale; a deadline fills
+   toward expired. The exact value is always beside it — a picture is never the
+   only place a number appears. */
 .meter{display:block;height:3px;background:var(--rule-strong);margin-top:4px;overflow:hidden}
-.meter i{display:block;height:100%;background:var(--accent)}
+.meter i{display:block;height:100%;background:var(--accent);min-width:1px}
 .meter i.warn{background:var(--warn)} .meter i.bad{background:var(--bad)}
 .meter i.good{background:var(--good)} .meter i.unknown{background:var(--unknown)}
+.meter i.plain,.meter i.action{background:var(--dim)}
+/* an age and a deadline carry the threshold they are measured against */
+.meter.age,.meter.deadline{position:relative}
+.meter.age::after,.meter.deadline::after{content:"";position:absolute;right:0;top:-1px;
+bottom:-1px;width:1px;background:var(--ink);opacity:.55}
+
+/* a categorical distribution: one segment per answer, none of them omitted */
+.dist{display:block;height:6px;display:flex;gap:1px;margin:5px 0 4px;background:var(--rule)}
+.dist span{display:block;min-width:2px}
+.dist .bad{background:var(--bad)} .dist .warn{background:var(--warn)}
+.dist .unknown{background:var(--unknown)} .dist .good{background:var(--good)}
+.dist .plain{background:var(--dim)} .dist .action{background:var(--accent)}
+.legend{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:var(--fs-forensic);color:var(--dim)}
+.legend span{white-space:nowrap;display:flex;align-items:center;gap:5px}
+.legend i{width:8px;height:8px;display:inline-block;background:var(--dim);flex:0 0 auto}
+.legend .bad i{background:var(--bad)} .legend .warn i{background:var(--warn)}
+.legend .unknown i{background:var(--unknown)} .legend .good i{background:var(--good)}
+.legend b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.legend .bad b{color:var(--bad)} .legend .warn b{color:var(--warn)}
+.legend .unknown b{color:var(--unknown)} .legend .good b{color:var(--good)}
 
 /* ============ LEVEL 3 — ZONES AND PANELS ============================== */
 main{display:grid;grid-template-columns:1fr;gap:var(--gap);background:var(--rule)}
@@ -1510,14 +1593,29 @@ def _operational_strip(view: "Projection") -> str:
 
 
 def _cell(cell: "Cell", css: str) -> str:
-    """One figure. Tone decides colour AND a glyph, because status carried by
-    colour alone is status a colour-blind reader does not have."""
+    """One figure: the exact value, and a bar only where a real denominator says
+    what the fraction is a fraction OF.
+
+    Tone decides colour AND a glyph, because status carried by colour alone is
+    status a colour-blind reader does not have. The bar's own colour comes from
+    `Cell.sense`, and the two senses are opposite on purpose — a spent budget
+    and complete coverage are both "full", and a console that draws them the
+    same way tells a reader that running out is an achievement.
+    """
     tone = cell.tone if cell.tone in Tone.ALL else Tone.PLAIN
     meter = ""
     if cell.share:
         used, ceiling = cell.share
-        share = min(100, max(0, round(100 * used / ceiling))) if ceiling else 0
-        meter = (f"<span class=meter><i class='{tone}' style='width:{share}%'></i></span>")
+        share = min(100.0, max(0.0, 100.0 * used / ceiling))
+        full = used >= ceiling
+        bar = {"consumption": Tone.BAD if full else (Tone.WARN if share >= 75 else tone),
+               "coverage": Tone.GOOD if full else tone,
+               "age": Tone.WARN if full else tone,
+               "deadline": Tone.BAD if full else (Tone.WARN if share >= 85 else tone),
+               }.get(cell.sense, tone)
+        meter = (f"<span class='meter {cell.sense}' role=img "
+                 f"aria-label='{_escape(cell.value)}'>"
+                 f"<i class='{bar}' style='width:{share:.1f}%'></i></span>")
     note = f"<u>{_escape(cell.note)}</u>" if cell.note else ""
     return (f"<div class='{css} {tone}'><i>{_escape(cell.label)}</i>"
             f"<em>{_escape(cell.value)}</em>{note}{meter}</div>")

@@ -911,7 +911,7 @@ def test_a_budget_with_no_ceiling_gets_no_bar(tmp_path):
     _record(tmp_path, actionable=("x",), budgets={"counted": {"used": 6, "ceiling": 8},
                                                   "uncounted": {"used": 3}})
     page = projection.render_html(projection.project(tmp_path))
-    assert "6/8" in page and "class=meter" in page
+    assert "6/8" in page and "class='meter" in page
     assert "3/None" not in page and "3/0" not in page
 
 
@@ -1009,7 +1009,9 @@ def test_a_meter_is_drawn_only_against_a_declared_denominator(tmp_path):
     uncounted = next(c for c in view.telemetry if c.label == "uncounted")
     assert counted.share == (6, 8) and uncounted.share is None
     page = projection.render_html(view)
-    assert "class=meter" in page and "3/None" not in page and "3/0" not in page
+    assert "class='meter" in page and "3/None" not in page and "3/0" not in page
+    #: And a spent budget is not drawn in the colour of complete coverage.
+    assert "class='meter consumption'" in page
 
 
 def test_the_command_band_is_never_behind_a_disclosure(tmp_path):

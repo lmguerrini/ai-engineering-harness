@@ -361,6 +361,18 @@ label.set button:hover{color:var(--ink);border-color:var(--accent)}
 .summary{display:flex;flex-wrap:wrap;gap:0 14px;padding:6px var(--pad-x) 7px;
 border-bottom:1px solid var(--rule);font-size:var(--fs-forensic);color:var(--dim)}
 .summary span{white-space:nowrap}
+/* ---- the instrument band ---------------------------------------------------- */
+.instruments{display:grid;gap:var(--gap);background:var(--rule);
+grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));
+border-bottom:1px solid var(--rule)}
+.instruments-wide .instruments{border-bottom:0}
+.room .instruments-wide{max-height:34vh;overflow:auto}
+.room .instruments{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.instrument{min-width:0}
+.nodata{margin:2px 0 4px;color:var(--faint);font-size:var(--fs-forensic)}
+.onlyminimal{display:none}
+[data-od="minimal"] .onlyminimal{display:block}
+[data-od="minimal"] .notminimal{display:none}
 .c-jobs b{font-weight:700;display:inline-block;min-width:1.6ch;text-align:right}
 .c-jobs{white-space:nowrap;color:var(--dim)}
 .summary .bad{color:var(--bad)} .summary .warn{color:var(--warn)}
@@ -765,7 +777,15 @@ def _widgets(sites: list) -> list:
              ("global:full-capacity", "Capacity, compact", "global"),
              ("global:full-evidence", "Standing evidence, compact", "global"),
              ("global:full-history", "History and public safety", "global"),
-             ("global:full-identity", "Identity and release, compact", "global")]
+             ("global:full-identity", "Identity and release, compact", "global"),
+             ("global:viz-projects", "Project states", "global"),
+             ("global:viz-workers", "Worker states", "global"),
+             ("global:viz-attention", "Attention", "global"),
+             ("global:viz-audits", "Audit status", "global"),
+             ("global:viz-capacity", "Capacity overview", "global"),
+             ("global:viz-freshness", "Freshness overview", "global"),
+             ("global:viz-budgets", "Budget shape", "global"),
+             ("global:viz-budget-meters", "Budget meters", "global")]
     for index, site in enumerate(sites):
         if site.view is None:
             continue
@@ -2035,6 +2055,190 @@ _QUESTIONS = (
 )
 
 
+# --- instruments -----------------------------------------------------------------
+#
+# Each one answers a question faster than the rows under it, and none of them is
+# the only place its numbers appear. Three rules hold them honest:
+#
+#   * **Only counts of things this page is already showing.** A distribution is
+#     a tally of rows, in the same way the attention badge is; nothing here
+#     computes a condition, and nothing invents a denominator.
+#   * **UNKNOWN is a segment, never an absence.** An unestablished reading gets
+#     its own band in its own tone. It is never folded into a total, never drawn
+#     as zero, and never left out because it would spoil the picture.
+#   * **The exact numbers are beside the picture, always.** A reader who
+#     distrusts a bar can read the count without hovering anything.
+
+
+def _distribution(parts, empty: str = "nothing to count") -> str:
+    """A categorical tally as one segmented bar plus its exact counts.
+
+    `parts` is `[(name, count, tone)]`. A part with a count of zero keeps its
+    entry in the legend — *none of these* is a reading — and takes no width in
+    the bar.
+    """
+    # A count of `None` is a question this reading cannot answer. It keeps its
+    # place in the legend and shows `·`, because a `0` beside *two readings
+    # needed* reads as *none stalled* — an answer, from a page that has just
+    # said it cannot give one.
+    counted = [(name, None if count is None else int(count), tone)
+               for name, count, tone in parts]
+    total = sum(count for _n, count, _t in counted if count)
+    if not counted:
+        return f"<p class=none>{_ESC(empty)}</p>"
+    bar = "".join(
+        f"<span class='{tone}' style='flex:{count}' title='{_ESC(f'{name}: {count}')}'></span>"
+        for name, count, tone in counted if count)
+    legend = "".join(
+        f"<span class='{tone}'><i></i>{_ESC(name)} "
+        f"<b>{'·' if count is None else count}</b></span>"
+        for name, count, tone in counted)
+    return (f"<div class=instrument>"
+            + (f"<div class=dist>{bar}</div>" if total else
+               "<p class=nodata>nothing is outstanding</p>")
+            + f"<div class=legend>{legend}</div></div>")
+
+
+def _project_states(sites: list) -> str:
+    tally: dict = {}
+    for site in sites:
+        tally[(site.state, site.tone)] = tally.get((site.state, site.tone), 0) + 1
+    return _distribution([(state, count, tone) for (state, tone), count in
+                          sorted(tally.items(), key=lambda row: -row[1])],
+                         "No project was named.")
+
+
+def _worker_states(sites: list) -> str:
+    jobs = [c for s in sites for c in s.figures("job")]
+    overdue = [c for c in jobs if "EXPIRED" in c.fields.get("deadline", "")]
+    return _distribution([
+        ("running", len([c for c in jobs if c.value == "RUNNING" and c not in overdue]),
+         Tone.PLAIN),
+        ("complete, unconsumed", len([c for c in jobs if c.value == "COMPLETE"]), Tone.WARN),
+        ("past a deadline", len(overdue), Tone.BAD),
+        ("nobody can observe", len([c for c in jobs if c.value == UNKNOWN]), Tone.UNKNOWN),
+        # NOT ZERO. One reading cannot establish a stall, so the tally declines
+        # to answer rather than answering none.
+        ("stalled — two readings needed", None, Tone.PLAIN),
+    ], "No project declares an outstanding job.")
+
+
+def _attention_shape(sites: list) -> str:
+    tally = {Tone.BAD: 0, Tone.WARN: 0, Tone.UNKNOWN: 0}
+    for site in sites:
+        for tone, count in site.attention.items():
+            tally[tone] = tally.get(tone, 0) + count
+    return _distribution([("marked as a defect", tally.get(Tone.BAD, 0), Tone.BAD),
+                          ("marked to look at", tally.get(Tone.WARN, 0), Tone.WARN),
+                          ("could not be established", tally.get(Tone.UNKNOWN, 0),
+                           Tone.UNKNOWN)],
+                         "Nothing is marked.")
+
+
+def _audit_shape(sites: list) -> str:
+    audits = [c for s in sites for c in s.figures("audit")]
+    return _distribution([
+        ("about the candidate", len([c for c in audits if c.tone == Tone.GOOD]), Tone.GOOD),
+        ("about another tree", len([c for c in audits if c.tone == Tone.BAD]), Tone.BAD),
+        ("cannot be compared", len([c for c in audits if c.tone == Tone.UNKNOWN]),
+         Tone.UNKNOWN),
+        ("projects with no audit in flight",
+         len([s for s in sites if s.view is not None and not s.figures("audit")]), Tone.PLAIN),
+    ], "No audit states a subject.")
+
+
+def _capacity_shape(sites: list) -> str:
+    pools = [c for s in sites for c in s.figures("capacity")]
+    return _distribution([
+        ("measured", len([c for c in pools if c.tone != Tone.UNKNOWN]), Tone.PLAIN),
+        # UNKNOWN IS NOT EMPTY AND IS NOT ZERO. An unmeasured window is its own
+        # answer and gets its own band.
+        ("unmeasured", len([c for c in pools if c.tone == Tone.UNKNOWN]), Tone.UNKNOWN),
+    ], "No project declares a capacity observation.")
+
+
+def _freshness_shape(sites: list) -> str:
+    ages = [c for s in sites for c in s.figures("freshness")]
+    return _distribution([
+        ("read within the hour",
+         len([c for c in ages if c.tone != Tone.WARN and c.tone != Tone.UNKNOWN]), Tone.PLAIN),
+        ("stale", len([c for c in ages if c.note == "STALE"]), Tone.WARN),
+        ("cannot be dated", len([c for c in ages if c.tone == Tone.UNKNOWN]), Tone.UNKNOWN),
+        ("unreadable", len([s for s in sites if s.view is None]), Tone.UNKNOWN),
+    ], "Nothing to date.")
+
+
+def _budget_shape(sites: list) -> str:
+    """Where every declared budget stands, as one distribution.
+
+    The per-project meters are a table and belong in a section; in the
+    instrument band they filled the screen and pushed the room off it. A shape
+    first, the meters on demand.
+    """
+    exhausted = near = room = unbounded = 0
+    for site in sites:
+        for cell in site.figures("budget"):
+            if cell.share is None:
+                unbounded += 1
+            else:
+                used, ceiling = cell.share
+                if used >= ceiling:
+                    exhausted += 1
+                elif used / ceiling >= 0.75:
+                    near += 1
+                else:
+                    room += 1
+    return _distribution([("exhausted", exhausted, Tone.BAD),
+                          ("three quarters spent", near, Tone.WARN),
+                          ("with room", room, Tone.PLAIN),
+                          ("counted against no ceiling", unbounded, Tone.UNKNOWN)],
+                         "No project declares a budget.")
+
+
+def _budget_meters(sites: list) -> str:
+    """Every declared budget, as a consumption meter with its exact position.
+
+    Consumption only. The evidence readings a project writes — coverage,
+    mechanisms, recurrence classes — are sentences it chose, not numbers with a
+    denominator, and turning `87/87 covered` into a bar would mean this page
+    parsing prose to find a fraction. It says the sentence instead.
+    """
+    rows = []
+    for site in sites:
+        for cell in site.figures("budget"):
+            at = _INDEX.get(id(site))
+            named = (f"<button class=jump data-goto='project:{at}'>{_ESC(site.name)}</button>"
+                     if at is not None else _ESC(site.name))
+            rows.append(f"<tr data-tone='{cell.tone}'>" + _td("project", named)
+                        + _td("budget", _ESC(cell.label))
+                        + _td("used", projection._cell(cell, "fact"), cell.tone) + "</tr>")
+    if not rows:
+        return "<p class=none>No project declares a budget.</p>"
+    return f"<div class=tw><table><tbody>{''.join(rows)}</tbody></table></div>"
+
+
+def _telemetry(sites: list, *, kinds=()) -> str:
+    """The instrument band. `kinds` chooses which, so a density can carry a few
+    and a control room can carry all of them."""
+    every = {
+        "projects": ("project states", _project_states),
+        "workers": ("worker states", _worker_states),
+        "attention": ("attention", _attention_shape),
+        "audits": ("audits", _audit_shape),
+        "capacity": ("capacity", _capacity_shape),
+        "freshness": ("freshness", _freshness_shape),
+        "budgets": ("budgets", _budget_shape),
+        "budget-meters": ("every budget", _budget_meters),
+    }
+    chosen = [key for key in (kinds or every) if key in every]
+    return ("<div class=instruments>" + "".join(
+        f"<section class=setgroup data-widget='global:viz-{key}' "
+        f"data-widget-name='{_ESC(every[key][0])}' data-widget-scope='global'>"
+        f"<div class=head><h2>{_ESC(every[key][0])}</h2></div>"
+        f"<div class=setbody>{every[key][1](sites)}</div></section>"
+        for key in chosen) + "</div>")
+
+
 def _finder(sites: list) -> str:
     """Quick find: a way to reach anything on this page by typing part of it.
 
@@ -2361,6 +2565,10 @@ def _control_room(sites: list) -> str:
         "<div class=room>"
         + section("the situation", f"{len(sites)} projects",
                   f"<div class=setbody>{banner}</div>", "room-wide")
+        + "<div class='room-wide instruments-wide'>"
+        + _telemetry(sites, kinds=("projects", "workers", "attention", "audits", "capacity",
+                                   "freshness", "budgets"))
+        + "</div>"
         + section("needs a person or a look",
                   f"{len(attention_rows)}" if attention_rows else "clear",
                   summary((f"{len(blocked)} waiting on a person", Tone.WARN if blocked else ""),
@@ -2492,6 +2700,11 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                       "<button data-tone-filter='bad'>defect</button>"
                       "<button data-tone-filter='warn'>blocked or waiting</button>"
                       "<button data-tone-filter='unknown'>unknown</button></div>"
+                      + "<div class=onlyminimal>"
+                      + _telemetry(sites, kinds=("attention", "projects")) + "</div>"
+                      + "<div class=notminimal>"
+                      + _telemetry(sites, kinds=("projects", "workers", "attention",
+                                                 "freshness")) + "</div>"
                       + _widget("global:overview", "Project matrix",
                                 _overview(sites).replace("<table>", "<table id=overview-table>",
                                                           1), "global")
@@ -2499,6 +2712,8 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                                 _attention_across(sites), "global").replace(
                           "<section ", "<section id=attention-widget ", 1)
                       + "<div class=onlyfull>"
+                      + _telemetry(sites, kinds=("audits", "capacity", "budgets"))
+                      + _telemetry(sites, kinds=("budget-meters",))
                       + _widget("global:full-workers", "Every job", _kind_table(
                           sites, "job",
                           [("·state", "state"), ("job", "job"), ("owner", "owner"),
@@ -2581,6 +2796,14 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
         else:
             inner = projection.render_body(site.view, f"{site.name} — project detail",
                                            widget_prefix=f"p{index}")
+            # ONE PROJECT'S OWN SHAPE, above its panels. The same instruments,
+            # scoped to it, so the reader sees the shape before the detail.
+            inner = inner.replace(
+                "<main>",
+                "<div class=instruments-wide>"
+                + _telemetry([site], kinds=("workers", "attention", "audits", "capacity",
+                                            "budgets", "freshness", "budget-meters"))
+                + "</div><main>", 1)
         body.append(_view(f"project:{index}", site.name,
                           "the whole position of one project", inner))
 
