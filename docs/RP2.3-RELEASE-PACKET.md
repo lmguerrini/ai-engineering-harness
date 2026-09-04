@@ -199,6 +199,70 @@ than record it.
 The state is `IN_PROGRESS` and that is what the command above must pass. A
 project may only adopt `QUALIFIED_AND_FROZEN`.
 
+## Evolution Candidates, deferred out of this release
+
+Each is a real observation with the evidence that produced it. None is a defect
+in this release: each would be a **new guarantee**, and adding one tonight would
+be starting the next release inside this one.
+
+**An archive cannot verify its own identity.** *Evidence:* unpacking the release
+with `git archive` into a clean room and adopting it — `IDENTITY COULD NOT BE
+ESTABLISHED`, because the digest is defined over the tracked tree and an archive
+has none. *Value:* a consumer who vendors the pack rather than cloning it could
+check what it has. *Trigger:* the first consumer that vendors. *Layer:*
+`pack_pin` and the manifest — a per-path inventory in the manifest would make
+the tracked set knowable without Git. *Deferred because:* the documented
+delivery is a checkout, and a second identity mechanism is a new promise rather
+than a repair to this one. This release says which question it cannot answer.
+
+**A published submodule's history is not read.** *Evidence:* an independent
+reader built a superproject whose dependency's committer identity carried a
+private term and the scan reported clean. It reports INCOMPLETE now and names
+the submodule. *Value:* actually reading it. *Trigger:* the first consumer with
+a submodule it must publish. *Layer:* `publication_history` and `gitread`.
+*Deferred because:* resolving and fetching another repository is a network act
+with an authority question of its own, and refusing to certify is the correct
+answer until that question is decided.
+
+**Nothing wakes a coordinator.** *Evidence:* `COORDINATOR_WAKE_REQUIRED` is
+derived and reported, and acted on by nothing. *Value:* the liveness model would
+close rather than merely detect. *Trigger:* a qualified first-party session
+primitive plus a governance rule authorising its use. *Layer:* outside the pack.
+*Deferred because:* creating or waking a session is out of scope by declaration,
+and the deadline ends the wait regardless.
+
+**The console cannot refresh itself.** *Evidence:* the page is exactly as old as
+the reading times it shows, and re-reading means running the command again.
+*Value:* an operator watching a long run would not have to. *Trigger:* an
+operator asking. *Layer:* presentation. *Deferred because:* every honest way to
+do it adds something that runs — a server, a scheduler, a poll — and this
+release ships nothing that runs. A page that reloaded itself from disk without
+re-deriving would be showing a stale reading with a fresh timestamp, which is
+worse than the reading being old and saying so.
+
+**A stall still needs two readings, so the console declines to answer it.**
+*Evidence:* the overview's `stalled` column shows `·` and says why. *Value:* an
+operator would see stalls where they look for everything else. *Trigger:* a
+coordinator that runs `progress.classify` on a schedule and records its verdict
+in the record — at which point the console can show it, because it would be
+reading an answer somebody else owns rather than computing one. *Layer:* project
+practice first, then the projection. *Deferred because:* the page must not
+become the second place a state is decided.
+
+**The widget catalogue grows with the number of projects.** *Evidence:* twelve
+projects offer a hundred and thirty widgets; the catalogue is grouped and folded
+per project and is still long. *Value:* an operator with many projects could
+find one. *Trigger:* an operator with many projects. *Layer:* presentation.
+
+**The complete-history scan costs about a second per commit.** *Evidence:*
+measured at 125 seconds over this repository's history. It is intentionally
+expensive — it reads every tree of every commit — and its cadence is
+pre-publication, not per-commit. *Value:* an incremental scan against a
+last-scanned marker. *Trigger:* a consumer repository large enough that the cost
+is a reason to skip the gate, which is the failure this would exist to prevent.
+*Layer:* `publication_history`. *Deferred because:* *unchanged since* is a new
+claim and needs an oracle of its own before anything may rely on it.
+
 ## The freeze, prepared and not performed
 
 Moving the state is the founder's act — HITL row 2, and this session stops
