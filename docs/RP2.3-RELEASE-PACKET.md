@@ -1,6 +1,7 @@
 # RP2.3 — founder release packet
 
-**The manifest declares `IN_PROGRESS`.** No project may adopt this candidate.
+**The manifest declares `QUALIFIED_AND_FROZEN`.** This release is adoptable at a
+project's next capability boundary.
 Moving it to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md`
 row 2) and the coordinator did not take it. Everything below is the record that
 decision would be taken on.
@@ -191,13 +192,15 @@ than record it.
 
     cd <this checkout>
     python3 tools/pack_pin.py . --version 2.3.0 --sha <full 40-char revision> \
-        --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
+        --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
     python3 -m pytest tools/tests/ -q
     python3 tools/commit_gate.py --default-terms . --range HEAD \
         --baseline d70d72fbcadb98cb8a2979f9c63ed84e595662e8 --repo .
 
-The state is `IN_PROGRESS` and that is what the command above must pass. A
-project may only adopt `QUALIFIED_AND_FROZEN`.
+The state is `QUALIFIED_AND_FROZEN` and that is what the command above must
+pass. A project may only adopt `QUALIFIED_AND_FROZEN`, which this release now
+declares — adoption still happens at the project's own capability boundary and
+is never automatic.
 
 ## The console, and what holds it to being a reading
 
@@ -440,12 +443,17 @@ with an invalidation rule. *Deferred because:* a cache is a second copy of a
 fact, and the fact it would copy is cheap to re-derive for the window anyone
 has asked to see.
 
-## The freeze, prepared and not performed
+## The freeze, performed
 
-Moving the state is the founder's act — HITL row 2, and this session stops
-short of it deliberately. What follows is the procedure derived from what the
-2.2.0 freeze actually did, so the decision is a decision and not also a
-research task.
+Moving the state was the founder's act — HITL row 2 — taken on the authorised
+candidate `2e34bccbea03f13eb2abb2d101d0ad9035886af9`, digest
+`19eac879a9756b5146d61cd171f8f63c1148ae785da5d4d52c07f33a4c7c0c59`, after two
+bounded independent readings of the final delta. The procedure below is what
+was executed, derived from what the 2.2.0 freeze actually did, so that the
+decision was a decision and not also a research task. The freeze itself changes
+the tree — five surfaces and the digest over them — so the frozen release
+carries a revision and a digest of its own, recorded in the closure section at
+the end of this file.
 
 **1. State the release identity identically on every surface that carries it.**
 The 2.2.0 freeze touched exactly five files, and the reason it touched five is
@@ -493,7 +501,7 @@ a project that never moves is correctly pinned rather than out of date.
     version   2.3.0
     revision  NOT WRITTEN HERE, deliberately — see below
     digest    PACK_MANIFEST.json, `tree_digest_sha256`
-    state     IN_PROGRESS — and it stays there until a person moves it
+    state     QUALIFIED_AND_FROZEN — moved by the founder, on the candidate named below
     tests     PACK_MANIFEST.json, `tests.passed`
 
 **The revision is absent for the same reason the manifest gives for its own:** a
@@ -510,7 +518,7 @@ it in its own pin and verifies rather than copies:
     python3 tools/pack_pin.py . --version 2.3.0 \
         --sha "$(git rev-parse HEAD)" \
         --digest "$(python3 -c "import json;print(json.load(open('PACK_MANIFEST.json'))['tree_digest_sha256'])")" \
-        --state IN_PROGRESS
+        --state QUALIFIED_AND_FROZEN
     python3 -m pytest tools/tests/ -q
 
 If both exit zero, the tree in front of you is the candidate this document
@@ -527,7 +535,7 @@ exists to catch exactly this. The guard reads whole documents now, and this
 section names the command instead of the number.
 
     python3 -m pytest tools/tests/ -q                      # the suite
-    python3 tools/pack_pin.py . --version 2.3.0 --state IN_PROGRESS
+    python3 tools/pack_pin.py . --version 2.3.0 --state QUALIFIED_AND_FROZEN
     python3 tools/publication_history.py .                 # the history scan
     python3 -c "import json;print(len(json.load(open('policy/recurrence-classes.json'))['classes']))"
     grep -cE '^\| M-[0-9]' docs/RP2.3-FAILURE-MODE-CLOSURE.md

@@ -10,7 +10,7 @@
     },
     {
       "reading": "pack state",
-      "marker": "state: IN_PROGRESS",
+      "marker": "state: QUALIFIED_AND_FROZEN",
       "why": "and whether it is adoptable"
     },
     {

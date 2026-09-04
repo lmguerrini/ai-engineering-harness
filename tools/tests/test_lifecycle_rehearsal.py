@@ -32,6 +32,20 @@ from continuation import Blocker, ContinuationRecord, State, Wait, WaitKind
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _declared_state() -> str:
+    """The state this pack DECLARES, read rather than remembered.
+
+    It was the literal `IN_PROGRESS`, which is a fact about a moment rather than
+    a property of the pin: the founder freeze moved the state and the rehearsal
+    failed for having remembered the old one. What the rehearsal means is *a
+    project verifies the pack it pins*, and the state is part of what it
+    verifies, not part of what it assumes.
+    """
+    import json
+
+    return json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))["state"]
+
+
 def _save(root: Path, **fields) -> Path:
     fields.setdefault("capability", "C1 — the capability under rehearsal")
     fields.setdefault("updated_at", continuation.now())
@@ -82,14 +96,14 @@ def test_a_project_verifies_the_pack_it_pins_rather_than_trusting_it(tmp_path):
     digest = json.loads((ROOT / "PACK_MANIFEST.json").read_text())["tree_digest_sha256"]
 
     problems = pack_pin.verify_pin(ROOT, expect_version="2.3.0", expect_sha=head,
-                                   expect_digest=digest, expect_state="IN_PROGRESS")
+                                   expect_digest=digest, expect_state=_declared_state())
     # An untracked file is a real finding about a working checkout and not about
     # the pin mechanism, and this rehearsal runs in one. It is reported rather
     # than ignored, and everything else must still verify.
     untracked = [p for p in problems if "untracked" in p]
     assert problems == untracked, f"the pin failed for a reason other than a dirty checkout: {problems}"
     wrong = pack_pin.verify_pin(ROOT, expect_version="2.3.0", expect_sha="0" * 40,
-                                expect_digest=digest, expect_state="IN_PROGRESS")
+                                expect_digest=digest, expect_state=_declared_state())
     assert wrong, "a pin naming another revision verified"
 
 

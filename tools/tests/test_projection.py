@@ -899,9 +899,16 @@ def test_the_status_bar_lifts_values_it_does_not_invent(tmp_path):
     _record(tmp_path, actionable=("x",))
     view = projection.project(tmp_path)
     bar = projection._status_bar(view)
-    assert "2.3.0" in bar and "IN_PROGRESS" in bar
+    # THE STATE THIS PACK DECLARES, read rather than remembered — the literal
+    # was a fact about a moment, and the founder freeze moved it.
+    import pathlib
+
+    declared = json.loads(
+        (pathlib.Path(projection.__file__).parent.parent / "PACK_MANIFEST.json").read_text(
+            encoding="utf-8"))["state"]
+    assert "2.3.0" in bar and declared in bar
     text = view.render()
-    for shown in ("2.3.0", "IN_PROGRESS"):
+    for shown in ("2.3.0", declared):
         assert shown in text, f"the bar shows {shown!r} and no panel does"
 
 

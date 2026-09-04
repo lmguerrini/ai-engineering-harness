@@ -11,7 +11,7 @@ every audit round while its stateless checkers survived every one
 | | |
 |---|---|
 | Version | **2.3.0** — `VERSION` is the single machine-readable authority |
-| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate. **No project may adopt it**; only `QUALIFIED_AND_FROZEN` is adoptable, and moving this release there is a human decision |
+| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) — frozen by human authority; adoptable at a project's next capability boundary |
 | Gate record | `docs/RP2.3-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
@@ -19,13 +19,13 @@ Verify a checkout — run it, do not read it:
 
 ```bash
 python3 tools/pack_pin.py . --version 2.3.0 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
 ```
 
 `--state` is the state this checkout actually declares. **A project may only
-adopt `QUALIFIED_AND_FROZEN`**, and this checkout declares `IN_PROGRESS`, so the
-command above verifies the candidate and does **not** make it adoptable. Passing
-any other state against this checkout fails — correctly.
+adopt `QUALIFIED_AND_FROZEN`**, which is what this release now declares, so the
+command above verifies it and it is adoptable at a project's next capability
+boundary. Passing any other state against this checkout fails — correctly.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a

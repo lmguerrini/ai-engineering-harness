@@ -4,7 +4,7 @@
 
 A **MINOR** release (`DECISIONS.md` D11 and D24): new backward-compatible
 capability, plus enforcement of guarantees earlier versions already promised.
-**State `IN_PROGRESS` — no project may adopt this candidate.** Every defect
+**State `QUALIFIED_AND_FROZEN` — frozen by the founder, and adoptable at a project's next capability boundary.** Every defect
 below was reproduced by execution against the frozen 2.2.0 baseline before it
 was repaired, and every repaired guarantee carries an oracle that fails against
 the pre-repair behaviour. Gate: `docs/RP2.3-GATE.md`.
@@ -219,8 +219,8 @@ stronger one.
 - **A release index now exists beside the release roots.** It omits 2.1.1
   deliberately: that release has no root of its own, and listing the working
   checkout would enshrine the D18 defect rather than record it.
-- **The migration gate refuses this candidate while it is `IN_PROGRESS`**, and
-  that is a test.
+- **The migration gate refuses any target that is not `QUALIFIED_AND_FROZEN`**,
+  and that is a test. It refused this release throughout its candidacy.
 - The launch contract gains one sentence: the index exists, an entry is a claim,
   and a project runs against its own pin rather than against an index.
 

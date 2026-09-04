@@ -3,9 +3,13 @@
 What happened, in the order it happened, including what the coordinator got
 wrong. Appended to as each capability closes; never rewritten.
 
-**Version `2.3.0`, state `IN_PROGRESS`.** No project may adopt this candidate. Moving it to
-`QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) and
-the coordinator does not take it.
+**Version `2.3.0`, state `QUALIFIED_AND_FROZEN`.** Frozen by the founder on the
+authorised candidate `2e34bccbea03f13eb2abb2d101d0ad9035886af9`, digest
+`19eac879a9756b5146d61cd171f8f63c1148ae785da5d4d52c07f33a4c7c0c59`, after two
+bounded independent readings of the final delta — the first NOT READY with two
+release-blocking defects, the second READY with none. Moving the state was a human
+decision (`policy/hitl-matrix.md` row 2) and the coordinator did not take it; this
+release ships no verb that promotes itself.
 
 ## Baseline
 

@@ -860,35 +860,31 @@ def test_every_refused_shape_names_what_its_refusal_has_to_say():
 # --- adoption: a candidate is not adoptable, and the gate says so ------------------
 
 
-def test_a_project_cannot_adopt_this_candidate_while_it_is_in_progress(tmp_path):
+def test_a_project_cannot_adopt_a_target_that_is_not_itself_qualified(tmp_path):
     """`DECISIONS.md` D21 reserves hard refusal for what is actually broken, and
-    a migration target that is not itself qualified is on that list. This
-    release is `IN_PROGRESS` until a person moves it, so a project offered it
-    must be refused rather than warned."""
+    a migration target that is not itself qualified is on that list.
+
+    **It builds the unqualified target it needs.** This used to point at the
+    live pack and carried its own warning that it would stop meaning anything
+    the moment the candidate was frozen — which is exactly what the founder
+    freeze did. A test whose subject can be promoted out from under it is a
+    test about a moment; the property is about any target.
+    """
     import json
-    import pathlib
-    import subprocess
 
     import pack_migration
 
-    root = pathlib.Path(pack_migration.__file__).parent.parent
-    manifest = json.loads((root / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root),
-                          capture_output=True, text=True, check=True).stdout.strip()
-
+    candidate = _build_release(tmp_path / "candidate", "9.9.9", state="IN_PROGRESS")
     index = tmp_path / "RELEASE_INDEX.json"
     index.write_text(json.dumps({"releases": [{
-        "version": manifest["version"], "root_path": str(root), "sha": head,
-        "digest": manifest["tree_digest_sha256"], "state": manifest["state"],
+        "version": candidate["version"], "root_path": candidate["root"],
+        "sha": candidate["sha"], "digest": candidate["digest"], "state": candidate["state"],
     }]}))
     target = pack_migration.read_release_index(index)[0]
-    assert target.state == "IN_PROGRESS", (
-        "this test only means anything while the candidate is unfrozen; once it is frozen "
-        "the assertion below is about a different release"
-    )
+    assert target.state == "IN_PROGRESS", "the fixture did not build an unqualified target"
 
     pin = pack_migration.Pin(
-        root_path=str(root), version="2.2.0", sha="d" * 40, digest="4" * 64,
+        root_path=candidate["root"], version="2.2.0", sha="d" * 40, digest="4" * 64,
         state="QUALIFIED_AND_FROZEN",
     )
     report = pack_migration.migration_gate(pin, target, at_capability_boundary=True)
@@ -896,3 +892,28 @@ def test_a_project_cannot_adopt_this_candidate_while_it_is_in_progress(tmp_path)
     assert any("IN_PROGRESS" in finding or "QUALIFIED" in finding for finding in report.findings), (
         report.findings
     )
+
+    #: and the pack this test runs inside, whatever state it is in, is offered
+    #: only when that state is the adoptable one — the same rule, applied to the
+    #: subject the old version of this test pointed at.
+    import pathlib
+    import subprocess
+
+    root = pathlib.Path(pack_migration.__file__).parent.parent
+    manifest = json.loads((root / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root),
+                          capture_output=True, text=True, check=True).stdout.strip()
+    live_index = tmp_path / "LIVE_INDEX.json"
+    live_index.write_text(json.dumps({"releases": [{
+        "version": manifest["version"], "root_path": str(root), "sha": head,
+        "digest": manifest["tree_digest_sha256"], "state": manifest["state"],
+    }]}))
+    live = pack_migration.read_release_index(live_index)[0]
+    live_report = pack_migration.migration_gate(
+        pack_migration.Pin(root_path=str(root), version="2.2.0", sha="d" * 40,
+                           digest="4" * 64, state="QUALIFIED_AND_FROZEN"),
+        live, at_capability_boundary=True)
+    if manifest["state"] == "QUALIFIED_AND_FROZEN":
+        assert not any("IN_PROGRESS" in f for f in live_report.findings), live_report.findings
+    else:
+        assert live_report.findings, "an unqualified live pack must be refused too"
