@@ -411,6 +411,9 @@ body[data-chrome="off"] .app{grid-template-columns:1fr}
 body[data-chrome="off"] .view>h2.vh,body[data-chrome="off"] .view>p.vq{display:none}
 body[data-chrome="off"] footer{display:none}
 
+/* all systems: two depths, and the shallower one drops only what has its own view */
+[data-ad="minimal"] .later{display:none}
+
 /* the overview's three densities */
 .onlyfull{display:none}
 [data-od="full"] .onlyfull{display:block}
@@ -1526,6 +1529,18 @@ _SCRIPT = r"""
   [].forEach.call(document.querySelectorAll('button[data-od]'), function (b) {
     b.addEventListener('click', function () { overviewDensity(b.dataset.od); });
   });
+  function allDepth(name) {
+    if (['minimal', 'full'].indexOf(name) < 0) { name = 'full'; }
+    var host = document.querySelector('[data-view="all"]');
+    if (host) { host.setAttribute('data-ad', name); }
+    [].forEach.call(document.querySelectorAll('button[data-ad]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.ad === name));
+    });
+    set('ad', name);
+  }
+  [].forEach.call(document.querySelectorAll('button[data-ad]'), function (b) {
+    b.addEventListener('click', function () { allDepth(b.dataset.ad); });
+  });
 
   // ---- the control room's chrome, and the screen it wants ----------------------
   function chrome(on) {
@@ -1630,6 +1645,7 @@ _SCRIPT = r"""
   syncControls();
   paintPresets();
   overviewDensity(typeof prefs.od === 'string' ? prefs.od : 'balanced');
+  allDepth(typeof prefs.ad === 'string' ? prefs.ad : 'full');
   chrome(prefs.chrome !== 'off');
   rebuildLayoutPresets();
   paint();
@@ -2067,14 +2083,24 @@ def _all_systems(sites: list) -> str:
         ("identity", "identity and release", _identity(sites)),
         ("registry", "the registry itself", _projects(sites)),
     )
+    #: MINIMAL is the first four: what needs a person, every project, every job,
+    #: every audit. The rest are `later` — and every one of them is also its own
+    #: view in the sidebar, so choosing minimal changes what this page shows and
+    #: never what the console holds.
+    minimal = {"attention", "matrix", "workers", "audits"}
     index = "".join(
         f"<button class=jump data-anchor='all-{key}'>{_ESC(title)}</button>"
         for key, title, _body in sections)
     body = "".join(
-        f"<section class=setgroup id='all-{key}' data-anchor-target='all-{key}'>"
+        f"<section class='setgroup{"" if key in minimal else " later"}' id='all-{key}' "
+        f"data-anchor-target='all-{key}'>"
         f"<div class=head><h2>{_ESC(title)}</h2></div>{content}</section>"
         for key, title, content in sections)
-    return f"<div class='filters index'>{index}</div><div class=stack>{body}</div>"
+    return ("<div class=filters><span class=t>show</span>"
+            "<button data-ad='minimal'>minimal</button>"
+            "<button data-ad='full' aria-pressed='true'>full</button>"
+            "<span class=t>everything here is also its own view</span></div>"
+            f"<div class='filters index'>{index}</div><div class=stack>{body}</div>")
 
 
 def _control_room(sites: list) -> str:
