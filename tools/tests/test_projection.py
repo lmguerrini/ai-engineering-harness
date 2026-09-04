@@ -1799,3 +1799,28 @@ def test_no_two_things_the_charts_paint_are_the_same_colour():
         assert f"background:var(--{token})" in projection._STYLE \
             or f"background:var(--{token})" in _console_style(), (
                 f"--{token} is in the chart-fill list and nothing paints with it")
+
+
+def test_a_good_state_is_never_the_same_green_as_the_type_beside_it():
+    """**N3.** The chart-fill guard compares the semantics against `ink`, and
+    the collision an independent reader actually found was `good` against
+    `dim` — Matrix at 12.7° and 1.36:1, under this release's own 22°/1.6 floor.
+    The palette moved; the guard did not cover the pair its own docstring named,
+    so reverting the palette left it green.
+
+    `good` is the one semantic drawn as a chart fill *and* set beside secondary
+    prose in a single-hue lens, which is where a good state and ordinary dim
+    type become the same colour. The pairs deliberately left close — a warm
+    monochrome `warn` against warm greys, steel `unknown` against steel `dim` —
+    are recorded as a limitation and are not this.
+    """
+    for lens in projection.LENSES:
+        tokens = _theme_tokens(lens)
+        a = _hue_and_luminance(tokens["good"])
+        b = _hue_and_luminance(tokens["dim"])
+        apart = min(abs(a[0] - b[0]), 360 - abs(a[0] - b[0]))
+        ratio = ((max(a[1], b[1]) + 0.05) / (min(a[1], b[1]) + 0.05))
+        assert apart >= 22 or ratio >= 1.6, (
+            f"{lens or 'monochrome'}: --good {tokens['good']} and --dim {tokens['dim']} are "
+            f"{apart:.0f}° apart at {ratio:.2f}:1 — a good state and ordinary secondary type "
+            f"are the same colour")

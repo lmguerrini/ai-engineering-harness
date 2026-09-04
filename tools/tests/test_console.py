@@ -1427,7 +1427,7 @@ def test_a_quiet_day_keeps_its_place_in_the_week_and_the_day(with_repository):
     assert "No commit on this day" in block
 
 
-def test_the_number_a_month_cell_actually_prints_is_the_reading(with_repository):
+def test_the_number_a_month_cell_actually_prints_is_the_reading(with_pushed_repository):
     """T1 and T3. Every earlier agreement test read `data-local`, which the
     renderer copies verbatim from the reading — so a mutant that made the
     *combined* mode return `local + remote` printed the sum in every visible
@@ -1441,13 +1441,19 @@ def test_the_number_a_month_cell_actually_prints_is_the_reading(with_repository)
 
     import activity as activity_module
 
-    three, _repo = with_repository
+    # A REPOSITORY WITH AN OBSERVED REMOTE. With no remote every day has
+    # `remote == 0`, so `local + remote == local` and the one mutant this test
+    # exists to catch is invisible in the fixture — which is how it survived.
+    three, _repo = with_pushed_repository
     sites = console.survey(three)
     page = console.render_console(sites)
     block = _history_block(page)
     truth = {day.date: day for day in
              activity_module.aggregate([console._activity_of(site) for site in sites])}
     assert truth, "the fixture has no activity, so this proves nothing"
+    assert any(day.remote for day in truth.values()), (
+        "no day in the fixture is represented by a remote, so local+remote cannot differ "
+        "from local and this test could not see the sum it exists to refuse")
 
     modes = re.findall(r"<div class=actmode data-actmode='([a-z]+)'>(.*?)(?=<div class=actmode|$)",
                        block, re.S)
@@ -1459,8 +1465,20 @@ def test_the_number_a_month_cell_actually_prints_is_the_reading(with_repository)
         assert cells, f"the {mode} month grid printed no cell"
         for date, shown in cells:
             day = truth.get(date) or activity_module.Day(date=date)
-            expected, exact, _kind = console._mode_counts(day, mode)
-            want = console.UNKNOWN_MARK if exact is None else (str(exact) if exact else "")
+            # THE RULE, RESTATED HERE, from the reading's own fields. Calling
+            # `_mode_counts` made this test a mirror: it is the renderer, so any
+            # mutation inside it moved the cell and the expectation together and
+            # the test could not fail for it — by construction, not by accident.
+            # A mutant returning `local + remote` for the combined reading —
+            # the one sum this release promises never to compute — printed the
+            # sum in every visible cell against a green suite.
+            if mode == "local":
+                want = str(day.local) if day.local else ""
+            elif mode == "remote":
+                want = (console.UNKNOWN_MARK if day.remote_unknown
+                        else (str(day.remote) if day.remote else ""))
+            else:
+                want = str(day.local) if day.local else ""
             assert shown == want, (
                 f"{mode} {date}: the cell prints {shown!r} and the reading is {want!r} "
                 f"(local {day.local}, represented {day.remote}, "
@@ -1505,3 +1523,60 @@ def test_an_hour_bar_is_drawn_from_the_number_beside_it(with_repository):
                 f"commits against a peak of {peak} is {want}%")
             checked += 1
     assert checked >= 24, f"only {checked} bars were checked; the fixture drew too few"
+
+
+def test_a_bounded_representation_states_a_total_that_is_actually_bounded(three, tmp_path):
+    """**N2.** The week view covers the last `COLUMN_DAYS` of the window and
+    states its own total for them. Every fixture that reached the agreement
+    test spanned a few days, so the covered total and the window total were the
+    same number and a mutant summing the whole window survived.
+
+    This spans more than `COLUMN_DAYS`, so the two totals must differ.
+    """
+    import datetime
+    import re
+    import subprocess
+
+    repo = tmp_path / "long-history"
+    repo.mkdir()
+    for command in (("init", "--quiet", "--initial-branch", "main"),
+                    ("config", "user.name", "T"), ("config", "user.email", "t@e.invalid"),
+                    ("config", "commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(repo), *command], check=True, capture_output=True)
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    for back in (120, 100, 80, 60, 50, 30, 10, 2, 0):
+        when = f"{(today - datetime.timedelta(days=back)).isoformat()}T10:00:00+00:00"
+        (repo / f"c{back}.txt").write_text(str(back))
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", f"c{back}"], check=True,
+                       capture_output=True, timeout=120,
+                       env={"PATH": "/usr/bin:/bin", "HOME": str(repo),
+                            "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when,
+                            "GIT_AUTHOR_NAME": "T", "GIT_AUTHOR_EMAIL": "t@e.invalid",
+                            "GIT_COMMITTER_NAME": "T", "GIT_COMMITTER_EMAIL": "t@e.invalid"})
+    root = three[0][1]
+    (root / "PROJECT.yaml").write_text(
+        'project:\n  name: "a"\n  publication_intent: "internal"\n'
+        f'  repo_path: "{repo}"\n'
+        'pack:\n  root_path: "%s"\n  version_adopted: "2.3.0"\n'
+        '  state_adopted: "IN_PROGRESS"\n  adopted_at: "2026-09-04"\n'
+        '  adoption_boundary: "at a capability boundary"\nadapters: []\n'
+        % Path(__file__).resolve().parents[2], encoding="utf-8")
+
+    page = console.render_console(console.survey(three))
+    block = _history_block(page)
+    stated = re.search(r"<i>local commits</i><em>(\d+)</em>", block)
+    total = int(stated.group(1))
+    covered = {int(n) for n in re.findall(r"<b class=covered>(\d+)</b>", block)}
+    assert len(covered) == 1, f"the week view states several totals: {covered}"
+    covered = covered.pop()
+
+    assert total > covered, (
+        f"the window holds {total} and the bounded view claims {covered}: the fixture does not "
+        f"span more than the {console.COLUMN_DAYS} days the view covers, so this proves nothing")
+    columns = [int(n) for n in re.findall(
+        r"<div class='daycol k-[a-z]+' data-day='[^']+' data-local='(\d+)'", block)]
+    assert columns, "the week view drew no column"
+    assert sum(columns) // 3 == covered, (
+        f"the columns total {sum(columns) // 3} and the view states {covered}")
+    assert len(columns) // 3 <= console.COLUMN_DAYS

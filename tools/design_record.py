@@ -217,6 +217,24 @@ class DesignRecord:
             found.append(f"the base revision {self.base_revision[:12]} is not an ancestor of "
                          f"HEAD, so it is not the state this work started from")
         if mutation_begins_at:
+            # RESOLVED FIRST. The strictness of this whole binding rested on a
+            # string comparison, so the same commit spelled as an abbreviation
+            # or as a ref name was not equal to the base and the reflexive
+            # `--is-ancestor` then said yes: a design frozen against the very
+            # commit where mutation began reported FROZEN. The pack already
+            # says an abbreviation is not a weaker claim but a different one
+            # (`pack_pin`); here the argument is a runtime input rather than a
+            # recorded claim, so it is resolved rather than refused — which
+            # also stops an unresolvable value being reported as backdating.
+            try:
+                mutation_begins_at = gitread._run(
+                    repository, "rev-parse", f"{mutation_begins_at}^{{commit}}",
+                    timeout=30).strip()
+            except Exception:
+                found.append(
+                    f"the revision where mutation began, {mutation_begins_at!r}, does not "
+                    f"resolve in this repository, so the design cannot be shown to precede it")
+                return found
             if mutation_begins_at == self.base_revision:
                 found.append(
                     "the base revision is the revision at which mutation began, so the design "

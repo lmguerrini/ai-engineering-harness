@@ -542,3 +542,35 @@ def test_the_shipped_waiter_ends_the_moment_the_sentinel_appears():
     assert waiter.returncode == 0
     assert elapsed < 3, (
         f"the result was already on disk and the waiter took {elapsed:.1f}s to notice")
+
+
+def test_a_sentinel_that_exists_and_is_empty_does_not_end_the_wait():
+    """**N4.** The `-s` in the generated wait is load-bearing: a worker that
+    redirects its output into the report file creates that file empty at the
+    moment it starts, and `-e` would end the wait immediately — before a single
+    byte of the result existed.
+
+    The two behavioural tests beside this one cover *absent* and *non-empty*
+    and skipped the case in between, so `-s` → `-e` survived them both.
+    """
+    import subprocess as sub
+    import time
+
+    sentinel = pathlib.Path(tempfile.mkdtemp()) / "created-but-empty"
+    sentinel.touch()
+    assert sentinel.exists() and sentinel.stat().st_size == 0
+
+    worker = sub.Popen([sys.executable, "-c", "import time; time.sleep(6)"])
+    try:
+        started = time.monotonic()
+        waiter = sub.run(progress.waiter_command("r", worker.pid, sentinel=str(sentinel),
+                                                 poll_seconds=1),
+                         capture_output=True, timeout=30)
+        elapsed = time.monotonic() - started
+    finally:
+        worker.wait(timeout=30)
+
+    assert waiter.returncode == 0
+    assert elapsed >= 4, (
+        f"the waiter returned after {elapsed:.1f}s against a worker that lived 6s: an empty "
+        f"file is a file the producer has not written yet, not a result")

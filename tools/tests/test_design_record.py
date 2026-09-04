@@ -432,3 +432,55 @@ def test_declaring_a_change_trivial_cannot_bypass_a_project_that_requires_a_desi
     design = report.component("design")
     assert design.state == capability_open.NOT_PRESENT
     assert design.required and design.blocking and not design.satisfied
+
+
+def test_the_revision_where_mutation_began_is_resolved_before_it_is_compared(repo):
+    """**The freeze binding held in exactly one spelling.**
+
+    `mutation_begins_at == self.base_revision` was a string comparison, and the
+    `--is-ancestor` fallback beside it is reflexive. So the same commit written
+    as an abbreviation or as a ref name was *not equal* to the base, the
+    ancestor check said yes, and a design frozen against the very commit where
+    mutation began reported FROZEN — the backdating case the binding exists to
+    refuse, failing silently in the unsafe direction. An independent reader
+    found it, and the template this release ships prints
+    `--mutation-begins-at <the first commit>` with no `git rev-parse` around it.
+    """
+    (repo / "work.txt").write_text("the work")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "where the work began")
+    began = _head(repo)
+    short = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short=12", "HEAD"],
+                           capture_output=True, text=True, check=True).stdout.strip()
+    _git(repo, "branch", "began", began)
+    _git(repo, "tag", "began-tag", began)
+    record = design_record.read(_write(repo, base=began))
+
+    #: every spelling of one commit is that commit
+    for spelling in (began, short, "began", "began-tag", "HEAD"):
+        problems = record.problems(mutation_begins_at=spelling, repository=repo)
+        assert any("already contains the work" in p for p in problems), (
+            f"{spelling!r} names the commit the design was frozen against and the "
+            f"binding did not notice: {problems}")
+
+    #: and a value that names no commit is that, not backdating
+    problems = record.problems(mutation_begins_at="zzz-no-such-revision", repository=repo)
+    assert any("does not resolve" in p for p in problems), problems
+    assert not any("already contains the work" in p for p in problems), (
+        "an unresolvable revision was reported as backdating")
+
+
+def test_a_design_frozen_before_the_work_still_passes_in_every_spelling(repo):
+    """The other direction, so the repair above cannot be a blanket refusal."""
+    base = _head(repo)
+    (repo / "work.txt").write_text("the work")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "where the work began")
+    began = _head(repo)
+    short = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short=12", "HEAD"],
+                           capture_output=True, text=True, check=True).stdout.strip()
+    _git(repo, "branch", "began2", began)
+    record = design_record.read(_write(repo, base=base))
+    for spelling in (began, short, "began2", "HEAD"):
+        assert record.problems(mutation_begins_at=spelling, repository=repo) == [], (
+            f"a design frozen before the work was refused when the work was named {spelling!r}")

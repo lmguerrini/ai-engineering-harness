@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "1246746185d3311244ff13c4ea104feef687fc53715f3f54012a4bd0d2624a7e",
+  "tree_digest_sha256": "19eac879a9756b5146d61cd171f8f63c1148ae785da5d4d52c07f33a4c7c0c59",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 2031
+    "passed": 2036
   },
   "gate_record": "docs/RP2.3-GATE.md",
   "delta_audit": "docs/RP2.3-CAPABILITY-MAP.md",
@@ -75,7 +75,8 @@
     "RP2.3 REMOVED FROM SCOPE": "autonomous termination of a stalled worker (classification ships; ending a worker stays a coordinator action under hitl-matrix row 4), and an observer that restarts a coordinator (DECISIONS.md D23 clause 4).",
     "RP2.2 DEFER_WITH_TRIGGER": "carried unchanged from 2.2.0 — see docs/RP2.2-GATE.md for each item and its trigger.",
     "EC-O": "carried from 2.1.1 — second project blocked by the machine-path rule",
-    "EC-T": "carried from 2.1.1 — unscannable-blob volume makes the exemption total unreadable"
+    "EC-T": "carried from 2.1.1 — unscannable-blob volume makes the exemption total unreadable",
+    "EC — a design record's oracle selectors are not checked": "A design record names a selector per oracle and nothing reads it, so a selector that reaches no test is accepted. The closure matrix already has that mechanism for the release's own oracles; wiring it into the design gate is a new promise rather than a repair. Trigger: the first project whose design records are audited by somebody other than their author."
   },
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"

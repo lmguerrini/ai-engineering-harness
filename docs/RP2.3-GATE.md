@@ -2949,8 +2949,20 @@ except the one checkout that happened to sit beside the session directory** —
 the pack cited a file it did not ship. It ships it now, at
 `docs/RP2.3-DESIGN-C31-design-gate.md`, and the test asserts rather than skips.
 
-Every one of those fourteen defects was then restored deliberately against a
-green baseline in the real checkout: **fourteen killed, none survived.**
+Fourteen mutants were then run against a green baseline in the real checkout —
+one per repaired mechanism, which is fewer than the sixteen findings because
+several findings share one guard. The first run of them reported fourteen
+killed, and **that was wrong twice**: the month-cell oracle computed its
+expectation by calling the very function a mutant changed, so a combined
+reading returning `local + remote` — the one sum this release promises never to
+compute — printed the sum in every visible cell against a green suite. A second
+independent reader found it, as a second reader had found the previous version
+of the same sentence.
+
+The oracle restates the mode rule from the reading's own fields now, and its
+fixture has an observed remote, without which `local + remote` equals `local`
+and the mutant is invisible whatever the assertion says. **Fourteen killed,
+none survived**, re-run after that repair.
 
 ### What the reading found correct
 
@@ -3010,3 +3022,92 @@ by an unrelated injection test hanging until its own timeout.
 **The lesson is the one this release keeps relearning, from the other side.**
 The tool was correct in its intent, shipped for exactly this failure, and its
 guarantee was held by a string. Nobody had run it.
+
+## The freeze reading, and the two things it found
+
+`991b6bae438936af1542b10da108822a1faf1215`, digest `1246746185d3…`, blind and
+bounded to `514bf66..HEAD` — three commits, 19 files, +883/−90. **NOT READY**,
+two release-blocking defects. The reader recomputed the digest and the tracked
+file count with its own framing implementation rather than the shipped one, and
+ran the suite itself: 2031.
+
+**The freeze binding held in exactly one spelling.** `mutation_begins_at` was
+compared to the base revision as a *string*, and the `--is-ancestor` fallback
+beside it is reflexive. So the same commit written as an abbreviation or as a
+ref name was not equal to the base, the ancestor check said yes, and a design
+frozen against the very commit where mutation began reported **FROZEN** — the
+backdating case the binding exists to refuse, failing silently in the unsafe
+direction, all the way through the readiness gate.
+
+Five artifacts stated the guarantee unhedged, four of them written by the delta
+that introduced the hole. Worse, the template this release ships prints
+`--mutation-begins-at <the first commit of the implementation>` with no
+`git rev-parse` around it, while the skill prints `"$(git rev-parse …)"` — two
+shipped instructions, one of which disarms the check. The pack refuses exactly
+this one module away: *an abbreviation is not a weaker pin, it is a different
+claim.*
+
+The revision is resolved through the repository before it is compared now. An
+argument is a runtime input rather than a recorded claim, so resolving is right
+where refusing is right for a pin — and it closes every spelling at once
+instead of one at a time. A value that names no commit reports that, rather
+than being reported as backdating.
+
+**And *fourteen killed, none survived* was false again**, for a different one
+of the fourteen and for a reason worth recording. The oracle written to close
+the previous round's B7 computed its expected value by calling `_mode_counts` —
+the renderer. Any mutation inside that function moved the cell and the
+expectation together, so the test could not fail for it by construction. A
+combined reading returning `local + remote`, the one sum this release promises
+never to compute, printed the sum in every visible month cell against a green
+2031-test suite.
+
+Repairing the assertion was not enough: the fixture had no remote, so
+`local + remote` equalled `local` and the mutant stayed invisible whatever the
+assertion said. **A test can be blind through its fixture as easily as through
+its assertion**, and that is the second lesson. The oracle restates the mode
+rule from the reading's own fields and runs against a repository with an
+observed remote; both of the reader's mutants now die.
+
+### Three more oracles that were not evidence
+
+*   **The bounded week view's own total** was asserted only where it could not
+    differ. Every fixture spanned a few days, so the covered total equalled the
+    window total and a mutant summing the whole window survived. It now runs
+    against a 120-day history, where the two must differ.
+*   **The chart-fill guard did not cover the pair its own docstring named.**
+    It compares the semantics against `ink`; the collision the previous reader
+    found was Matrix's `good` against its `dim`. Reverting the palette left the
+    guard green. `good` against `dim` is asserted in every lens now — the one
+    semantic drawn both as a chart fill and beside secondary prose.
+*   **Nothing distinguished a sentinel that exists from one with content.** The
+    `-s` in the wait is load-bearing: a worker redirecting into its report
+    creates it empty at the moment it starts. The two behavioural tests covered
+    *absent* and *non-empty* and skipped the case between them, so `-s` → `-e`
+    survived both.
+
+Each of the five was mutation-checked after repair, and the fourteen-mutant
+pass was re-run against a green baseline: **fourteen killed, none survived.**
+
+### One documented mitigation that did not exist
+
+The design record's own failure mode 6 said *a selector matching nothing is
+refused*. Nothing in `design_record.py` reads the selector column. A record is
+refused unless every oracle states the property it settles, which stops the
+emptiest version — but the selector claim was an enforcement that was never
+built. The row says what is true now and records the rest as an Evolution
+Candidate. A document claiming a check it does not have is the failure this
+release names in its own verifier: *a check that passes for a reason weaker
+than its message is worse than no check, because it is believed.*
+
+### What the reading found correct
+
+The waiter repair, the headline of the last commit, was attacked seven ways and
+held: a real unreaped zombie, a worker that exits after five seconds, a reaped
+pid, an already-written sentinel against a lingering worker, an empty sentinel,
+and `pid 1`. Eight hostile sentinel paths were quoted correctly and created no
+file. `ps -o stat=` was verified to return no leading whitespace on this host,
+so the prefix removal behaves. All seven of the previous round's repairs were
+confirmed closed, four of them by mutation and two — the narrowed calendar and
+the open-ended range — in a real browser over a 400-day repository, with zero
+hidden-but-painted cells in every state.
