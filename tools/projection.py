@@ -40,6 +40,7 @@ than deriving anything of its own.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -130,16 +131,25 @@ class Cell:
     #: ``situation`` for the command band a reader takes in first, ``telemetry``
     #: for the instrument row under it.
     band: str = "telemetry"
+    #: WHAT KIND of thing this is about — ``job``, ``output``, ``audit``,
+    #: ``capacity``, ``budget``, ``evidence``. A view that collects every job
+    #: across every project needs to recognise one without matching on the text
+    #: of its label, which is prose and changes.
+    kind: str = ""
+    #: Further named fields, for a table that has columns. Same rule as
+    #: `value`: each one restates something the panel already says.
+    fields: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.tone not in Tone.ALL:
             raise ValueError(f"unknown tone {self.tone!r}")
-        if self.band not in ("situation", "telemetry"):
+        if self.band not in ("situation", "telemetry", "identity"):
             raise ValueError(f"unknown band {self.band!r}")
-        for name in ("label", "value", "note"):
+        for name in ("label", "value", "note", "kind"):
             value = getattr(self, name)
             if not isinstance(value, str):
                 setattr(self, name, str(value))
+        self.fields = {str(k): str(v) for k, v in dict(self.fields or {}).items()}
 
 
 @dataclass
@@ -170,9 +180,10 @@ class Panel:
         self.lines.append(Line(text, tone, label, depth))
 
     def figure(self, label: str, value: str, tone: str = Tone.PLAIN, *,
-               share=None, note: str = "", band: str = "telemetry") -> None:
+               share=None, note: str = "", band: str = "telemetry", kind: str = "",
+               **fields: str) -> None:
         """Say a fact this panel already says, as a figure. Never instead of it."""
-        self.cells.append(Cell(label, value, tone, share, note, band))
+        self.cells.append(Cell(label, value, tone, share, note, band, kind, dict(fields)))
 
     def rows(self) -> "list[Line]":
         """Every line as a `Line`, including the ones appended as bare strings.
@@ -249,6 +260,17 @@ class Projection:
         return [c for p in self.panels for c in p.cells if c.band == "telemetry"]
 
     @property
+    def identity(self) -> "list[Cell]":
+        """What this project and this pack ARE. Read by the status bar and by
+        the console's identity view, so neither has to recognise a panel by its
+        title — which is prose, and moves."""
+        return [c for p in self.panels for c in p.cells if c.band == "identity"]
+
+    def figure_of(self, kind: str) -> "list[Cell]":
+        """Every figure of one kind, in the order the panels were built."""
+        return [c for p in self.panels for c in p.cells if c.kind == kind]
+
+    @property
     def next_action(self) -> str:
         for panel in self.panels:
             for line in panel.rows():
@@ -307,6 +329,18 @@ def _contract_panel(contract_path: Path) -> tuple[Panel, object | None]:
             panel.unknown.append(f"the pin could not be checked: {exc}")
     intent = getattr(contract, "publication_intent", None)
     panel.lines.append(f"publication intent: {intent or 'not declared'}")
+    pinned = (f"{pack.get('version_adopted', UNKNOWN)} at "
+              f"{str(pack.get('sha_adopted', UNKNOWN))[:12]} "
+              f"state {pack.get('state_adopted', UNKNOWN)}")
+    verifies = next((l for l in panel.rows() if l.text.startswith("pin ")
+                     or l.text.startswith("PIN ")), None)
+    panel.figure("pin", pinned,
+                 Tone.BAD if verifies is not None and "DOES NOT" in verifies.text
+                 else (Tone.GOOD if verifies is not None else Tone.UNKNOWN),
+                 note=verifies.text if verifies is not None else UNKNOWN,
+                 band="identity", kind="pin",
+                 repository=str(contract.repo_path or UNKNOWN),
+                 publication=str(intent or "not declared"))
     return panel, contract
 
 
@@ -385,7 +419,14 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
                      Tone.BAD if expired else
                      {"COMPLETE": Tone.GOOD, UNKNOWN: Tone.UNKNOWN}.get(mark, Tone.PLAIN),
                      note=deadline.rpartition(" — ")[2] if " — " in deadline else "",
-                     band="situation")
+                     band="situation", kind="job",
+                     job=observation.job_id, expects=wait.expects,
+                     owner=wait.executor or UNKNOWN,
+                     subject=wait.subject_revision[:12] or UNKNOWN,
+                     obligation=wait.obligation or wait.job_id,
+                     deadline=deadline,
+                     progress=_guarded(_progress_line, wait, observation,
+                                       default=f"{UNKNOWN} — could not be dated"))
     for label, values, tone in (
             ("unconsumed results", report.unconsumed, Tone.WARN),
             ("waits nobody can observe", report.unobservable, Tone.UNKNOWN),
@@ -406,10 +447,12 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
               Tone.WARN if report.blockers else Tone.PLAIN, label="human intervention")
     panel.figure("intervention", ", ".join(report.blockers) if report.blockers
                  else "none declared",
-                 Tone.WARN if report.blockers else Tone.PLAIN, band="situation")
+                 Tone.WARN if report.blockers else Tone.PLAIN, band="situation",
+                 kind="intervention")
     if report.actionable:
         panel.say(f"{len(report.actionable)} item(s)", label="authorised and outstanding")
-        panel.figure("outstanding", f"{len(report.actionable)} item(s)", band="situation")
+        panel.figure("outstanding", f"{len(report.actionable)} item(s)", band="situation",
+                     kind="outstanding")
         blocked_names = {n for b in record.blockers for n in b.blocks}
         for item in report.actionable:
             panel.say(item, Tone.MUTED if item in blocked_names else Tone.PLAIN, depth=1)
@@ -507,12 +550,21 @@ def _audit_freshness_panel(record) -> Panel:
         panel.unknown.append(
             "the record does not state which revision is the candidate, so no audit's subject "
             "can be compared against it")
+    if declared:
+        # WHICH candidate. The panel compared every audit against this and never
+        # printed it, so a reader could see *the candidate* and not what it was.
+        # Found by extending the figure invariant to a table's columns.
+        panel.say(declared, Tone.MUTED, label="the candidate this record declares")
     audits = [w for w in record.waits if w.subject_revision or w.subject_digest]
     if not audits:
         panel.say("no outstanding job states a subject revision", Tone.MUTED)
         return panel
     for wait in audits:
         short = wait.subject_revision[:12]
+        # WHO RAN IT. An audit's verdict is only as independent as its executor,
+        # and this panel named the subject and not the reader.
+        panel.say(wait.executor or UNKNOWN,
+                  Tone.MUTED if wait.executor else Tone.UNKNOWN, label="executor", depth=1)
         if not declared:
             panel.say(f"{short or UNKNOWN} — cannot be compared", Tone.UNKNOWN, label=wait.job_id)
             panel.figure(f"audit {wait.job_id}", "cannot be compared", Tone.UNKNOWN,
@@ -520,10 +572,14 @@ def _audit_freshness_panel(record) -> Panel:
         elif short and short in declared:
             panel.say(f"{short} — the candidate", Tone.GOOD, label=wait.job_id)
             panel.figure(f"audit {wait.job_id}", "the candidate", Tone.GOOD, note=short,
-                         band="situation")
+                         band="situation", kind="audit", audit=wait.job_id,
+                         subject=short or UNKNOWN, candidate=declared or UNKNOWN,
+                         owner=wait.executor or UNKNOWN)
         else:
             panel.figure(f"audit {wait.job_id}", "NOT the candidate", Tone.BAD, note=short,
-                         band="situation")
+                         band="situation", kind="audit", audit=wait.job_id,
+                         subject=short or UNKNOWN, candidate=declared or UNKNOWN,
+                         owner=wait.executor or UNKNOWN)
             panel.say(f"{short or UNKNOWN} — NOT the candidate this record declares. Findings "
                       f"from it describe a different tree", Tone.BAD, label=wait.job_id)
     return panel
@@ -582,13 +638,13 @@ def _budget_panel(record) -> Panel:
         panel.say(text, Tone.WARN if spent else Tone.PLAIN, label=counter)
         if isinstance(used, int) and isinstance(ceiling, int):
             panel.figure(counter, f"{used}/{ceiling}", Tone.WARN if spent else Tone.PLAIN,
-                         share=(used, ceiling), note=f"{left} remaining")
+                         share=(used, ceiling), note=f"{left} remaining", kind="budget")
         elif isinstance(used, int):
             # No denominator, so no bar. A meter here would be a picture of a
             # fraction nobody declared.
-            panel.figure(counter, f"{used} used", note="no declared ceiling")
+            panel.figure(counter, f"{used} used", note="no declared ceiling", kind="budget")
         else:
-            panel.figure(counter, UNKNOWN, Tone.UNKNOWN)
+            panel.figure(counter, UNKNOWN, Tone.UNKNOWN, kind="budget")
     # THE READINGS A LONG RUN NEEDS, listed whether or not the record carries
     # them. An absent key simply did not appear before, which makes *nobody
     # declared this* and *this is fine* look identical — the one thing this
@@ -598,9 +654,9 @@ def _budget_panel(record) -> Panel:
                  "public_safety", "evolution_candidates"):
         if name in record.evidence:
             panel.say(str(record.evidence[name]), label=name)
-            panel.figure(name.replace("_", " "), str(record.evidence[name]))
+            panel.figure(name.replace("_", " "), str(record.evidence[name]), kind="evidence")
         else:
-            panel.figure(name.replace("_", " "), UNKNOWN, Tone.UNKNOWN,
+            panel.figure(name.replace("_", " "), UNKNOWN, Tone.UNKNOWN, kind="evidence",
                          note=f"no {name.replace(chr(95), chr(32))}")
             panel.unknown.append(f"the record declares no {name.replace('_', ' ')}")
     for name, value in sorted(record.evidence.items()):
@@ -628,13 +684,13 @@ def _freshness_panel(record, record_path: Path) -> Panel:
         panel.unknown.append(
             f"the record's own timestamp {record.updated_at!r} cannot be read, so how old this "
             f"reading is cannot be established")
-        panel.figure("reading age", UNKNOWN, Tone.UNKNOWN, band="situation")
+        panel.figure("reading age", UNKNOWN, Tone.UNKNOWN, band="situation", kind="freshness")
         return panel
     age = (datetime.now(timezone.utc) - written).total_seconds()
     panel.lines.append(f"record written {age / 60:.0f} min ago ({record.updated_at})")
     panel.figure("reading age", f"{age / 60:.0f} min ago",
                  Tone.WARN if age > 3600 else Tone.PLAIN,
-                 note="STALE" if age > 3600 else "", band="situation")
+                 note="STALE" if age > 3600 else "", band="situation", kind="freshness")
     panel.lines.append(f"read from {record_path}")
     if age > 3600:
         panel.lines.append(
@@ -669,6 +725,11 @@ def _pack_panel(here: Path) -> Panel:
     # pin. A reader who needs it runs the command.
     panel.say("not in the tree — `git rev-parse HEAD`, because a manifest cannot name the "
               "commit that contains it", Tone.MUTED, label="revision")
+    panel.figure("pack", str(document.get("version", UNKNOWN)),
+                 Tone.GOOD if state == "QUALIFIED_AND_FROZEN" else Tone.WARN,
+                 note=str(state), band="identity", kind="pack",
+                 version=str(document.get("version", UNKNOWN)), state=str(state),
+                 digest=f"{str(document.get('tree_digest_sha256', UNKNOWN))[:16]}…")
     panel.summary = f"{document.get('version', UNKNOWN)} {state}"
     panel.summary_tone = Tone.GOOD if state == "QUALIFIED_AND_FROZEN" else Tone.WARN
     # SAID IN BOTH DIRECTIONS, under a label. It was said only when the answer
@@ -720,12 +781,19 @@ def _output_panel(record, base: Path) -> Panel:
         # marker for *task ownership* until it stopped matching something else,
         # at which point there was nothing left for it to match.
         panel.say(str(wait.task_id), Tone.MUTED, label="task_id", depth=1)
+        # WHERE THE ARTIFACTS ARE. The panel classified a partial recovery and
+        # never said the root, so *recover the partial output before any retry*
+        # sent a reader to the record to find out where. Third place the column
+        # invariant found the table showing what the panel does not say.
+        panel.say(str(root), Tone.MUTED, label="output root", depth=1)
         panel.figure(f"output {wait.job_id}", report.state,
                      {task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT: Tone.GOOD,
                       task_output.RecoveryState.UNKNOWN: Tone.UNKNOWN,
                       task_output.RecoveryState.FAILED_WITH_PARTIAL_DURABLE_OUTPUT: Tone.WARN,
                       task_output.RecoveryState.FAILED_BEFORE_USEFUL_OUTPUT: Tone.WARN}
-                     .get(report.state, Tone.PLAIN), note=str(wait.task_id))
+                     .get(report.state, Tone.PLAIN), note=str(wait.task_id), kind="output",
+                     job=wait.job_id, task=str(wait.task_id), root=str(root),
+                     examined=report.examined.summary())
         if report.state == task_output.RecoveryState.UNKNOWN:
             panel.say(report.why, Tone.UNKNOWN, depth=1)
     return panel
@@ -745,7 +813,7 @@ def _capacity_panel(path: Path) -> Panel:
             "for a provider with no machine-readable surface and is not zero"
         )
         panel.figure("capacity", UNKNOWN, Tone.UNKNOWN, note="no window is known",
-                     band="situation")
+                     band="situation", kind="capacity")
         return panel
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -764,7 +832,10 @@ def _capacity_panel(path: Path) -> Panel:
         except Exception as exc:
             panel.unknown.append(f"a pool declaration could not be read: {exc}")
             continue
-        remaining = pool.remaining if pool.known else UNKNOWN
+        # `340.0 requests` is a float printed as a measurement. The pool model
+        # holds a number; this renders it as the count it is.
+        remaining = (f"{pool.remaining:g}" if pool.known and isinstance(pool.remaining, float)
+                     else (pool.remaining if pool.known else UNKNOWN))
         panel.lines.append(
             f"{pool.pool_id} [{pool.kind}/{pool.window}]: {remaining} {pool.unit} remaining, "
             f"{pool.active_workers} active, resets {pool.resets_at or UNKNOWN}, "
@@ -772,7 +843,9 @@ def _capacity_panel(path: Path) -> Panel:
         )
         panel.figure(f"capacity {pool.pool_id}", f"{remaining} {pool.unit}",
                      Tone.PLAIN if pool.known else Tone.UNKNOWN,
-                     note=f"{pool.active_workers} active", band="situation")
+                     note=f"{pool.active_workers} active", band="situation", kind="capacity",
+                     pool=pool.pool_id, provider=pool.kind, window=pool.window,
+                     resets=pool.resets_at or UNKNOWN, observed=pool.observed_at or UNKNOWN)
     reserve = raw.get("reserve") or {}
     if reserve:
         try:
@@ -919,6 +992,46 @@ _STYLE = """
   --bad:#ff7a6e; --warn:#ffcf4d; --unknown:#7fe3ff; --good:#5cff9f; --action:#2bf58d;
   --bad-bg:#2a0f0c; --warn-bg:#2a2207; --unknown-bg:#04252e; --good-bg:#053a22;
   --action-bg:#04301d;
+}
+:root[data-theme="minimal"]{
+  /* Minimal: black, and almost no chrome. The hierarchy is carried by type
+     size, weight and space rather than by boxes — rules are nearly invisible
+     and exist only where two things would otherwise touch. Semantics are
+     desaturated to sit inside a quiet page and stay four separable hues. */
+  --ground:#000; --panel:#0a0a0a; --panel-2:#0f0f0f; --panel-3:#141414;
+  --rule:#1b1b1b; --rule-strong:#2b2b2b;
+  --ink:#f2f2f2; --dim:#a6a6a6; --faint:#767676;
+  --accent:#cfd6dd;
+  --bad:#f2726b; --warn:#d9a441; --unknown:#a891ea; --good:#4cc38a; --action:#cfd6dd;
+  --bad-bg:#1e0f0e; --warn-bg:#1d1809; --unknown-bg:#16122a; --good-bg:#07211a;
+  --action-bg:#14181c;
+}
+:root[data-theme="futuristic"]{
+  /* Futuristic: a research console. Deep blue-black, precision hairlines, and
+     one luminous accent used sparingly for interaction — depth from three
+     close surface steps rather than from shadow. No HUD, no glow. */
+  --ground:#050810; --panel:#0a1020; --panel-2:#0e1628; --panel-3:#131f36;
+  --rule:#1b2a44; --rule-strong:#2c4269;
+  --ink:#dbe7ff; --dim:#93a9cf; --faint:#66809f;
+  --accent:#7dd3fc;
+  --bad:#ff6b8b; --warn:#ffc55c; --unknown:#c4a2ff; --good:#3fe8bd; --action:#7dd3fc;
+  --bad-bg:#2a0d18; --warn-bg:#2a2109; --unknown-bg:#1a1533; --good-bg:#042a26;
+  --action-bg:#062033;
+}
+:root[data-theme="monochrome"]{
+  /* Monochrome: the accessibility lens. No hue carries meaning here at all —
+     the four semantic tones are luminance steps, and the glyphs the stylesheet
+     already puts in front of them do the separating. It is the honest test of
+     the rule that no status is encoded by colour alone: if a reading is only
+     findable in another lens, it was.
+     Brightest is worst on purpose: a good state should draw the least eye. */
+  --ground:#000; --panel:#0c0c0c; --panel-2:#161616; --panel-3:#1f1f1f;
+  --rule:#383838; --rule-strong:#585858;
+  --ink:#fff; --dim:#d2d2d2; --faint:#a9a9a9;
+  --accent:#fff;
+  --bad:#ffffff; --warn:#d6d6d6; --unknown:#b2b2b2; --good:#8e8e8e; --action:#e9e9e9;
+  --bad-bg:#2b2b2b; --warn-bg:#232323; --unknown-bg:#1d1d1d; --good-bg:#171717;
+  --action-bg:#202020;
 }
 @media(prefers-color-scheme:light){
   :root:not([data-theme]){
@@ -1099,6 +1212,13 @@ footer{padding:14px 16px 30px;color:var(--faint);font-size:11px;max-width:88ch}
 """
 
 
+#: Every lens the stylesheet defines, read from the stylesheet. Written out
+#: once, a list here and a set of `[data-theme=…]` blocks below drift, and the
+#: drift is silent: a lens with no entry is unreachable from the command line
+#: and a lens with no block renders as the default while claiming not to.
+LENSES = ("",) + tuple(sorted(set(re.findall(r'\[data-theme="([a-z]+)"\]', _STYLE))))
+
+
 def _escape(text: str) -> str:
     return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
@@ -1141,13 +1261,36 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection", 
 
     root_attrs = f' data-theme="{_escape(theme)}"' if theme else ""
     accent_rule = (f"<style>:root{{--accent:{_escape(accent)}}}</style>" if accent else "")
-    out = ["<!doctype html>", f"<html lang=\"en\"{root_attrs}>", "<head>",
-           "<meta charset=\"utf-8\">",
-           "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
-           f"<title>{_escape(title)}</title>", f"<style>{_STYLE}</style>", accent_rule,
-           "</head>", "<body>",
-           _status_bar(view),
-           "<header>", "<h1>Runtime Pack — mission control</h1>",
+    return "\n".join([
+        "<!doctype html>", f"<html lang=\"en\"{root_attrs}>", "<head>",
+        "<meta charset=\"utf-8\">",
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
+        f"<title>{_escape(title)}</title>", f"<style>{_STYLE}</style>", accent_rule,
+        "</head>", "<body>", render_body(view),
+        "<footer>Every answer here is delegated to the module that owns it. "
+        "This page authorises nothing, schedules nothing, wakes nothing and stores "
+        "nothing; deleting it breaks no checker.</footer>", "</body></html>"])
+
+
+def render_body(view: "Projection", heading: str = "Runtime Pack — mission control", *,
+                widget_prefix: str = "") -> str:
+    """The three bands, without a document around them.
+
+    Split out so the multi-project console composes exactly this page per
+    project rather than a second rendering of the same reading. One
+    implementation, so the two cannot say different things.
+    """
+    tone = _verdict_tone(view.headline)
+    verdict_class = {Tone.BAD: "v-bad", Tone.WARN: "v-warn", Tone.GOOD: "v-good",
+                     Tone.UNKNOWN: "v-unknown"}.get(tone, "")
+    state, _, sentence = view.headline.partition(":")
+    attention = view.attention
+    counts = {t: sum(1 for line in attention if line.tone == t)
+              for t in (Tone.BAD, Tone.WARN, Tone.UNKNOWN)}
+    band = (f" data-widget='{widget_prefix}:command' data-widget-name="
+            f"'{_escape(widget_prefix)} — state and next action'" if widget_prefix else "")
+    out = [_status_bar(view),
+           f"<header{band}>", f"<h1>{_escape(heading)}</h1>",
            f"<div class='cmd {verdict_class}'>",
            "<div class=primary>",
            f"<p class=state>{_escape(state.strip())}</p>",
@@ -1187,15 +1330,17 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection", 
         wide = " wide" if len(groups) > 1 else ""
         out.append(f"<div class='zone{wide}'><h3>{_escape(heading)}</h3>")
         for panel in panels:
-            out.append(_section(panel))
+            order = view.panels.index(panel)
+            out.append(_section(panel,
+                                node_id=f"{widget_prefix}:{order}" if widget_prefix else "",
+                                name=f"{widget_prefix} — {panel.title}" if widget_prefix
+                                else panel.title))
         out.append("</div>")
-    out.append("</main><footer>Every answer here is delegated to the module that owns it. "
-               "This page authorises nothing, schedules nothing, wakes nothing and stores "
-               "nothing; deleting it breaks no checker.</footer></body></html>")
+    out.append("</main>")
     return "\n".join(out)
 
 
-def _section(panel: "Panel") -> str:
+def _section(panel: "Panel", *, node_id: str = "", name: str = "") -> str:
     """One panel: its answer as a chip, its findings open, its prose behind a
     disclosure — and never its uncertainty."""
     rows = panel.rows()
@@ -1215,7 +1360,9 @@ def _section(panel: "Panel") -> str:
             if panel.summary else "")
     if panel.unknown:
         chip += f"<span class='count unknown'>{len(panel.unknown)}</span>"
-    out = [f"<section><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>"]
+    tag = (f" data-widget='{_escape(node_id)}' data-widget-name='{_escape(name or panel.title)}'"
+           if node_id else "")
+    out = [f"<section{tag}><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>"]
     out.extend(_row(line) for line in head)
     for item in panel.unknown:
         out.append(f"<li class='unknown d0'><span class=k>{UNKNOWN}</span>"
@@ -1236,29 +1383,16 @@ def _section(panel: "Panel") -> str:
 def _status_bar(view: "Projection") -> str:
     """Identity, always, in one line. Never a summary — every value here is
     lifted verbatim from a panel that also shows it."""
-    def find(title, label):
-        for panel in view.panels:
-            if panel.title != title:
-                continue
-            for line in panel.rows():
-                if line.label == label:
-                    return line.text
-        return ""
-
-    version = find("the pack this projection ships in", "version")
-    state = find("the pack this projection ships in", "state")
-    digest = find("the pack this projection ships in", "digest")
-    cells = [("pack", f"{version or UNKNOWN} {state or UNKNOWN}", "id"),
-             ("digest", digest or UNKNOWN, "")]
-    for panel in view.panels:
-        if panel.title == "project and pin":
-            pin = next((l.text for l in panel.rows() if "pin" in (l.label or "")), "")
-            cells.append(("project", pin or (UNKNOWN if panel.unknown else "declared"), ""))
-            break
-    freshness = next((p for p in view.panels if p.title == "freshness of this reading"), None)
-    if freshness is not None:
-        age = next((l.text for l in freshness.rows() if l.label == "" and "ago" in l.text), "")
-        cells.append(("read", age or UNKNOWN, ""))
+    # READ OFF THE FIGURES, not off panel titles. Matching `panel.title ==
+    # "the pack this projection ships in"` made the bar a second reader of
+    # prose: rewording a heading emptied it, silently, with nothing red.
+    pack = next((c for c in view.identity if c.kind == "pack"), None)
+    pin = next((c for c in view.identity if c.kind == "pin"), None)
+    fresh = next(iter(view.figure_of("freshness")), None)
+    cells = [("pack", f"{pack.value} {pack.note}" if pack else UNKNOWN, "id"),
+             ("digest", pack.fields.get("digest", UNKNOWN) if pack else UNKNOWN, ""),
+             ("project", pin.value if pin else UNKNOWN, ""),
+             ("read", fresh.value if fresh else UNKNOWN, "")]
     return ("<div class=bar>" + "".join(
         f"<b>{_escape(k)}</b><span class='{cls}'>{_escape(v)}</span>" for k, v, cls in cells)
         + "</div>")
@@ -1278,7 +1412,7 @@ def _situation(view: "Projection") -> str:
         return "<div class=sit></div>"
     tally = {}
     for cell in cells:
-        if cell.label.startswith("job "):
+        if cell.kind == "job":
             tally[cell.value] = tally.get(cell.value, 0) + 1
     summary = (" · ".join(f"{n} {name.lower()}" for name, n in sorted(tally.items()))
                if tally else "nothing is outstanding")
@@ -1418,7 +1552,7 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--html", action="store_true",
                         help="render as a self-contained page on stdout instead of text")
     parser.add_argument("--title", default="Runtime Pack — projection")
-    parser.add_argument("--theme", default="", choices=["", "matrix"],
+    parser.add_argument("--theme", default="", choices=list(LENSES),
                         help="presentation only; it changes no state and no classification")
     parser.add_argument("--accent", default="",
                         help="a CSS colour for the presentation accent, e.g. '#37ff9b'")

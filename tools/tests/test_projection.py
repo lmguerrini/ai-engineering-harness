@@ -10,6 +10,8 @@ import json
 import subprocess
 import sys
 
+import re
+
 import pytest
 
 import continuation
@@ -257,12 +259,20 @@ def test_no_runtime_tool_module_imports_it():
     breaks no checker."""
     import pathlib
 
+    # THE VIEW LAYER IS TWO FILES NOW. `console.py` composes exactly this
+    # module's page per project rather than rendering a second reading of the
+    # same state, so it depends on it by construction. The property is
+    # unchanged and says so precisely: no CHECKER depends on either, and
+    # deleting both breaks nothing that decides anything.
+    view = {"projection.py", "console.py"}
     tools = pathlib.Path(projection.__file__).parent
     importers = [
         path.name for path in tools.glob("*.py")
-        if path.name != "projection.py" and "import projection" in path.read_text(encoding="utf-8")
+        if path.name not in view
+        and re.search(r"^\s*(import|from) (projection|console)\b",
+                      path.read_text(encoding="utf-8"), re.M)
     ]
-    assert importers == [], f"these depend on the projection: {importers}"
+    assert importers == [], f"these depend on the view layer: {importers}"
 
 
 def test_the_view_says_which_direction_a_disagreement_resolves(project_root):
@@ -829,7 +839,7 @@ def test_a_theme_changes_no_state_and_no_classification(tmp_path):
         "the theme changed something other than the stylesheet"
 
 
-@pytest.mark.parametrize("theme", ["", "matrix"])
+@pytest.mark.parametrize("theme", projection.LENSES)
 def test_every_semantic_tone_keeps_its_own_colour_under_every_theme(theme):
     """Matrix mode is a green console, not a green everything. **A warning that
     turned green would be a theme deciding what a warning is** — so the theme
@@ -838,7 +848,7 @@ def test_every_semantic_tone_keeps_its_own_colour_under_every_theme(theme):
     import re
 
     style = projection._STYLE
-    block = style if not theme else style[style.index('[data-theme="matrix"]'):]
+    block = style if not theme else style[style.index(f'[data-theme="{theme}"]'):]
     block = block[:block.index("}")] if theme else block
 
     colours = {}
@@ -854,7 +864,7 @@ def test_every_semantic_tone_keeps_its_own_colour_under_every_theme(theme):
         f"two semantic tones share a colour under {theme or 'default'}: {colours}")
 
 
-@pytest.mark.parametrize("theme", ["", "matrix"])
+@pytest.mark.parametrize("theme", projection.LENSES)
 @pytest.mark.parametrize("what,record,marker", [
     ("SILENT_IDLE", {"actionable": ["work nobody is doing"]}, "SILENT_IDLE"),
     ("an unknown", {}, "UNKNOWN"),
@@ -957,6 +967,14 @@ def test_a_cell_says_nothing_its_panel_does_not_say(tmp_path):
                 f"nowhere. A cell restates a line; it may not be the only place a reading is")
             assert not cell.note or cell.note in said, (
                 f"{panel.title!r} annotates {cell.label!r} with {cell.note!r}, which it never says")
+            #: AND EVERY COLUMN. A cross-project table has more columns than a
+            #: cell has room for, and a column is exactly where a value that no
+            #: panel states could hide: nobody scrolls a table looking for the
+            #: line it came from.
+            for column, entry in cell.fields.items():
+                assert entry in said, (
+                    f"{panel.title!r} tabulates {column}={entry!r} for {cell.label!r} and says it "
+                    f"nowhere")
 
 
 def test_a_cell_that_invents_a_value_is_caught(tmp_path):
@@ -1041,7 +1059,7 @@ def test_no_status_is_carried_by_colour_alone(tmp_path):
     assert "✕" in style and "▲" in style and "?" in style
 
 
-@pytest.mark.parametrize("theme", ["", "matrix"])
+@pytest.mark.parametrize("theme", projection.LENSES)
 def test_the_console_reads_in_the_order_a_reader_needs(tmp_path, theme):
     """Command, then telemetry, then panels — in the DOM, so a phone that
     stacks the page gets the same order without a second layout to keep true."""
@@ -1071,8 +1089,8 @@ def _theme_tokens(name: str) -> dict:
     import re
 
     style = projection._STYLE
-    if name == "matrix":
-        block = style[style.index('[data-theme="matrix"]'):]
+    if name in projection.LENSES and name:
+        block = style[style.index(f'[data-theme="{name}"]'):]
     elif name == "light":
         block = style[style.index("prefers-color-scheme:light"):]
     else:
@@ -1102,7 +1120,7 @@ def _contrast(fg: str, bg: str) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
-@pytest.mark.parametrize("theme", ["", "matrix", "light"])
+@pytest.mark.parametrize("theme", list(projection.LENSES) + ["light"])
 def test_every_pairing_the_console_actually_paints_is_legible(theme):
     """Contrast, measured rather than eyeballed.
 
@@ -1133,7 +1151,7 @@ def test_every_pairing_the_console_actually_paints_is_legible(theme):
             f"{theme or 'default'}: --{fg} on --{bg} is {ratio:.2f}:1, below AA for a label")
 
 
-@pytest.mark.parametrize("theme", ["", "matrix", "light"])
+@pytest.mark.parametrize("theme", list(projection.LENSES) + ["light"])
 def test_the_theme_moves_the_ground_and_not_the_meanings(theme):
     """A green console, not a green everything: the four semantic hues stay
     separable from each other AND from the theme's own accent, in every theme."""
@@ -1195,3 +1213,48 @@ def test_the_generated_shapes_would_notice_the_defect_they_were_written_for(tmp_
     # It reaches the attention strip, which is where it raised.
     assert view.attention or view.unknowns
     assert "7" in view.render()
+
+
+def test_every_lens_the_stylesheet_defines_is_reachable_from_the_command_line():
+    """A lens with no way to select it is a lens nobody sees, and a selectable
+    lens with no block renders as the default while claiming not to. Both halves
+    come from one list, read off the stylesheet."""
+    import re
+
+    defined = set(re.findall(r'\[data-theme="([a-z]+)"\]', projection._STYLE))
+    assert defined == set(projection.LENSES) - {""}
+    assert len(defined) >= 4, f"only {len(defined)} lenses are defined"
+    for lens in projection.LENSES:
+        # The ROOT ELEMENT, not the document: the stylesheet names every lens,
+        # so searching the page finds them all whichever one was asked for.
+        root = (projection.render_html(projection.Projection(), theme=lens)
+                .split(">")[1].strip() + ">")
+        assert root.startswith("<html"), root
+        assert (f'data-theme="{lens}"' in root) if lens else ("data-theme" not in root)
+
+
+@pytest.mark.parametrize("lens", [l for l in projection.LENSES if l])
+def test_a_lens_is_a_stylesheet_and_never_a_reading(tmp_path, lens):
+    """The whole boundary, for every lens rather than for the first two.
+
+    A lens may move every surface colour and no semantic one, and may not
+    change a single word the projection derived. Parametrised off the same
+    list the stylesheet defines, so a fifth lens cannot arrive untested.
+    """
+    import re
+
+    _record(tmp_path, actionable=("work nobody is doing",),
+            budgets={"cycles": {"used": 6, "ceiling": 8}},
+            evidence={"suite": "412 passing", "candidate": "demo at abcdef123456"},
+            waits=(_continuation.Wait(job_id="j", kind=_continuation.WaitKind.HUMAN,
+                                      expects="a decision"),))
+    plain = _themed(tmp_path)
+    themed = _themed(tmp_path, theme=lens)
+    assert "class=strip" in plain, "the fixture does not reach the operational strip"
+
+    def body(page):
+        return re.sub(r"<style>.*?</style>", "", page, flags=re.S)
+
+    assert body(plain).replace('<html lang="en">', "") == \
+        body(themed).replace(f'<html lang="en" data-theme="{lens}">', ""), \
+        f"the {lens} lens changed something other than the stylesheet"
