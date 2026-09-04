@@ -275,3 +275,97 @@ def test_the_command_line_reads_projects_and_prints_a_page(three, tmp_path):
     assert out.stdout.startswith("<!doctype html>")
     assert out.stdout.rstrip().endswith("</html>")
     assert "Overview" in out.stdout
+
+
+def test_grouping_identical_readings_loses_none_of_them(three):
+    """Twelve projects reading through one unfrozen pack each marked the same
+    sentence about it, and the list that exists to be scanned opened with twelve
+    copies of one fact. Grouping is a change of shape: every reading and every
+    project it belongs to must still be on the page."""
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    block = page[page.index("global:attention"):]
+    block = block[:block.index("data-view=", 40)]
+    for site in sites:
+        for line in (site.view.attention if site.view is not None else []):
+            assert projection._escape(line.text) in block, (
+                f"{site.name}: the grouped list dropped {line.text!r}")
+        assert projection._escape(site.name) in block or site.view is None or \
+            not site.view.attention
+
+    shared = [r for r in re.findall(r"<tr data-tone=.*?</tr>", block, re.S)
+              if "projects</span>" in r]
+    for row in shared:
+        count = int(re.search(r"<span class=s>(\d+) projects", row).group(1))
+        named = re.search(r"<small>([^<]*)</small>", row).group(1).split(", ")
+        assert len(named) == count, (
+            f"a grouped row says {count} projects and names {len(named)}")
+
+
+# --- adversarial: what a project can be called, and where it can point ----------------
+
+
+@pytest.mark.parametrize("name", [
+    "<script>alert(1)</script>", "overview", "project:0", "a & b", '"quoted"',
+    "'single'", "../escape", "a\nb", "  ", "é—ü", "x" * 120,
+])
+def test_a_project_can_be_called_anything_without_reaching_the_page(tmp_path, name):
+    """A project's name is a directory name — which is to say, untrusted text
+    somebody else chose. It reaches a table cell, a navigation button, a
+    `data-goto` attribute and a heading, and none of those may become markup.
+    """
+    root = tmp_path / "roots" / str(abs(hash(name)))
+    _project(root, actionable=("a thing",))
+    sites = console.survey([(name, root)])
+    page = console.render_console(sites)
+    assert "<script>alert" not in page
+    assert projection._escape(name) in page or not name.strip()
+    # The navigation targets are indices, so a name cannot collide with a view.
+    views = re.findall(r"<section class=view data-view='([^']+)'", page)
+    assert len(views) == len(set(views)), f"a name collided with a view id: {views}"
+    assert "overview" in views and "project:0" in views
+    assert page.endswith("</html>")
+
+
+def test_two_projects_with_one_name_stay_two_projects(tmp_path):
+    """A registry may name two different trees the same thing. The console must
+    not merge them, and a reader must be able to tell which row is which."""
+    first, second = tmp_path / "a" / "api", tmp_path / "b" / "api"
+    _project(first, actionable=("first thing",))
+    _project(second, actionable=("second thing",))
+    sites = console.survey([(None, first), (None, second)])
+    assert len(sites) == 2 and not any(s.same_tree_as for s in sites)
+    page = console.render_console(sites)
+    assert "first thing" in page and "second thing" in page
+    views = re.findall(r"<section class=view data-view='(project:[^']+)'", page)
+    assert views == ["project:0", "project:1"]
+    # and the rows are told apart by something, not left identical
+    assert str(first) in page or str(first.parent.name) in page
+
+
+def test_a_symlinked_root_is_recognised_as_the_tree_it_points_at(tmp_path):
+    """Two names for one tree is a fact about the registry however it is
+    spelled, and a symlink is the spelling that gets past a string comparison."""
+    real = tmp_path / "real"
+    _project(real, actionable=("a thing",))
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    sites = console.survey([(None, real), (None, link)])
+    assert sites[1].same_tree_as == "real", (
+        "a symlink to a project already in the registry was not recognised")
+    assert "the same tree as real" in console.render_console(sites)
+
+
+def test_a_record_that_is_a_directory_is_unreadable_and_not_absent(tmp_path):
+    """`CONTINUATION.json` as a directory reads neither as a record nor as no
+    record. It must not be the second: *nothing to do* is the one thing an
+    unreadable position may never look like."""
+    root = tmp_path / "p"
+    root.mkdir()
+    (root / "CONTINUATION.json").mkdir()
+    sites = console.survey([(None, root)])
+    assert sites[0].view is not None, "the whole project vanished"
+    assert sites[0].state == projection.UNKNOWN, sites[0].state
+    page = console.render_console(sites)
+    assert "UNKNOWN" in page
+    assert sum(sites[0].attention.values()) > 0

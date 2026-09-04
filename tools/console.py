@@ -607,17 +607,35 @@ def _widgets(sites: list) -> list:
 
 
 def _attention_across(sites: list) -> str:
-    rows = []
+    """Everything every project marked, with identical readings said once.
+
+    **Grouped, never dropped.** Twelve projects reading through the same
+    unfrozen pack each marked the same sentence about it, and the list that is
+    supposed to be scannable opened with twelve copies of one fact. A reading
+    that several projects share is shown once with every project that has it
+    named beside it — the count is on the page and so are the names, so nothing
+    is smaller than it was, only less repetitive.
+    """
+    grouped: dict = {}
     for site in sites:
         if site.view is None:
-            rows.append(f"<tr data-tone=unknown><td><span class=s>{_ESC(site.name)}</span></td>"
-                        f"<td class=unknown><span class='s unknown'>unreadable</span></td>"
-                        f"<td>{_ESC(site.unreadable)}</td></tr>")
+            grouped.setdefault((Tone.UNKNOWN, f"unreadable — {site.unreadable}"),
+                               []).append(site.name)
             continue
         for line in site.view.attention:
-            rows.append(f"<tr data-tone='{line.tone}'><td><span class=s>{_ESC(site.name)}</span>"
-                        f"</td><td class='{line.tone}'><span class='s {line.tone}'>"
-                        f"{_ESC(line.tone)}</span></td><td>{_ESC(line.text)}</td></tr>")
+            grouped.setdefault((line.tone, line.text), []).append(site.name)
+    order = (Tone.BAD, Tone.WARN, Tone.UNKNOWN)
+    rows = []
+    for (tone, text), names in sorted(
+            grouped.items(), key=lambda item: (order.index(item[0][0])
+                                               if item[0][0] in order else 9,
+                                               -len(item[1]), item[0][1])):
+        shared = (f"<span class=s>{_ESC(names[0])}</span>" if len(names) == 1 else
+                  f"<span class=s>{len(names)} projects</span>"
+                  f"<small>{_ESC(', '.join(names))}</small>")
+        rows.append(f"<tr data-tone='{tone}'>" + _td("project", shared)
+                    + _td("tone", f"<span class='s {tone}'>{_ESC(tone)}</span>", tone)
+                    + _td("what it says", _ESC(text)) + "</tr>")
     if not rows:
         return ("<p class=none>Nothing in any project is marked wrong, unknown or waiting on a "
                 "person. That is a reading of these records, not a promise about the runs.</p>")
