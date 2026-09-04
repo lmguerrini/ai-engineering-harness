@@ -199,6 +199,42 @@ than record it.
 The state is `IN_PROGRESS` and that is what the command above must pass. A
 project may only adopt `QUALIFIED_AND_FROZEN`.
 
+## The console, and what holds it to being a reading
+
+`tools/console.py` renders one read-only page over every project that has
+adopted this release: an overview at three densities, an all-systems page, a
+control room built for a wide display, cross-project views of workers, audits,
+capacity, history and identity, a custom-view builder, settings, and a help with
+a question-and-answer index. It ships in a monochrome lens and offers four
+others.
+
+**It decides nothing.** Every answer belongs to the module that owns the
+question; the page asks `projection.project()` once per project and arranges
+what comes back. Four properties hold that true, and each has a test that fails
+without it:
+
+*   **A figure restates a line.** Every number in every table, cell and bar is a
+    `Cell` a panel made from something it also says in full, and the page is
+    compared against the panels it read.
+*   **A picture needs a real denominator.** A bar is drawn only where one exists
+    — never against a guessed, zero, negative, infinite or non-numeric one — and
+    a spent budget is not drawn like complete coverage, because both are full and
+    they mean opposite things.
+*   **UNKNOWN is never an absence.** An unmeasured window, an undatable reading
+    and a stall this page cannot establish each get their own visible answer,
+    and none of them is zero.
+*   **Nothing critical can be folded away.** Only sections whose marks the
+    attention strip also carries have a switch, which is why the state
+    vocabulary has none.
+
+**What a browser found that the source could not.** Three presentation defects
+this release repaired were invisible to every check that reads text: a stray
+brace that made all four lenses render as the default, a `hidden` attribute
+outranked by a CSS rule so navigation silently showed everything, and an
+overflow probe measuring a 500-pixel window while calling it a phone. The
+release now guards the stylesheet's structure, asks the browser which palette it
+is drawing, and measures narrow widths inside a frame that asserts its own size.
+
 ## Evolution Candidates, deferred out of this release
 
 Each is a real observation with the evidence that produced it. None is a defect
