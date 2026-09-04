@@ -844,7 +844,15 @@ def test_no_document_restates_a_count_of_things_the_repository_can_count():
         r"\b\d+\s+(?:tool\s+)?modules\b"
         r"|\bacross\s+\d+\s+modules\b"
         r"|\b\d+\s+CLIs?\b"
-        r"|\b\d+\s+(?:passing\s+)?tests\b",
+        r"|\b\d+\s+(?:passing\s+)?tests\b"
+        # AND THE THREE THE MATRIX AND THE POLICY FILES COMPUTE. A packet
+        # claiming sixty-three mechanisms beside a matrix holding ninety, and
+        # thirty-nine recurrence classes beside a policy file holding
+        # forty-seven, is the same defect wearing a different noun. Both were
+        # found by an outside reader, not by this guard.
+        r"|\b\d+\s+(?:verified\s+)?failure\s+mechanisms\b"
+        r"|\b\d+\s+(?:mandated\s+)?recurrence\s+classes\b"
+        r"|\b\d+\s+(?:blind\s+)?closure\s+audits\b",
         re.IGNORECASE,
     )
     #: The documents THIS release is responsible for. Gate records of previous
@@ -866,10 +874,20 @@ def test_no_document_restates_a_count_of_things_the_repository_can_count():
             if name in seen or not path.is_file():
                 continue
             seen.add(name)
-            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                match = forbidden.search(line)
-                if match and not any(marker in line.lower() for marker in exempt_line):
-                    offenders.append(f"{name}:{number}: {match.group(0)}")
+            # THE WHOLE DOCUMENT, not a line at a time. `1207` ended one line
+            # and `tests` began the next, so the guard written to catch a
+            # hand-typed test count could not see the hand-typed test count in
+            # the release's own decision document — for as long as the sentence
+            # happened to wrap there. Found by a reader adopting the release in
+            # a clean room and comparing what it says against what it ships.
+            text = path.read_text(encoding="utf-8")
+            for match in forbidden.finditer(text):
+                number = text.count("\n", 0, match.start()) + 1
+                # The exemption is read from the lines the match actually spans.
+                spans = text[text.rfind("\n", 0, match.start()) + 1:
+                             text.find("\n", match.end()) + 1 or None].lower()
+                if not any(marker in spans for marker in exempt_line):
+                    offenders.append(f"{name}:{number}: {match.group(0)!r}")
     assert len(seen) >= 6, f"only {len(seen)} owned documents scanned; the globs are not matching"
 
     assert not offenders, (

@@ -24,6 +24,32 @@ confirm the record and the tree agree. If they do not, that is HITL row 11
 Git disagree about, it stops and asks. Target: full reconstruction in these four
 reads plus the one Git check. Anything else is pull-on-demand, not held.
 
+## Writing the record
+
+The release ships a reader, a deriver and a projection for `CONTINUATION.json`,
+and until now it shipped no way to create one — a coordinator adopting the pack
+could see its position and had nothing telling it how to write the file the
+position is read from. Found by giving the release to a reader who had never
+seen it and asking them to open a capability.
+
+`templates/CONTINUATION.json.template` is the shape, field by field, with what
+each one is for. Either write the JSON directly from it, or use the module that
+owns the record:
+
+    python3 - <<'END'
+    import sys; sys.path.insert(0, '<pack_root>/tools')
+    import continuation as c
+    c.save(c.ContinuationRecord(
+        capability='C1 - the first capability', updated_at=c.now(),
+        actionable=('survey the repository',)), '<project>/CONTINUATION.json')
+    END
+
+**The record holds obligations, never a state.** The state is derived from this
+file and the artifacts it names, on every read — a state written into the file
+would be a second opinion about a thing the deriver owns, and the two would
+disagree the moment an artifact appeared.
+
+
 ## A declared wait is a machine-readable declaration, not a sentence
 
 The rule above is necessary and was measured insufficient. A coordinator that

@@ -104,8 +104,8 @@ published vocabulary — is closed rather than worked around.
 
 ## What has NOT happened
 
-*   **No independent audit has seen this candidate.** That is the next step and
-    it is not optional for a final gate.
+*   **No push, remote, tag or publication has been prepared.** The freeze
+    procedure below is written and has not been run.
 *   **No push, remote, tag or publication.** Nothing left this machine.
 *   **No project was migrated, and no project's files were modified.** The three
     real contracts were read; one of them is refused, correctly and now
@@ -264,25 +264,44 @@ describes. If either does not, believe them and not this.
 
 ### What is green
 
-Eight blind closure audits, all NOT READY, all consumed and repaired. 1207
-tests. The commit gate reports VALID over every message from the 2.2.0 freeze to
-this revision, checked against the pack's own published vocabulary. **63 verified
-failure mechanisms in the closure matrix, every one PREVENTED,
-DETECTED_AND_BLOCKED or SAFELY_RECOVERABLE, none uncovered.** 39 mandated
-recurrence classes, each proved against an oracle that was executed rather than
-cited. Two mutation passes over 25 guards: 22 killed on the first run, 3
-survivors each given an oracle that kills them, and 4 more guards from the last
-round killed on the first run.
+**Every count in this section was removed rather than updated.** Four of them
+were stale when an outside reader compared this document against what the
+release ships — a test total, a mechanism total, a recurrence total and an
+audit total, each typed beside a fact the repository can compute. Two of the
+four had wrapped across a line, which is how they got past the guard that
+exists to catch exactly this. The guard reads whole documents now, and this
+section names the command instead of the number.
 
-The live rehearsal against the two projects that actually pin this pack:
-`VERIFIED_PIN` on both, read-only, nothing in either project changed. The
-consumer surface against the frozen 2.2.0: **121 entries, all additions**, with
-two deleted test functions explained. The complete-history scan reads paths,
-blobs, ref names, tag messages and commit messages: **253 occurrences to
-adjudicate over 1179 objects and zero unscanned.**
+    python3 -m pytest tools/tests/ -q                      # the suite
+    python3 tools/pack_pin.py . --version 2.3.0 --state IN_PROGRESS
+    python3 tools/publication_history.py .                 # the history scan
+    python3 -c "import json;print(len(json.load(open('policy/recurrence-classes.json'))['classes']))"
+    grep -cE '^\| M-[0-9]' docs/RP2.3-FAILURE-MODE-CLOSURE.md
 
-2.2.0 verifies. 2.1.1 verifies. Zero remotes, zero tags, nothing pushed or
-published, no history rewritten, `main` unmoved.
+What holds, in words that cannot go stale:
+
+*   Every blind closure audit run against this candidate returned NOT READY,
+    and every finding was consumed and repaired. The table above lists them by
+    round with what each cost.
+*   Every mechanism in the closure matrix is PREVENTED, DETECTED_AND_BLOCKED or
+    SAFELY_RECOVERABLE, and none is uncovered. A guard asserts the dispositions
+    are from that set and that every named oracle selects at least one real test.
+*   Every mandated recurrence class is proved against an oracle that was
+    executed rather than cited, and the prose and the policy file are asserted
+    to hold the same list.
+*   The commit gate reports VALID over every message from the 2.2.0 freeze to
+    this revision, checked against the pack's own published vocabulary.
+*   The complete-history scan reads paths, blobs, ref names, tag messages and
+    whole commit objects, with **zero unscanned**. A repository that publishes a
+    submodule reference makes the report INCOMPLETE rather than clean, because
+    that history is not read here.
+*   The live rehearsal against the projects that pin this pack: `VERIFIED_PIN`,
+    read-only, nothing in any of them changed.
+*   The assembled system runs end to end against real processes, in a clean room
+    built from `git archive` and from a fresh clone, with the console and the
+    phone layout measured rather than eyeballed.
+*   2.2.0 verifies. 2.1.1 verifies. Zero remotes, zero tags, nothing pushed or
+    published, no history rewritten, `main` unmoved.
 
 ### What is not, and will not be before a person acts
 

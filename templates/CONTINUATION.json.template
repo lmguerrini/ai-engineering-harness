@@ -1,0 +1,80 @@
+{
+  "_what_this_is": [
+    "The coordinator's position, written by the coordinator and read by everything else.",
+    "It is the ONE file that answers 'what is outstanding, and what may I do next'.",
+    "Every field below is optional except capability and updated_at. Delete the",
+    "_what_this_is and _how_to_write keys; the loader ignores unknown keys but a",
+    "record is easier to read without them."
+  ],
+  "_how_to_write": [
+    "Either write this JSON directly, or use the module that owns it:",
+    "  python3 - <<'END'",
+    "  import sys; sys.path.insert(0, '<pack_root>/tools')",
+    "  import continuation as c",
+    "  c.save(c.ContinuationRecord(",
+    "      capability='C1 - the first capability', updated_at=c.now(),",
+    "      actionable=('survey the repository',)), '<project>/CONTINUATION.json')",
+    "  END",
+    "Then read the position back, in a separate process, with:",
+    "  python3 <pack_root>/tools/projection.py <project>",
+    "The state is DERIVED from this file and from the artifacts it names. It is",
+    "never stored: rewriting this file with a state in it would be a second",
+    "opinion about a thing the deriver owns."
+  ],
+  "capability": "C1 - the capability this position belongs to",
+  "updated_at": "2026-09-04T00:00:00+00:00",
+  "actionable": [
+    "the outstanding items, in the order the coordinator would do them",
+    "the first unblocked one is the next authorised action"
+  ],
+  "waits": [
+    {
+      "job_id": "survey",
+      "kind": "output_root  (or process, path_exists, human)",
+      "path": "<project>/worker-output",
+      "task_id": "survey",
+      "max_bytes_per_write": 4096,
+      "expects": "what this job must return for the wait to be over",
+      "obligation": "the thing being satisfied, so two waits cannot hold it at once",
+      "executor": "who is doing it: provider, model, effort, sandbox",
+      "subject_revision": "the full revision this job is ABOUT, if it is about a tree",
+      "subject_digest": "and its tree digest",
+      "routing_qualification": "why this executor is qualified for this task class",
+      "attempt": 1,
+      "retry_reason": "what the previous attempt did, if this is not the first",
+      "declared_at": "2026-09-04T00:00:00+00:00",
+      "not_beyond_seconds": 3600
+    }
+  ],
+  "blockers": [
+    {
+      "kind": "human  (or capacity)",
+      "detail": "what has to move first",
+      "hitl_row": 4,
+      "blocks": [
+        "the items this stops, and ONLY those",
+        "an empty list means everything, which is the safe default for a blocker nobody scoped"
+      ]
+    }
+  ],
+  "budgets": {
+    "closure cycles per capability": {
+      "used": 0,
+      "ceiling": 4,
+      "authorised_by": ""
+    }
+  },
+  "evidence": {
+    "candidate": "what is being qualified: version, revision, digest, state",
+    "suite": "the result of the command, not a number typed here",
+    "gates": "which gates ran and what they said",
+    "latest_audit": "which audit, on which revision, and its verdict",
+    "closure": "the closure position",
+    "recurrence_classes": "the recurrence position",
+    "real_consumers": "what was verified, read-only",
+    "adapters": "adapter qualification",
+    "continuation": "whether reconstruction was rehearsed, and where",
+    "public_safety": "the history scan result and whether anything was unscanned",
+    "evolution_candidates": "how many are open"
+  }
+}

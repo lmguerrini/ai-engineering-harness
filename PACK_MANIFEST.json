@@ -4,7 +4,7 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "ba0cbb452fa68ddce93f7779ddde9b737617fbff1dca6bff5eb580ecaa914a77",
+  "tree_digest_sha256": "83d8d71dde40f85e8fef8593903d0d25c4ed94c77ce20561e18c22ab62ed051e",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
@@ -29,7 +29,7 @@
   },
   "known_limitations": [
     "STATE IS IN_PROGRESS. This is a candidate, not a release. No project may pin it, and moving it to QUALIFIED_AND_FROZEN is a human decision (policy/hitl-matrix.md row 2) the coordinator does not take.",
-    "held prose 2586 lines against a ~2000 target (29.3% over, recorded not shaved). THE COMPOSITION IS THE PART THAT MATTERS AND 2.2.0'S DISCLOSURE DID NOT SEPARATE IT: 1553 lines are in-release and that half is UNDER the target; the 1023 that put the total over are the two installed adapters, outside this envelope, covered by no digest, not written by this pack and impossible for it to freeze — and counted anyway, because they are loaded every session. 2.2.0 was 2486 (24.3% over) on the same rule. Delete-before-adding was applied: one duplicated sentence removed, and two blocks relocated to docs/ under the pack's own rule that policy holds what governs and docs holds what happened. The in-release half was NOT shaved to compensate for the adapter half, because cutting text that is already under target to offset text outside the envelope is re-scoping the rule to fit the number.",
+    "held prose 2612 lines against a ~2000 target (30.6% over, recorded not shaved). THE COMPOSITION IS THE PART THAT MATTERS AND 2.2.0'S DISCLOSURE DID NOT SEPARATE IT: 1589 lines are in-release and that half is UNDER the target; the 1023 that put the total over are the two installed adapters, outside this envelope, covered by no digest, not written by this pack and impossible for it to freeze — and counted anyway, because they are loaded every session. 2.2.0 was 2486 (24.3% over) on the same rule. Delete-before-adding was applied: one duplicated sentence removed, and two blocks relocated to docs/ under the pack's own rule that policy holds what governs and docs holds what happened. The in-release half was NOT shaved to compensate for the adapter half, because cutting text that is already under target to offset text outside the envelope is re-scoping the rule to fit the number.",
     "THE EVOLUTION WORKSPACE IS A WORKTREE, BECAUSE A LIVE PROJECT PINS THE PACK'S WORKING CHECKOUT BY ROOT PATH. That is the D18 layout defect the 2.2.0 manifest named as the finding most deserving a decision, and it is unchanged: the older pinned root verifies only because it happens to sit on its pinned revision, and ordinary development in it would break a live pin. This candidate avoids the hazard rather than removing it. Relocating that project's release root is the founder's decision and was explicitly not taken during this session.",
     "AN ADAPTER PIN NOW VERIFIES THE EXECUTABLE A PROJECT DECLARES, AND NO PROJECT DECLARES ONE YET. The mechanism is demonstrated against the live installation — the drift this release reproduced is reported correctly once the executable is declared — but every real contract on this machine still declares files only, so every real report reads '0 executable(s)'. The declaration is the project's to make and was not made on its behalf.",
     "installed adapter skills and agents live outside this repository and are not covered by tree_digest_sha256; they are covered instead by a project's declared adapters contract, which is verified rather than frozen",
@@ -71,6 +71,6 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 145,
+  "digest_file_count": 146,
   "failure_mode_closure": "docs/RP2.3-FAILURE-MODE-CLOSURE.md"
 }

@@ -59,12 +59,12 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1563
+    in-release (skills/core/*.md + policy/*.md)   1589
     installed adapters, outside the envelope      1023
-    total against a ~2,000 target                 2586   29.3% over the ~2,000
+    total against a ~2,000 target                 2612   30.6% over the ~2,000
 
 **The breach is inherited, and its composition is the part 2.2.0's disclosure
-did not separate.** 1553 lines are in-release and **that half is under the
+did not separate.** 1589 lines are in-release and **that half is under the
 ~2,000 target**; the 1023 that put the total over are the two installed adapters,
 which this pack did not write, cannot freeze, and counts anyway because they are
 loaded every session. Both figures are stated because `policy/BUDGETS.md` already
@@ -1011,8 +1011,8 @@ as owed.
 
 Recorded because it is the most informative half of a report. The suite and the
 manifest's test count agreed exactly. The release identity verified. **Every
-held-prose number recomputed correctly** — 1563 in-release, 1023 adapters, 2586,
-29.3% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
+held-prose number recomputed correctly** — 1589 in-release, 1023 adapters, 2612,
+30.6% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
 frozen manifest. Every `D<n> clause <m>` citation in every file was parsed
 against `DECISIONS.md` and matched: **zero dangling pointers**, which one auditor
 said it had expected to find. No AI attribution anywhere in sixteen commit
@@ -2373,9 +2373,9 @@ same way — it was true when it was measured and stale when it was read.
 
 | artifact | the contract | the check |
 |---|---|---|
-| 49 dashboard readings | `policy/dashboard-readings.json` | `test_dashboard_contract.py` renders four states and asserts every marker appears in both renderers |
-| 47 recurrence classes | `policy/recurrence-classes.json` | `test_recurrence_classes.py` asserts every class selects a real test, and that the prose and the data hold the same list |
-| 80 matrix mechanisms | `docs/RP2.3-FAILURE-MODE-CLOSURE.md` | four guards: unique identifiers, four columns, an authorised disposition, and every named oracle selecting at least one real test |
+| the dashboard readings | `policy/dashboard-readings.json` | `test_dashboard_contract.py` renders four states and asserts every marker appears in both renderers |
+| the recurrence classes | `policy/recurrence-classes.json` | `test_recurrence_classes.py` asserts every class selects a real test, and that the prose and the data hold the same list |
+| the matrix mechanisms | `docs/RP2.3-FAILURE-MODE-CLOSURE.md` | four guards: unique identifiers, four columns, an authorised disposition, and every named oracle selecting at least one real test |
 
 Each guard was then broken deliberately and each died: a duplicated identifier, a
 row with a column removed, an invented disposition, an oracle pointed at nothing,
