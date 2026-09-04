@@ -174,11 +174,23 @@ class HistoryReport:
 
     def render(self) -> str:
         examined = self.examined
+        # BOTH AXES, ALWAYS. The verdict used to be a choice between them, and
+        # occurrences won — so a scan that found three things AND could not read
+        # four objects was headlined `3 occurrence(s) to adjudicate`, with the
+        # skips listed below where a reader adjudicating findings had no reason
+        # to look. That is the same defect as recording a skip and not counting
+        # it, one layer up: the gap was disclosed and the headline said the scan
+        # had happened. Surfaced by the oracle written for the submodule repair,
+        # which produced a report with both.
+        partial = ("" if self.complete else
+                   f"INCOMPLETE — {len(self.skipped)} not read, so this history has NOT been "
+                   f"scanned")
         if self.occurrences:
-            verdict = f"{len(self.occurrences)} occurrence(s) to adjudicate ({examined.summary()})"
-        elif not self.complete:
-            verdict = (f"INCOMPLETE — {len(self.skipped)} object(s) were not read, so this "
-                       f"history has not been scanned ({examined.summary()})")
+            found = f"{len(self.occurrences)} occurrence(s) to adjudicate"
+            verdict = f"{found}, and {partial}" if partial else found
+            verdict = f"{verdict} ({examined.summary()})"
+        elif partial:
+            verdict = f"{partial} ({examined.summary()})"
         else:
             verdict = f"clean ({examined.summary()})"
         verdict = examined.verdict_or_nothing(verdict)
@@ -298,8 +310,28 @@ def scan_complete_history(
     #: from all of them together, below.
     names_of: dict[str, set[str]] = {}
     for name in names:
-        for sha, path in gitread.every_name_in_history(repository, name):
+        for kind, sha, path in gitread.tree_entries_in_history(repository, name):
             names_of.setdefault(sha, set()).add(path)
+            # A GITLINK IS A HISTORY THIS SCAN DOES NOT READ.
+            #
+            # A submodule entry is a pointer into another repository, and the
+            # objects behind it are not in this one's store — so the walk below
+            # never reaches them, `rev-list --objects` never lists them, and
+            # nothing was skipped, because nothing was attempted. A superproject
+            # that publishes a commit reference and a URL for a dependency was
+            # reported CLEAN with a private term in that dependency's committer
+            # identity. Found by an independent reader.
+            #
+            # This does not fetch the other repository — it may not be present,
+            # and reading it is a different question. It records that a
+            # published history was not read, which makes the report INCOMPLETE
+            # instead of clean. Report and refuse: the scan says what it did not
+            # do rather than certifying it.
+            if kind == "commit":
+                note = (f"submodule {path} at {sha[:12]} is a separate repository whose history "
+                        f"this scan does not read; it is published by reference")
+                if note not in report.skipped:
+                    report.skipped.append(note)
             if (sha, path) in seen_paths:
                 continue
             seen_paths.add((sha, path))

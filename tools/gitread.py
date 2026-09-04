@@ -996,6 +996,58 @@ def annotated_tags(
     return found
 
 
+def tree_entries_in_history(
+    repository: str | Path,
+    ref: str,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[tuple[str, str, str]]:
+    """Every ``(type, sha, path)`` a tree in this history ever held.
+
+    The typed form of `every_name_in_history`, which is a filter over it. The
+    type matters for one entry kind: a **gitlink** — mode ``160000``, type
+    ``commit`` — is a pointer into a repository this one does not contain, and
+    a caller that cannot tell it from a blob cannot know it did not read it.
+    """
+    try:
+        commits = _run(repository, "rev-list", ref, timeout=timeout).split()
+    except GitRefusal:
+        # A repository with no commits has no names, and that is an answer
+        # rather than a failure: `rev-list HEAD` exits non-zero on one, and the
+        # refusal reached callers who had asked a question with a correct empty
+        # answer.
+        #
+        # THE QUESTION IS ABOUT THE REPOSITORY, NOT ABOUT THE REF. The first
+        # version asked whether `ref` resolved — which is false both for an
+        # empty repository and for a ref that simply does not exist, so *this
+        # branch is not here* became *this history has no names*. A mutation
+        # pass caught it: deleting the `raise` changed nothing, because nothing
+        # ever reached it.
+        empty = _run(repository, "rev-list", "--all", "--count", timeout=timeout).strip()
+        if empty == "0":
+            return []
+        raise
+    found: list[tuple[str, str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for commit in commits:
+        output = _run(repository, "ls-tree", "-r", "-z", "--full-tree", commit,
+                      timeout=timeout, text=False)
+        assert isinstance(output, bytes)
+        for record in nul_paths(output):
+            if not record:
+                continue
+            # `<mode> SP <type> SP <sha> TAB <path>`
+            meta, _, path = record.partition("\t")
+            parts = meta.split()
+            if len(parts) != 3 or not path:
+                continue
+            entry = (parts[1], parts[2], path)
+            if entry not in seen:
+                seen.add(entry)
+                found.append(entry)
+    return found
+
+
 def every_name_in_history(
     repository: str | Path,
     ref: str,
@@ -1016,42 +1068,12 @@ def every_name_in_history(
     than the object walk and correct, and only names are collected here — the
     content scan still reads each blob once.
     """
-    try:
-        commits = _run(repository, "rev-list", ref, timeout=timeout).split()
-    except GitRefusal:
-        # A repository with no commits has no names, and that is an answer
-        # rather than a failure: `rev-list HEAD` exits non-zero on one, and the
-        # refusal reached callers who had asked a question with a correct empty
-        # answer.
-        #
-        # THE QUESTION IS ABOUT THE REPOSITORY, NOT ABOUT THE REF. The first
-        # version asked whether `ref` resolved — which is false both for an
-        # empty repository and for a ref that simply does not exist, so *this
-        # branch is not here* became *this history has no names*. A mutation
-        # pass caught it: deleting the `raise` changed nothing, because nothing
-        # ever reached it.
-        empty = _run(repository, "rev-list", "--all", "--count", timeout=timeout).strip()
-        if empty == "0":
-            return []
-        raise
-    found: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
-    for commit in commits:
-        output = _run(repository, "ls-tree", "-r", "-z", "--full-tree", commit,
-                      timeout=timeout, text=False)
-        assert isinstance(output, bytes)
-        for record in nul_paths(output):
-            if not record:
-                continue
-            # `<mode> SP <type> SP <sha> TAB <path>`
-            meta, _, path = record.partition("\t")
-            parts = meta.split()
-            if len(parts) != 3 or not path:
-                continue
-            pair = (parts[2], path)
-            if pair not in seen:
-                seen.add(pair)
-                found.append(pair)
+    found: list[tuple[str, str]] = []
+    for _type, sha, path in tree_entries_in_history(repository, ref, timeout=timeout):
+        if (sha, path) not in seen:
+            seen.add((sha, path))
+            found.append((sha, path))
     return found
 
 

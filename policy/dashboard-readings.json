@@ -25,8 +25,8 @@
     },
     {
       "reading": "adoptability",
-      "marker": "ADOPTABLE",
-      "why": "only QUALIFIED_AND_FROZEN may be pinned"
+      "marker": "adoptability: ",
+      "why": "stated in both directions under a label: only QUALIFIED_AND_FROZEN may be pinned, and the bare word matched the sentence denying it"
     },
     {
       "reading": "project identity and pin",
@@ -51,7 +51,11 @@
     {
       "reading": "active jobs",
       "marker": "job ",
-      "why": "every outstanding job by name"
+      "why": "one row per outstanding job. Two sentences elsewhere begin `no job` and deny a DIFFERENT reading — that SILENT_IDLE has nothing running, and that nothing finished unconsumed — so they are declared here by name",
+      "not_a_denial": [
+        "no job is running",
+        "no job finished without its result being consumed"
+      ]
     },
     {
       "reading": "task ownership",
@@ -140,8 +144,8 @@
     },
     {
       "reading": "capacity observation",
-      "marker": "capacity",
-      "why": "what a provider window last reported"
+      "marker": "remaining,",
+      "why": "what a pool actually reported — the bare word `capacity` was also the panel title and the sentence saying there is no observation"
     },
     {
       "reading": "reset horizon",
@@ -180,8 +184,8 @@
     },
     {
       "reading": "stale-audit warning",
-      "marker": "audit subject vs candidate",
-      "why": "an audit of another tree is named as such"
+      "marker": "NOT the candidate this record declares",
+      "why": "an audit of another tree, named as such — the panel's TITLE was the marker, so the reading was satisfied by the panel merely existing"
     },
     {
       "reading": "deterministic gate status",

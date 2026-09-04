@@ -507,3 +507,48 @@ def test_a_private_term_in_an_author_name_is_found(repo):
         repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))))
     assert [o.location for o in report.occurrences] == ["commit"]
     assert report.complete
+
+
+def test_a_published_submodule_makes_the_scan_incomplete(repo, tmp_path):
+    """**The finding, from an independent reader: a superproject with a private
+    term in its dependency's committer identity scanned CLEAN.**
+
+    A gitlink is a pointer into a repository this one does not contain. Its
+    objects are not in this store, so the object walk never lists them, the
+    content scan never attempts them, and nothing appears in `skipped` —
+    because nothing was tried. The superproject nonetheless publishes the
+    commit reference and, in `.gitmodules`, the URL to fetch it from.
+
+    The scan does not fetch the other repository: it may not be present, and
+    reading it is a different question with a different answer. It records that
+    a published history was not read, which is the difference between
+    disclosing a gap and certifying there is none.
+    """
+    dependency = tmp_path / "dependency"
+    dependency.mkdir()
+    _git(dependency, "init", "--quiet", "--initial-branch", "main")
+    _git(dependency, "config", "user.name", "needleprivate")
+    _git(dependency, "config", "user.email", "needleprivate@example.invalid")
+    _git(dependency, "config", "commit.gpgsign", "false")
+    (dependency / "f.txt").write_text("ordinary content\n")
+    _git(dependency, "add", "-A")
+    _git(dependency, "commit", "--quiet", "-m", "a dependency commit")
+
+    clean = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))))
+    assert clean.complete, "the fixture is already incomplete before the submodule is added"
+
+    _git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet",
+         str(dependency), "dependency")
+    _git(repo, "commit", "--quiet", "-m", "reference a dependency")
+
+    report = publication_history.scan_complete_history(
+        repo, outgoing_scan.Scanner(TermSet(terms=("needleprivate",))))
+    assert not any("needleprivate" in str(o.finding) for o in report.occurrences), (
+        "the fixture leaks the term into this repository, so it proves nothing about the one "
+        "next door")
+    assert not report.complete, (
+        "the scan certified a history complete while a repository it publishes a reference to "
+        "was never read")
+    assert any("dependency" in note for note in report.skipped), report.skipped
+    assert "INCOMPLETE" in report.render()

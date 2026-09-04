@@ -187,22 +187,36 @@ def test_the_whole_position_survives_the_process_that_wrote_it(tmp_path):
           budgets={"cycles": {"used": 1, "ceiling": 4}},
           evidence={"candidate": "demo 1.0.0 at abcdef123456"})
 
+    # THE WHOLE RECORD, not a hand-picked projection of it.
+    #
+    # The child used to print six chosen readings, and an independent reader
+    # deleted `capability` from that list: every assertion still passed, in the
+    # test whose name is *the whole position survives*. What a test names is
+    # what it must check, so the child now serialises the entire record and the
+    # comparison is field for field — a field that stops round-tripping goes
+    # red without anybody remembering to add it here.
     script = (
         "import json,sys;sys.path.insert(0,sys.argv[1]);import continuation;"
         "r=continuation.load(sys.argv[3]);p=continuation.derive(r,relative_to=sys.argv[2]);"
-        "print(json.dumps({'state':p.state,'next':list(p.actionable)[:1],"
-        "'jobs':[w.job_id for w in r.waits],'subject':r.waits[0].subject_revision,"
-        "'budgets':list(r.budgets),'candidate':r.evidence.get('candidate')}))")
+        "print(json.dumps({'record':r.as_dict(),'state':p.state,"
+        "'next':list(p.actionable)[:1]}))")
     out = subprocess.run(
         [sys.executable, "-c", script, str(ROOT / "tools"), str(tmp_path),
          str(tmp_path / "CONTINUATION.json")], capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
     seen = json.loads(out.stdout)
+    here = continuation.load(tmp_path / "CONTINUATION.json").as_dict()
+    assert seen["record"] == here, (
+        "the record a separate process reads is not the record this one wrote")
+    #: And the fields the position is actually MADE of, named so a silent
+    #: emptying of `as_dict` cannot pass the comparison above.
+    assert here["capability"] and seen["record"]["capability"] == here["capability"]
+    assert [w["job_id"] for w in seen["record"]["waits"]] == ["survey"]
+    assert seen["record"]["waits"][0]["subject_revision"] == "a" * 40
+    assert list(seen["record"]["budgets"]) == ["cycles"]
+    assert seen["record"]["evidence"]["candidate"] == "demo 1.0.0 at abcdef123456"
     assert seen["state"] == State.WAITING_ON_IDENTIFIED_JOB
-    assert seen["jobs"] == ["survey"]
-    assert seen["subject"] == "a" * 40
-    assert seen["budgets"] == ["cycles"]
-    assert seen["candidate"] == "demo 1.0.0 at abcdef123456"
+    assert seen["next"] == ["consume the survey"]
 
 
 # --- 7. a scoped human decision, and everything else still runnable ------------------

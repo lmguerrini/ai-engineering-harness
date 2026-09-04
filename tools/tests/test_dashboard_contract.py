@@ -201,12 +201,12 @@ def test_a_reading_removed_from_the_projection_fails_this_contract(tmp_path):
 _FROM_THE_PACK_OR_THE_CHROME = {
     "pack version", "pack state", "pack digest", "pack revision", "adoptability",
     "UNKNOWN", "projection versus authority", "coordinator state",
-    "project identity and pin", "durable output", "capacity observation",
+    "project identity and pin", "durable output",
     "freshness of the reading", "budgets used and remaining",
     "outstanding evolution candidates", "public-safety state", "continuation health",
     "recurrence-class status", "real-consumer compatibility", "adapter qualification",
     "latest audit verdict", "failure-mode closure status", "deterministic gate status",
-    "stale-audit warning", "STALLED", "ORPHANED", "SUPERSEDED", "context reconstruction",
+    "STALLED", "ORPHANED", "SUPERSEDED", "context reconstruction",
 }
 
 
@@ -234,3 +234,40 @@ def test_a_marker_must_come_from_the_record_and_not_from_the_page(row, tmp_path)
         f"the marker {row['marker']!r} for {row['reading']!r} appears with no record at all, so "
         f"it is matching the page rather than the reading")
 
+
+
+@pytest.mark.parametrize("row", _contract()["readings"], ids=lambda r: r["reading"])
+def test_no_marker_matches_the_sentence_that_denies_it(row, rendered):
+    """**A marker that also matches the opposite state discriminates nothing.**
+
+    `adoptability` was the bare word `ADOPTABLE`, and the only place the
+    projection used it was `NOT ADOPTABLE: only QUALIFIED_AND_FROZEN may be
+    pinned` — so the contract for *this release may be adopted* was satisfied,
+    in every state, by the sentence saying it may not. An independent reader
+    printed the surrounding characters.
+
+    The class is mechanical even though the general question is not: whatever a
+    reading means, a marker preceded by a negation in the rendered text is
+    matching both answers at once.
+    """
+    text, page = rendered
+    marker = row["marker"].lower().strip()
+    #: Phrases that begin with a negation and the marker, and deny a DIFFERENT
+    #: reading. Declared per row, by name, with the reason in `why` — an
+    #: exception somebody makes in the open rather than a guard going slack.
+    # And each one must still occur: an exception for a sentence the projection
+    # no longer renders is an exception nobody re-examined, so a stale entry
+    # here goes red rather than quietly widening the marker.
+    allowed = [p.lower() for p in row.get("not_a_denial", [])]
+    for phrase in allowed:
+        assert phrase in text.lower(), (
+            f"{row['reading']!r} declares {phrase!r} is not a denial, and the projection no "
+            f"longer renders it. Re-examine the marker rather than keeping the exception")
+    for negation in ("not ", "no ", "never ", "cannot "):
+        for where, rendered_text in (("text view", text.lower()), ("page", page.lower())):
+            hunted = rendered_text
+            for phrase in allowed:
+                hunted = hunted.replace(phrase, " ")
+            assert negation + marker not in hunted, (
+                f"{row['reading']!r} matches {negation + marker!r} in the {where}, so it is "
+                f"satisfied by the sentence that denies it")

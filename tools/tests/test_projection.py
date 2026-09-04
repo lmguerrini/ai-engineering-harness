@@ -522,7 +522,7 @@ def test_the_headline_tone_comes_from_the_state_and_not_from_its_wording(tmp_pat
         # defined in the stylesheet above it, so the assertion was true whatever
         # the code did. It survived a mutant that mapped SILENT_IDLE to GOOD.
         import re
-        return re.search(r"<div class='verdict ([a-z-]*)'>", page).group(1)
+        return re.search(r"<div class='cmd ([a-z-]*)'>", page).group(1)
 
     _record(tmp_path, actionable=("work nobody is doing",))
     assert verdict_class(projection.render_html(projection.project(tmp_path))) == "v-bad"
@@ -556,7 +556,16 @@ def test_the_page_declares_a_viewport_so_a_phone_gets_the_narrow_layout(tmp_path
     _record(tmp_path, actionable=("x",))
     page = projection.render_html(projection.project(tmp_path))
     assert "width=device-width" in page
-    assert "@media(max-width:720px)" in page
+    # The BREAKPOINT, not a literal. Asserting the number spelled in the
+    # stylesheet made the test fail the moment the layout was retuned, which
+    # told nobody anything: the property is that a narrow layout exists and
+    # begins somewhere a phone actually is.
+    import re
+
+    narrow = [int(w) for w in re.findall(r"@media\(max-width:(\d+)px\)", page)]
+    assert narrow, "the page declares no narrow layout at all"
+    assert any(600 <= w <= 900 for w in narrow), (
+        f"the narrow layout begins at {narrow}, which is not a phone")
 
 
 def test_an_evidence_reading_nobody_declared_is_an_explicit_unknown(tmp_path):
@@ -833,11 +842,15 @@ def test_every_semantic_tone_keeps_its_own_colour_under_every_theme(theme):
     block = block[:block.index("}")] if theme else block
 
     colours = {}
-    for name in ("bad", "warn", "unknown", "good"):
+    # ACTION TOO. It was omitted, and a matrix mutant setting `--action` to the
+    # same green as `--good` passed — the tone that marks the next authorised
+    # action, merged with the tone that marks an established good state, in the
+    # test for *every semantic tone*. Found by an independent reader.
+    for name in ("bad", "warn", "unknown", "good", "action"):
         found = re.search(rf"--{name}:(#[0-9a-f]{{6}})", block)
         assert found, f"the {theme or 'default'} theme does not define --{name}"
         colours[name] = found.group(1)
-    assert len(set(colours.values())) == 4, (
+    assert len(set(colours.values())) == 5, (
         f"two semantic tones share a colour under {theme or 'default'}: {colours}")
 
 
@@ -890,3 +903,295 @@ def test_a_budget_with_no_ceiling_gets_no_bar(tmp_path):
     page = projection.render_html(projection.project(tmp_path))
     assert "6/8" in page and "class=meter" in page
     assert "3/None" not in page and "3/0" not in page
+
+
+# --- TERMINAL MISSION CONTROL: the console's own invariants ---------------------------
+
+
+def _rich(tmp_path):
+    """A project that reaches every band of the console: budgets with and
+    without a ceiling, evidence, a job with a deadline, an output root, a
+    scoped blocker and a capacity observation."""
+    import json as _json
+    import task_output as _t
+
+    root = tmp_path / "worker-output"
+    contract = _t.OutputContract("survey", root, max_bytes_per_write=64, expected_chunks=2)
+    _t.claim_root(contract)
+    _t.materialise(contract, 0, "a finding")
+    _record(tmp_path, actionable=("consume the survey", "free thing"),
+            budgets={"cycles": {"used": 6, "ceiling": 8}, "uncounted": {"used": 3}},
+            evidence={"suite": "412 passing", "candidate": "demo at abcdef123456"},
+            blockers=(_continuation.Blocker(kind="human", detail="a person decides",
+                                            hitl_row=4, blocks=("free thing",)),),
+            waits=(_continuation.Wait(
+                job_id="survey", kind=_continuation.WaitKind.OUTPUT_ROOT, path=str(root),
+                task_id="survey", max_bytes_per_write=64, expects="two chunks",
+                subject_revision="abcdef123456" + "0" * 28,
+                not_beyond_seconds=3600, declared_at=_continuation.now()),))
+    (tmp_path / "CAPACITY.json").write_text(_json.dumps({
+        "schema": "capacity-observation-v1",
+        "pools": [{"pool_id": "independent", "kind": "independent", "window": "weekly",
+                   "remaining": 340, "unit": "requests", "observed_at": _continuation.now(),
+                   "active_workers": 1}],
+        "reserve": {"coordinator": 20, "result_consumption": 10, "repair_and_audit": 10}}))
+    return projection.project(tmp_path)
+
+
+def test_a_cell_says_nothing_its_panel_does_not_say(tmp_path):
+    """**The whole bound on the instrument bands.**
+
+    A figure is the compact form of a fact its panel also states in full. If a
+    cell could carry a value no line carries, the console would have a reading
+    the text view does not — and the page would be the one nobody can check
+    against the record. So every value and every note must occur in the text
+    its own panel renders.
+    """
+    view = _rich(tmp_path)
+    assert view.situation and view.telemetry, "the fixture reaches neither band"
+    for panel in view.panels:
+        said = panel.render()
+        for cell in panel.cells:
+            assert cell.value in said, (
+                f"{panel.title!r} shows the figure {cell.value!r} for {cell.label!r} and says it "
+                f"nowhere. A cell restates a line; it may not be the only place a reading is")
+            assert not cell.note or cell.note in said, (
+                f"{panel.title!r} annotates {cell.label!r} with {cell.note!r}, which it never says")
+
+
+def test_a_cell_that_invents_a_value_is_caught(tmp_path):
+    """The bound above, falsified. The check must fail for the thing it forbids
+    — otherwise it is a loop over a list that is usually empty."""
+    view = _rich(tmp_path)
+    panel = next(p for p in view.panels if p.cells)
+    panel.figure("fabricated", "a figure no line carries")
+    said = panel.render()
+    assert not all(c.value in said for c in panel.cells), (
+        "a cell carrying a value its panel never says passed the completeness check")
+
+
+def test_every_figure_reaches_the_page(tmp_path):
+    """Cells are not a second data model that can quietly stop rendering."""
+    view = _rich(tmp_path)
+    page = projection.render_html(view)
+    for cell in view.situation + view.telemetry:
+        assert projection._escape(cell.value) in page, f"the page dropped the figure {cell!r}"
+        assert projection._escape(cell.label) in page
+
+
+def test_a_meter_is_drawn_only_against_a_declared_denominator(tmp_path):
+    """Fabricated precision is worse than prose: a reader trusts a bar without
+    reading it."""
+    view = _rich(tmp_path)
+    for cell in view.telemetry:
+        if cell.share:
+            used, ceiling = cell.share
+            assert isinstance(used, int) and isinstance(ceiling, int) and ceiling > 0
+    counted = next(c for c in view.telemetry if c.label == "cycles")
+    uncounted = next(c for c in view.telemetry if c.label == "uncounted")
+    assert counted.share == (6, 8) and uncounted.share is None
+    page = projection.render_html(view)
+    assert "class=meter" in page and "3/None" not in page and "3/0" not in page
+
+
+def test_the_command_band_is_never_behind_a_disclosure(tmp_path):
+    """Level 1 is what a reader gets in the first seconds. A state, a next
+    action or a blocker inside a `<details>` is a state nobody read."""
+    import re
+
+    view = _rich(tmp_path)
+    page = projection.render_html(view)
+    head = page[:page.index("<main>")]
+    collapsed = "".join(re.findall(r"<details[^>]*>(?!\s*<summary>needs).*?</details>", head, re.S))
+    assert collapsed == "", "part of the command band is collapsed"
+    for cell in view.situation:
+        assert projection._escape(cell.value) in head, f"{cell.label} is not in the command band"
+    assert "NEXT AUTHORISED ACTION" in head
+
+
+def test_uncertainty_stays_open_however_the_disclosure_is_spelled(tmp_path):
+    """The same property as `test_uncertainty_is_never_put_behind_a_disclosure`,
+    against a renderer that adds an attribute to its `<details>`.
+
+    The original matched the literal `<details>`, so putting a class on the
+    element would have emptied the check silently — a gate defeated by a
+    presentation change nobody would think to look at.
+    """
+    import re
+
+    _record(tmp_path, actionable=("x",), waits=(_continuation.Wait(
+        job_id="j", kind=_continuation.WaitKind.PROCESS, pid=1, expects="a result",
+        not_beyond_seconds=1, declared_at="2020-01-01T00:00:00+00:00"),))
+    page = projection.render_html(projection.project(tmp_path))
+    hidden = "".join(re.findall(r"<details(?![^>]*class=attn)[^>]*>.*?</details>", page, re.S))
+    assert hidden, "the fixture collapses nothing, so this proves nothing"
+    for tone in ("bad", "warn", "unknown"):
+        assert f"class='{tone} " not in hidden, f"a {tone} line is hidden behind a disclosure"
+
+
+def test_no_status_is_carried_by_colour_alone(tmp_path):
+    """Every urgent tone gets a glyph as well as a hue. A reader who cannot
+    separate red from amber must still be able to separate a defect from a
+    warning."""
+    style = projection._STYLE
+    for tone in ("bad", "warn", "unknown"):
+        assert f".{tone} em::before" in style or f"li.{tone} .v::before" in style, (
+            f"{tone} is distinguished by colour alone")
+    page = projection.render_html(_rich(tmp_path))
+    assert "✕" in style and "▲" in style and "?" in style
+
+
+@pytest.mark.parametrize("theme", ["", "matrix"])
+def test_the_console_reads_in_the_order_a_reader_needs(tmp_path, theme):
+    """Command, then telemetry, then panels — in the DOM, so a phone that
+    stacks the page gets the same order without a second layout to keep true."""
+    page = _themed(tmp_path, theme=theme) if False else projection.render_html(
+        _rich(tmp_path), theme=theme)
+    order = [page.index(mark) for mark in
+             ("<div class=bar>", "class=state", "NEXT AUTHORISED ACTION", "class=sit",
+              "class=attn", "class=strip", "<main>", "<footer>")]
+    assert order == sorted(order), "the console's bands are not in reading order"
+
+
+def test_the_situation_tally_counts_only_what_the_page_shows(tmp_path):
+    """The one computed thing in the command band is a count of its own cells —
+    page furniture, like the badge on the attention strip. It may not become a
+    reading."""
+    view = _rich(tmp_path)
+    band = projection._situation(view)
+    jobs = [c for c in view.situation if c.label.startswith("job ")]
+    assert jobs, "the fixture declares no job"
+    for cell in jobs:
+        assert cell.value in band
+    assert f"{len(jobs)} {jobs[0].value.lower()}" in band
+
+
+def _theme_tokens(name: str) -> dict:
+    """The colour variables one theme actually resolves to."""
+    import re
+
+    style = projection._STYLE
+    if name == "matrix":
+        block = style[style.index('[data-theme="matrix"]'):]
+    elif name == "light":
+        block = style[style.index("prefers-color-scheme:light"):]
+    else:
+        block = style[style.index(":root{"):]
+    block = block[:block.index("}")]
+    tokens = dict(re.findall(r"--([a-z0-9-]+):(#[0-9a-f]{3,8})", block))
+    if name != "":
+        tokens = {**_theme_tokens(""), **tokens}
+    return tokens
+
+
+def _contrast(fg: str, bg: str) -> float:
+    """WCAG 2.1 relative-luminance contrast ratio."""
+    def channels(colour):
+        value = colour.lstrip("#")
+        if len(value) == 3:
+            value = "".join(c * 2 for c in value)
+        return [int(value[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+
+    def luminance(colour):
+        r, g, b = (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+                   for c in channels(colour))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    a, b = luminance(fg), luminance(bg)
+    lo, hi = sorted((a, b))
+    return (hi + 0.05) / (lo + 0.05)
+
+
+@pytest.mark.parametrize("theme", ["", "matrix", "light"])
+def test_every_pairing_the_console_actually_paints_is_legible(theme):
+    """Contrast, measured rather than eyeballed.
+
+    Every foreground the stylesheet puts on a given surface, checked against
+    WCAG 2.1 AA: 4.5:1 for text, 3:1 for the micro-labels and rules that are
+    never the only place a reading appears. **Written after the palette, and it
+    failed** — which is the reason to compute a ratio instead of looking at it.
+    """
+    t = _theme_tokens(theme)
+    body = [("ink", "ground"), ("ink", "panel"), ("ink", "panel-2"), ("ink", "panel-3"),
+            ("dim", "panel"), ("dim", "panel-2"), ("dim", "panel-3"),
+            ("bad", "panel"), ("warn", "panel"), ("unknown", "panel"), ("good", "panel"),
+            ("bad", "bad-bg"), ("warn", "warn-bg"), ("unknown", "unknown-bg"),
+            ("good", "good-bg"), ("action", "action-bg"), ("accent", "panel"),
+            ("bad", "panel-2"), ("warn", "panel-2"), ("unknown", "panel-2"),
+            ("good", "panel-2"), ("unknown", "unknown-bg")]
+    #: Uppercase micro-labels and disclosure summaries. Never the only place a
+    #: reading is: every one of them labels a value rendered in `ink`.
+    secondary = [("faint", "panel"), ("faint", "panel-2"), ("faint", "panel-3"),
+                 ("faint", "ground")]
+    for fg, bg in body:
+        ratio = _contrast(t[fg], t[bg])
+        assert ratio >= 4.5, (
+            f"{theme or 'default'}: --{fg} on --{bg} is {ratio:.2f}:1, below AA for text")
+    for fg, bg in secondary:
+        ratio = _contrast(t[fg], t[bg])
+        assert ratio >= 3.0, (
+            f"{theme or 'default'}: --{fg} on --{bg} is {ratio:.2f}:1, below AA for a label")
+
+
+@pytest.mark.parametrize("theme", ["", "matrix", "light"])
+def test_the_theme_moves_the_ground_and_not_the_meanings(theme):
+    """A green console, not a green everything: the four semantic hues stay
+    separable from each other AND from the theme's own accent, in every theme."""
+    t = _theme_tokens(theme)
+    semantic = {name: t[name] for name in ("bad", "warn", "unknown", "good")}
+    assert len(set(semantic.values())) == 4, f"{theme}: two semantic tones share a colour"
+    for name, colour in semantic.items():
+        if name == "action":
+            continue
+        assert _contrast(colour, t["accent"]) > 1.15 or colour != t["accent"], (
+            f"{theme}: --{name} is the accent, so the theme decided what it means")
+
+
+#: Every field a saved record can carry, crossed with values of the wrong shape.
+#: **Generated, not chosen.** Three rounds of *no shape of a saved record makes
+#: the view raise* were closed one hand-picked field at a time — the deadline,
+#: then the budget position, then the write bound — and each time an
+#: independent reader found the next one: `attempt: "three"`, `{"pools": 1}`,
+#: and then `capability: 7`, which raised in the attention strip. A list of
+#: shapes somebody thought of is a list of shapes somebody thought of.
+_WRONG_SHAPES = [
+    (field, value)
+    for field in ("capability", "updated_at", "actionable", "waits", "blockers", "budgets",
+                  "evidence", "record_path")
+    for value in (7, 1.5, True, [], {}, "", ["a", 2], {"k": ["v"]}, None)
+]
+
+
+@pytest.mark.parametrize("field,value", _WRONG_SHAPES,
+                         ids=[f"{f}={v!r}" for f, v in _WRONG_SHAPES])
+def test_no_field_of_the_wrong_shape_makes_the_view_raise(tmp_path, field, value):
+    """A projection may not raise, whatever the record holds.
+
+    The record is untrusted input: a coordinator writes it, a person edits it,
+    a half-finished write truncates it. **A view of a broken record is the one
+    view a reader most needs**, so a field that cannot be rendered is rendered
+    as what it is rather than taking the page with it.
+    """
+    import json as _json
+
+    document = {"capability": "c", "updated_at": _continuation.now(), field: value}
+    (tmp_path / "CONTINUATION.json").write_text(_json.dumps(document))
+    view = projection.project(tmp_path)
+    assert view.render()
+    assert projection.render_html(view).endswith("</html>")
+    #: And it must not have rendered the wreck as a resting state.
+    assert view.headline
+
+
+def test_the_generated_shapes_would_notice_the_defect_they_were_written_for(tmp_path):
+    """The bound. `capability: 7` is the shape an independent reader found, and
+    it must be in the generated set and must reach the code that broke."""
+    import json as _json
+
+    assert ("capability", 7) in _WRONG_SHAPES
+    (tmp_path / "CONTINUATION.json").write_text(_json.dumps(
+        {"capability": 7, "updated_at": _continuation.now(), "actionable": ["x"]}))
+    view = projection.project(tmp_path)
+    # It reaches the attention strip, which is where it raised.
+    assert view.attention or view.unknowns
+    assert "7" in view.render()

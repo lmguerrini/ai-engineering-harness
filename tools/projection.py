@@ -43,7 +43,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-__all__ = ["Line", "Panel", "Projection", "Tone", "project", "render_html"]
+__all__ = ["Cell", "Line", "Panel", "Projection", "Tone", "project", "render_html"]
 
 UNKNOWN = "UNKNOWN"
 
@@ -88,6 +88,58 @@ class Line:
     def __post_init__(self) -> None:
         if self.tone not in Tone.ALL:
             raise ValueError(f"unknown tone {self.tone!r}")
+        # COERCED HERE, NOT AT EVERY CALL SITE. `{"capability": 7}` loads and
+        # then made the view raise `TypeError` while joining the attention
+        # strip — the third shape of *a saved record the projection cannot
+        # render* found by an independent reader, after two were closed one
+        # field at a time. A record is untrusted input and a `Line` is where
+        # every panel's text becomes text, so this is the boundary. Whatever
+        # the record holds, the view says what it holds.
+        self.text = self.text if isinstance(self.text, str) else str(self.text)
+        self.label = self.label if isinstance(self.label, str) else str(self.label)
+
+
+@dataclass
+class Cell:
+    """One reading as a FIGURE rather than as a sentence.
+
+    A cell is the compact form of a fact its panel **also says in full**, and
+    the panel that knows the fact is the one that makes it. Two rules hold it
+    there:
+
+    * **It computes nothing.** Every number in a cell was already in the record
+      or in the answer of the module that owns the question. A cell that
+      derived one would be the page reaching a second opinion about the thing
+      it is a reading of.
+    * **It never stands alone.** The line stays where it was, so no reading
+      exists only as a figure — otherwise the page and the text view would be
+      showing different things, and the page would be the one nobody could
+      check. `test_a_cell_says_nothing_its_panel_does_not_say` is that bound.
+    """
+
+    label: str
+    value: str
+    tone: str = Tone.PLAIN
+    #: ``(used, ceiling)`` — set ONLY where a ceiling was actually declared. A
+    #: meter needs a denominator, and a bar drawn against a guessed one is
+    #: fabricated precision in the one place a reader trusts a picture rather
+    #: than reading the number.
+    share: "tuple | None" = None
+    #: A smaller second value: an age, a unit, a subject.
+    note: str = ""
+    #: ``situation`` for the command band a reader takes in first, ``telemetry``
+    #: for the instrument row under it.
+    band: str = "telemetry"
+
+    def __post_init__(self) -> None:
+        if self.tone not in Tone.ALL:
+            raise ValueError(f"unknown tone {self.tone!r}")
+        if self.band not in ("situation", "telemetry"):
+            raise ValueError(f"unknown band {self.band!r}")
+        for name in ("label", "value", "note"):
+            value = getattr(self, name)
+            if not isinstance(value, str):
+                setattr(self, name, str(value))
 
 
 @dataclass
@@ -105,6 +157,9 @@ class Panel:
     #: and then everything else — and panels in the order they were written do
     #: not answer them in that order.
     group: str = "detail"
+    #: The same facts as figures, for the console's first two bands. Adding
+    #: one here does not remove the line it restates.
+    cells: list = field(default_factory=list)
     #: A panel whose lines are a VOCABULARY rather than findings. The state
     #: legend marks the current state urgently, correctly, and hoisting that into
     #: the attention strip restates the headline in different words — noise in
@@ -113,6 +168,11 @@ class Panel:
 
     def say(self, text: str, tone: str = Tone.PLAIN, label: str = "", depth: int = 0) -> None:
         self.lines.append(Line(text, tone, label, depth))
+
+    def figure(self, label: str, value: str, tone: str = Tone.PLAIN, *,
+               share=None, note: str = "", band: str = "telemetry") -> None:
+        """Say a fact this panel already says, as a figure. Never instead of it."""
+        self.cells.append(Cell(label, value, tone, share, note, band))
 
     def rows(self) -> "list[Line]":
         """Every line as a `Line`, including the ones appended as bare strings.
@@ -177,6 +237,16 @@ class Projection:
                 found.append(Line(f"{panel.title} — {item}", Tone.UNKNOWN))
         found.sort(key=lambda l: (Tone.BAD, Tone.WARN, Tone.UNKNOWN).index(l.tone))
         return found
+
+    @property
+    def situation(self) -> "list[Cell]":
+        """The level-1 figures, in the order their panels were built."""
+        return [c for p in self.panels for c in p.cells if c.band == "situation"]
+
+    @property
+    def telemetry(self) -> "list[Cell]":
+        """The level-2 figures. Same rule: made by the panel that owns the fact."""
+        return [c for p in self.panels for c in p.cells if c.band == "telemetry"]
 
     @property
     def next_action(self) -> str:
@@ -304,9 +374,18 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
                   Tone.MUTED, label="last progress", depth=1)
         deadline = _guarded(_deadline_line, wait,
                             default=f"{UNKNOWN} — this wait's deadline could not be read")
+        expired = "EXPIRED" in deadline
         panel.say(deadline,
-                  Tone.BAD if "EXPIRED" in deadline else
+                  Tone.BAD if expired else
                   (Tone.MUTED if "no deadline" in deadline else Tone.PLAIN), depth=1)
+        # The same job as a lifecycle cell. Its note is the tail of the deadline
+        # line above — a slice of a string this panel already produced, not a
+        # second reading of the clock.
+        panel.figure(f"job {observation.job_id}", mark,
+                     Tone.BAD if expired else
+                     {"COMPLETE": Tone.GOOD, UNKNOWN: Tone.UNKNOWN}.get(mark, Tone.PLAIN),
+                     note=deadline.rpartition(" — ")[2] if " — " in deadline else "",
+                     band="situation")
     for label, values, tone in (
             ("unconsumed results", report.unconsumed, Tone.WARN),
             ("waits nobody can observe", report.unobservable, Tone.UNKNOWN),
@@ -314,10 +393,23 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
             ("obligations held by more than one wait", report.duplicated, Tone.BAD),
             ("superseded waits, retire them", report.superseded, Tone.WARN),
             ("blocked", report.blockers, Tone.WARN)):
-        if values:
-            panel.say(", ".join(values), tone, label=label)
+        # ONE LINE EACH. Six categories comma-joined into six lines put four
+        # blockers, their HITL rows and their scopes into a single run-on line
+        # a reader has to parse — in the panel that exists to say what is in
+        # the way. Same facts, same words, one per line.
+        for value in values:
+            panel.say(value, tone, label=label)
+    # SAID WHETHER OR NOT THERE IS ONE. An absent blocker line and a record
+    # nobody has declared a blocker on look identical, and *is a person needed*
+    # is the first question a reader of a long run asks.
+    panel.say(", ".join(report.blockers) if report.blockers else "none declared",
+              Tone.WARN if report.blockers else Tone.PLAIN, label="human intervention")
+    panel.figure("intervention", ", ".join(report.blockers) if report.blockers
+                 else "none declared",
+                 Tone.WARN if report.blockers else Tone.PLAIN, band="situation")
     if report.actionable:
         panel.say(f"{len(report.actionable)} item(s)", label="authorised and outstanding")
+        panel.figure("outstanding", f"{len(report.actionable)} item(s)", band="situation")
         blocked_names = {n for b in record.blockers for n in b.blocks}
         for item in report.actionable:
             panel.say(item, Tone.MUTED if item in blocked_names else Tone.PLAIN, depth=1)
@@ -423,9 +515,15 @@ def _audit_freshness_panel(record) -> Panel:
         short = wait.subject_revision[:12]
         if not declared:
             panel.say(f"{short or UNKNOWN} — cannot be compared", Tone.UNKNOWN, label=wait.job_id)
+            panel.figure(f"audit {wait.job_id}", "cannot be compared", Tone.UNKNOWN,
+                         note=short, band="situation")
         elif short and short in declared:
             panel.say(f"{short} — the candidate", Tone.GOOD, label=wait.job_id)
+            panel.figure(f"audit {wait.job_id}", "the candidate", Tone.GOOD, note=short,
+                         band="situation")
         else:
+            panel.figure(f"audit {wait.job_id}", "NOT the candidate", Tone.BAD, note=short,
+                         band="situation")
             panel.say(f"{short or UNKNOWN} — NOT the candidate this record declares. Findings "
                       f"from it describe a different tree", Tone.BAD, label=wait.job_id)
     return panel
@@ -465,6 +563,7 @@ def _budget_panel(record) -> Panel:
             # may not raise, least of all on the record it exists to display.
             panel.say(f"{position!r} — not a position this view can read", Tone.UNKNOWN,
                       label=counter)
+            panel.figure(counter, UNKNOWN, Tone.UNKNOWN, note="not a position this view can read")
             continue
         used, ceiling = position.get("used"), position.get("ceiling")
         left = (ceiling - used) if isinstance(used, int) and isinstance(ceiling, int) else UNKNOWN
@@ -481,6 +580,15 @@ def _budget_panel(record) -> Panel:
         if position.get("authorised_by"):
             text += f"  (raised by {position['authorised_by']})"
         panel.say(text, Tone.WARN if spent else Tone.PLAIN, label=counter)
+        if isinstance(used, int) and isinstance(ceiling, int):
+            panel.figure(counter, f"{used}/{ceiling}", Tone.WARN if spent else Tone.PLAIN,
+                         share=(used, ceiling), note=f"{left} remaining")
+        elif isinstance(used, int):
+            # No denominator, so no bar. A meter here would be a picture of a
+            # fraction nobody declared.
+            panel.figure(counter, f"{used} used", note="no declared ceiling")
+        else:
+            panel.figure(counter, UNKNOWN, Tone.UNKNOWN)
     # THE READINGS A LONG RUN NEEDS, listed whether or not the record carries
     # them. An absent key simply did not appear before, which makes *nobody
     # declared this* and *this is fine* look identical — the one thing this
@@ -490,7 +598,10 @@ def _budget_panel(record) -> Panel:
                  "public_safety", "evolution_candidates"):
         if name in record.evidence:
             panel.say(str(record.evidence[name]), label=name)
+            panel.figure(name.replace("_", " "), str(record.evidence[name]))
         else:
+            panel.figure(name.replace("_", " "), UNKNOWN, Tone.UNKNOWN,
+                         note=f"no {name.replace(chr(95), chr(32))}")
             panel.unknown.append(f"the record declares no {name.replace('_', ' ')}")
     for name, value in sorted(record.evidence.items()):
         if name not in ("candidate", "suite", "gates", "latest_audit", "closure",
@@ -517,9 +628,13 @@ def _freshness_panel(record, record_path: Path) -> Panel:
         panel.unknown.append(
             f"the record's own timestamp {record.updated_at!r} cannot be read, so how old this "
             f"reading is cannot be established")
+        panel.figure("reading age", UNKNOWN, Tone.UNKNOWN, band="situation")
         return panel
     age = (datetime.now(timezone.utc) - written).total_seconds()
     panel.lines.append(f"record written {age / 60:.0f} min ago ({record.updated_at})")
+    panel.figure("reading age", f"{age / 60:.0f} min ago",
+                 Tone.WARN if age > 3600 else Tone.PLAIN,
+                 note="STALE" if age > 3600 else "", band="situation")
     panel.lines.append(f"read from {record_path}")
     if age > 3600:
         panel.lines.append(
@@ -556,9 +671,15 @@ def _pack_panel(here: Path) -> Panel:
               "commit that contains it", Tone.MUTED, label="revision")
     panel.summary = f"{document.get('version', UNKNOWN)} {state}"
     panel.summary_tone = Tone.GOOD if state == "QUALIFIED_AND_FROZEN" else Tone.WARN
-    if state != "QUALIFIED_AND_FROZEN":
-        panel.say("NOT ADOPTABLE: only QUALIFIED_AND_FROZEN may be pinned by a project",
-                  Tone.WARN, depth=1)
+    # SAID IN BOTH DIRECTIONS, under a label. It was said only when the answer
+    # was no, so the positive reading was unreachable — and the contract's
+    # marker for it, the bare word `ADOPTABLE`, matched the sentence that
+    # denies it. A marker that matches the opposite state discriminates
+    # nothing, and an independent reader demonstrated exactly that.
+    panel.say("this state may be pinned by a project" if state == "QUALIFIED_AND_FROZEN"
+              else "NO — only QUALIFIED_AND_FROZEN may be pinned by a project",
+              Tone.GOOD if state == "QUALIFIED_AND_FROZEN" else Tone.WARN,
+              label="adoptability", depth=1)
     return panel
 
 
@@ -599,6 +720,12 @@ def _output_panel(record, base: Path) -> Panel:
         # marker for *task ownership* until it stopped matching something else,
         # at which point there was nothing left for it to match.
         panel.say(str(wait.task_id), Tone.MUTED, label="task_id", depth=1)
+        panel.figure(f"output {wait.job_id}", report.state,
+                     {task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT: Tone.GOOD,
+                      task_output.RecoveryState.UNKNOWN: Tone.UNKNOWN,
+                      task_output.RecoveryState.FAILED_WITH_PARTIAL_DURABLE_OUTPUT: Tone.WARN,
+                      task_output.RecoveryState.FAILED_BEFORE_USEFUL_OUTPUT: Tone.WARN}
+                     .get(report.state, Tone.PLAIN), note=str(wait.task_id))
         if report.state == task_output.RecoveryState.UNKNOWN:
             panel.say(report.why, Tone.UNKNOWN, depth=1)
     return panel
@@ -617,6 +744,8 @@ def _capacity_panel(path: Path) -> Panel:
             f"no capacity observation at {path}; no window is known, which is the ordinary case "
             "for a provider with no machine-readable surface and is not zero"
         )
+        panel.figure("capacity", UNKNOWN, Tone.UNKNOWN, note="no window is known",
+                     band="situation")
         return panel
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -641,6 +770,9 @@ def _capacity_panel(path: Path) -> Panel:
             f"{pool.active_workers} active, resets {pool.resets_at or UNKNOWN}, "
             f"observed {pool.observed_at or UNKNOWN}"
         )
+        panel.figure(f"capacity {pool.pool_id}", f"{remaining} {pool.unit}",
+                     Tone.PLAIN if pool.known else Tone.UNKNOWN,
+                     note=f"{pool.active_workers} active", band="situation")
     reserve = raw.get("reserve") or {}
     if reserve:
         try:
@@ -742,159 +874,227 @@ def _panel(build, *args, title: str, group: str) -> Panel:
 _STYLE = """
 /* TERMINAL MISSION CONTROL
    ------------------------------------------------------------------
-   Two layers, kept apart on purpose.
+   Three layers, and the reason for each.
+
+   LEVEL 1 — COMMAND. What is happening, whether a person is needed, what
+   happens next. Given room, and never collapsed.
+   LEVEL 2 — TELEMETRY. Established figures AS figures: meters, counts, status
+   cells. Dense on purpose, because a strip a reader must read a sentence at a
+   time is a strip they stop reading.
+   LEVEL 3 — FORENSICS. Prose, paths, provenance, vocabulary. Behind a
+   disclosure wherever collapsing it cannot hide uncertainty.
+
+   And two colour layers, kept apart.
 
    SEMANTIC tokens say what a fact IS — bad, warn, unknown, good, action.
-   They are the same hue family in every theme, because a state that reads
-   differently under a theme is a theme that changed the meaning.
+   Same hue family in every theme, because a state that reads differently
+   under a theme is a theme that changed the meaning.
 
    THEME tokens say what the surface looks like — ground, panel, rule, ink,
-   and one accent. A theme may move all of those and none of the semantics.
-
-   The accent is a single variable so it can be set without touching either.  */
+   and one accent. A theme may move all of those and none of the semantics.  */
 
 :root{
   color-scheme:dark;
-  /* theme: default terminal */
-  --ground:#0a0c10; --panel:#11151b; --panel-2:#161b23; --rule:#242c38;
-  --ink:#dfe6ef; --dim:#8b98a9; --faint:#5b6675;
-  --accent:#4ea1ff;
-  /* semantics — never overridden by a theme, only re-toned for contrast */
-  --bad:#ff6b63; --warn:#e8b339; --unknown:#b79dff; --good:#4ed6a0; --action:#66b3ff;
-  --bad-bg:#2a1210; --warn-bg:#2a2109; --unknown-bg:#1e1930; --good-bg:#0d2620;
-  --action-bg:#0f1e33;
+  /* theme: default terminal — near-black ground, graphite elevations,
+     one restrained cyan for interaction and nothing else. */
+  --ground:#07090c; --panel:#0d1117; --panel-2:#121922; --panel-3:#18212c;
+  --rule:#1c2530; --rule-strong:#2c3a4a;
+  --ink:#e3e9f0; --dim:#94a3b4; --faint:#6d7d8f;
+  --accent:#38bdf8;
+  /* semantics — a theme re-tones these for contrast and never merges them */
+  --bad:#ff6b63; --warn:#f0b429; --unknown:#b79dff; --good:#3ecf8e; --action:#38bdf8;
+  --bad-bg:#25100e; --warn-bg:#241c07; --unknown-bg:#1b1630; --good-bg:#08251b;
+  --action-bg:#07202e;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"DejaVu Sans Mono",Consolas,monospace;
 }
 :root[data-theme="matrix"]{
-  /* Matrix: a green operations console, built from FIVE luminance steps rather
-     than one green. Semantics keep their hue — a warning that turned green
-     would be a theme deciding what a warning is. */
-  --ground:#02120a; --panel:#041c10; --panel-2:#062616; --rule:#0b4a2b;
-  --ink:#8affc1; --dim:#3fbf82; --faint:#1f7a52;
-  --accent:#37ff9b;
-  --bad:#ff7a6e; --warn:#ffd257; --unknown:#9df0ff; --good:#5cff9f; --action:#37ff9b;
-  --bad-bg:#2a0f0c; --warn-bg:#2a2408; --unknown-bg:#04252b; --good-bg:#053a22;
-  --action-bg:#05301c;
+  /* Matrix: a green-phosphor operations console. FIVE luminance steps of one
+     green carry ground, surface, rule, neutral text and accent — and the
+     semantics keep their own hue on top of it, because a warning that turned
+     green would be a theme deciding what a warning is. */
+  --ground:#030b07; --panel:#06140f; --panel-2:#0a1f16; --panel-3:#0e2c1f;
+  --rule:#12402a; --rule-strong:#1d6a45;
+  --ink:#a6f7cd; --dim:#4fc98d; --faint:#369e70;
+  --accent:#2bf58d;
+  --bad:#ff7a6e; --warn:#ffcf4d; --unknown:#7fe3ff; --good:#5cff9f; --action:#2bf58d;
+  --bad-bg:#2a0f0c; --warn-bg:#2a2207; --unknown-bg:#04252e; --good-bg:#053a22;
+  --action-bg:#04301d;
 }
 @media(prefers-color-scheme:light){
   :root:not([data-theme]){
     color-scheme:light;
-    --ground:#eef1f5; --panel:#fff; --panel-2:#f5f7fa; --rule:#d6dde6;
-    --ink:#111820; --dim:#5a6675; --faint:#8a95a3;
-    --bad:#b3261e; --warn:#8a5a00; --unknown:#5b3fa8; --good:#12694a; --action:#0b4fa8;
-    --bad-bg:#fdecea; --warn-bg:#fdf4e3; --unknown-bg:#f0ecfb; --good-bg:#e7f6ef;
-    --action-bg:#e9f1fd;
+    --ground:#e9edf2; --panel:#fff; --panel-2:#f4f7fa; --panel-3:#eaeff5;
+    --rule:#d3dae3; --rule-strong:#b4bfcc;
+    --ink:#0d1520; --dim:#54606f; --faint:#7d8998;
+    --accent:#0b6bcb;
+    --bad:#a91b13; --warn:#7a4e00; --unknown:#54329e; --good:#0e6145; --action:#0b4fa8;
+    --bad-bg:#fceceb; --warn-bg:#fbf3e0; --unknown-bg:#efeafb; --good-bg:#e6f5ef;
+    --action-bg:#e8f0fc;
   }
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font:13px/1.5 var(--mono);
--webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--ground);color:var(--ink);
+font:12.5px/1.5 var(--mono);font-variant-numeric:tabular-nums;
+-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+b,i,em,u{font-style:normal;font-weight:inherit;text-decoration:none}
 
-/* --- top status bar: identity, always, in one scan ---------------------- */
-.bar{display:flex;flex-wrap:wrap;gap:0 18px;align-items:baseline;
-padding:7px 18px;background:var(--panel-2);border-bottom:1px solid var(--rule);
-font-size:11.5px;letter-spacing:.02em}
-.bar b{color:var(--faint);font-weight:400;text-transform:uppercase;letter-spacing:.1em;
-margin-right:5px;font-size:10px}
-.bar span+b{margin-left:0}
-.bar .id{color:var(--accent)}
+/* ============ IDENTITY BAR — what this is, in one line ================ */
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:0 20px;
+padding:6px 16px;background:var(--panel-2);border-bottom:1px solid var(--rule-strong);
+font-size:11px;letter-spacing:.01em}
+.bar b{color:var(--faint);text-transform:uppercase;letter-spacing:.12em;font-size:9px;
+margin-right:6px}
+.bar span{color:var(--dim)}
+.bar .id{color:var(--accent);font-weight:600}
 
-header{padding:18px 18px 16px;background:var(--panel);border-bottom:1px solid var(--rule)}
-h1{margin:0 0 12px;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;
+/* ============ LEVEL 1 — COMMAND ======================================= */
+header{border-bottom:1px solid var(--rule-strong)}
+h1{margin:0;padding:9px 16px 0;font-size:9px;letter-spacing:.3em;text-transform:uppercase;
 color:var(--faint);font-weight:600}
 
-.state{font-size:27px;line-height:1.1;font-weight:700;letter-spacing:-.015em;margin:0 0 5px}
-.said{font-size:12.5px;color:var(--dim);max-width:80ch;margin:0}
-.verdict{border-left:3px solid var(--dim);padding-left:13px}
-.v-bad{border-left-color:var(--bad)} .v-bad .state{color:var(--bad)}
-.v-warn{border-left-color:var(--warn)} .v-warn .state{color:var(--warn)}
-.v-good{border-left-color:var(--good)} .v-good .state{color:var(--good)}
-.v-unknown{border-left-color:var(--unknown)} .v-unknown .state{color:var(--unknown)}
+.cmd{display:grid;grid-template-columns:1fr;gap:14px;padding:10px 16px 14px;
+background:var(--panel);border-left:3px solid var(--dim)}
+@media(min-width:1000px){.cmd{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+gap:22px;align-items:start}}
+.v-bad{border-left-color:var(--bad)} .v-warn{border-left-color:var(--warn)}
+.v-good{border-left-color:var(--good)} .v-unknown{border-left-color:var(--unknown)}
 
-.next{margin-top:13px;padding:11px 13px;border-radius:5px;background:var(--action-bg);
-border:1px solid var(--action)}
-.next b{display:block;font-size:9.5px;letter-spacing:.16em;color:var(--action);margin-bottom:4px}
-.next span{font-size:14.5px;font-weight:600;color:var(--ink)}
+.state{font-size:30px;line-height:1.08;font-weight:700;letter-spacing:-.02em;margin:2px 0 6px;
+word-break:break-word}
+.v-bad .state{color:var(--bad)} .v-warn .state{color:var(--warn)}
+.v-good .state{color:var(--good)} .v-unknown .state{color:var(--unknown)}
+.said{font-size:12.5px;color:var(--dim);max-width:74ch;margin:0}
 
-/* --- the operational strip: established facts as figures, not paragraphs -- */
-.strip{display:flex;flex-wrap:wrap;gap:7px;margin-top:13px}
-.fact{display:flex;align-items:baseline;gap:7px;padding:4px 10px;border-radius:4px;
-background:var(--panel-2);border:1px solid var(--rule);font-size:11.5px}
-.fact i{font-style:normal;color:var(--faint);text-transform:uppercase;letter-spacing:.09em;
-font-size:9.5px}
-.fact em{font-style:normal;font-weight:700;color:var(--ink)}
-.fact.good em{color:var(--good)} .fact.warn em{color:var(--warn)}
-.fact.bad em{color:var(--bad)} .fact.unknown em{color:var(--unknown)}
-.meter{display:block;width:52px;height:3px;background:var(--rule);border-radius:2px;
-overflow:hidden;margin-top:3px}
-.meter i{display:block;height:100%;background:var(--accent)}
-.meter i.warn{background:var(--warn)} .meter i.bad{background:var(--bad)}
+.next{margin-top:12px;padding:9px 12px;background:var(--action-bg);
+border:1px solid var(--action);border-left-width:3px}
+.next b{display:block;font-size:9px;letter-spacing:.18em;color:var(--action);margin-bottom:3px}
+.next span{font-size:15px;font-weight:600;color:var(--ink);word-break:break-word}
 
-.attn{margin-top:13px;border:1px solid var(--rule);border-radius:5px;overflow:hidden;
-background:var(--panel-2)}
-.attn>summary{cursor:pointer;padding:8px 13px;font-size:10.5px;letter-spacing:.13em;
+/* the situation grid: level-1 readings as cells, never as sentences */
+.sit{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:1px;
+background:var(--rule);border:1px solid var(--rule)}
+.sit>div{background:var(--panel-2);padding:6px 9px;min-width:0}
+.sit i{display:block;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sit em{display:block;font-size:13px;font-weight:700;color:var(--ink);
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sit u{display:block;font-size:10px;color:var(--dim);margin-top:1px;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sit .good em{color:var(--good)} .sit .warn em{color:var(--warn)}
+.sit .bad em{color:var(--bad)} .sit .unknown em{color:var(--unknown)}
+.sit .action em{color:var(--action)}
+.sit .bad{background:var(--bad-bg)} .sit .unknown{background:var(--unknown-bg)}
+.sit .warn em::before{content:"▲ "} .sit .bad em::before{content:"✕ "}
+.sit .unknown em::before{content:"? "} .sit .good em::before{content:"✓ "}
+.sit-head{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+.sit-head b{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.sit-head span{font-size:10.5px;color:var(--dim)}
+
+/* attention: never collapsed away, always counted */
+.attn{background:var(--panel-2);border-top:1px solid var(--rule)}
+.attn>summary{cursor:pointer;padding:7px 16px;font-size:9.5px;letter-spacing:.16em;
 text-transform:uppercase;color:var(--dim);list-style:none;user-select:none}
 .attn>summary::-webkit-details-marker{display:none}
 .attn>summary::before{content:"▸ "} .attn[open]>summary::before{content:"▾ "}
-.attn ul{padding:2px 0 6px} .attn li{font-size:12px}
-.count{display:inline-block;min-width:17px;text-align:center;padding:1px 6px;border-radius:9px;
-font-size:10px;font-weight:700;margin-left:5px;letter-spacing:0}
-.count.bad{background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad)}
-.count.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn)}
-.count.unknown{background:var(--unknown-bg);color:var(--unknown);border:1px solid var(--unknown)}
-.count.good{background:var(--good-bg);color:var(--good);border:1px solid var(--good)}
+.attn ul{padding:0 0 7px}
+.attn li{font-size:12px;padding-top:2px;padding-bottom:2px}
+.count{display:inline-block;min-width:16px;text-align:center;padding:0 6px;
+font-size:10px;font-weight:700;margin-left:5px;letter-spacing:0;border:1px solid}
+.count.bad{background:var(--bad-bg);color:var(--bad)}
+.count.warn{background:var(--warn-bg);color:var(--warn)}
+.count.unknown{background:var(--unknown-bg);color:var(--unknown)}
+.count.good{background:var(--good-bg);color:var(--good)}
 
-main{display:grid;gap:11px;padding:14px 18px 36px;
-grid-template-columns:repeat(auto-fit,minmax(min(100%,370px),1fr));align-items:start}
-@media(min-width:1240px){main{grid-template-columns:repeat(3,1fr)}}
-h3.group{grid-column:1/-1;margin:8px 1px -2px;font-size:9.5px;letter-spacing:.2em;
-text-transform:uppercase;color:var(--faint);font-weight:700}
-h3.group:first-of-type{margin-top:0}
+/* ============ LEVEL 2 — TELEMETRY ===================================== */
+.strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(163px,1fr));gap:1px;
+background:var(--rule);border-bottom:1px solid var(--rule-strong)}
+.fact{background:var(--panel);padding:6px 10px 7px;min-width:0}
+.fact i{display:block;font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;
+color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fact em{font-size:12.5px;font-weight:700;color:var(--ink);display:block;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fact u{font-size:10px;color:var(--faint);display:block;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fact.good em{color:var(--good)} .fact.warn em{color:var(--warn)}
+.fact.bad em{color:var(--bad)} .fact.unknown em{color:var(--unknown)}
+.fact.warn{box-shadow:inset 2px 0 0 var(--warn)} .fact.bad{box-shadow:inset 2px 0 0 var(--bad)}
+.fact.unknown{box-shadow:inset 2px 0 0 var(--unknown)}
+.fact.good{box-shadow:inset 2px 0 0 var(--good)}
+.meter{display:block;height:3px;background:var(--rule-strong);margin-top:4px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent)}
+.meter i.warn{background:var(--warn)} .meter i.bad{background:var(--bad)}
+.meter i.good{background:var(--good)} .meter i.unknown{background:var(--unknown)}
 
-section{background:var(--panel);border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+/* ============ LEVEL 3 — ZONES AND PANELS ============================== */
+main{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule)}
+@media(min-width:900px){main{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}}
+@media(min-width:1320px){main{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr)}}
+.zone{background:var(--ground);min-width:0;padding-bottom:14px}
+.zone.wide{grid-column:1/-1}
+.zone>h3{margin:0;padding:7px 16px 6px;font-size:9px;letter-spacing:.22em;
+text-transform:uppercase;color:var(--faint);font-weight:700;
+background:var(--panel-2);border-bottom:1px solid var(--rule)}
+
+section{background:var(--panel);border-bottom:1px solid var(--rule);overflow:hidden}
 .head{display:flex;justify-content:space-between;gap:9px;align-items:baseline;
-padding:8px 13px;background:var(--panel-2);border-bottom:1px solid var(--rule)}
-.head h2{margin:0;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);
+padding:7px 16px;background:var(--panel-3);border-bottom:1px solid var(--rule)}
+.head h2{margin:0;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);
 font-weight:600}
-.chip{font-size:10px;padding:1px 7px;border-radius:9px;background:var(--ground);
-color:var(--dim);white-space:nowrap;border:1px solid var(--rule)}
+.chip{font-size:9.5px;padding:1px 7px;background:var(--ground);color:var(--dim);
+white-space:nowrap;border:1px solid var(--rule-strong);max-width:22ch;overflow:hidden;
+text-overflow:ellipsis}
 .chip.good{color:var(--good);border-color:var(--good)}
 .chip.warn{color:var(--warn);border-color:var(--warn)}
-.chip.bad{color:var(--bad);border-color:var(--bad)}
-.chip.unknown{color:var(--unknown);border-color:var(--unknown)}
+.chip.bad{color:var(--bad);border-color:var(--bad);background:var(--bad-bg)}
+.chip.unknown{color:var(--unknown);border-color:var(--unknown);background:var(--unknown-bg)}
+.chip.good::before{content:"✓ "} .chip.warn::before{content:"▲ "}
+.chip.bad::before{content:"✕ "} .chip.unknown::before{content:"? "}
 
-ul{list-style:none;margin:0;padding:5px 0}
-li{padding:2.5px 13px;display:flex;gap:8px;flex-wrap:wrap;word-break:break-word;
-line-height:1.45}
+ul{list-style:none;margin:0;padding:4px 0}
+li{padding:2px 16px;display:flex;gap:9px;flex-wrap:wrap;word-break:break-word;line-height:1.45}
 li .k{color:var(--faint);flex:0 0 auto}
 li .k::after{content:":"}
-li .v{flex:1 1 13rem;min-width:0}
-li.d1{padding-left:28px;border-left:1px solid var(--rule);margin-left:13px}
-li.d2{padding-left:42px;border-left:1px solid var(--rule);margin-left:13px}
+li .v{flex:1 1 15rem;min-width:0;max-width:96ch}
+li.d1{padding-left:30px;box-shadow:inset 1px 0 0 var(--rule);margin-left:16px}
+li.d2{padding-left:44px;box-shadow:inset 1px 0 0 var(--rule);margin-left:16px}
 li.good .v{color:var(--good)} li.warn .v{color:var(--warn)}
 li.bad .v{color:var(--bad);font-weight:600}
 li.muted,li.muted .v,li.muted .k{color:var(--faint)}
 li.unknown{background:var(--unknown-bg)} li.unknown .v{color:var(--unknown)}
 li.unknown>.k{color:var(--unknown);font-weight:600}
 li.action{background:var(--action-bg)} li.action .v{color:var(--action);font-weight:600}
+li.bad .v::before{content:"✕ "} li.warn .v::before{content:"▲ "}
+li.unknown .v::before{content:"? "}
 
-section>details>summary{cursor:pointer;padding:5px 13px 7px;font-size:10.5px;color:var(--faint);
-letter-spacing:.05em;list-style:none;border-top:1px solid var(--rule);user-select:none}
+section>details>summary{cursor:pointer;padding:5px 16px 6px;font-size:10px;color:var(--faint);
+letter-spacing:.06em;list-style:none;border-top:1px solid var(--rule);user-select:none}
 section>details>summary::-webkit-details-marker{display:none}
 section>details>summary::before{content:"▸ "}
 section>details[open]>summary::before{content:"▾ "}
-summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+summary:hover{color:var(--accent)}
+summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
-footer{padding:0 18px 26px;color:var(--faint);font-size:11px;max-width:82ch}
+footer{padding:14px 16px 30px;color:var(--faint);font-size:11px;max-width:88ch}
 
-@media(max-width:720px){
-  .bar{gap:0 12px;padding:6px 12px;font-size:11px}
-  header{padding:13px 12px} main{padding:11px 12px 30px;gap:9px}
-  .state{font-size:22px}
+/* ============ NARROW — a deliberate order, not a stack ================ */
+@media(max-width:760px){
+  body{font-size:12.5px}
+  .bar{gap:0 14px;padding:5px 12px;font-size:10.5px}
+  h1{padding:8px 12px 0}
+  .cmd{padding:9px 12px 12px;gap:11px}
+  .state{font-size:24px}
+  .said{font-size:12px}
+  .next span{font-size:14px}
+  .sit{grid-template-columns:repeat(auto-fill,minmax(min(100%,132px),1fr))}
+  .strip{grid-template-columns:repeat(auto-fill,minmax(min(100%,146px),1fr))}
+  .attn>summary{padding:7px 12px}
+  .zone>h3{padding:6px 12px 5px}
+  .head{padding:6px 12px}
   li{padding-left:12px;padding-right:12px}
-  li.d1{padding-left:22px;margin-left:10px} li.d2{padding-left:30px;margin-left:10px}
   li .v{flex:1 1 100%}
-  .strip{gap:5px} .fact{font-size:11px;padding:3px 8px}
+  li.d1{padding-left:24px;margin-left:10px} li.d2{padding-left:34px;margin-left:10px}
+  section>details>summary{padding-left:12px}
+  footer{padding:12px 12px 26px}
 }
 """
 
@@ -903,14 +1103,33 @@ def _escape(text: str) -> str:
     return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
+#: Which band of the console a panel's rows belong in. Presentation only: the
+#: panel says which QUESTION it answers (`Panel.group`, five values a test
+#: bounds), and this says where that question goes on a wide screen. Keeping
+#: them separate is the point — a panel that had to know about a grid column
+#: would be a panel that changes when the layout does.
+_ZONES = (
+    ("operations", ("now",)),
+    ("evidence and audit", ("evidence",)),
+    ("capacity and routing", ("resources",)),
+    ("forensics — identity, vocabulary, provenance", ("identity", "detail")),
+)
+
+
 def render_html(view: "Projection", title: str = "Runtime Pack — projection", *,
                 theme: str = "", accent: str = "") -> str:
-    """The same panels, for a browser. Derives nothing the text renderer does not.
+    """The same reading, as an operations console.
 
-    Laid out in the order a reader of a long run actually asks: **what is
-    happening, is anything wrong, what happens next**, and only then the panels.
-    Nothing is summarised away — every line the text view shows is here, and the
-    ones hoisted into the attention strip appear in their panels as well.
+    Three bands, in the order a reader of a long run actually needs them.
+    **Command** — the state, whether a person is required, what happens next,
+    and the level-1 readings as cells. **Telemetry** — every established figure
+    as a figure. **Zones** — the panels, grouped by the question they answer,
+    with prose behind a disclosure wherever collapsing it cannot hide
+    uncertainty.
+
+    Derives nothing the text renderer does not. Every figure in the first two
+    bands is a `Cell` some panel made, and every cell restates a line that
+    panel also shows — so nothing here is the only place a reading appears.
     """
     tone = _verdict_tone(view.headline)
     verdict_class = {Tone.BAD: "v-bad", Tone.WARN: "v-warn", Tone.GOOD: "v-good",
@@ -929,17 +1148,17 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection", 
            "</head>", "<body>",
            _status_bar(view),
            "<header>", "<h1>Runtime Pack — mission control</h1>",
-           f"<div class='verdict {verdict_class}'>",
+           f"<div class='cmd {verdict_class}'>",
+           "<div class=primary>",
            f"<p class=state>{_escape(state.strip())}</p>",
-           f"<p class=said>{_escape(sentence.strip() or view.headline)}</p>", "</div>"]
+           f"<p class=said>{_escape(sentence.strip() or view.headline)}</p>"]
 
     if view.next_action:
         out.append("<div class=next><b>NEXT AUTHORISED ACTION</b>"
                    f"<span>{_escape(view.next_action)}</span></div>")
-
-    strip = _operational_strip(view)
-    if strip:
-        out.append(strip)
+    out.append("</div>")
+    out.append(_situation(view))
+    out.append("</div>")
 
     if attention:
         badge = "".join(
@@ -954,53 +1173,62 @@ def render_html(view: "Projection", title: str = "Runtime Pack — projection", 
                    "<ul><li class=muted><span class=v>nothing is marked wrong, unknown or "
                    "waiting on a person. That is a reading of this record, not a promise about "
                    "the run.</span></li></ul></details>")
+    out.append("</header>")
 
-    out.append("</header><main>")
-    for group, heading in (("now", "what is happening"), ("evidence", "what is established"),
-                           ("resources", "what it is spending"), ("identity", "what this is"),
-                           ("detail", "everything else")):
-        panels = [p for p in view.panels if p.group == group]
+    strip = _operational_strip(view)
+    if strip:
+        out.append(strip)
+
+    out.append("<main>")
+    for heading, groups in _ZONES:
+        panels = [p for p in view.panels if p.group in groups]
         if not panels:
             continue
-        out.append(f"<h3 class=group>{_escape(heading)}</h3>")
+        wide = " wide" if len(groups) > 1 else ""
+        out.append(f"<div class='zone{wide}'><h3>{_escape(heading)}</h3>")
         for panel in panels:
-            rows = panel.rows()
-            #: The forensic half. A line is detail when its own panel marked it
-            #: MUTED or nested it under another — never when it is BAD, WARN or
-            #: UNKNOWN, because putting uncertainty behind a disclosure is
-            #: hiding it.
-            # Depth does NOT decide this. The first version collapsed anything
-            # nested, and an expired deadline is a nested line marked BAD — so
-            # the single most urgent fact on the page went behind a disclosure.
-            # Caught by the test that asserts uncertainty is never collapsed,
-            # which is the reason to write that test rather than assume it.
-            urgent = (Tone.BAD, Tone.WARN, Tone.UNKNOWN, Tone.ACTION)
-            head = [l for l in rows
-                    if l.tone in urgent or (l.depth == 0 and l.tone != Tone.MUTED)]
-            rest = [l for l in rows if l not in head]
-            tone_here = panel.summary_tone if panel.summary_tone in Tone.ALL else Tone.PLAIN
-            chip = (f"<span class='chip {tone_here}'>{_escape(panel.summary)}</span>"
-                    if panel.summary else "")
-            if panel.unknown:
-                chip += f"<span class='count unknown'>{len(panel.unknown)}</span>"
-            out.append(f"<section><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>")
-            for line in head:
-                out.append(_row(line))
-            for item in panel.unknown:
-                out.append(f"<li class='unknown d0'><span class=k>{UNKNOWN}</span>"
-                           f"<span class=v>{_escape(item)}</span></li>")
-            if not rows and not panel.unknown:
-                out.append("<li class='unknown d0'><span class=v>nothing to read</span></li>")
-            out.append("</ul>")
-            if rest:
-                out.append(f"<details><summary>{len(rest)} more</summary><ul>")
-                out.extend(_row(line) for line in rest)
-                out.append("</ul></details>")
-            out.append("</section>")
+            out.append(_section(panel))
+        out.append("</div>")
     out.append("</main><footer>Every answer here is delegated to the module that owns it. "
                "This page authorises nothing, schedules nothing, wakes nothing and stores "
                "nothing; deleting it breaks no checker.</footer></body></html>")
     return "\n".join(out)
+
+
+def _section(panel: "Panel") -> str:
+    """One panel: its answer as a chip, its findings open, its prose behind a
+    disclosure — and never its uncertainty."""
+    rows = panel.rows()
+    #: The forensic half. A line is detail when its own panel marked it MUTED or
+    #: nested it under another — never when it is BAD, WARN or UNKNOWN, because
+    #: putting uncertainty behind a disclosure is hiding it.
+    # Depth does NOT decide this. The first version collapsed anything nested,
+    # and an expired deadline is a nested line marked BAD — so the single most
+    # urgent fact on the page went behind a disclosure. Caught by the test that
+    # asserts uncertainty is never collapsed, which is the reason to write that
+    # test rather than assume it.
+    urgent = (Tone.BAD, Tone.WARN, Tone.UNKNOWN, Tone.ACTION)
+    head = [l for l in rows if l.tone in urgent or (l.depth == 0 and l.tone != Tone.MUTED)]
+    rest = [l for l in rows if l not in head]
+    tone_here = panel.summary_tone if panel.summary_tone in Tone.ALL else Tone.PLAIN
+    chip = (f"<span class='chip {tone_here}'>{_escape(panel.summary)}</span>"
+            if panel.summary else "")
+    if panel.unknown:
+        chip += f"<span class='count unknown'>{len(panel.unknown)}</span>"
+    out = [f"<section><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>"]
+    out.extend(_row(line) for line in head)
+    for item in panel.unknown:
+        out.append(f"<li class='unknown d0'><span class=k>{UNKNOWN}</span>"
+                   f"<span class=v>{_escape(item)}</span></li>")
+    if not rows and not panel.unknown:
+        out.append("<li class='unknown d0'><span class=v>nothing to read</span></li>")
+    out.append("</ul>")
+    if rest:
+        out.append(f"<details><summary>{len(rest)} more</summary><ul>")
+        out.extend(_row(line) for line in rest)
+        out.append("</ul></details>")
+    out.append("</section>")
+    return "".join(out)
 
 
 #: Readings that belong in the top bar rather than in a panel: a reader wants
@@ -1020,7 +1248,6 @@ def _status_bar(view: "Projection") -> str:
     version = find("the pack this projection ships in", "version")
     state = find("the pack this projection ships in", "state")
     digest = find("the pack this projection ships in", "digest")
-    fresh = find("freshness of this reading", "") or ""
     cells = [("pack", f"{version or UNKNOWN} {state or UNKNOWN}", "id"),
              ("digest", digest or UNKNOWN, "")]
     for panel in view.panels:
@@ -1037,38 +1264,57 @@ def _status_bar(view: "Projection") -> str:
         + "</div>")
 
 
-def _operational_strip(view: "Projection") -> str:
-    """Established figures as figures.
+def _situation(view: "Projection") -> str:
+    """Level 1 as cells: the readings a person needs before deciding whether to
+    look further.
 
-    Budgets and standing evidence are counts and ratios, and a reader scanning a
-    long run should not have to read a sentence to get one. **Nothing is
-    computed here** — every value is a line some panel already produced, shown
-    as a figure instead of as prose, and a budget with no ceiling shows no bar
-    rather than a guessed one.
+    Every cell was made by the panel that owns its fact, and restates a line
+    that panel also shows. The one thing computed here is the tally beside the
+    heading — a count of the cells on this page, the same page furniture as the
+    badge on the attention strip, and not a reading of the record.
     """
-    import re
+    cells = view.situation
+    if not cells:
+        return "<div class=sit></div>"
+    tally = {}
+    for cell in cells:
+        if cell.label.startswith("job "):
+            tally[cell.value] = tally.get(cell.value, 0) + 1
+    summary = (" · ".join(f"{n} {name.lower()}" for name, n in sorted(tally.items()))
+               if tally else "nothing is outstanding")
+    return ("<div><div class=sit-head><b>situation</b>"
+            f"<span>{_escape(summary)}</span></div>"
+            "<div class=sit>" + "".join(_cell(c, "sit") for c in cells) + "</div></div>")
 
-    facts = []
-    for panel in view.panels:
-        if panel.title != "budgets and standing evidence":
-            continue
-        for line in panel.rows():
-            if not line.label:
-                continue
-            used = re.match(r"^(\d+)/(\d+) used", line.text)
-            if used:
-                spent, ceiling = int(used.group(1)), int(used.group(2))
-                share = min(100, round(100 * spent / ceiling)) if ceiling else 0
-                tone = "bad" if spent >= ceiling else ("warn" if share >= 75 else "")
-                facts.append(
-                    f"<span class='fact {tone}'><i>{_escape(line.label[:26])}</i>"
-                    f"<em>{spent}/{ceiling}</em>"
-                    f"<span class=meter><i class='{tone}' style='width:{share}%'></i></span>"
-                    f"</span>")
-            elif line.tone != Tone.MUTED and len(line.text) < 44:
-                facts.append(f"<span class=fact><i>{_escape(line.label[:22])}</i>"
-                             f"<em>{_escape(line.text)}</em></span>")
+
+def _operational_strip(view: "Projection") -> str:
+    """Level 2: established figures as figures.
+
+    **Nothing is computed here.** Every value is a `Cell` a panel produced from
+    a fact it also states as a line, and a budget with no ceiling gets no bar
+    rather than a guessed one.
+
+    The previous version read the strip out of the panels' PROSE with a regular
+    expression for `N/M used`. It worked, and it meant the instruments were one
+    rewording away from silently emptying — with nothing red, because no test
+    can require a meter that the page infers.
+    """
+    facts = [_cell(c, "fact") for c in view.telemetry]
     return f"<div class=strip>{''.join(facts)}</div>" if facts else ""
+
+
+def _cell(cell: "Cell", css: str) -> str:
+    """One figure. Tone decides colour AND a glyph, because status carried by
+    colour alone is status a colour-blind reader does not have."""
+    tone = cell.tone if cell.tone in Tone.ALL else Tone.PLAIN
+    meter = ""
+    if cell.share:
+        used, ceiling = cell.share
+        share = min(100, max(0, round(100 * used / ceiling))) if ceiling else 0
+        meter = (f"<span class=meter><i class='{tone}' style='width:{share}%'></i></span>")
+    note = f"<u>{_escape(cell.note)}</u>" if cell.note else ""
+    return (f"<div class='{css} {tone}'><i>{_escape(cell.label)}</i>"
+            f"<em>{_escape(cell.value)}</em>{note}{meter}</div>")
 
 
 def _row(line: "Line") -> str:

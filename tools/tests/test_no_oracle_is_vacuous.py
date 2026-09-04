@@ -73,6 +73,74 @@ def test_no_test_asserts_a_constant(module):
                 f"{path.name}::{node.name} asserts a literal at line {check.lineno}")
 
 
+@pytest.mark.parametrize("module", _modules(), ids=lambda p: p.name)
+def test_no_assertion_is_satisfied_by_a_constant_it_is_joined_to(module):
+    """`assert subject() or True` runs the subject and cannot fail.
+
+    **Found by an independent reader planting it, not by this sweep**, which is
+    the fourth time a shape got past the check written to catch its family. A
+    truthy constant anywhere in an `or` chain, or a falsy one in an `and`
+    chain, makes the whole assertion decide nothing — and unlike a bare
+    `assert True`, the subject is still called, so the test looks like it does
+    work and reads green whatever the subject returns.
+    """
+    for path, node in _functions(module):
+        for check in (n for n in ast.walk(node) if isinstance(n, ast.Assert)):
+            for boolean in (n for n in ast.walk(check.test) if isinstance(n, ast.BoolOp)):
+                decisive = ast.Or if isinstance(boolean.op, ast.Or) else ast.And
+                for part in boolean.values:
+                    if not isinstance(part, ast.Constant):
+                        continue
+                    settles = bool(part.value) if decisive is ast.Or else not part.value
+                    assert not settles, (
+                        f"{path.name}::{node.name} line {check.lineno}: the constant "
+                        f"{part.value!r} settles this assertion whatever the subject does")
+
+
+def _plant(source: str):
+    """Run one shape past the sweep's own checks, as the sweep sees a module."""
+    import pathlib
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as scratch:
+        planted = pathlib.Path(scratch) / "test_planted.py"
+        planted.write_text(source, encoding="utf-8")
+        caught = []
+        for check in (test_no_test_compares_a_thing_with_itself,
+                      test_no_test_asserts_a_constant,
+                      test_no_assertion_is_satisfied_by_a_constant_it_is_joined_to):
+            try:
+                check(planted)
+            except AssertionError as exc:
+                caught.append(f"{check.__name__}: {exc}")
+        return caught
+
+
+@pytest.mark.parametrize("shape,source", [
+    ("self comparison", "def test_x():\n    assert f(1) == f(1)\n"),
+    ("asserted constant", "def test_x():\n    assert True\n"),
+    ("truthy disjunct", "def test_x():\n    assert subject() or True\n"),
+    ("truthy disjunct, nested", "def test_x():\n    assert (a() and b()) or 1\n"),
+    ("falsy conjunct", "def test_x():\n    assert subject() and 0\n"),
+])
+def test_the_sweep_catches_each_shape_it_claims_to(shape, source):
+    """**Planted, every time the sweep changes.** A sweep is only evidence for
+    the shapes it demonstrably catches, and the way to know is to write one."""
+    assert _plant(source), f"the sweep does not catch a {shape}"
+
+
+@pytest.mark.parametrize("shape,source", [
+    ("an ordinary assertion", "def test_x():\n    assert f(1) == 2\n"),
+    ("a legitimate disjunction", "def test_x():\n    assert a() or b()\n"),
+    ("a falsy disjunct, which decides nothing on its own",
+     "def test_x():\n    assert subject() or 0\n"),
+    ("a truthy conjunct, likewise", "def test_x():\n    assert subject() and 1\n"),
+])
+def test_the_sweep_does_not_flag_an_honest_test(shape, source):
+    """The other half. A sweep that flags everything is a sweep nobody keeps."""
+    assert not _plant(source), f"the sweep wrongly flags {shape}"
+
+
 def test_every_parametrised_test_collected_at_least_one_case():
     """**The boundary, rather than the seven instances.**
 
