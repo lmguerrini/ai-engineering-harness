@@ -261,7 +261,8 @@ td.bad .s,.s.bad{color:var(--bad)} td.warn .s,.s.warn{color:var(--warn)}
 td.unknown .s,.s.unknown{color:var(--unknown)} td.good .s,.s.good{color:var(--good)}
 .s.bad::before{content:"✕ "} .s.warn::before{content:"▲ "}
 .s.unknown::before{content:"? "} .s.good::before{content:"✓ "}
-td small{display:block;color:var(--faint);font-size:10px}
+td small{display:block;color:var(--faint);font-size:10px;
+overflow-wrap:normal;word-break:normal}
 /* Long prose in a table cell: clamped, never cut. The whole string stays in the
    document and in the element's title, so nothing is removed — a row simply
    stops being able to push every other row off the screen. */
@@ -313,7 +314,11 @@ font:inherit;font-size:10px;line-height:1;padding:1px 5px;cursor:pointer}
 grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));align-content:start}
 @media(max-width:760px){.canvas{grid-template-columns:1fr}}
 .canvas>*{grid-column:span var(--span,1);grid-row:span var(--tall,1);
-overflow:auto;min-height:0}
+overflow:auto;min-height:0;min-width:0}
+/* A table in a narrow cell squeezed its columns until values wrapped mid-word.
+   It scrolls sideways inside its own cell instead — the page does not. */
+.canvas table{min-width:760px}
+.canvas .tw{overflow-x:auto}
 .canvas .empty{grid-column:1/-1;color:var(--faint);font-size:11.5px;padding:16px;
 border:1px dashed var(--rule-strong);text-align:center}
 
