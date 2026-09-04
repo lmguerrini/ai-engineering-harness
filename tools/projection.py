@@ -232,13 +232,20 @@ class Projection:
         #: What the header already says, in the words it says it in. The state
         #: appeared three times in the strip — as the coordinator's `state`, as
         #: the legend's current entry, and as the headline above it.
+        #
+        # SCOPED TO THE PANEL THAT OWNS IT. Two panels label a line `state`:
+        # the coordinator's, which the headline repeats, and the pack's, which
+        # is a different fact about a different thing. Excluding the word
+        # excluded both, so `state: IN_PROGRESS` — the reading that says this
+        # release may not be adopted — was hoisted nowhere. Found by writing
+        # down what makes a section safe to fold and checking the page.
         said_already = {"state"}
         found = []
         for panel in self.panels:
             if panel.legend:
                 continue
             for line in panel.rows():
-                if line.label in said_already:
+                if line.label in said_already and panel.group == "now":
                     continue
                 if line.tone in urgent:
                     found.append(Line(f"{panel.title} — "
@@ -976,92 +983,133 @@ _STYLE = """
 
 :root{
   color-scheme:dark;
-  /* theme: default terminal — near-black ground, graphite elevations,
-     one restrained cyan for interaction and nothing else. */
-  --ground:#07090c; --panel:#0d1117; --panel-2:#121922; --panel-3:#18212c;
-  --rule:#1c2530; --rule-strong:#2c3a4a;
-  --ink:#e3e9f0; --dim:#94a3b4; --faint:#6d7d8f;
-  --accent:#38bdf8;
-  /* semantics — a theme re-tones these for contrast and never merges them */
-  --bad:#ff6b63; --warn:#f0b429; --unknown:#b79dff; --good:#3ecf8e; --action:#38bdf8;
-  --bad-bg:#25100e; --warn-bg:#241c07; --unknown-bg:#1b1630; --good-bg:#08251b;
-  --action-bg:#07202e;
-  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"DejaVu Sans Mono",Consolas,monospace;
+
+  /* ---- the presentation substrate -------------------------------------
+     Every size, space and family the console draws with is a variable, so
+     the Settings view can move it at runtime without a second stylesheet
+     and without touching a single reading. A lens moves colour; an operator
+     moves the rest; neither moves a meaning. */
+  --ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"JetBrains Mono","DejaVu Sans Mono",
+         Consolas,monospace;
+  --font:var(--mono);
+  --fs:12.5px;            /* body and telemetry values */
+  --fs-state:30px;        /* the one state a reader looks for first */
+  --fs-micro:8.5px;       /* uppercase field labels */
+  --fs-forensic:11.5px;   /* paths, provenance, raw messages */
+  --lh:1.5;
+  --pad-x:16px;           /* the page's horizontal rhythm */
+  --pad-y:2px;            /* the vertical rhythm inside a list */
+  --gap:1px;              /* between zones */
+  --rail:216px;
+
+  /* ---- the DEFAULT lens: MONOCHROME ------------------------------------
+     The founder reviewed five lenses against real states and chose this one,
+     so it is what the release ships rather than what it offers. Black ground,
+     graphite surfaces, white and grey type — and colour only where an
+     operator has to act on it: a defect, a warning, an unestablished reading,
+     an established good state. Everything structural is neutral, so the four
+     places carrying hue are the four places worth looking at. */
+
+  --ground:#000; --panel:#0b0b0c; --panel-2:#131315; --panel-3:#1a1a1d;
+  --rule:#232326; --rule-strong:#36363b;
+  --ink:#f4f4f5; --dim:#a8a8ad; --faint:#78787e;
+  --accent:#e8e8ea; --select:#26262a;
+  --bad:#f2635c; --warn:#d6a029; --unknown:#7d8f9c; --good:#54b98a;
+  --action:#e8e8ea;
+  --bad-bg:#1d0f0e; --warn-bg:#1c1707; --unknown-bg:#141b21; --good-bg:#0b1d16;
+  --action-bg:#1c1c1f;
 }
+
+:root[data-theme="terminal"]{
+  --ground:#08090b; --panel:#101113; --panel-2:#161719; --panel-3:#1c1e21;
+  --rule:#232529; --rule-strong:#343840;
+  --ink:#e6e9ed; --dim:#9aa1ab; --faint:#727a85;
+  --accent:#4cc9f0; --select:#123240;
+
+  /* ---- semantics -------------------------------------------------------
+     Four answers, four hues, in every lens. UNKNOWN is STEEL: a desaturated
+     blue-grey that reads as *not established* rather than as an action, and
+     that no lens turns into the accent. It was violet, which collided with
+     nothing and looked like decoration; the founder's review called it out
+     and the whole system is free of purple now. */
+  --bad:#ff6b63; --warn:#f0b429; --unknown:#7d8f9c; --good:#3ecf8e; --action:#4cc9f0;
+  --bad-bg:#26100e; --warn-bg:#241c07; --unknown-bg:#12202a; --good-bg:#08251b;
+  --action-bg:#0a2430;
+}
+
+}
+
 :root[data-theme="matrix"]{
-  /* Matrix: a green-phosphor operations console. FIVE luminance steps of one
-     green carry ground, surface, rule, neutral text and accent — and the
-     semantics keep their own hue on top of it, because a warning that turned
-     green would be a theme deciding what a warning is. */
-  --ground:#030b07; --panel:#06140f; --panel-2:#0a1f16; --panel-3:#0e2c1f;
-  --rule:#12402a; --rule-strong:#1d6a45;
-  --ink:#a6f7cd; --dim:#4fc98d; --faint:#369e70;
-  --accent:#2bf58d;
-  --bad:#ff7a6e; --warn:#ffcf4d; --unknown:#7fe3ff; --good:#5cff9f; --action:#2bf58d;
-  --bad-bg:#2a0f0c; --warn-bg:#2a2207; --unknown-bg:#04252e; --good-bg:#053a22;
-  --action-bg:#04301d;
+  /* MATRIX — a green-phosphor console, and unmistakably one. The ground is
+     nearly black with green in it, every structural surface and rule is a
+     further step of the same green, and the neutral type is green.
+     The semantics are NOT: a defect is red, a warning is amber, an
+     unestablished reading is steel. A console where everything is green is a
+     console where nothing means anything. */
+  --ground:#010704; --panel:#03120a; --panel-2:#051c10; --panel-3:#082716;
+  --rule:#0d3d23; --rule-strong:#15653a;
+  --ink:#7dfab4; --dim:#3cc47f; --faint:#2a9862;
+  --accent:#5cff9f; --select:#06341d;
+  --bad:#ff6f62; --warn:#ffc93f; --unknown:#7d8f9c; --good:#1fbd75;
+  --action:#5cff9f;
+  --bad-bg:#26100c; --warn-bg:#231c06; --unknown-bg:#0a2029; --good-bg:#04331d;
+  --action-bg:#04301c;
 }
+
 :root[data-theme="minimal"]{
-  /* Minimal: black, and almost no chrome. The hierarchy is carried by type
-     size, weight and space rather than by boxes — rules are nearly invisible
-     and exist only where two things would otherwise touch. Semantics are
-     desaturated to sit inside a quiet page and stay four separable hues. */
-  --ground:#000; --panel:#0a0a0a; --panel-2:#0f0f0f; --panel-3:#141414;
-  --rule:#1b1b1b; --rule-strong:#2b2b2b;
-  --ink:#f2f2f2; --dim:#a6a6a6; --faint:#767676;
-  --accent:#cfd6dd;
-  --bad:#f2726b; --warn:#d9a441; --unknown:#a891ea; --good:#4cc38a; --action:#cfd6dd;
-  --bad-bg:#1e0f0e; --warn-bg:#1d1809; --unknown-bg:#16122a; --good-bg:#07211a;
-  --action-bg:#14181c;
+  /* MINIMAL — the calm one. Same information, more room: black, almost no
+     rules, hierarchy carried by size and space rather than by boxes. It is
+     deliberately LESS dense than monochrome, which is the difference between
+     the two — one is a precision operations console, the other is a
+     workspace to sit in front of for an hour. */
+  --ground:#000; --panel:#08080a; --panel-2:#0d0d10; --panel-3:#121216;
+  --rule:#191920; --rule-strong:#2a2a33;
+  --ink:#ededf0; --dim:#9d9da6; --faint:#6f6f78;
+  --accent:#c9d1d9; --select:#1b1b21;
+  --bad:#ef6f68; --warn:#cfa03f; --unknown:#7d8f9c; --good:#54bd8d;
+  --action:#c9d1d9;
+  --bad-bg:#1a0e0d; --warn-bg:#191507; --unknown-bg:#121a1f; --good-bg:#091b14;
+  --action-bg:#16161a;
+  --lh:1.65; --pad-y:4px; --fs-micro:9px; --gap:1px;
 }
+
 :root[data-theme="futuristic"]{
-  /* Futuristic: a research console. Deep blue-black, precision hairlines, and
-     one luminous accent used sparingly for interaction — depth from three
-     close surface steps rather than from shadow. No HUD, no glow. */
-  --ground:#050810; --panel:#0a1020; --panel-2:#0e1628; --panel-3:#131f36;
-  --rule:#1b2a44; --rule-strong:#2c4269;
-  --ink:#dbe7ff; --dim:#93a9cf; --faint:#66809f;
-  --accent:#7dd3fc;
-  --bad:#ff6b8b; --warn:#ffc55c; --unknown:#c4a2ff; --good:#3fe8bd; --action:#7dd3fc;
-  --bad-bg:#2a0d18; --warn-bg:#2a2109; --unknown-bg:#1a1533; --good-bg:#042a26;
-  --action-bg:#062033;
+  /* FUTURISTIC — a research console: neutral cool ground, hairline
+     structure, and one ice-blue used only for interaction. Depth from three
+     close surfaces rather than from shadow. No HUD, no glow, no purple. */
+  --ground:#06080a; --panel:#0d1114; --panel-2:#12171c; --panel-3:#181f25;
+  --rule:#1e262d; --rule-strong:#2e3c47;
+  --ink:#dde7ee; --dim:#93a4b1; --faint:#6b7d8b;
+  --accent:#67e8f9; --select:#0d2f38;
+  --bad:#ff6f85; --warn:#ffc75c; --unknown:#7d8f9c; --good:#2fcf90;
+  --action:#67e8f9;
+  --bad-bg:#280f16; --warn-bg:#261e08; --unknown-bg:#0f2029; --good-bg:#052a23;
+  --action-bg:#062731;
 }
-:root[data-theme="monochrome"]{
-  /* Monochrome: the accessibility lens. No hue carries meaning here at all —
-     the four semantic tones are luminance steps, and the glyphs the stylesheet
-     already puts in front of them do the separating. It is the honest test of
-     the rule that no status is encoded by colour alone: if a reading is only
-     findable in another lens, it was.
-     Brightest is worst on purpose: a good state should draw the least eye. */
-  --ground:#000; --panel:#0c0c0c; --panel-2:#161616; --panel-3:#1f1f1f;
-  --rule:#383838; --rule-strong:#585858;
-  --ink:#fff; --dim:#d2d2d2; --faint:#a9a9a9;
-  --accent:#fff;
-  --bad:#ffffff; --warn:#d6d6d6; --unknown:#b2b2b2; --good:#8e8e8e; --action:#e9e9e9;
-  --bad-bg:#2b2b2b; --warn-bg:#232323; --unknown-bg:#1d1d1d; --good-bg:#171717;
-  --action-bg:#202020;
-}
+
 @media(prefers-color-scheme:light){
   :root:not([data-theme]){
     color-scheme:light;
-    --ground:#e9edf2; --panel:#fff; --panel-2:#f4f7fa; --panel-3:#eaeff5;
-    --rule:#d3dae3; --rule-strong:#b4bfcc;
-    --ink:#0d1520; --dim:#54606f; --faint:#7d8998;
-    --accent:#0b6bcb;
-    --bad:#a91b13; --warn:#7a4e00; --unknown:#54329e; --good:#0e6145; --action:#0b4fa8;
-    --bad-bg:#fceceb; --warn-bg:#fbf3e0; --unknown-bg:#efeafb; --good-bg:#e6f5ef;
-    --action-bg:#e8f0fc;
+    --ground:#eceff2; --panel:#fff; --panel-2:#f5f7f9; --panel-3:#eceff3;
+    --rule:#d6dade; --rule-strong:#b6bcc4;
+    --ink:#0e1114; --dim:#525a63; --faint:#79828c;
+    --accent:#1a44a0; --select:#dde6f8;
+    --bad:#a81f16; --warn:#7a4e00; --unknown:#33707d; --good:#0e6145;
+    --action:#1a44a0;
+    --bad-bg:#fcecea; --warn-bg:#fbf3e0; --unknown-bg:#e6f1f7; --good-bg:#e6f5ef;
+    --action-bg:#e7f2f8;
   }
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);
-font:12.5px/1.5 var(--mono);font-variant-numeric:tabular-nums;
+font:var(--fs)/var(--lh) var(--font);font-variant-numeric:tabular-nums;
 -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 b,i,em,u{font-style:normal;font-weight:inherit;text-decoration:none}
 
 /* ============ IDENTITY BAR — what this is, in one line ================ */
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:0 20px;
-padding:6px 16px;background:var(--panel-2);border-bottom:1px solid var(--rule-strong);
+padding:6px var(--pad-x);background:var(--panel-2);border-bottom:1px solid var(--rule-strong);
 font-size:11px;letter-spacing:.01em}
 .bar b{color:var(--faint);text-transform:uppercase;letter-spacing:.12em;font-size:9px;
 margin-right:6px}
@@ -1070,17 +1118,17 @@ margin-right:6px}
 
 /* ============ LEVEL 1 — COMMAND ======================================= */
 header{border-bottom:1px solid var(--rule-strong)}
-h1{margin:0;padding:9px 16px 0;font-size:9px;letter-spacing:.3em;text-transform:uppercase;
+h1{margin:0;padding:9px var(--pad-x) 0;font-size:var(--fs-micro);letter-spacing:.3em;text-transform:uppercase;
 color:var(--faint);font-weight:600}
 
-.cmd{display:grid;grid-template-columns:1fr;gap:14px;padding:10px 16px 14px;
+.cmd{display:grid;grid-template-columns:1fr;gap:14px;padding:10px var(--pad-x) 14px;
 background:var(--panel);border-left:3px solid var(--dim)}
 @media(min-width:1000px){.cmd{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
 gap:22px;align-items:start}}
 .v-bad{border-left-color:var(--bad)} .v-warn{border-left-color:var(--warn)}
 .v-good{border-left-color:var(--good)} .v-unknown{border-left-color:var(--unknown)}
 
-.state{font-size:30px;line-height:1.08;font-weight:700;letter-spacing:-.02em;margin:2px 0 6px;
+.state{font-size:var(--fs-state);line-height:1.08;font-weight:700;letter-spacing:-.02em;margin:2px 0 6px;
 word-break:break-word}
 .v-bad .state{color:var(--bad)} .v-warn .state{color:var(--warn)}
 .v-good .state{color:var(--good)} .v-unknown .state{color:var(--unknown)}
@@ -1095,7 +1143,7 @@ border:1px solid var(--action);border-left-width:3px}
 .sit{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:1px;
 background:var(--rule);border:1px solid var(--rule)}
 .sit>div{background:var(--panel-2);padding:6px 9px;min-width:0}
-.sit i{display:block;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+.sit i{display:block;font-size:var(--fs-micro);letter-spacing:.14em;text-transform:uppercase;
 color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sit em{display:block;font-size:13px;font-weight:700;color:var(--ink);
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1113,7 +1161,7 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* attention: never collapsed away, always counted */
 .attn{background:var(--panel-2);border-top:1px solid var(--rule)}
-.attn>summary{cursor:pointer;padding:7px 16px;font-size:9.5px;letter-spacing:.16em;
+.attn>summary{cursor:pointer;padding:7px var(--pad-x);font-size:9.5px;letter-spacing:.16em;
 text-transform:uppercase;color:var(--dim);list-style:none;user-select:none}
 .attn>summary::-webkit-details-marker{display:none}
 .attn>summary::before{content:"▸ "} .attn[open]>summary::before{content:"▾ "}
@@ -1130,7 +1178,7 @@ font-size:10px;font-weight:700;margin-left:5px;letter-spacing:0;border:1px solid
 .strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(163px,1fr));gap:1px;
 background:var(--rule);border-bottom:1px solid var(--rule-strong)}
 .fact{background:var(--panel);padding:6px 10px 7px;min-width:0}
-.fact i{display:block;font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;
+.fact i{display:block;font-size:var(--fs-micro);letter-spacing:.13em;text-transform:uppercase;
 color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fact em{font-size:12.5px;font-weight:700;color:var(--ink);display:block;
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1147,18 +1195,18 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meter i.good{background:var(--good)} .meter i.unknown{background:var(--unknown)}
 
 /* ============ LEVEL 3 — ZONES AND PANELS ============================== */
-main{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule)}
+main{display:grid;grid-template-columns:1fr;gap:var(--gap);background:var(--rule)}
 @media(min-width:900px){main{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}}
 @media(min-width:1320px){main{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr) minmax(0,1fr)}}
 .zone{background:var(--ground);min-width:0;padding-bottom:14px}
 .zone.wide{grid-column:1/-1}
-.zone>h3{margin:0;padding:7px 16px 6px;font-size:9px;letter-spacing:.22em;
+.zone>h3{margin:0;padding:7px var(--pad-x) 6px;font-size:var(--fs-micro);letter-spacing:.22em;
 text-transform:uppercase;color:var(--faint);font-weight:700;
 background:var(--panel-2);border-bottom:1px solid var(--rule)}
 
 section{background:var(--panel);border-bottom:1px solid var(--rule);overflow:hidden}
 .head{display:flex;justify-content:space-between;gap:9px;align-items:baseline;
-padding:7px 16px;background:var(--panel-3);border-bottom:1px solid var(--rule)}
+padding:7px var(--pad-x);background:var(--panel-3);border-bottom:1px solid var(--rule)}
 .head h2{margin:0;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);
 font-weight:600}
 .chip{font-size:9.5px;padding:1px 7px;background:var(--ground);color:var(--dim);
@@ -1172,12 +1220,12 @@ text-overflow:ellipsis}
 .chip.bad::before{content:"✕ "} .chip.unknown::before{content:"? "}
 
 ul{list-style:none;margin:0;padding:4px 0}
-li{padding:2px 16px;display:flex;gap:9px;flex-wrap:wrap;word-break:break-word;line-height:1.45}
+li{padding:var(--pad-y) var(--pad-x);display:flex;gap:9px;flex-wrap:wrap;word-break:break-word;line-height:1.45}
 li .k{color:var(--faint);flex:0 0 auto}
 li .k::after{content:":"}
 li .v{flex:1 1 15rem;min-width:0;max-width:96ch}
-li.d1{padding-left:30px;box-shadow:inset 1px 0 0 var(--rule);margin-left:16px}
-li.d2{padding-left:44px;box-shadow:inset 1px 0 0 var(--rule);margin-left:16px}
+li.d1{padding-left:calc(var(--pad-x) + 14px);box-shadow:inset 1px 0 0 var(--rule);margin-left:16px}
+li.d2{padding-left:calc(var(--pad-x) + 28px);box-shadow:inset 1px 0 0 var(--rule);margin-left:16px}
 li.good .v{color:var(--good)} li.warn .v{color:var(--warn)}
 li.bad .v{color:var(--bad);font-weight:600}
 li.muted,li.muted .v,li.muted .k{color:var(--faint)}
@@ -1187,15 +1235,17 @@ li.action{background:var(--action-bg)} li.action .v{color:var(--action);font-wei
 li.bad .v::before{content:"✕ "} li.warn .v::before{content:"▲ "}
 li.unknown .v::before{content:"? "}
 
-section>details>summary{cursor:pointer;padding:5px 16px 6px;font-size:10px;color:var(--faint);
+section>details>summary{cursor:pointer;padding:5px var(--pad-x) 6px;font-size:var(--fs-forensic);color:var(--faint);
 letter-spacing:.06em;list-style:none;border-top:1px solid var(--rule);user-select:none}
 section>details>summary::-webkit-details-marker{display:none}
 section>details>summary::before{content:"▸ "}
 section>details[open]>summary::before{content:"▾ "}
 summary:hover{color:var(--accent)}
-summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+summary:focus-visible,a:focus-visible,button:focus-visible,input:focus-visible,
+select:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+::selection{background:var(--select);color:var(--ink)}
 
-footer{padding:14px 16px 30px;color:var(--faint);font-size:11px;max-width:88ch}
+footer{padding:14px var(--pad-x) 30px;color:var(--faint);font-size:var(--fs-forensic);max-width:88ch}
 
 /* ============ NARROW — a deliberate order, not a stack ================ */
 @media(max-width:760px){
@@ -1370,6 +1420,20 @@ def _section(panel: "Panel", *, node_id: str = "", name: str = "") -> str:
         chip += f"<span class='count unknown'>{len(panel.unknown)}</span>"
     tag = (f" data-widget='{_escape(node_id)}' data-widget-name='{_escape(name or panel.title)}'"
            if node_id else "")
+    # SECTIONS AN OPERATOR MAY FOLD AWAY, and the rule that decides which.
+    #
+    # Not *carries no finding* — the identity panel carries one whenever the
+    # pack is unfrozen. The rule is that **everything urgent inside a foldable
+    # section is also in the attention strip**, which cannot be folded, so
+    # folding one changes where a marked line is and never whether it is on the
+    # page.
+    #
+    # The state vocabulary fails that rule and is NOT foldable: `attention`
+    # deliberately skips legend panels, so `SILENT_IDLE: THIS ONE` is marked
+    # BAD there and hoisted nowhere. Found by writing the rule down and
+    # checking the page against it.
+    if panel.group == "identity" and not panel.legend:
+        tag += " data-optional='identity'"
     out = [f"<section{tag}><div class=head><h2>{_escape(panel.title)}</h2>{chip}</div><ul>"]
     out.extend(_row(line) for line in head)
     for item in panel.unknown:

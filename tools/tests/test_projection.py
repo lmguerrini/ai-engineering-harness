@@ -1289,3 +1289,73 @@ def test_adoptability_is_stated_in_both_directions(tmp_path, state, expected, to
     assert said is not None, "the panel does not state adoptability at all"
     assert expected in said.text, said.text
     assert said.tone == tone, f"{state} is toned {said.tone}"
+
+
+def _hue_and_luminance(colour: str):
+    """A crude hue angle and a relative luminance, enough to tell two tones
+    apart the way an eye does rather than the way `!=` does."""
+    value = colour.lstrip("#")
+    r, g, b = (int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    high, low = max(r, g, b), min(r, g, b)
+    span = high - low
+    if span == 0:
+        hue = None                      # grey: no hue to compare
+    elif high == r:
+        hue = (60 * ((g - b) / span)) % 360
+    elif high == g:
+        hue = 60 * ((b - r) / span) + 120
+    else:
+        hue = 60 * ((r - g) / span) + 240
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in (r, g, b)]
+    return hue, 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+@pytest.mark.parametrize("theme", list(projection.LENSES) + ["light"])
+def test_no_two_semantic_tones_merely_differ_in_their_hex(theme):
+    """**Distinct is not the same as distinguishable.**
+
+    The previous check asserted five different strings, and two greens that
+    differ in the last digit are five different strings. `--good` and
+    `--action` in the matrix lens were the same value, which that check did
+    catch; two values a shade apart it would not have. A reader separates
+    tones by hue and by brightness, so that is what is compared.
+    """
+    t = _theme_tokens(theme)
+    tones = {name: _hue_and_luminance(t[name])
+             for name in ("bad", "warn", "unknown", "good", "action")}
+    names = list(tones)
+    for i, first in enumerate(names):
+        for second in names[i + 1:]:
+            (hue_a, lum_a), (hue_b, lum_b) = tones[first], tones[second]
+            brighter = (max(lum_a, lum_b) + 0.05) / (min(lum_a, lum_b) + 0.05)
+            if hue_a is None or hue_b is None:
+                apart = brighter >= 1.6
+            else:
+                turn = abs(hue_a - hue_b)
+                turn = min(turn, 360 - turn)
+                apart = turn >= 22 or brighter >= 1.6
+            assert apart, (
+                f"{theme or 'default'}: --{first} {t[first]} and --{second} {t[second]} are "
+                f"{turn if hue_a is not None and hue_b is not None else 0:.0f}° apart and "
+                f"{brighter:.2f}:1 in brightness — a reader cannot tell them apart")
+
+
+def test_the_visual_system_holds_no_purple():
+    """The founder's review: no purple anywhere in the default visual system.
+
+    UNKNOWN was violet in every lens, which collided with nothing and read as
+    decoration rather than as *this could not be established*. It is steel now.
+    Checked by hue rather than by hunting for particular hex values, because a
+    different purple is still purple.
+    """
+    import re
+
+    for theme in list(projection.LENSES) + ["light"]:
+        for name, colour in _theme_tokens(theme).items():
+            if not re.fullmatch(r"#[0-9a-f]{6}", colour):
+                continue
+            hue, _lum = _hue_and_luminance(colour)
+            if hue is None:
+                continue
+            assert not (255 <= hue <= 330), (
+                f"{theme or 'default'}: --{name} is {colour}, a purple at {hue:.0f}°")

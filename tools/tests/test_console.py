@@ -254,17 +254,23 @@ def test_the_script_keeps_only_presentation_and_only_in_one_place(three):
 
 @pytest.mark.parametrize("lens", [l for l in projection.LENSES if l])
 def test_a_lens_changes_the_stylesheet_and_nothing_else(three, lens):
+    """A lens may move every surface and no reading.
+
+    The lens picker's own pressed state is the one thing that legitimately
+    differs, so it is normalised away rather than patched around: the previous
+    version replaced two particular strings and broke the moment the default
+    lens changed, which is a test coupled to a value it is not about.
+    """
     sites = console.survey(three)
-    plain = console.render_console(sites)
-    themed = console.render_console(sites, theme=lens)
 
     def body(page):
-        return re.sub(r"<style>.*?</style>", "", page, flags=re.S)
+        page = re.sub(r"<style>.*?</style>", "", page, flags=re.S)
+        page = re.sub(r"<html[^>]*>", "<html>", page)
+        page = re.sub(r"(data-lens='[a-z]*' )aria-pressed='(true|false)'", r"\1aria-pressed=''",
+                      page)
+        return page
 
-    assert body(plain).replace('<html lang="en">', "") == \
-        body(themed).replace(f'<html lang="en" data-theme="{lens}">', "").replace(
-            f'aria-pressed=\'true\'>{lens}', f'aria-pressed=\'false\'>{lens}').replace(
-            "aria-pressed='false'>terminal", "aria-pressed='true'>terminal"), \
+    assert body(console.render_console(sites)) == body(console.render_console(sites, theme=lens)), \
         f"the {lens} lens changed something other than the stylesheet"
 
 
@@ -369,3 +375,176 @@ def test_a_record_that_is_a_directory_is_unreadable_and_not_absent(tmp_path):
     page = console.render_console(sites)
     assert "UNKNOWN" in page
     assert sum(sites[0].attention.values()) > 0
+
+
+# --- the surfaces added in the final UX pass -------------------------------------------
+
+
+def test_no_reading_any_projection_produced_is_missing_from_the_console(three):
+    """**The bound on every presentation change.**
+
+    A visual pass may move a reading, group it, fold it or draw it as a figure.
+    It may not lose one. Every line, every label and every unknown that any
+    project's projection produced is compared against the whole page — so a
+    section quietly dropped in a redesign fails here rather than in front of
+    somebody trying to diagnose an incident with it.
+    """
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    missing = []
+    for site in sites:
+        if site.view is None:
+            continue
+        for panel in site.view.panels:
+            if projection._escape(panel.title) not in page:
+                missing.append(f"{site.name}: panel {panel.title!r}")
+            for line in panel.rows():
+                if projection._escape(line.text) not in page:
+                    missing.append(f"{site.name}/{panel.title}: {line.text[:60]!r}")
+                if line.label and projection._escape(line.label) not in page:
+                    missing.append(f"{site.name}/{panel.title}: label {line.label!r}")
+            for item in panel.unknown:
+                if projection._escape(item) not in page:
+                    missing.append(f"{site.name}/{panel.title}: UNKNOWN {item[:60]!r}")
+    assert not missing, "the console dropped: " + "; ".join(missing[:6])
+
+
+def test_only_decoration_and_vocabulary_can_be_folded_away(three):
+    """The founder asked for control over what is on screen, with one floor: a
+    defect, an unestablished reading, a blocker, a stale reading and a human
+    decision have no switch. This reads the declared list and then checks the
+    page agrees with it — a `data-optional` nobody declared is a switch nobody
+    reviewed."""
+    declared = {key for key, _label in console._OPTIONAL_SECTIONS}
+    assert declared == {"identity", "footer", "questions"}, declared
+    page = console.render_console(console.survey(three))
+    used = set(re.findall(r"data-optional='([^']+)'", page))
+    assert used, "nothing on the page is marked optional, so the controls do nothing"
+    assert used <= declared, f"the page marks {used - declared} optional and nothing declared it"
+
+
+def test_folding_a_section_moves_a_marked_line_and_never_removes_one(three):
+    """The real rule, and it is not *a foldable section carries no finding*.
+
+    The identity panel carries one whenever the pack is unfrozen. What makes it
+    safe to fold is that everything urgent inside it is ALSO in the attention
+    strip, which has no switch — so folding changes where a marked line is, not
+    whether it is on the page.
+
+    **The state vocabulary failed this and is no longer foldable.** `attention`
+    deliberately skips legend panels, so `SILENT_IDLE: THIS ONE` is marked BAD
+    there and hoisted nowhere; folding it away would have taken the mark with
+    it. Found by writing the rule down and checking the page against it.
+    """
+    sites = console.survey(three)
+    for site in sites:
+        if site.view is None:
+            continue
+        hoisted = " ".join(line.text for line in site.view.attention)
+        for panel in site.view.panels:
+            if panel.group != "identity" or panel.legend:
+                continue
+            for line in panel.rows():
+                if line.tone in (projection.Tone.BAD, projection.Tone.WARN,
+                                 projection.Tone.UNKNOWN):
+                    assert line.text in hoisted, (
+                        f"{site.name}: folding {panel.title!r} would take {line.text[:60]!r} "
+                        f"off the page")
+            for item in panel.unknown:
+                assert item in hoisted, (
+                    f"{site.name}: folding {panel.title!r} would take an UNKNOWN off the page")
+
+
+def test_the_state_vocabulary_is_not_foldable(three):
+    """The half that would go quiet if somebody added it back to the list."""
+    page = console.render_console(console.survey(three))
+    assert "data-optional='legend'" not in page
+    assert "legend" not in {key for key, _label in console._OPTIONAL_SECTIONS}
+
+
+@pytest.mark.parametrize("token", [t for t, _l, _k in console._COLOUR_TOKENS]
+                                  + [t for t, _l in console._SEMANTIC_TOKENS]
+                                  + [t for t, *_r in console._SIZE_TOKENS])
+def test_every_settable_token_has_a_control_and_a_way_back(three, token):
+    """A token the script can set with no control is a setting nobody can reach;
+    a control with no × is one nobody can undo."""
+    page = console.render_console(console.survey(three))
+    assert f"data-token='{token}'" in page
+    assert f"data-clear='{token}'" in page
+
+
+@pytest.mark.parametrize("token,low,high", [(t, lo, hi) for t, _l, lo, hi, *_r
+                                            in console._SIZE_TOKENS])
+def test_every_size_control_declares_the_range_it_stays_usable_in(three, token, low, high):
+    """The bounds are the point of the settings panel. A range with no floor
+    would let an operator set a state to nothing and then not find it."""
+    page = console.render_console(console.survey(three))
+    control = re.search(rf"<input type=range data-token='{token}'[^>]*>", page)
+    assert control, token
+    assert f"min='{low}'" in control.group(0) and f"max='{high}'" in control.group(0)
+    assert low > 0 or token in ("pad-y", "gap"), f"{token} may be set to nothing"
+
+
+def test_the_help_explains_every_state_the_reading_can_report(three):
+    """A vocabulary a reader meets on the page and cannot look up is a
+    vocabulary that gets guessed at."""
+    import continuation as _c
+
+    explained = {name for name, _text in console._STATES}
+    page = console.render_console(console.survey(three))
+    for state in (_c.State.WAITING_ON_IDENTIFIED_JOB, _c.State.COMPLETED_NOT_CONSUMED,
+                  _c.State.ACTIONABLE_WORK_READY, _c.State.BLOCKED_ON_HUMAN,
+                  _c.State.BLOCKED_ON_CAPACITY, _c.State.RECOVERY_REQUIRED,
+                  _c.State.SILENT_IDLE, _c.State.TERMINAL):
+        assert state in explained, f"the help does not explain {state}"
+    assert {"STALLED", "UNKNOWN"} <= explained
+    for name, text in console._STATES:
+        assert projection._escape(text[:50]) in page, name
+
+
+def test_every_question_the_help_answers_names_a_view_that_exists(three):
+    """A *where to look* that points nowhere is worse than no answer."""
+    views = {name for name, _t, _q in console._VIEWS}
+    for question, _answer, where in console._QUESTIONS:
+        assert where in views, f"{question!r} points at {where!r}, which is not a view"
+
+
+def test_the_quick_find_reaches_only_places_that_exist(three):
+    """It is a navigator, not a command surface: every entry's only verb is
+    *go there*, and everywhere it can go is a view on this page."""
+    page = console.render_console(console.survey(three))
+    finder = page[page.index("<div class=finder"):]
+    finder = finder[:finder.index("</ul>")]
+    targets = set(re.findall(r"data-goto='([^']+)'", finder))
+    views = set(re.findall(r"<section class=view data-view='([^']+)'", page))
+    assert targets, "quick find offers nothing"
+    assert targets <= views, f"quick find points at {targets - views}"
+    assert len(re.findall(r"data-find='", finder)) >= 20
+
+
+def test_the_control_room_and_all_systems_are_recomposed_and_not_concatenated(three):
+    """Both are their own hierarchy. The check that they are not a copy of the
+    other views is that they carry sections those views do not: a situation
+    banner in one, an anchored index in the other."""
+    page = console.render_console(console.survey(three))
+    room = page[page.index("data-view='control'"):page.index("data-view='projects'")]
+    assert "the situation" in room and room.count("<section class=setgroup") >= 6
+    assert "what happens next, per project" in room
+    everything = page[page.index("data-view='all'"):page.index("data-view='control'")]
+    assert len(re.findall(r"data-anchor-target='all-[a-z]+'", everything)) >= 10
+    assert len(re.findall(r"data-anchor='all-[a-z]+'", everything)) >= 10
+
+
+def test_the_overview_offers_three_densities_and_hides_no_project_in_any(three):
+    """Density chooses how much of a row is drawn. It may never choose which
+    projects there are."""
+    page = console.render_console(console.survey(three))
+    for mode in ("minimal", "balanced", "full"):
+        assert f"data-od='{mode}'" in page
+    # THE OVERVIEW'S OWN TABLE. The project matrix is drawn in three views, so
+    # counting rows across the page counts it three times — which is a fact
+    # about the page and not about the density modes.
+    overview = page[page.index("data-view='overview'"):page.index("data-view='all'")]
+    rows = re.findall(r"<tr data-project='\d+'", overview)
+    assert len(rows) == len(console.survey(three)), f"{len(rows)} rows"
+    assert '[data-od="minimal"] tr' not in page, "a density rule reaches a whole row"

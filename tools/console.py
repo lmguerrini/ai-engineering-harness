@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import projection
-from projection import Tone, UNKNOWN
+from projection import Cell, Tone, UNKNOWN
 
 __all__ = ["Site", "survey", "render_console"]
 
@@ -188,6 +188,8 @@ _ESC = projection._escape
 #: that answers no question a reader has is a route, not a view.
 _VIEWS = (
     ("overview", "Overview", "which project should I open?"),
+    ("all", "All systems", "everything worth knowing, on one page"),
+    ("control", "Control room", "one screen to leave up while the work runs"),
     ("projects", "Projects", "what is in the registry, and can it be read?"),
     ("workers", "Workers", "what is running, what finished, what is overdue?"),
     ("audits", "Audits & evidence", "is the evidence current, and about the right tree?"),
@@ -196,13 +198,14 @@ _VIEWS = (
     ("identity", "Identity & release", "what release is each project actually on?"),
     ("custom", "Custom views", "the arrangement this operator wants, kept in this browser"),
     ("settings", "Settings", "lens, accent, density — and what this page is not"),
+    ("help", "Help", "what this is, what the words mean, and where to find things"),
 )
 
 _SHELL_STYLE = """
 /* ---- the application shell ------------------------------------------------ */
 body{min-height:100vh}
 .app{display:grid;grid-template-columns:1fr;min-height:100vh}
-@media(min-width:1000px){.app{grid-template-columns:216px 1fr}}
+@media(min-width:1000px){.app{grid-template-columns:var(--rail) 1fr}}
 .rail{background:var(--panel-2);border-right:1px solid var(--rule-strong);
 display:flex;flex-direction:column;gap:2px;padding:0 0 10px;min-width:0}
 .brand{padding:11px 14px 9px;border-bottom:1px solid var(--rule)}
@@ -309,13 +312,132 @@ font:inherit;font-size:10px;line-height:1;padding:1px 5px;cursor:pointer}
 .canvas{background:var(--ground);padding:10px;display:grid;gap:10px;
 grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));align-content:start}
 @media(max-width:760px){.canvas{grid-template-columns:1fr}}
-.canvas>*{grid-column:span var(--span,1)}
+.canvas>*{grid-column:span var(--span,1);grid-row:span var(--tall,1);
+overflow:auto;min-height:0}
 .canvas .empty{grid-column:1/-1;color:var(--faint);font-size:11.5px;padding:16px;
 border:1px dashed var(--rule-strong);text-align:center}
+
+/* ---- settings: a control surface, not a debug form ------------------------- */
+.settings{display:grid;gap:var(--gap);background:var(--rule);
+grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));align-items:start}
+.setgroup{background:var(--panel);min-width:0}
+.setbody{padding:8px var(--pad-x) 12px}
+label.set{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;
+padding:3px 0;font-size:var(--fs);color:var(--dim);min-width:0}
+label.set>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+label.set.changed>span:first-child{color:var(--ink)}
+label.set.changed>span:first-child::after{content:" •";color:var(--accent)}
+label.set em{font-style:normal;color:var(--faint);font-size:var(--fs-forensic);
+min-width:5ch;text-align:right}
+label.set input[type=color]{inline-size:34px;block-size:20px;padding:0;border:1px solid
+var(--rule-strong);background:none;cursor:pointer}
+label.set input[type=range]{inline-size:100%;accent-color:var(--accent);cursor:pointer;
+grid-column:1/-1}
+label.set:has(input[type=range]){grid-template-columns:1fr auto auto}
+label.set input[type=checkbox]{accent-color:var(--accent);cursor:pointer}
+label.set select,#preset-name,.filters select{background:var(--ground);
+border:1px solid var(--rule-strong);color:var(--ink);font:inherit;font-size:var(--fs);
+padding:2px 6px;max-width:20ch}
+label.set button{background:var(--panel-2);border:1px solid var(--rule);color:var(--faint);
+font:inherit;font-size:11px;line-height:1;padding:2px 6px;cursor:pointer}
+label.set button:hover{color:var(--ink);border-color:var(--accent)}
+.setgroup .note{margin:9px 0 0;color:var(--faint);font-size:var(--fs-forensic);max-width:56ch}
+#refusals li.bad .k{color:var(--bad)}
 [data-density="compact"] li{padding-top:1px;padding-bottom:1px}
 [data-density="compact"] .state{font-size:22px}
-[data-density="expanded"] li{padding-top:5px;padding-bottom:5px;line-height:1.6}
-[data-density="expanded"] .state{font-size:34px}
+[data-density="comfortable"] li{padding-top:5px;padding-bottom:5px;line-height:1.6}
+[data-density="comfortable"] .state{font-size:34px}
+
+
+/* ---- one page for everything, and one screen to leave up ------------------- */
+.stack{display:grid;gap:var(--gap);background:var(--rule)}
+.filters.index{gap:4px}
+.jump{background:none;border:1px solid transparent;color:var(--accent);font:inherit;
+font-size:inherit;padding:0 3px;cursor:pointer;text-align:left}
+.jump:hover{border-color:var(--accent)}
+td .jump{font-weight:700}
+.filters .jump{border-color:var(--rule-strong);color:var(--dim);padding:3px 9px;
+font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.filters .jump:hover{color:var(--ink);border-color:var(--accent)}
+.guide{display:grid;gap:var(--gap);background:var(--rule);
+grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start}
+.guide .setgroup ul{padding:6px 0 10px}
+.guide table td:first-child{white-space:normal;max-width:26ch}
+
+.room{display:grid;gap:var(--gap);background:var(--rule);grid-template-columns:1fr;
+align-items:start}
+.room-wide{grid-column:1/-1}
+.room .sit{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.room table{min-width:0}
+.room .setbody{padding:8px var(--pad-x) 10px}
+/* EACH PANEL IS BOUNDED, so the room stays a room. Unbounded, the attention
+   list — which is honestly long — grew past the screen and pushed every other
+   section below the fold, leaving half an ultrawide display empty and the
+   operating picture off it. Bounded, every section is on one screen and the
+   long ones scroll where they are. Nothing is hidden: a scrollbar is not a
+   disclosure. Found by rendering it at 3840 and looking. */
+@media(min-width:1100px){
+  .room{grid-template-columns:repeat(2,minmax(0,1fr));align-content:start}
+  .room>section{max-height:46vh;overflow:auto;overscroll-behavior:contain}
+  .room>section.room-wide{max-height:none}
+  .room>section>.head{position:sticky;top:0;z-index:1}
+}
+@media(min-width:1800px){.room{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* ULTRAWIDE. At this width a single column would be a very tall page nobody
+   scrolls; four columns put the whole operating picture on one screen without
+   shrinking the type to do it. */
+@media(min-width:2600px){
+  .room{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .room>section{max-height:42vh}
+  .room-wide{grid-column:span 2}
+  main{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .settings,.guide{grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr))}
+  body{--fs:13.5px;--fs-state:34px;--fs-micro:9.5px}
+}
+@media(min-width:3400px){
+  .room{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .room>section{max-height:38vh}
+  /* The banner is short and must never scroll; the project matrix is long and
+     is bounded like everything else, so the row beneath it is on the screen
+     rather than just under it. */
+  .room-wide{grid-column:span 5}
+  .room>section.room-wide:first-child{max-height:none}
+  .room>section:nth-child(2),.room>section:nth-child(3){grid-column:span 2}
+  .room>section.room-wide:not(:first-child){max-height:34vh;overflow:auto}
+}
+/* the chrome folds away, and comes back with the same key */
+body[data-chrome="off"] .rail{display:none}
+body[data-chrome="off"] .app{grid-template-columns:1fr}
+body[data-chrome="off"] .view>h2.vh,body[data-chrome="off"] .view>p.vq{display:none}
+body[data-chrome="off"] footer{display:none}
+
+/* the overview's three densities */
+.onlyfull{display:none}
+[data-od="full"] .onlyfull{display:block}
+[data-od="minimal"] .c-running,[data-od="minimal"] .c-complete,
+[data-od="minimal"] .c-unknown,[data-od="minimal"] .c-stalled,
+[data-od="minimal"] th[data-sort="num"]:not(:last-child){display:none}
+[data-od="minimal"] #attention-widget{display:none}
+
+/* ---- quick find ------------------------------------------------------------- */
+.finder{display:none;position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.62);
+padding:8vh 16px 16px}
+.finder.open{display:block}
+.finderbox{display:flex;gap:1px;max-width:720px;margin:0 auto;background:var(--rule)}
+.finderbox input{flex:1;background:var(--panel);border:0;color:var(--ink);font:inherit;
+font-size:15px;padding:11px 14px}
+.finderbox button{background:var(--panel-2);border:0;color:var(--faint);font:inherit;
+font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:0 12px;cursor:pointer}
+#find-list{max-width:720px;margin:1px auto 0;background:var(--panel);max-height:62vh;
+overflow-y:auto;padding:0}
+#find-list li{padding:6px 14px;gap:10px;cursor:pointer;border-bottom:1px solid var(--rule)}
+#find-list li:hover,#find-list li.on{background:var(--panel-3)}
+#find-list li .k{flex:0 0 6.5ch;color:var(--faint);text-transform:uppercase;
+font-size:var(--fs-micro);letter-spacing:.1em}
+#find-list li .k::after{content:""}
+#find-list li .v{flex:1 1 auto;color:var(--ink)}
+#find-list li .hint{color:var(--faint);font-size:var(--fs-forensic);
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34ch}
 
 /* ---- narrow: the rail becomes a bar ---------------------------------------- */
 @media(max-width:999px){
@@ -381,13 +503,23 @@ def _td(column: str, body: str, tone: str = "", extra: str = "") -> str:
     return f"<td class='c-{slug} {tone}'{extra} data-label='{_ESC(column)}'>{body}</td>"
 
 
+#: Where each project sits in the page, so a name anywhere can open it.
+_INDEX: dict = {}
+
+
 def _project_cell(site: "Site") -> str:
-    """WHO this row is about. The state has its own column; putting it here too
-    made the first column repeat the second and pushed the name into a
-    footnote."""
+    """WHO this row is about, and a way to go there.
+
+    The state has its own column; putting it here too made the first column
+    repeat the second and pushed the name into a footnote. The name is a
+    control now — an operator who has found a project in any table should not
+    have to go back to the sidebar to open it.
+    """
     where = site.root.name or str(site.root)
-    return _td("project", f"<span class=s>{_ESC(site.name)}</span>"
-               + (f"<small>{_ESC(where)}</small>" if where != site.name else ""))
+    at = _INDEX.get(id(site))
+    name = (f"<button class=jump data-goto='project:{at}'>{_ESC(site.name)}</button>"
+            if at is not None else f"<span class=s>{_ESC(site.name)}</span>")
+    return _td("project", name + (f"<small>{_ESC(where)}</small>" if where != site.name else ""))
 
 
 def _overview(sites: list) -> str:
@@ -525,9 +657,12 @@ def _kind_table(sites: list, kind: str, columns, empty: str) -> str:
                       else f"<span class='s unknown'>{UNKNOWN}</span>")),
                     cell.tone if name == "·state" else "")
                 for name, title in columns)
+            at = _INDEX.get(id(site))
+            named = (f"<button class=jump data-goto='project:{at}'>{_ESC(site.name)}</button>"
+                     if at is not None else f"<span class=s>{_ESC(site.name)}</span>")
             rows.append(f"<tr data-tone='{cell.tone}'>"
-                        + _td("project", f"<span class=s>{_ESC(site.name)}</span>"
-                              f"<small>{_ESC(cell.label)}</small>") + values + "</tr>")
+                        + _td("project", named + f"<small>{_ESC(cell.label)}</small>")
+                        + values + "</tr>")
     if not rows:
         return f"<p class=none>{_ESC(empty)}</p>"
     heads = "".join(f"<th data-sort=text>{_ESC(title)}</th>" for _, title in columns)
@@ -596,7 +731,15 @@ def _widgets(sites: list) -> list:
              ("global:capacity", "Capacity", "global"),
              ("global:history", "History & public safety", "global"),
              ("global:identity", "Identity & release", "global"),
-             ("global:projects", "Registry", "global")]
+             ("global:projects", "Registry", "global"),
+             ("global:full-workers", "Every job, in detail", "global"),
+             ("global:full-output", "Durable output, in detail", "global"),
+             ("global:full-audits", "Audits, in detail", "global"),
+             ("global:full-budgets", "Budgets", "global"),
+             ("global:full-capacity", "Capacity, compact", "global"),
+             ("global:full-evidence", "Standing evidence, compact", "global"),
+             ("global:full-history", "History and public safety", "global"),
+             ("global:full-identity", "Identity and release, compact", "global")]
     for index, site in enumerate(sites):
         if site.view is None:
             continue
@@ -652,7 +795,8 @@ def _widget(node_id: str, title: str, body: str, scope: str = "") -> str:
 
 def _view(name: str, title: str, question: str, body: str) -> str:
     return (f"<section class=view data-view='{_ESC(name)}'>"
-            f"<h2 class=vh>{_ESC(title)}</h2><p class=vq>{_ESC(question)}</p>{body}</section>")
+            f"<h2 class=vh>{_ESC(title)}</h2>"
+            f"<p class=vq data-optional='questions'>{_ESC(question)}</p>{body}</section>")
 
 
 _SCRIPT = r"""
@@ -716,13 +860,313 @@ _SCRIPT = r"""
     l.addEventListener('click', function () { lens(l.dataset.lens); });
   });
 
+  // ---- presentation settings, and the bounds on them --------------------------
+  // Everything here writes a CSS variable and a key in this browser. None of it
+  // reaches a record, a project, an evidence file or an authority. The bounds
+  // are the interesting part: an operator may make the interface theirs and may
+  // not make it lie, so a colour that cannot be read on its surface, and a set
+  // of state colours a reader could not tell apart, are refused with a reason.
+  var REFUSALS = [];
+  function hexish(value) { return /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(value || ''); }
+  function rgb(value) {
+    var v = String(value).replace('#', '');
+    if (v.length === 3) { v = v[0]+v[0]+v[1]+v[1]+v[2]+v[2]; }
+    return [0, 2, 4].map(function (i) { return parseInt(v.slice(i, i + 2), 16) / 255; });
+  }
+  function luminance(value) {
+    var c = rgb(value).map(function (x) {
+      return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function contrast(a, b) {
+    var x = luminance(a), y = luminance(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+  function hue(value) {
+    var c = rgb(value), hi = Math.max.apply(null, c), lo = Math.min.apply(null, c);
+    if (hi === lo) { return null; }
+    var s = hi - lo, h;
+    if (hi === c[0]) { h = (60 * ((c[1] - c[2]) / s)) % 360; }
+    else if (hi === c[1]) { h = 60 * ((c[2] - c[0]) / s) + 120; }
+    else { h = 60 * ((c[0] - c[1]) / s) + 240; }
+    return (h + 360) % 360;
+  }
+  function separable(a, b) {
+    var ha = hue(a), hb = hue(b);
+    var bright = contrast(a, b);
+    if (ha === null || hb === null) { return bright >= 1.6; }
+    var turn = Math.abs(ha - hb); turn = Math.min(turn, 360 - turn);
+    return turn >= 22 || bright >= 1.6;
+  }
+  function shown(token) {
+    return getComputedStyle(root).getPropertyValue('--' + token).trim();
+  }
+  function refuse(what, why) {
+    REFUSALS.push([what, why]);
+    var host = document.getElementById('refusals');
+    var count = document.getElementById('refusal-count');
+    if (host) {
+      if (REFUSALS.length === 1) { host.innerHTML = ''; }
+      var li = document.createElement('li');
+      li.className = 'bad';
+      li.innerHTML = '<span class=k></span><span class=v></span>';
+      li.querySelector('.k').textContent = what;
+      li.querySelector('.v').textContent = why;
+      host.appendChild(li);
+    }
+    if (count) { count.textContent = REFUSALS.length + ' refused'; count.className = 'chip bad'; }
+  }
+
+  function settings() {
+    var s = prefs.settings;
+    return (s && typeof s === 'object' && !Array.isArray(s)) ? s : {};
+  }
+  function applyOne(token, value) {
+    if (value === null || value === undefined || value === '') {
+      root.style.removeProperty('--' + token);
+    } else {
+      root.style.setProperty('--' + token, value);
+    }
+  }
+  //: The bound for one proposed value, decided against what the page would
+  //: actually look like with it. Returns '' when it may be applied.
+  function objection(token, value) {
+    var kinds = {};
+    [].forEach.call(document.querySelectorAll('[data-token]'), function (input) {
+      kinds[input.dataset.token] = input.dataset.kind || 'size';
+    });
+    var kind = kinds[token] || 'size';
+    if (kind === 'text' || kind === 'surface' || kind === 'line' || kind === 'semantic') {
+      if (!hexish(value)) { return 'that is not a colour this page can use'; }
+    }
+    if (kind === 'text' || kind === 'semantic') {
+      var surfaces = ['panel', 'panel-2', 'ground'].map(shown).filter(hexish);
+      for (var i = 0; i < surfaces.length; i++) {
+        if (contrast(value, surfaces[i]) < 4.5) {
+          return 'unreadable on the panels it is drawn on (' +
+                 contrast(value, surfaces[i]).toFixed(2) + ':1, and 4.5 is the floor)';
+        }
+      }
+    }
+    if (kind === 'surface') {
+      var texts = ['ink', 'dim'].map(shown).filter(hexish);
+      for (var j = 0; j < texts.length; j++) {
+        if (contrast(value, texts[j]) < 4.5) {
+          return 'the text on it would be unreadable (' +
+                 contrast(value, texts[j]).toFixed(2) + ':1, and 4.5 is the floor)';
+        }
+      }
+    }
+    if (kind === 'semantic') {
+      var others = ['bad', 'warn', 'unknown', 'good', 'action'];
+      for (var k = 0; k < others.length; k++) {
+        if (others[k] === token) { continue; }
+        var other = shown(others[k]);
+        if (hexish(other) && !separable(value, other)) {
+          return 'a reader could not tell it from ' + others[k] +
+                 ', and these four are what they look for';
+        }
+      }
+    }
+    return '';
+  }
+  function applySettings() {
+    var chosen = settings();
+    Object.keys(chosen).forEach(function (token) {
+      var value = chosen[token];
+      var input = document.querySelector('[data-token="' + token + '"]');
+      if (input && input.type === 'range') {
+        var low = Number(input.min), high = Number(input.max);
+        var number = Number(String(value).replace(/[^0-9.\-]/g, ''));
+        if (!isFinite(number)) { refuse(token, 'not a number'); return; }
+        var held = Math.min(high, Math.max(low, number));
+        if (held !== number) {
+          refuse(token, 'outside the range this page stays usable in (' + low + '–' + high +
+                        '), held at ' + held);
+        }
+        applyOne(token, held + (input.dataset.unit || ''));
+        return;
+      }
+      applyOne(token, value);
+    });
+    // Judge colours AFTER the surfaces are in place, so a pair is checked as it
+    // will actually be drawn rather than against the lens it replaced.
+    Object.keys(chosen).forEach(function (token) {
+      var input = document.querySelector('[data-token="' + token + '"]');
+      if (!input || input.type === 'range') { return; }
+      var why = objection(token, chosen[token]);
+      if (why) { refuse(token, why); applyOne(token, null); }
+    });
+  }
+  function setSetting(token, value) {
+    var chosen = settings();
+    if (value === null) { delete chosen[token]; } else { chosen[token] = value; }
+    prefs.settings = chosen;
+    keep(prefs);
+    root.removeAttribute('style');
+    REFUSALS = [];
+    var host = document.getElementById('refusals');
+    var count = document.getElementById('refusal-count');
+    if (host) {
+      host.innerHTML = '<li class=muted><span class=v>A setting this page would not accept '
+        + 'appears here with the reason. Nothing is applied silently and nothing is discarded '
+        + 'silently.</span></li>';
+    }
+    if (count) { count.textContent = 'none'; count.className = 'chip'; }
+    applySettings();
+    syncControls();
+  }
+  function syncControls() {
+    var chosen = settings();
+    [].forEach.call(document.querySelectorAll('[data-token]'), function (input) {
+      var token = input.dataset.token;
+      var live = shown(token);
+      if (input.type === 'color') {
+        input.value = hexish(live) ? (live.length === 4
+          ? '#' + live[1] + live[1] + live[2] + live[2] + live[3] + live[3] : live) : '#000000';
+      } else if (input.type === 'range') {
+        input.value = parseFloat(live) || input.value;
+        var echo = document.querySelector('[data-shows="' + token + '"]');
+        if (echo) { echo.textContent = live || '—'; }
+      } else if (input.tagName === 'SELECT') {
+        input.value = chosen[token] || input.value;
+      }
+      input.closest('.set') && input.closest('.set').classList.toggle('changed', token in chosen);
+    });
+  }
+  [].forEach.call(document.querySelectorAll('[data-token]'), function (input) {
+    var event = input.type === 'range' ? 'input' : 'change';
+    input.addEventListener(event, function () {
+      setSetting(input.dataset.token,
+                 input.value + (input.type === 'range' ? (input.dataset.unit || '') : ''));
+    });
+  });
+  [].forEach.call(document.querySelectorAll('[data-clear]'), function (b) {
+    b.addEventListener('click', function () { setSetting(b.dataset.clear, null); });
+  });
+
+  // ---- optional sections ------------------------------------------------------
+  // Only what the page declared optional. There is no control here for anything
+  // that carries a defect, an unestablished reading, a blocker, a stale reading
+  // or a human decision, and the page is rendered without one.
+  function applyHidden() {
+    var hidden = Array.isArray(prefs.hidden) ? prefs.hidden : [];
+    [].forEach.call(document.querySelectorAll('[data-optional]'), function (node) {
+      node.hidden = hidden.indexOf(node.dataset.optional) >= 0;
+    });
+    [].forEach.call(document.querySelectorAll('[data-show]'), function (box) {
+      box.checked = hidden.indexOf(box.dataset.show) < 0;
+    });
+  }
+  [].forEach.call(document.querySelectorAll('[data-show]'), function (box) {
+    box.addEventListener('change', function () {
+      var hidden = Array.isArray(prefs.hidden) ? prefs.hidden.slice() : [];
+      var at = hidden.indexOf(box.dataset.show);
+      if (box.checked && at >= 0) { hidden.splice(at, 1); }
+      if (!box.checked && at < 0) { hidden.push(box.dataset.show); }
+      prefs.hidden = hidden; keep(prefs); applyHidden();
+    });
+  });
+
+  // ---- presets: a whole look, saved and switched ------------------------------
+  function presets() {
+    var all = prefs.presets;
+    return (all && typeof all === 'object' && !Array.isArray(all)) ? all : {};
+  }
+  function paintPresets() {
+    var host = document.getElementById('preset-list');
+    if (!host) { return; }
+    host.innerHTML = '';
+    var names = Object.keys(presets());
+    if (!names.length) {
+      var none = document.createElement('span');
+      none.className = 't'; none.textContent = 'none saved';
+      host.appendChild(none);
+    }
+    names.forEach(function (name) {
+      var b = document.createElement('button');
+      b.textContent = name;
+      b.setAttribute('aria-pressed', String(name === prefs.preset));
+      b.addEventListener('click', function () {
+        var one = presets()[name] || {};
+        prefs.settings = (one.settings && typeof one.settings === 'object') ? one.settings : {};
+        prefs.lens = typeof one.lens === 'string' ? one.lens : '';
+        prefs.density = typeof one.density === 'string' ? one.density : 'normal';
+        prefs.hidden = Array.isArray(one.hidden) ? one.hidden : [];
+        prefs.preset = name;
+        keep(prefs);
+        root.removeAttribute('style');
+        lens(prefs.lens); density(prefs.density); applySettings(); applyHidden();
+        syncControls(); paintPresets();
+      });
+      host.appendChild(b);
+    });
+    var current = document.getElementById('preset-current');
+    if (current) { current.textContent = prefs.preset || 'unsaved'; }
+  }
+  function savePreset(name) {
+    var all = presets();
+    all[name] = { settings: settings(), lens: prefs.lens || '',
+                  density: prefs.density || 'normal',
+                  hidden: Array.isArray(prefs.hidden) ? prefs.hidden : [] };
+    prefs.presets = all; prefs.preset = name; keep(prefs); paintPresets();
+  }
+  var namer = document.getElementById('preset-name');
+  var saver = document.getElementById('preset-save');
+  if (saver && namer) {
+    saver.addEventListener('click', function () {
+      savePreset((namer.value || '').trim().slice(0, 40) || 'untitled');
+    });
+  }
+  var duper = document.getElementById('preset-dup');
+  if (duper) {
+    duper.addEventListener('click', function () {
+      savePreset(((prefs.preset || 'untitled') + ' copy').slice(0, 40));
+    });
+  }
+  var dropper = document.getElementById('preset-del');
+  if (dropper) {
+    dropper.addEventListener('click', function () {
+      var all = presets(); delete all[prefs.preset];
+      prefs.presets = all; prefs.preset = ''; keep(prefs); paintPresets();
+    });
+  }
+  var lensReset = document.getElementById('lens-reset');
+  if (lensReset) {
+    lensReset.addEventListener('click', function () {
+      prefs.settings = {}; prefs.hidden = []; keep(prefs);
+      root.removeAttribute('style');
+      REFUSALS = []; applySettings(); applyHidden(); syncControls();
+    });
+  }
+  var allReset = document.getElementById('all-reset');
+  if (allReset) {
+    allReset.addEventListener('click', function () {
+      prefs = {}; keep(prefs);
+      root.removeAttribute('style');
+      REFUSALS = [];
+      lens(''); density('normal'); applySettings(); applyHidden(); syncControls();
+      paintPresets(); rebuildLayoutPresets(); paint(); show('overview');
+    });
+  }
+  var lensDefault = document.getElementById('lens-default');
+  if (lensDefault) {
+    lensDefault.addEventListener('change', function () { lens(lensDefault.value); });
+  }
+  var densitySelect = document.getElementById('density-set');
+  if (densitySelect) {
+    densitySelect.addEventListener('change', function () { density(densitySelect.value); });
+  }
+
   // ---- density and accent ---------------------------------------------------
   function density(name) {
-    if (['compact', 'normal', 'expanded'].indexOf(name) < 0) { name = 'normal'; }
+    if (['compact', 'normal', 'comfortable'].indexOf(name) < 0) { name = 'normal'; }
     document.body.setAttribute('data-density', name);
     [].forEach.call(document.querySelectorAll('[data-density-set]'), function (b) {
       b.setAttribute('aria-pressed', String(b.dataset.densitySet === name));
     });
+    var picker = document.getElementById('density-set');
+    if (picker && picker.value !== name) { picker.value = name; }
     set('density', name);
   }
   [].forEach.call(document.querySelectorAll('[data-density-set]'), function (b) {
@@ -800,17 +1244,50 @@ _SCRIPT = r"""
     var all = prefs.layouts;
     return (all && typeof all === 'object' && !Array.isArray(all)) ? all : {};
   }
+  function anyLayout(name) {
+    var saved = layouts();
+    return Object.prototype.hasOwnProperty.call(saved, name) ? saved[name] : BUILT_IN[name];
+  }
   // An arrangement to start from, used only when this browser has never been
   // given one. Choosing to have none is a choice and is kept.
   var OPENING = [{ id: 'global:overview', span: 2 }, { id: 'global:attention', span: 2 }];
+  // Arrangements worth starting from. They are presentation and nothing else:
+  // each is a list of sections already on this page, in an order somebody found
+  // useful. An operator may switch to one, edit it, and save it under their own
+  // name; the built-in stays where it was.
+  var BUILT_IN = {
+    'minimal overview': { cols: 1, widgets: [
+      { id: 'global:overview', span: 1 }] },
+    'daily operations': { cols: 2, widgets: [
+      { id: 'global:overview', span: 2 }, { id: 'global:attention', span: 2 },
+      { id: 'global:workers', span: 1 }, { id: 'global:capacity', span: 1 }] },
+    'full control room': { cols: 3, widgets: [
+      { id: 'global:overview', span: 3 }, { id: 'global:attention', span: 2 },
+      { id: 'global:workers', span: 1 }, { id: 'global:output', span: 1 },
+      { id: 'global:audits', span: 1 }, { id: 'global:capacity', span: 1 },
+      { id: 'global:full-budgets', span: 1 }, { id: 'global:identity', span: 2 }] },
+    'audit and release': { cols: 2, widgets: [
+      { id: 'global:audits', span: 2 }, { id: 'global:evidence', span: 1 },
+      { id: 'global:identity', span: 1 }, { id: 'global:history', span: 2 }] },
+    'worker operations': { cols: 2, widgets: [
+      { id: 'global:workers', span: 2 }, { id: 'global:output', span: 2 },
+      { id: 'global:capacity', span: 1 }, { id: 'global:attention', span: 1 }] },
+    'multi-project health': { cols: 2, widgets: [
+      { id: 'global:overview', span: 2 }, { id: 'global:full-evidence', span: 1 },
+      { id: 'global:full-budgets', span: 1 }, { id: 'global:history', span: 1 },
+      { id: 'global:identity', span: 1 }] }
+  };
   function current() {
     var name = typeof prefs.layout === 'string' ? prefs.layout : 'default';
     var all = layouts();
-    var one = all[name];
+    var one = anyLayout(name);
     var chosen = Array.isArray(one && one.widgets) ? one.widgets
                : (prefs.layouts === undefined ? OPENING : []);
     return { name: name, widgets: chosen,
-             cols: Math.min(4, Math.max(1, Number(one && one.cols) || 2)) };
+             cols: Math.min(6, Math.max(1, Number(one && one.cols) || 2)),
+             scope: typeof (one && one.scope) === 'string' ? one.scope : 'all',
+             density: typeof (one && one.density) === 'string' ? one.density : 'normal',
+             filter: typeof (one && one.filter) === 'string' ? one.filter : '' };
   }
   function paint() {
     if (!canvas) { return; }
@@ -826,6 +1303,21 @@ _SCRIPT = r"""
       var copy = source.cloneNode(true);
       copy.removeAttribute('data-widget');
       copy.style.setProperty('--span', String(span));
+      var tall = Math.min(3, Math.max(1, Number(entry && entry.tall) || 1));
+      copy.style.setProperty('--tall', String(tall));
+      // SCOPE AND FILTER ARE PRESENTATION. They hide rows in this copy; the
+      // rows are still in the widget they were copied from, in its own view.
+      // Nothing is removed from the page, and nothing marked as a defect, an
+      // unestablished reading or a blocker is hidden anywhere.
+      var needle = (view.filter || '').toLowerCase().trim();
+      var only = view.scope && view.scope !== 'all' ? view.scope : null;
+      [].forEach.call(copy.querySelectorAll('tbody tr'), function (tr) {
+        var text = tr.textContent.toLowerCase();
+        var urgent = ['bad', 'warn', 'unknown'].indexOf(tr.dataset.tone) >= 0;
+        var scoped = only === null || tr.dataset.project === only ||
+                     tr.querySelector('[data-goto="project:' + only + '"]') !== null;
+        tr.hidden = !urgent && (!scoped || (needle && text.indexOf(needle) < 0));
+      });
       canvas.appendChild(copy);
       placed += 1;
     });
@@ -841,13 +1333,28 @@ _SCRIPT = r"""
         return (typeof e === 'string' ? e : e && e.id) === box.dataset.pick;
       });
     });
+    canvas.setAttribute('data-density', view.density || 'normal');
     var label = document.getElementById('layout-name');
     if (label) { label.textContent = view.name; }
+    var scopeBox = document.getElementById('layout-scope');
+    if (scopeBox && scopeBox.value !== (view.scope || 'all')) {
+      scopeBox.value = view.scope || 'all';
+    }
+    var densityBox = document.getElementById('layout-density');
+    if (densityBox && densityBox.value !== (view.density || 'normal')) {
+      densityBox.value = view.density || 'normal';
+    }
+    var filterBox = document.getElementById('layout-filter');
+    if (filterBox && filterBox.value !== (view.filter || '')) {
+      filterBox.value = view.filter || '';
+    }
   }
   function edit(change) {
     var view = current();
     var all = layouts();
-    all[view.name] = change({ widgets: view.widgets.slice(), cols: view.cols });
+    all[view.name] = change({ widgets: view.widgets.slice(), cols: view.cols,
+                              scope: view.scope, density: view.density,
+                              filter: view.filter });
     prefs.layouts = all;
     prefs.layout = view.name;
     keep(prefs);
@@ -896,9 +1403,67 @@ _SCRIPT = r"""
       });
     });
   });
+  [].forEach.call(document.querySelectorAll('[data-tall]'), function (b) {
+    b.addEventListener('click', function () {
+      edit(function (v) {
+        v.widgets = v.widgets.map(function (e) {
+          var entry = typeof e === 'string' ? { id: e, span: 1 } : e;
+          if (entry.id === b.dataset.tall) {
+            entry.tall = (Number(entry.tall) || 1) % 3 + 1;
+          }
+          return entry;
+        });
+        return v;
+      });
+    });
+  });
+  var scope = document.getElementById('layout-scope');
+  if (scope) {
+    scope.addEventListener('change', function () {
+      edit(function (v) { v.scope = scope.value; return v; });
+    });
+  }
+  var canvasDensity = document.getElementById('layout-density');
+  if (canvasDensity) {
+    canvasDensity.addEventListener('change', function () {
+      edit(function (v) { v.density = canvasDensity.value; return v; });
+    });
+  }
+  var layoutFilter = document.getElementById('layout-filter');
+  if (layoutFilter) {
+    layoutFilter.addEventListener('input', function () {
+      edit(function (v) { v.filter = layoutFilter.value; return v; });
+    });
+  }
+  var dupLayout = document.getElementById('layout-dup');
+  if (dupLayout) {
+    dupLayout.addEventListener('click', function () {
+      var view = current();
+      var all = layouts();
+      all[(view.name + ' copy').slice(0, 40)] = {
+        cols: view.cols, widgets: view.widgets.slice(), scope: view.scope,
+        density: view.density, filter: view.filter };
+      prefs.layouts = all; prefs.layout = (view.name + ' copy').slice(0, 40);
+      keep(prefs); rebuildLayoutPresets(); paint();
+    });
+  }
+  var renameLayout = document.getElementById('layout-rename');
+  if (renameLayout && naming) {
+    renameLayout.addEventListener('click', function () {
+      var to = (naming.value || '').trim().slice(0, 40);
+      if (!to) { return; }
+      var view = current();
+      var all = layouts();
+      all[to] = { cols: view.cols, widgets: view.widgets.slice(), scope: view.scope,
+                  density: view.density, filter: view.filter };
+      delete all[view.name];
+      prefs.layouts = all; prefs.layout = to; keep(prefs);
+      rebuildLayoutPresets(); paint();
+    });
+  }
   [].forEach.call(document.querySelectorAll('[data-cols]'), function (b) {
     b.addEventListener('click', function () {
-      edit(function (v) { v.cols = Math.min(4, Math.max(1, Number(b.dataset.cols) || 2));
+      edit(function (v) { v.cols = Math.min(6, Math.max(1, Number(b.dataset.cols) || 2));
                           return v; });
     });
   });
@@ -910,21 +1475,20 @@ _SCRIPT = r"""
       var all = layouts();
       all[name] = { widgets: current().widgets.slice(), cols: current().cols };
       prefs.layouts = all; prefs.layout = name; keep(prefs);
-      rebuildPresets(); paint();
+      rebuildLayoutPresets(); paint();
     });
   }
-  function rebuildPresets() {
+  function rebuildLayoutPresets() {
     var host = document.getElementById('layout-presets');
     if (!host) { return; }
     host.innerHTML = '';
-    Object.keys(layouts()).concat(['default']).filter(function (n, i, a) {
-      return a.indexOf(n) === i;
-    }).forEach(function (name) {
+    Object.keys(BUILT_IN).concat(Object.keys(layouts())).concat(['default'])
+      .filter(function (n, i, a) { return a.indexOf(n) === i; }).forEach(function (name) {
       var b = document.createElement('button');
       b.textContent = name;
       b.setAttribute('aria-pressed', String(name === current().name));
       b.addEventListener('click', function () {
-        prefs.layout = name; keep(prefs); rebuildPresets(); paint();
+        prefs.layout = name; keep(prefs); rebuildLayoutPresets(); paint();
       });
       host.appendChild(b);
     });
@@ -935,7 +1499,7 @@ _SCRIPT = r"""
       var all = layouts();
       delete all[current().name];
       prefs.layouts = all; prefs.layout = 'default'; keep(prefs);
-      rebuildPresets(); paint();
+      rebuildLayoutPresets(); paint();
     });
   }
   var resetting = document.getElementById('layout-reset');
@@ -943,15 +1507,131 @@ _SCRIPT = r"""
     resetting.addEventListener('click', function () {
       prefs = {}; keep(prefs);
       lens(''); density('normal'); accent('');
-      rebuildPresets(); paint(); show('overview');
+      rebuildLayoutPresets(); paint(); show('overview');
     });
   }
 
+  // ---- the overview's three densities -----------------------------------------
+  function overviewDensity(name) {
+    if (['minimal', 'balanced', 'full'].indexOf(name) < 0) { name = 'balanced'; }
+    var host = document.querySelector('[data-view="overview"]');
+    if (host) { host.setAttribute('data-od', name); }
+    [].forEach.call(document.querySelectorAll('[data-od]'), function (b) {
+      if (b.tagName === 'BUTTON') {
+        b.setAttribute('aria-pressed', String(b.dataset.od === name));
+      }
+    });
+    set('od', name);
+  }
+  [].forEach.call(document.querySelectorAll('button[data-od]'), function (b) {
+    b.addEventListener('click', function () { overviewDensity(b.dataset.od); });
+  });
+
+  // ---- the control room's chrome, and the screen it wants ----------------------
+  function chrome(on) {
+    document.body.setAttribute('data-chrome', on ? 'on' : 'off');
+    var b = document.getElementById('chrome-toggle');
+    if (b) { b.textContent = on ? 'hide the chrome' : 'bring the chrome back'; }
+    set('chrome', on ? 'on' : 'off');
+  }
+  var chromeButton = document.getElementById('chrome-toggle');
+  if (chromeButton) {
+    chromeButton.addEventListener('click', function () {
+      chrome(document.body.getAttribute('data-chrome') === 'off');
+    });
+  }
+  var full = document.getElementById('fullscreen');
+  if (full) {
+    full.addEventListener('click', function () {
+      // A convenience. Everything works in an ordinary window, and a browser
+      // that refuses this changes nothing about what is on the page.
+      try {
+        if (document.fullscreenElement) { document.exitFullscreen(); }
+        else if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen();
+        }
+      } catch (e) {}
+    });
+  }
+
+  // ---- anchors inside the one-page views ---------------------------------------
+  [].forEach.call(document.querySelectorAll('[data-anchor]'), function (b) {
+    b.addEventListener('click', function () {
+      var target = document.getElementById(b.dataset.anchor);
+      if (target && target.scrollIntoView) { target.scrollIntoView({block: 'start'}); }
+    });
+  });
+
+  // ---- quick find ---------------------------------------------------------------
+  var finder = document.getElementById('finder');
+  var findInput = document.getElementById('find-input');
+  var findList = document.getElementById('find-list');
+  function openFinder(on) {
+    if (!finder) { return; }
+    finder.classList.toggle('open', !!on);
+    if (on && findInput) { findInput.value = ''; filterFind(); findInput.focus(); }
+  }
+  function rows() { return [].slice.call(findList ? findList.children : []); }
+  function filterFind() {
+    var needle = (findInput && findInput.value || '').toLowerCase().trim();
+    var shownCount = 0;
+    rows().forEach(function (li) {
+      var hit = !needle || (li.dataset.find || '').indexOf(needle) >= 0;
+      li.hidden = !hit || shownCount >= 40;
+      li.classList.remove('on');
+      if (hit) { shownCount += 1; }
+    });
+    var first = rows().filter(function (li) { return !li.hidden; })[0];
+    if (first) { first.classList.add('on'); }
+  }
+  function goFirst() {
+    var on = rows().filter(function (li) { return li.classList.contains('on'); })[0]
+          || rows().filter(function (li) { return !li.hidden; })[0];
+    if (on) { show(on.dataset.goto); openFinder(false); }
+  }
+  if (findInput) {
+    findInput.addEventListener('input', filterFind);
+    findInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { goFirst(); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        var open = rows().filter(function (li) { return !li.hidden; });
+        var at = open.findIndex(function (li) { return li.classList.contains('on'); });
+        var to = Math.min(open.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)));
+        open.forEach(function (li) { li.classList.remove('on'); });
+        if (open[to]) { open[to].classList.add('on'); open[to].scrollIntoView({block: 'nearest'}); }
+      }
+    });
+  }
+  rows().forEach(function (li) {
+    li.addEventListener('click', function () { show(li.dataset.goto); openFinder(false); });
+  });
+  var findClose = document.getElementById('find-close');
+  if (findClose) { findClose.addEventListener('click', function () { openFinder(false); }); }
+  document.addEventListener('keydown', function (e) {
+    var typing = /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '');
+    if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !typing)) {
+      e.preventDefault(); openFinder(true);
+    }
+    if (e.key === 'Escape') {
+      if (finder && finder.classList.contains('open')) { openFinder(false); }
+      else if (document.body.getAttribute('data-chrome') === 'off') { chrome(true); }
+    }
+  });
+
   // ---- restore ---------------------------------------------------------------
   lens(typeof prefs.lens === 'string' ? prefs.lens : root.getAttribute('data-theme') || '');
+  var picked = document.getElementById('lens-default');
+  if (picked) { picked.value = prefs.lens || ''; }
   density(typeof prefs.density === 'string' ? prefs.density : 'normal');
   accent(typeof prefs.accent === 'string' ? prefs.accent : '');
-  rebuildPresets();
+  applySettings();
+  applyHidden();
+  syncControls();
+  paintPresets();
+  overviewDensity(typeof prefs.od === 'string' ? prefs.od : 'balanced');
+  chrome(prefs.chrome !== 'off');
+  rebuildLayoutPresets();
   paint();
   var asked = '';
   try { asked = decodeURIComponent(location.hash.slice(1)); } catch (e) { asked = ''; }
@@ -992,7 +1672,7 @@ def _global_bar(sites: list, lens: str) -> str:
     ages = [c.value for s in readable for c in s.figures("freshness")]
     lenses = "".join(
         f"<button data-lens='{l}' aria-pressed='{str(l == lens).lower()}'>"
-        f"{_ESC(l or 'terminal')}</button>" for l in projection.LENSES)
+        f"{_ESC(l or 'monochrome')}</button>" for l in projection.LENSES)
     return ("<div class=gbar>"
             f"<span class=t>projects</span><span>{len(sites)}</span>"
             f"<span class=t>readable</span><span>{len(readable)}</span>"
@@ -1017,7 +1697,8 @@ def _custom_view(sites: list) -> str:
                 f"<span>{_ESC(label)}</span><span class=ord>"
                 f"<button data-move='{_ESC(node_id)}' data-by='-1' title='earlier'>↑</button>"
                 f"<button data-move='{_ESC(node_id)}' data-by='1' title='later'>↓</button>"
-                f"<button data-span='{_ESC(node_id)}' title='width'>⇔</button>"
+                f"<button data-span='{_ESC(node_id)}' title='wider'>⇔</button>"
+                f"<button data-tall='{_ESC(node_id)}' title='taller'>⇕</button>"
                 f"</span></label>")
 
     picks = []
@@ -1030,10 +1711,23 @@ def _custom_view(sites: list) -> str:
                          f"<span class=n> {len(rows)}</span></summary>{inner}</details>")
     return (
         "<div class=filters><span class=t>columns</span>"
-        + "".join(f"<button data-cols='{n}'>{n}</button>" for n in (1, 2, 3, 4))
-        + "<span class=t>preset</span><span id=layout-presets class=lens></span>"
-        + "<input type=text id=layout-new placeholder='name a new view' maxlength=40>"
+        + "".join(f"<button data-cols='{n}'>{n}</button>" for n in (1, 2, 3, 4, 5, 6))
+        + "<span class=t>projects</span><select id=layout-scope>"
+        + "<option value=all>all of them</option>"
+        + "".join(f"<option value='{at}'>{_ESC(site.name)}</option>"
+                  for at, site in enumerate(sites))
+        + "</select>"
+        + "<span class=t>density</span><select id=layout-density>"
+        "<option value=compact>compact</option><option value=normal>normal</option>"
+        "<option value=comfortable>comfortable</option></select>"
+        + "<input type=search id=layout-filter placeholder='filter what the widgets show'>"
+        + "</div>"
+        "<div class=filters><span class=t>layout</span>"
+        + "<span id=layout-presets class=lens></span>"
+        + "<input type=text id=layout-new placeholder='name a new layout' maxlength=40>"
         + "<button id=layout-create>save as</button>"
+        + "<button id=layout-dup>duplicate</button>"
+        + "<button id=layout-rename>rename</button>"
         + "<button id=layout-delete>delete</button>"
         + "<button id=layout-reset>reset everything</button>"
         + "<span class=t>current</span><span id=layout-name>default</span></div>"
@@ -1048,29 +1742,495 @@ def _custom_view(sites: list) -> str:
         "view — nothing is only here.</div></div></div>")
 
 
+# --- what an operator may change, and how far ------------------------------------------
+#
+# Declared once, in one table, and read by both halves: the controls are
+# rendered from it and the script that applies and bounds them reads the same
+# `data-` attributes. A settings panel whose inputs and whose validator were
+# written separately is a settings panel that will one day accept something the
+# validator rejects, or reject something no control can produce.
+
+#: Presentation colours. `text` says whether a token is drawn ON a surface, so
+#: the contrast rule knows which pairs to check.
+_COLOUR_TOKENS = (
+    ("ground", "app background", "surface"),
+    ("panel", "panel", "surface"),
+    ("panel-2", "raised panel", "surface"),
+    ("panel-3", "panel header", "surface"),
+    ("rule", "divider", "line"),
+    ("rule-strong", "strong divider", "line"),
+    ("ink", "primary text", "text"),
+    ("dim", "secondary text", "text"),
+    ("faint", "muted text", "text"),
+    ("accent", "interaction accent", "text"),
+    ("select", "selection highlight", "surface"),
+)
+
+#: Semantic colours. Changeable, and bounded by the rule that they must stay
+#: four answers a reader can tell apart — from each other and from the accent.
+#: The founder asked for control over presentation; a control that could merge
+#: BAD with GOOD would be control over meaning.
+_SEMANTIC_TOKENS = (
+    ("bad", "defect"), ("warn", "warning"), ("unknown", "not established"),
+    ("good", "established good"),
+)
+
+#: Sizes and spaces, each with the range outside which the interface stops
+#: being usable. The bounds are the point: an operator may make the type large
+#: or the page dense, and may not make a state invisible.
+_SIZE_TOKENS = (
+    ("fs", "body and telemetry", 10, 20, 0.5, "px"),
+    ("fs-state", "the primary state", 18, 56, 1, "px"),
+    ("fs-micro", "field labels", 7.5, 13, 0.5, "px"),
+    ("fs-forensic", "forensic detail", 9, 18, 0.5, "px"),
+    ("lh", "line height", 1.2, 2.2, 0.05, ""),
+    ("rail", "sidebar width", 150, 380, 2, "px"),
+    ("pad-x", "horizontal padding", 6, 40, 1, "px"),
+    ("pad-y", "row padding", 0, 10, 0.5, "px"),
+    ("gap", "space between zones", 0, 10, 1, "px"),
+)
+
+_FONT_CHOICES = (
+    ("var(--mono)", "monospace (data)"),
+    ("var(--ui)", "system UI"),
+    ("ui-monospace,SFMono-Regular,Menlo,monospace", "SF Mono / Menlo"),
+    ("'JetBrains Mono',ui-monospace,monospace", "JetBrains Mono, if installed"),
+    ("'IBM Plex Mono',ui-monospace,monospace", "IBM Plex Mono, if installed"),
+    ("Inter,-apple-system,BlinkMacSystemFont,sans-serif", "Inter, if installed"),
+    ("Georgia,'Times New Roman',serif", "serif"),
+)
+
+#: Sections an operator may fold away. **Nothing that carries a defect, an
+#: unestablished reading, a blocker, a stale reading or a human decision is on
+#: this list, and the test that says so reads this tuple** — so adding one is a
+#: decision somebody makes here, in the open, rather than in a stylesheet.
+_OPTIONAL_SECTIONS = (
+    ("identity", "identity and pin panels"),
+    ("footer", "the page's own disclaimer"),
+    ("questions", "the view's question line"),
+)
+
+
 def _settings(sites: list) -> str:
-    swatches = ("", "#38bdf8", "#2bf58d", "#f0b429", "#c4a2ff", "#ff6b8b", "#cfd6dd")
+    """Presentation, under the operator's hand — and nothing else under it."""
+    colours = "".join(
+        f"<label class=set><span>{_ESC(label)}</span>"
+        f"<input type=color data-token='{token}' data-kind='{kind}'>"
+        f"<button data-clear='{token}' title='back to the lens'>×</button></label>"
+        for token, label, kind in _COLOUR_TOKENS)
+    semantic = "".join(
+        f"<label class=set><span>{_ESC(label)}</span>"
+        f"<input type=color data-token='{token}' data-kind='semantic'>"
+        f"<button data-clear='{token}' title='back to the lens'>×</button></label>"
+        for token, label in _SEMANTIC_TOKENS)
+    sizes = "".join(
+        f"<label class=set><span>{_ESC(label)}</span>"
+        f"<input type=range data-token='{token}' min='{low}' max='{high}' step='{step}'"
+        f" data-unit='{unit}'><em data-shows='{token}'>—</em>"
+        f"<button data-clear='{token}' title='back to the lens'>×</button></label>"
+        for token, label, low, high, step, unit in _SIZE_TOKENS)
+    fonts = "".join(
+        f"<option value=\"{_ESC(value)}\">{_ESC(label)}</option>" for value, label in _FONT_CHOICES)
+    optional = "".join(
+        f"<label class=set><input type=checkbox data-show='{key}' checked>"
+        f"<span>{_ESC(label)}</span></label>" for key, label in _OPTIONAL_SECTIONS)
+    lenses = "".join(
+        f"<option value='{l}'>{_ESC(l or 'monochrome (default)')}</option>"
+        for l in projection.LENSES)
     return (
-        "<div class=filters><span class=t>density</span>"
-        + "".join(f"<button data-density-set='{d}'>{d}</button>"
-                  for d in ("compact", "normal", "expanded"))
-        + "<span class=t>accent</span>"
-        + "".join(f"<button data-accent='{a}' style=\"{'color:' + a if a else ''}\">"
-                  f"{_ESC(a or 'lens default')}</button>" for a in swatches)
-        + "</div>"
-        "<ul><li><span class=k>what this page is</span><span class=v>a reading of "
-        "durable state, rebuilt from artifacts every time it is generated. It is not live: it "
-        "is as old as the reading times shown beside each project, and re-reading means running "
-        "the command again.</span></li>"
-        "<li><span class=k>what it stores</span><span class=v>one key in this browser, holding "
-        "the lens, the density, the accent and the custom layouts. Nothing else, nowhere else."
-        "</span></li>"
-        "<li><span class=k>what it cannot do</span><span class=v>authorise, schedule, wake, "
-        "end a worker, change a record, alter evidence, or infer an authority nobody granted. "
+        "<div class=filters><span class=t>preset</span><span id=preset-list class=lens></span>"
+        "<input type=text id=preset-name placeholder='name this look' maxlength=40>"
+        "<button id=preset-save>save as</button><button id=preset-dup>duplicate</button>"
+        "<button id=preset-del>delete</button>"
+        "<button id=lens-reset>back to lens defaults</button>"
+        "<button id=all-reset>reset everything</button>"
+        "<span class=t>saved</span><span id=preset-current>—</span></div>"
+        "<div class=settings>"
+        "<section class=setgroup><div class=head><h2>lens</h2></div><div class=setbody>"
+        f"<label class=set><span>opens in</span><select id=lens-default>{lenses}</select></label>"
+        "<label class=set><span>density</span><select id=density-set>"
+        "<option value=compact>compact</option><option value=normal>normal</option>"
+        "<option value=comfortable>comfortable</option></select></label>"
+        "<p class=note>A lens moves surfaces and never meanings. Whatever you change below "
+        "sits on top of the lens you pick; the × beside a control puts that one back.</p>"
+        "</div></section>"
+        f"<section class=setgroup><div class=head><h2>colour</h2></div>"
+        f"<div class=setbody>{colours}</div></section>"
+        f"<section class=setgroup><div class=head><h2>state colour</h2>"
+        f"<span class=chip>bounded</span></div><div class=setbody>{semantic}"
+        "<p class=note>These four are what a reader looks for. A choice that makes any two of "
+        "them — or any one of them and the accent — hard to tell apart is refused, and the "
+        "control says why. That is not a presentation preference; it is what the colours are "
+        "for.</p></div></section>"
+        f"<section class=setgroup><div class=head><h2>type</h2></div><div class=setbody>"
+        f"<label class=set><span>interface font</span><select data-token='font'>{fonts}"
+        "</select><button data-clear='font'>×</button></label>"
+        f"{sizes}</div></section>"
+        f"<section class=setgroup><div class=head><h2>sections</h2></div><div class=setbody>"
+        f"{optional}"
+        "<p class=note>Only these. A defect, an unestablished reading, a blocker, a stale "
+        "reading and a human decision have no switch, in any view, at any density — they are "
+        "the reasons the page exists.</p></div></section>"
+        "<section class=setgroup><div class=head><h2>what this page is</h2></div><ul>"
+        "<li><span class=k>a reading</span><span class=v>rebuilt from durable artifacts every "
+        "time it is generated. It is exactly as old as the reading times beside each project, "
+        "and re-reading means running the command again.</span></li>"
+        "<li><span class=k>what it keeps</span><span class=v>one key in this browser, holding "
+        "the lens, these settings, the layouts and the presets. Nothing else, nowhere else, and "
+        "never in any project.</span></li>"
+        "<li><span class=k>what it cannot do</span><span class=v>authorise, schedule, wake, end "
+        "a worker, change a record, alter evidence, or infer an authority nobody granted. "
         "Deleting this page breaks no checker.</span></li>"
         "<li class=action><span class=k>where the authority is</span><span class=v>the durable "
         "artifacts each project owns. Where this page and those disagree, THIS is the defect."
-        "</span></li></ul>")
+        "</span></li></ul></section>"
+        "<section class=setgroup><div class=head><h2>refusals</h2>"
+        "<span class=chip id=refusal-count>none</span></div>"
+        "<ul id=refusals><li class=muted><span class=v>A setting this page would not accept "
+        "appears here with the reason. Nothing is applied silently and nothing is discarded "
+        "silently.</span></li></ul></section>"
+        "</div>")
+
+
+_STATES = (
+    ("WAITING_ON_IDENTIFIED_JOB",
+     "A named job is running and its deadline is recorded. The coordinator is right to be "
+     "waiting: there is something outstanding and it can be observed."),
+    ("COMPLETED_NOT_CONSUMED",
+     "A job finished and nobody has taken up its result. The work is done and the answer is "
+     "sitting there — this is the state four of five recorded liveness failures were in."),
+    ("ACTIONABLE_WORK_READY",
+     "Nothing is in the way and nothing is outstanding, so the coordinator decides what is "
+     "next. Not a resting state: a turn to take."),
+    ("BLOCKED_ON_HUMAN",
+     "Every outstanding item waits on a person. Unavailability never implies authorisation, "
+     "so the work waits — and a blocker that only stops SOME items does not put the "
+     "capability here."),
+    ("BLOCKED_ON_CAPACITY",
+     "No window is available for the outstanding work. Distinct from a human block because "
+     "it resolves by itself, at a time the record can name."),
+    ("RECOVERY_REQUIRED",
+     "Something is wrong with the record or with a job — an expired deadline, two waits "
+     "holding one obligation, a field that cannot be read. It names which."),
+    ("SILENT_IDLE",
+     "There is work to do, nothing is outstanding and nothing is in the way. **This is the "
+     "defect this release exists to close**, not a resting state: it is what a coordinator "
+     "that has quietly stopped looks like from outside."),
+    ("TERMINAL",
+     "Nothing is outstanding and nothing is authorised. The capability is finished."),
+    ("STALLED",
+     "A job that is not progressing. **One reading cannot establish it** — a stall needs two "
+     "independently observed flat signals over time — so this page shows `·` in that column "
+     "rather than answering it. `progress.classify` is the module that answers it."),
+    ("UNKNOWN",
+     "Could not be established. Never the same as *nothing*, and never rendered as a resting "
+     "state: an absent record means the coordinator's position cannot be read, which is a "
+     "much worse thing than having nothing to do."),
+)
+
+_QUESTIONS = (
+    ("Where do I see everything at once?",
+     "Control room, or All systems. The first is built to be left up on a wide screen; the "
+     "second is one scrollable page with a section index.", "control"),
+    ("Which project needs me?",
+     "Overview, sorted by the attention column, or filtered with *needs attention*. The "
+     "sidebar carries the same count beside each project.", "overview"),
+    ("Where do I see everything that is running?",
+     "Workers. Every job in every project, with its owner, its subject revision, its deadline "
+     "and when it last did something observable.", "workers"),
+    ("Why does something say UNKNOWN?",
+     "Because a reading could not be established — not because the answer is nothing. The row "
+     "says which reading and why; the project page says it in full.", "overview"),
+    ("How do I know an audit is about the right tree?",
+     "Audits & evidence compares each audit's subject revision against the candidate the "
+     "record declares. An audit of another tree is evidence about another tree, and the row "
+     "says so.", "audits"),
+    ("Where is the next action?",
+     "At the top of every project page, in its own bordered block, and in the overview's own "
+     "column. It is the record's first unblocked item, not a choice this page made.", "overview"),
+    ("Where is a human decision shown?",
+     "In the *needs a person* column, on the project page under the coordinator state, and in "
+     "the attention list. It carries the HITL row it sits on and exactly what it blocks.",
+     "overview"),
+    ("How do I read the forensic detail?",
+     "Every panel keeps its prose behind *N more*. Nothing marked as a defect, a warning or an "
+     "unestablished reading is ever put there — only detail.", "overview"),
+    ("How do I change the look?",
+     "Settings. Lens, then colours, type, spacing and density on top of it. Every control has "
+     "a × that puts that one thing back.", "settings"),
+    ("Will my settings still be here tomorrow?",
+     "Yes, in this browser. They are kept under one key and reach no project, no record and no "
+     "evidence. Clearing your browser data clears them, and the page comes back at its "
+     "defaults.", "settings"),
+    ("How do I build my own screen?",
+     "Custom views. Tick widgets, order them, set their width, choose a column count, save it "
+     "under a name. Presets switch between whole arrangements.", "custom"),
+    ("Why can I not hide this warning?",
+     "Because a defect, an unestablished reading, a blocker, a stale reading and a human "
+     "decision are the reasons this page exists. Only decoration and vocabulary can be folded "
+     "away, and Settings lists exactly which.", "settings"),
+    ("What does IN_PROGRESS mean on the pack?",
+     "The release is not frozen. Only a QUALIFIED_AND_FROZEN release may be pinned by a "
+     "project, so a pack in this state is not adoptable — and every project page says so.",
+     "identity"),
+    ("Why is this reading old?",
+     "Because the page is a reading, taken when it was generated. The age is in the top bar "
+     "and beside every project; over an hour it is marked STALE. Re-reading means running the "
+     "command again.", "overview"),
+    ("What does this page decide?",
+     "Nothing. It reads, arranges and shows. Where it and the durable record disagree, this "
+     "page is the defect.", "settings"),
+)
+
+
+def _finder(sites: list) -> str:
+    """Quick find: a way to reach anything on this page by typing part of it.
+
+    It searches what is already here — views, projects, jobs, audits, pools,
+    settings and help topics — and its only verb is *go there*. A palette that
+    could run something would be a command surface, and this page has no
+    commands.
+    """
+    entries = [{"label": title, "kind": "view", "goto": name, "hint": question}
+               for name, title, question in _VIEWS]
+    for at, site in enumerate(sites):
+        entries.append({"label": site.name, "kind": "project", "goto": f"project:{at}",
+                        "hint": site.state})
+        for cell in site.figures("job"):
+            entries.append({"label": cell.fields.get("job", cell.label), "kind": "job",
+                            "goto": "workers", "hint": f"{site.name} — {cell.value}"})
+        for cell in site.figures("audit"):
+            entries.append({"label": cell.fields.get("audit", cell.label), "kind": "audit",
+                            "goto": "audits", "hint": f"{site.name} — {cell.value}"})
+        for cell in site.figures("capacity"):
+            entries.append({"label": cell.fields.get("pool", cell.label), "kind": "pool",
+                            "goto": "capacity", "hint": f"{site.name} — {cell.value}"})
+    for token, label, _kind in _COLOUR_TOKENS:
+        entries.append({"label": label, "kind": "setting", "goto": "settings", "hint": token})
+    for token, label, *_rest in _SIZE_TOKENS:
+        entries.append({"label": label, "kind": "setting", "goto": "settings", "hint": token})
+    for question, _answer, where in _QUESTIONS:
+        entries.append({"label": question, "kind": "help", "goto": where, "hint": "help"})
+    for name, _text in _STATES:
+        entries.append({"label": name, "kind": "state", "goto": "help", "hint": "what it means"})
+    rows = "".join(
+        f"<li data-find='{_ESC((e['label'] + ' ' + e['kind'] + ' ' + e['hint']).lower())}' "
+        f"data-goto='{_ESC(e['goto'])}'><span class=k>{_ESC(e['kind'])}</span>"
+        f"<span class=v>{_ESC(e['label'])}</span>"
+        f"<span class=hint>{_ESC(e['hint'])}</span></li>" for e in entries)
+    return ("<div class=finder id=finder>"
+            "<div class=finderbox><input type=search id=find-input autocomplete=off "
+            "placeholder='find a project, a job, an audit, a setting, a state…'>"
+            "<button id=find-close>esc</button></div>"
+            f"<ul id=find-list>{rows}</ul></div>")
+
+
+def _all_systems(sites: list) -> str:
+    """Everything worth knowing, recomposed as one surface.
+
+    Not a concatenation of the other views: the sections are ordered the way an
+    operator reads a morning — what needs me, what is running, what is
+    established, what it is spending, what it is — with an index at the top and
+    every section anchored so a link can land on one.
+    """
+    sections = (
+        ("attention", "what needs a person or a look", _attention_across(sites)),
+        ("matrix", "every project", _overview(sites)),
+        ("workers", "every job", _kind_table(
+            sites, "job",
+            [("·state", "state"), ("job", "job"), ("expects", "expects"), ("owner", "owner"),
+             ("subject", "subject"), ("deadline", "deadline"),
+             ("progress", "last observable progress")],
+            "No project declares an outstanding job.")),
+        ("output", "durable output and recovery", _kind_table(
+            sites, "output",
+            [("·state", "recovery state"), ("task", "task"), ("root", "output root"),
+             ("examined", "what is there")],
+            "No project declares an output root.")),
+        ("audits", "audits against the candidate", _kind_table(
+            sites, "audit",
+            [("·state", "subject vs candidate"), ("audit", "audit"),
+             ("subject", "subject revision"), ("candidate", "declared candidate"),
+             ("owner", "executor")],
+            "No project has an audit in flight that states a subject.")),
+        ("evidence", "standing evidence", _kind_table(
+            sites, "evidence", [("·state", "reading")],
+            "No project declares standing evidence.")),
+        ("budgets", "what is being spent", _kind_table(
+            sites, "budget", [("·state", "used")], "No project declares a budget.")),
+        ("capacity", "windows", _kind_table(
+            sites, "capacity",
+            [("·state", "remaining"), ("pool", "pool"), ("provider", "provider"),
+             ("window", "window"), ("resets", "resets"), ("observed", "observed")],
+            "No project declares a capacity observation.")),
+        ("history", "history and public safety", _history(sites)),
+        ("identity", "identity and release", _identity(sites)),
+        ("registry", "the registry itself", _projects(sites)),
+    )
+    index = "".join(
+        f"<button class=jump data-anchor='all-{key}'>{_ESC(title)}</button>"
+        for key, title, _body in sections)
+    body = "".join(
+        f"<section class=setgroup id='all-{key}' data-anchor-target='all-{key}'>"
+        f"<div class=head><h2>{_ESC(title)}</h2></div>{content}</section>"
+        for key, title, content in sections)
+    return f"<div class='filters index'>{index}</div><div class=stack>{body}</div>"
+
+
+def _control_room(sites: list) -> str:
+    """One screen to leave up while the work runs.
+
+    Built for width. On an ultrawide it lays the whole operating picture across
+    the screen at once instead of producing a very tall page nobody scrolls: the
+    situation on the left, every project beside it, and the cross-project
+    tables filling the rest. The chrome folds away and comes back with one key.
+    """
+    readable = [s for s in sites if s.view is not None]
+    needing = [s for s in sites if sum(s.attention.values())]
+    running = sum(1 for s in sites for c in s.figures("job") if c.value == "RUNNING")
+    complete = sum(1 for s in sites for c in s.figures("job") if c.value == "COMPLETE")
+    unknown = sum(1 for s in sites for c in s.figures("job") if c.value == UNKNOWN)
+    blocked = [s for s in readable
+               if (s.one("intervention") or Cell("", "none declared")).value != "none declared"]
+    stale = [c for s in sites for c in s.figures("freshness") if c.note == "STALE"]
+    unreadable = [s for s in sites if s.view is None]
+
+    def cell(label, value, tone=Tone.PLAIN, note=""):
+        return (f"<div class='sit {tone}'><i>{_ESC(label)}</i><em>{_ESC(str(value))}</em>"
+                + (f"<u>{_ESC(note)}</u>" if note else "") + "</div>")
+
+    banner = ("<div class=sit>"
+              + cell("projects", len(sites), note=f"{len(readable)} readable")
+              + cell("needing a look", len(needing),
+                     Tone.WARN if needing else Tone.PLAIN)
+              + cell("running", running)
+              + cell("complete, unconsumed", complete, Tone.WARN if complete else Tone.PLAIN)
+              + cell("jobs nobody can observe", unknown,
+                     Tone.UNKNOWN if unknown else Tone.PLAIN)
+              + cell("waiting on a person", len(blocked),
+                     Tone.WARN if blocked else Tone.PLAIN)
+              + cell("stale readings", len(stale), Tone.WARN if stale else Tone.PLAIN)
+              + cell("unreadable", len(unreadable),
+                     Tone.UNKNOWN if unreadable else Tone.PLAIN)
+              + cell("stalled", "·", note="two readings needed")
+              + "</div>")
+    next_actions = "".join(
+        f"<tr>{_td('project', f'<span class=s>{_ESC(s.name)}</span>')}"
+        f"{_td('state', f'<span class=&#39;s {s.tone}&#39;>{_ESC(s.state)}</span>', s.tone)}"
+        f"{_td('next authorised action', _ESC(s.view.next_action or (chr(8212))))}</tr>"
+        for s in readable)
+    return (
+        "<div class='filters index'>"
+        "<button id=fullscreen>full screen</button>"
+        "<button id=chrome-toggle>hide the chrome</button>"
+        "<span class=t>the sidebar comes back with the same button, or Escape</span></div>"
+        "<div class=room>"
+        f"<section class='setgroup room-wide'><div class=head><h2>the situation</h2>"
+        f"<span class=chip>{len(sites)} projects</span></div>"
+        f"<div class=setbody>{banner}</div></section>"
+        f"<section class=setgroup><div class=head><h2>what happens next, per project</h2></div>"
+        f"<div class=tw><table><tbody>{next_actions}</tbody></table></div></section>"
+        f"<section class=setgroup><div class=head><h2>needs a person or a look</h2></div>"
+        f"{_attention_across(sites)}</section>"
+        f"<section class='setgroup room-wide'><div class=head><h2>every project</h2></div>"
+        f"{_overview(sites)}</section>"
+        f"<section class=setgroup><div class=head><h2>jobs</h2></div>"
+        + _kind_table(sites, "job",
+                      [("·state", "state"), ("job", "job"), ("owner", "owner"),
+                       ("deadline", "deadline")], "No project declares an outstanding job.")
+        + "</section>"
+        f"<section class=setgroup><div class=head><h2>audits</h2></div>"
+        + _kind_table(sites, "audit",
+                      [("·state", "subject vs candidate"), ("audit", "audit"),
+                       ("subject", "subject")], "No audit states a subject.")
+        + "</section>"
+        f"<section class=setgroup><div class=head><h2>capacity</h2></div>"
+        + _kind_table(sites, "capacity",
+                      [("·state", "remaining"), ("pool", "pool"), ("resets", "resets")],
+                      "No project declares a capacity observation.")
+        + "</section>"
+        f"<section class=setgroup><div class=head><h2>durable output</h2></div>"
+        + _kind_table(sites, "output",
+                      [("·state", "recovery state"), ("task", "task"),
+                       ("examined", "what is there")], "No project declares an output root.")
+        + "</section>"
+        f"<section class=setgroup><div class=head><h2>identity and release</h2></div>"
+        + _identity(sites) + "</section>"
+        "</div>")
+
+
+def _help(sites: list) -> str:
+    """What this is, what the words mean, and where things are."""
+    states = "".join(
+        f"<tr>{_td('state', f'<span class=s>{_ESC(name)}</span>')}"
+        f"{_td('what it means', _ESC(text))}</tr>" for name, text in _STATES)
+    questions = "".join(
+        f"<tr>{_td('question', f'<span class=s>{_ESC(q)}</span>')}"
+        f"{_td('answer', _ESC(a))}"
+        f"{_td('where', f'<button class=jump data-goto=&#39;{where}&#39;>open</button>')}</tr>"
+        for q, a, where in _QUESTIONS)
+    return (
+        "<div class=guide>"
+        "<section class=setgroup><div class=head><h2>what this is</h2></div><ul>"
+        "<li><span class=k>Mission Control</span><span class=v>one read-only page over every "
+        "project that has adopted this release. It reads their durable artifacts, arranges "
+        "what it finds, and shows it.</span></li>"
+        "<li><span class=k>what it is not</span><span class=v>an authority. It does not "
+        "authorise, schedule, wake anything, end a worker, change a record or alter evidence. "
+        "It has no opinion of its own: every answer here belongs to the module that owns the "
+        "question, and this page is a change of position, never of judgement.</span></li>"
+        "<li><span class=k>how fresh it is</span><span class=v>exactly as old as the reading "
+        "times it shows. It is generated, not live.</span></li>"
+        "<li><span class=k>switching project</span><span class=v>the sidebar lists every "
+        "project with the worst tone its own panels produced. Any project name anywhere on "
+        "the page opens that project.</span></li>"
+        "<li class=action><span class=k>if this page and the record disagree</span>"
+        "<span class=v>believe the record. This page is the defect.</span></li>"
+        "</ul></section>"
+        "<section class=setgroup><div class=head><h2>the states, and what each one means</h2>"
+        "</div><div class=tw><table><thead><tr><th>state</th><th>what it means</th></tr>"
+        "</thead><tbody>" + states + "</tbody></table></div></section>"
+        "<section class=setgroup><div class=head><h2>the words that are easy to misread</h2>"
+        "</div><ul>"
+        "<li><span class=k>next authorised action</span><span class=v>the record's own first "
+        "outstanding item that nothing is blocking. Not advice, and not a plan — the thing the "
+        "coordinator is expected to be doing.</span></li>"
+        "<li><span class=k>subject vs candidate</span><span class=v>the subject is the tree an "
+        "audit is ABOUT; the candidate is the tree the record is qualifying. When they differ, "
+        "the audit's findings describe something else.</span></li>"
+        "<li><span class=k>durable output</span><span class=v>what a worker actually wrote, "
+        "classified from the artifacts rather than from the worker's own claim: complete, "
+        "partial, nothing useful, or unknown.</span></li>"
+        "<li><span class=k>capacity</span><span class=v>what the project last OBSERVED about "
+        "its windows. A reading about a moment, licensing no claim about the next dispatch — "
+        "and no observation means unknown, never zero.</span></li>"
+        "<li><span class=k>freshness</span><span class=v>how old the record is. Every state "
+        "above it is derived from artifacts and so is current; the OBLIGATIONS are as the "
+        "coordinator last wrote them.</span></li>"
+        "<li><span class=k>the pin</span><span class=v>a project names one release by root, "
+        "version, revision, digest and state. The pin is checked here, not believed.</span>"
+        "</li>"
+        "<li><span class=k>a lens</span><span class=v>a stylesheet. It moves surfaces and "
+        "never a word of the reading, and every lens keeps the four state colours "
+        "separable.</span></li>"
+        "</ul></section>"
+        "<section class=setgroup><div class=head><h2>where do I find…?</h2></div>"
+        "<div class=tw><table><thead><tr><th>question</th><th>answer</th><th>where</th></tr>"
+        "</thead><tbody>" + questions + "</tbody></table></div></section>"
+        "<section class=setgroup><div class=head><h2>what needs a person</h2></div><ul>"
+        "<li><span class=k>freezing a release</span><span class=v>moving a pack to "
+        "QUALIFIED_AND_FROZEN is a human act. This release ships no verb that promotes "
+        "itself.</span></li>"
+        "<li><span class=k>ending a worker</span><span class=v>classifying a stalled worker is "
+        "shipped; ending one is escalated. There is no termination verb in this release."
+        "</span></li>"
+        "<li><span class=k>publishing anything</span><span class=v>a push, a tag, a remote, a "
+        "release — every one is a human decision with a numbered row in the HITL matrix."
+        "</span></li>"
+        "<li><span class=k>accepting a finding</span><span class=v>a material finding may be "
+        "closed, refuted, or accepted by a person. The third is recorded as a human decision."
+        "</span></li></ul></section>"
+        "</div>")
 
 
 def render_console(sites: list, title: str = "Runtime Pack — console", *,
@@ -1082,9 +2242,16 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
     """
     root_attrs = f' data-theme="{_ESC(theme)}"' if theme else ""
     accent_rule = f"<style>:root{{--accent:{_ESC(accent)}}}</style>" if accent else ""
-    body = [_rail(sites), "<div class=surface>", _global_bar(sites, theme)]
+    _INDEX.clear()
+    for at, site in enumerate(sites):
+        _INDEX[id(site)] = at
+    body = [_rail(sites), "<div class=surface>", _global_bar(sites, theme), _finder(sites)]
 
     body.append(_view("overview", "Overview", "which project should I open?",
+                      "<div class=filters><span class=t>show</span>"
+                      "<button data-od='minimal'>minimal</button>"
+                      "<button data-od='balanced' aria-pressed='true'>balanced</button>"
+                      "<button data-od='full'>full</button></div>"
                       "<div class=filters>"
                       "<input type=search id=overview-search placeholder='filter projects'>"
                       "<span class=t>show</span>"
@@ -1096,7 +2263,44 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                                 _overview(sites).replace("<table>", "<table id=overview-table>",
                                                           1), "global")
                       + _widget("global:attention", "Attention across projects",
-                                _attention_across(sites), "global")))
+                                _attention_across(sites), "global").replace(
+                          "<section ", "<section id=attention-widget ", 1)
+                      + "<div class=onlyfull>"
+                      + _widget("global:full-workers", "Every job", _kind_table(
+                          sites, "job",
+                          [("·state", "state"), ("job", "job"), ("owner", "owner"),
+                           ("subject", "subject"), ("deadline", "deadline"),
+                           ("progress", "last observable progress")],
+                          "No project declares an outstanding job."), "global")
+                      + _widget("global:full-output", "Durable output", _kind_table(
+                          sites, "output",
+                          [("·state", "recovery state"), ("task", "task"),
+                           ("examined", "what is there")],
+                          "No project declares an output root."), "global")
+                      + _widget("global:full-audits", "Audits", _kind_table(
+                          sites, "audit",
+                          [("·state", "subject vs candidate"), ("audit", "audit"),
+                           ("subject", "subject"), ("candidate", "candidate")],
+                          "No audit states a subject."), "global")
+                      + _widget("global:full-budgets", "Budgets", _kind_table(
+                          sites, "budget", [("·state", "used")],
+                          "No project declares a budget."), "global")
+                      + _widget("global:full-capacity", "Capacity", _kind_table(
+                          sites, "capacity",
+                          [("·state", "remaining"), ("pool", "pool"), ("resets", "resets")],
+                          "No project declares a capacity observation."), "global")
+                      + _widget("global:full-evidence", "Standing evidence", _kind_table(
+                          sites, "evidence", [("·state", "reading")],
+                          "No project declares standing evidence."), "global")
+                      + _widget("global:full-history", "History and public safety",
+                                _history(sites), "global")
+                      + _widget("global:full-identity", "Identity and release",
+                                _identity(sites), "global")
+                      + "</div>"))
+    body.append(_view("all", "All systems", "everything worth knowing, on one page",
+                      _all_systems(sites)))
+    body.append(_view("control", "Control room",
+                      "one screen to leave up while the work runs", _control_room(sites)))
     body.append(_view("projects", "Projects", "what is in the registry, and can it be read?",
                       _widget("global:projects", "Registry", _projects(sites), "global")))
     body.append(_view(
@@ -1152,6 +2356,9 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                       _custom_view(sites)))
     body.append(_view("settings", "Settings", "lens, accent, density — and what this page is not",
                       _settings(sites)))
+    body.append(_view("help", "Help",
+                      "what this is, what the words mean, and where to find things",
+                      _help(sites)))
 
     #: The widget sources. Every one is a section already rendered above; these
     #: are the global ones, which have no other home, and they are written into
