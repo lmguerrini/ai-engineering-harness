@@ -985,6 +985,7 @@ _SCRIPT = r"""
     if (kind === 'text' || kind === 'surface' || kind === 'line' || kind === 'semantic') {
       if (!hexish(value)) { return 'that is not a colour this page can use'; }
     }
+    var MEANINGS = ['bad', 'warn', 'unknown', 'good'];
     if (kind === 'text' || kind === 'semantic') {
       var surfaces = ['panel', 'panel-2', 'ground'].map(shown).filter(hexish);
       for (var i = 0; i < surfaces.length; i++) {
@@ -995,22 +996,31 @@ _SCRIPT = r"""
       }
     }
     if (kind === 'surface') {
-      var texts = ['ink', 'dim'].map(shown).filter(hexish);
-      for (var j = 0; j < texts.length; j++) {
-        if (contrast(value, texts[j]) < 4.5) {
-          return 'the text on it would be unreadable (' +
-                 contrast(value, texts[j]).toFixed(2) + ':1, and 4.5 is the floor)';
+      // EVERYTHING DRAWN ON IT, not only the two neutral texts. Checking a new
+      // panel against ink and dim alone accepted `#333333`, on which all four
+      // state colours fell below the floor — the page then drew a defect, a
+      // warning and an unestablished reading nobody could read, and said
+      // nothing. Found by an independent reader.
+      var drawn = ['ink', 'dim', 'accent'].concat(MEANINGS).map(shown).filter(hexish);
+      for (var j = 0; j < drawn.length; j++) {
+        if (contrast(value, drawn[j]) < 4.5) {
+          return 'what is drawn on it would be unreadable (' +
+                 contrast(value, drawn[j]).toFixed(2) + ':1 against one of the state colours, ' +
+                 'and 4.5 is the floor)';
         }
       }
     }
-    if (kind === 'semantic') {
-      var others = ['bad', 'warn', 'unknown', 'good', 'action'];
+    if (kind === 'semantic' || token === 'accent') {
+      // THE ACCENT TOO. It was checked for contrast and never for confusion, so
+      // it could be set to exactly the defect red and every selected control
+      // then looked like a defect.
+      var others = MEANINGS.concat(['action', 'accent']);
       for (var k = 0; k < others.length; k++) {
-        if (others[k] === token) { continue; }
+        if (others[k] === token || (token === 'accent' && others[k] === 'action')) { continue; }
         var other = shown(others[k]);
         if (hexish(other) && !separable(value, other)) {
           return 'a reader could not tell it from ' + others[k] +
-                 ', and these four are what they look for';
+                 ', and those are the colours they look for';
         }
       }
     }
@@ -1741,7 +1751,21 @@ def _rail(sites: list) -> str:
 def _global_bar(sites: list, lens: str) -> str:
     readable = [s for s in sites if s.view is not None]
     flagged = sum(sum(s.attention.values()) for s in sites)
-    ages = [c.value for s in readable for c in s.figures("freshness")]
+    #: THE OLDEST, BY NUMBER. Comparing the formatted strings put `9 min ago`
+    #: above `120 min ago`, so the summary of how stale the page is reported the
+    #: freshest record on it. And if any reading cannot be dated, the oldest
+    #: cannot be established — which is a different answer from a large number.
+    ages, undatable = [], False
+    for site in sites:
+        found = site.figures("freshness")
+        if site.view is None or not found:
+            undatable = True
+            continue
+        for cell in found:
+            try:
+                ages.append((int(cell.fields["minutes"]), cell.value))
+            except (KeyError, TypeError, ValueError):
+                undatable = True
     lenses = "".join(
         f"<button data-lens='{l}' aria-pressed='{str(l == lens).lower()}'>"
         f"{_ESC(l or 'monochrome')}</button>" for l in projection.LENSES)
@@ -1749,7 +1773,9 @@ def _global_bar(sites: list, lens: str) -> str:
             f"<span class=t>projects</span><span>{len(sites)}</span>"
             f"<span class=t>readable</span><span>{len(readable)}</span>"
             f"<span class=t>marked</span><span>{flagged}</span>"
-            f"<span class=t>oldest reading</span><span>{_ESC(max(ages) if ages else UNKNOWN)}</span>"
+            f"<span class=t>oldest reading</span>"
+            f"<span class='{'unknown' if undatable else ''}'>"
+            f"{_ESC(UNKNOWN if undatable or not ages else max(ages)[1])}</span>"
             f"<span class=lens>{lenses}</span></div>")
 
 

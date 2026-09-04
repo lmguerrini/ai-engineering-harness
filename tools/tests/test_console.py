@@ -427,32 +427,79 @@ def test_folding_a_section_moves_a_marked_line_and_never_removes_one(three):
     """The real rule, and it is not *a foldable section carries no finding*.
 
     The identity panel carries one whenever the pack is unfrozen. What makes it
-    safe to fold is that everything urgent inside it is ALSO in the attention
-    strip, which has no switch — so folding changes where a marked line is, not
-    whether it is on the page.
+    safe to fold is that everything urgent inside it is ALSO somewhere with no
+    switch — so folding changes where a marked line is, not whether it is on
+    the page.
 
-    **The state vocabulary failed this and is no longer foldable.** `attention`
-    deliberately skips legend panels, so `SILENT_IDLE: THIS ONE` is marked BAD
-    there and hoisted nowhere; folding it away would have taken the mark with
-    it. Found by writing the rule down and checking the page against it.
+    **Checked against the rendered page, with the foldable sections removed.**
+    The first version compared panel lines with `view.attention` and never
+    looked at any HTML: an independent reader deleted three renderers and it
+    still passed while the marked line was absent from the page it describes.
     """
     sites = console.survey(three)
+    page = console.render_console(sites)
+    #: The page as it is with every foldable section folded away.
+    folded = re.sub(r"<section[^>]*data-optional='[^']*'.*?</section>", "", page, flags=re.S)
+    folded = re.sub(r"<p class=vq data-optional='questions'>.*?</p>", "", folded, flags=re.S)
+    folded = re.sub(r"<footer data-optional='footer'>.*?</footer>", "", folded, flags=re.S)
+    missing = []
     for site in sites:
         if site.view is None:
             continue
-        hoisted = " ".join(line.text for line in site.view.attention)
         for panel in site.view.panels:
             if panel.group != "identity" or panel.legend:
                 continue
             for line in panel.rows():
                 if line.tone in (projection.Tone.BAD, projection.Tone.WARN,
                                  projection.Tone.UNKNOWN):
-                    assert line.text in hoisted, (
-                        f"{site.name}: folding {panel.title!r} would take {line.text[:60]!r} "
-                        f"off the page")
+                    if projection._escape(line.text) not in folded:
+                        missing.append(f"{site.name}: {line.text[:60]}")
             for item in panel.unknown:
-                assert item in hoisted, (
-                    f"{site.name}: folding {panel.title!r} would take an UNKNOWN off the page")
+                if projection._escape(item) not in folded:
+                    missing.append(f"{site.name}: UNKNOWN {item[:60]}")
+    assert not missing, ("folding the optional sections took these off the page: "
+                         + "; ".join(missing[:4]))
+
+
+def test_the_folding_check_would_notice_a_renderer_that_stopped_hoisting(three):
+    """The bound, by mutating the page the check reads.
+
+    Take one long marked line from an identity panel, delete every copy of it
+    that is NOT inside a foldable section, fold, and the check must find it
+    gone. Without this, the check above is a loop over a page that happens to
+    be right — which is exactly how it passed while three renderers were
+    missing.
+    """
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    marked = [line.text for s in sites if s.view is not None
+              for panel in s.view.panels
+              if panel.group == "identity" and not panel.legend
+              for line in panel.rows()
+              if line.tone in (projection.Tone.BAD, projection.Tone.WARN,
+                               projection.Tone.UNKNOWN) and len(line.text) > 40]
+    marked += [item for s in sites if s.view is not None
+               for panel in s.view.panels
+               if panel.group == "identity" and not panel.legend
+               for item in panel.unknown if len(item) > 40]
+    assert marked, "the fixture has no long marked identity reading, so this proves nothing"
+    subject = projection._escape(marked[0])
+
+    #: Everything the identity panels themselves hold, kept aside; the rest of
+    #: the page loses the line, which is what *nothing else repeats it* means.
+    keep = re.findall(r"<section[^>]*data-optional='identity'.*?</section>", page, re.S)
+    elsewhere = re.sub(r"<section[^>]*data-optional='identity'.*?</section>", "\x00", page,
+                       flags=re.S).replace(subject, "")
+    crippled = elsewhere
+    for block in keep:
+        crippled = crippled.replace("\x00", block, 1)
+
+    folded = re.sub(r"<section[^>]*data-optional='identity'.*?</section>", "", crippled,
+                    flags=re.S)
+    assert subject in crippled, "the mutation removed the line from its own panel too"
+    assert subject not in folded, (
+        "with nothing outside the identity panels repeating it, folding still appears to keep "
+        "the line — the check cannot fail")
 
 
 def test_the_state_vocabulary_is_not_foldable(three):
@@ -552,7 +599,19 @@ def test_the_overview_offers_three_densities_and_hides_no_project_in_any(three):
     overview = page[page.index("data-view='overview'"):page.index("data-view='all'")]
     rows = re.findall(r"<tr data-project='\d+'", overview)
     assert len(rows) == len(console.survey(three)), f"{len(rows)} rows"
-    assert '[data-od="minimal"] tr' not in page, "a density rule reaches a whole row"
+    # THE STYLESHEET, not one literal selector. An independent reader appended
+    # `[data-od="minimal"] #overview-table tbody tr{display:none}` and the check
+    # passed while minimal mode hid every project. No density rule may reach a
+    # row, a body or a table at all.
+    style = projection._STYLE + console._SHELL_STYLE
+    for rule in re.findall(r"\[data-od=\"[a-z]+\"\][^{]*\{[^}]*\}", style):
+        selector = rule.split("{")[0]
+        assert not re.search(r"\b(tr|tbody|table)\b|#overview-table", selector), (
+            f"a density rule reaches whole rows: {rule.strip()}")
+    for rule in re.findall(r"\[data-ad=\"[a-z]+\"\][^{]*\{[^}]*\}", style):
+        selector = rule.split("{")[0]
+        assert not re.search(r"\b(tr|tbody|table)\b", selector), (
+            f"a depth rule reaches whole rows: {rule.strip()}")
 
 
 # --- the instruments: a picture may transform a value, never derive another one -------
@@ -685,3 +744,66 @@ def test_the_instruments_read_the_same_lens_tokens_as_everything_else():
     flat = style.replace(" ", "")
     for tone in ("bad", "warn", "unknown", "good"):
         assert f".dist.{tone}{{background:var(--{tone})}}" in flat, tone
+
+
+def test_the_oldest_reading_is_the_oldest_and_not_the_longest_string(tmp_path):
+    """**Found by an independent reader.** The global bar compared the formatted
+    ages as text, so `9 min ago` sorted above `120 min ago` and the summary of
+    how stale the page is reported the freshest record on it — a stale reading
+    claiming freshness, in the one line a reader glances at."""
+    from datetime import datetime, timedelta, timezone
+
+    def aged(name, minutes):
+        root = tmp_path / name
+        root.mkdir()
+        when = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+        _continuation.save(_continuation.ContinuationRecord(
+            capability="c", updated_at=when, actionable=("x",)), root / "CONTINUATION.json")
+        return (None, root)
+
+    sites = console.survey([aged("fresh", 9), aged("old", 120)])
+    bar = console._global_bar(sites, "")
+    assert "120 min ago" in bar, bar
+    assert ">9 min ago<" not in bar, "the bar reports the freshest record as the oldest"
+
+
+def test_a_reading_that_cannot_be_dated_makes_the_oldest_unknown(tmp_path):
+    """The other half. With one undatable record the oldest cannot be
+    established, and a large number would be a claim about records this page
+    could not read."""
+    good = tmp_path / "good"
+    good.mkdir()
+    _continuation.save(_continuation.ContinuationRecord(
+        capability="c", updated_at=_continuation.now(), actionable=("x",)),
+        good / "CONTINUATION.json")
+    sites = console.survey([(None, good), (None, tmp_path / "gone")])
+    bar = console._global_bar(sites, "")
+    assert "UNKNOWN" in bar, bar
+
+
+@pytest.mark.parametrize("token,value,why", [
+    ("panel", "#333333", "a surface the state colours cannot be read on"),
+    ("accent", "#f2635c", "an accent that is exactly the defect red"),
+    ("ground", "#808080", "a ground nothing readable sits on"),
+])
+def test_the_settings_bounds_reject_what_a_reader_could_not_use(token, value, why):
+    """**Two of these were accepted.** A surface was checked against the two
+    neutral texts and not against the four state colours drawn on it; the accent
+    was checked for contrast and never for confusion, so it could be set to the
+    defect red and every selected control then looked like a defect.
+
+    The bounds live in the page's script, so this reads the script's own rule
+    rather than a copy of it — a duplicate of the arithmetic here would pass
+    while the page used different arithmetic.
+    """
+    import console as _console
+
+    script = _console._SCRIPT
+    if token == "accent":
+        assert "token === 'accent'" in script, (
+            "the accent is not put through the separability check")
+        assert "MEANINGS.concat(['action', 'accent'])" in script
+    else:
+        assert "['ink', 'dim', 'accent'].concat(MEANINGS)" in script, (
+            "a surface is not checked against the state colours drawn on it")
+    assert "4.5" in script

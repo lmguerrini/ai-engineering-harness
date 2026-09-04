@@ -757,7 +757,13 @@ def _freshness_panel(record, record_path: Path) -> Panel:
     panel.figure("reading age", f"{age / 60:.0f} min ago",
                  Tone.WARN if age > 3600 else Tone.PLAIN,
                  share=(min(age, 3600), 3600), sense="age",
-                 note="STALE" if age > 3600 else "", band="situation", kind="freshness")
+                 note="STALE" if age > 3600 else "", band="situation", kind="freshness",
+                 # THE AGE AS A NUMBER. A caller comparing `9 min ago` with
+                 # `120 min ago` as text gets the fresher one, which is how the
+                 # console's `oldest reading` reported a nine-minute record
+                 # while a two-hour one sat beside it marked STALE. Found by an
+                 # independent reader.
+                 minutes=f"{age / 60:.0f}")
     panel.lines.append(f"read from {record_path}")
     if age > 3600:
         panel.lines.append(
