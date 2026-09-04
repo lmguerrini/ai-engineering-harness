@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import activity
 import console
 import continuation as _continuation
 import projection
@@ -898,3 +899,114 @@ def test_the_page_wires_the_rule_to_the_control_and_not_only_to_a_comment():
         "a surface is not checked against the state colours drawn on it")
     assert "kind === 'semantic' || token === 'accent'" in script, (
         "the accent is not put through the separability check")
+
+
+# --- the two histories, on the page ------------------------------------------------------
+
+
+@pytest.fixture
+def with_repository(tmp_path, three):
+    """A registry where one project's contract points at a real repository."""
+    import subprocess
+
+    repo = tmp_path / "code"
+    repo.mkdir()
+    for command in (("init", "--quiet", "--initial-branch", "main"),
+                    ("config", "user.name", "T"), ("config", "user.email", "t@e.invalid"),
+                    ("config", "commit.gpgsign", "false")):
+        subprocess.run(["git", "-C", str(repo), *command], check=True, capture_output=True)
+    for n in range(4):
+        (repo / f"f{n}.txt").write_text(str(n))
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", f"c{n}"], check=True,
+                       capture_output=True)
+    root = three[0][1]
+    (root / "PROJECT.yaml").write_text(
+        'project:\n  name: "a"\n  publication_intent: "internal"\n'
+        f'  repo_path: "{repo}"\n'
+        'pack:\n  root_path: "%s"\n  version_adopted: "2.3.0"\n'
+        '  state_adopted: "IN_PROGRESS"\n  adopted_at: "2026-09-04"\n'
+        '  adoption_boundary: "at a capability boundary"\nadapters: []\n'
+        % Path(__file__).resolve().parents[2], encoding="utf-8")
+    return three, repo
+
+
+def test_the_calendar_and_the_summary_state_the_same_total(with_repository):
+    """**Source agreement.** The cells carry per-day counts and the summary
+    carries a total; a page where they disagree is a page with two answers."""
+    three, _repo = with_repository
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    block = page[page.index("data-view='history'"):]
+    block = block[:block.index("data-view=", 40)]
+    per_day = sum(int(n) for n in re.findall(r"data-local='(\d+)'", block)) // 3  # three modes
+    stated = re.search(r"<i>local commits</i><em>(\d+)</em>", block)
+    assert stated, "the summary states no local total"
+    assert per_day == int(stated.group(1)), (
+        f"{per_day} in the cells and {stated.group(1)} in the summary")
+
+
+def test_every_calendar_cell_carries_its_exact_counts(with_repository):
+    """A picture is never the only place a number is: the counts are in the
+    cell's own attributes and in the label a screen reader gets."""
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three))
+    cells = re.findall(r"<i class='cell[^>]*data-day='[^']+'[^>]*>", page)
+    assert cells, "the calendar has no cells"
+    for cell in cells[:40]:
+        assert "data-local='" in cell and "data-remote='" in cell and "data-only='" in cell
+        assert "aria-label='" in cell and "local" in cell
+
+
+def test_the_history_view_states_the_zone_its_days_are_counted_in(with_repository):
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three))
+    assert f"days are {activity.TIMEZONE}" in page
+    assert "belongs to its UTC day" in page
+
+
+def test_a_repository_the_console_cannot_read_says_which_of_the_two_it_is(three):
+    """*Not a repository* and *a repository that would not open* are different
+    answers, and `git invocation failed` was neither."""
+    page = console.render_console(console.survey(three))
+    assert "is not a git repository" in page
+    assert "git invocation failed" not in page
+
+
+def test_the_control_room_carries_recent_activity_and_not_a_year(with_repository):
+    """A year of calendar in a screen somebody leaves up is a year of calendar
+    nobody reads."""
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three))
+    room = page[page.index("data-view='control'"):page.index("data-view='projects'")]
+    assert "global:viz-recent-activity" in room
+    assert "data-day=" not in room, "the control room carries a dated calendar"
+    assert "commits in 10 weeks" in room
+
+
+def test_the_history_never_adds_local_and_remote_together(with_repository):
+    """The relationship, on the page. A summary that added them would show every
+    push as two pieces of work."""
+    three, _repo = with_repository
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    block = page[page.index("data-view='history'"):]
+    block = block[:block.index("data-view=", 40)]
+    local = int(re.search(r"<i>local commits</i><em>(\d+)</em>", block).group(1))
+    only = int(re.search(r"<i>only here</i><em>(\d+)</em>", block).group(1))
+    remote = re.search(r"<i>represented by the remote</i><em>([^<]+)</em>", block).group(1)
+    assert only <= local
+    if remote.isdigit():
+        assert int(remote) + only == local, f"{remote} + {only} != {local}"
+    assert "a subset of the local total, never added to it" in block
+
+
+def test_no_word_in_the_console_scores_the_work(with_repository):
+    """A hard one. Activity is evidence that commits happened; a console that
+    called it productivity would be making a claim nobody can support."""
+    three, _repo = with_repository
+    page = console.render_console(console.survey(three)).lower()
+    for word in ("productivity", "velocity", "performance score", "quality score",
+                 "developer score", "good day", "streak"):
+        assert word not in page, f"the console says {word!r}"
+    assert "not pace, not quality" in page

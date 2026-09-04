@@ -1297,6 +1297,8 @@ def _hue_and_luminance(colour: str):
     """A crude hue angle and a relative luminance, enough to tell two tones
     apart the way an eye does rather than the way `!=` does."""
     value = colour.lstrip("#")
+    if len(value) == 3:                         # `#000` is three digits, not six
+        value = "".join(c * 2 for c in value)
     r, g, b = (int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
     high, low = max(r, g, b), min(r, g, b)
     span = high - low
@@ -1539,3 +1541,58 @@ def test_each_lens_actually_changes_what_would_be_drawn():
         moved = [name for name in _THEME_TOKENS if tokens[name] != default[name]]
         assert len(moved) >= 6, (
             f"the {lens} lens moves only {moved}, which is not a lens")
+
+
+#: Tokens that fill AREA rather than carry information. A lens may make them any
+#: hue it likes and may not make them bright: a console whose tables are a
+#: mid-tone field is a console painted that colour, whatever its hue is.
+_SURFACE_TOKENS = ("ground", "panel", "panel-2", "panel-3")
+
+
+@pytest.mark.parametrize("lens", [l for l in projection.LENSES if l] + [""])
+def test_the_large_surfaces_of_a_dark_lens_stay_dark(lens):
+    """**The founder's review of the corrected Matrix: the hue was right and the
+    surfaces were far too bright.**
+
+    Checking that a lens is green says nothing about how much of the screen is
+    green. These are the tokens that fill area — the ground and the three panel
+    steps — and every dark lens holds them near the ground in luminance, so the
+    darkness dominates the area and the phosphor dominates the information.
+    """
+    tokens = _theme_tokens(lens)
+    for name in _SURFACE_TOKENS:
+        _hue, brightness = _hue_and_luminance(tokens[name])
+        assert brightness <= 0.045, (
+            f"{lens or 'monochrome'} --{name} is {tokens[name]} at luminance "
+            f"{brightness:.4f} — a surface that bright is a filled field, not a ground")
+    _hue, ground = _hue_and_luminance(tokens["ground"])
+    assert ground <= 0.010, (
+        f"{lens or 'monochrome'} --ground is {tokens['ground']} at {ground:.4f}")
+    #: And they still have to be told apart, or the page is one flat slab.
+    steps = [_hue_and_luminance(tokens[name])[1] for name in _SURFACE_TOKENS]
+    assert steps == sorted(steps), f"{lens or 'monochrome'}: the surfaces do not step up"
+    assert steps[-1] > steps[0], f"{lens or 'monochrome'}: ground and panels are identical"
+
+
+def test_the_matrix_surfaces_are_far_darker_than_its_information():
+    """The division of labour, as a ratio. Type and accent carry the light; the
+    surfaces do not compete with them."""
+    tokens = _theme_tokens("matrix")
+    _hue, brightest_surface = max(
+        (_hue_and_luminance(tokens[name]) for name in _SURFACE_TOKENS), key=lambda p: p[1])
+    for carrier in ("ink", "accent"):
+        _hue, light = _hue_and_luminance(tokens[carrier])
+        assert light / max(brightest_surface, 1e-6) > 40, (
+            f"--{carrier} is only {light / max(brightest_surface, 1e-6):.0f}× the brightest "
+            f"surface; the page reads as a green field with brighter green on it")
+
+
+def test_a_medium_green_panel_would_be_caught():
+    """The bound. Every assertion above passes over a palette that is already
+    dark, so the shapes it forbids are planted."""
+    for token, value in (("panel", "#1f5a28"), ("panel-3", "#2b7a34"), ("ground", "#0d2f14")):
+        _hue, brightness = _hue_and_luminance(value)
+        assert brightness > 0.045 or token == "ground", (
+            f"{value} is not bright enough to be a useful counterexample")
+        if token == "ground":
+            assert brightness > 0.010, value

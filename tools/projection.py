@@ -1122,20 +1122,27 @@ _STYLE = """
 }
 
 :root[data-theme="matrix"]{
-  /* MATRIX — a green-phosphor console, and unmistakably one. The ground is
-     nearly black with green in it, every structural surface and rule is a
-     further step of the same green, and the neutral type is green.
-     The semantics are NOT: a defect is red, a warning is amber, an
-     unestablished reading is steel. A console where everything is green is a
-     console where nothing means anything. */
-  --ground:#030702; --panel:#071206; --panel-2:#0b1c09; --panel-3:#10270d;
-  --rule:#1c4a16; --rule-strong:#2b7524;
+  /* MATRIX — an old phosphor terminal in a dark room, not a dashboard painted
+     green. The founder's review of the first corrected screenshot: the hue was
+     right and the SURFACES were far too bright, so large areas read as green
+     fields rather than as darkness with green writing on it.
+     The rule is a division of labour:
+
+         darkness dominates the AREA
+         phosphor green dominates the INFORMATION
+
+     so every surface token sits near the ground in luminance and only the type,
+     the accent and the semantics carry light. A luminance ceiling is asserted
+     against these, in Python and again from the browser's own computed values,
+     because a hue check says nothing about how bright a filled table is. */
+  --ground:#010402; --panel:#040c06; --panel-2:#07130a; --panel-3:#0a1a0d;
+  --rule:#12331a; --rule-strong:#1d5229;
   --ink:#8df56a; --dim:#4fbf3a; --faint:#38912a;
-  --accent:#62f542; --select:#0d3a09;
+  --accent:#62f542; --select:#0a2a07;
   --bad:#ff6a5e; --warn:#ffc33f; --unknown:#7d8f9c; --good:#23a52a;
   --action:#62f542;
-  --bad-bg:#25100c; --warn-bg:#221b06; --unknown-bg:#0a2029; --good-bg:#0a2c08;
-  --action-bg:#0c3208;
+  --bad-bg:#1d0c09; --warn-bg:#1b1505; --unknown-bg:#081a21; --good-bg:#072105;
+  --action-bg:#0a2606;
 }
 
 :root[data-theme="minimal"]{

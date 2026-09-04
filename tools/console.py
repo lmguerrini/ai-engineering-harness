@@ -29,10 +29,12 @@ business and this only reports it.
 
 from __future__ import annotations
 
+import datetime
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import activity
 import projection
 from projection import Cell, Tone, UNKNOWN
 
@@ -457,6 +459,68 @@ body[data-chrome="off"] footer{display:none}
 [data-od="minimal"] th[data-sort="num"]:not(:last-child){display:none}
 [data-od="minimal"] #attention-widget{display:none}
 
+/* ---- the activity calendar --------------------------------------------------
+   Five luminance steps, and the hue says which population a day belongs to:
+   neutral for what is only here, green for what the remote represents, a split
+   cell where a day holds both, and the UNKNOWN tone where the remote has never
+   been observed. A cell is never blank for an unanswered question — blank means
+   an established zero and nothing else. */
+.calendar{padding:8px var(--pad-x) 4px;overflow-x:auto}
+.calendar .months{display:grid;grid-auto-flow:column;grid-auto-columns:13px;
+font-size:var(--fs-micro);color:var(--faint);letter-spacing:.1em;text-transform:uppercase;
+margin-bottom:3px;min-width:min-content}
+.calendar .grid{display:grid;grid-template-rows:repeat(7,11px);grid-auto-flow:column;
+grid-auto-columns:11px;gap:2px;min-width:min-content}
+
+/* A cell's FILL says how much happened; its OUTLINE says whether the remote
+   side of that day is established. They are two different facts and the fill
+   used to be replaced by the uncertainty — so a day with real work on it and an
+   unfetched remote was painted as though nothing were known about it. */
+.cell{display:block;width:11px;height:11px;background:var(--panel-2);
+border:1px solid var(--rule)}
+.cell:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.cell.k-local.s1{background:color-mix(in srgb,var(--ink) 34%,var(--panel-2));border-color:transparent}
+.cell.k-local.s2{background:color-mix(in srgb,var(--ink) 56%,var(--panel-2));border-color:transparent}
+.cell.k-local.s3{background:color-mix(in srgb,var(--ink) 78%,var(--panel-2));border-color:transparent}
+.cell.k-local.s4{background:var(--ink);border-color:transparent}
+.cell.k-remote.s1{background:color-mix(in srgb,var(--good) 38%,var(--panel-2));
+border-color:transparent}
+.cell.k-remote.s2{background:color-mix(in srgb,var(--good) 60%,var(--panel-2));
+border-color:transparent}
+.cell.k-remote.s3{background:color-mix(in srgb,var(--good) 80%,var(--panel-2));
+border-color:transparent}
+.cell.k-remote.s4{background:var(--good);border-color:transparent}
+.cell.k-split.s1,.cell.k-split.s2,.cell.k-split.s3,.cell.k-split.s4{border-color:transparent;
+background:linear-gradient(135deg,var(--good) 0 50%,var(--ink) 50% 100%)}
+/* A day with NOTHING local and a remote nobody has observed: the question is
+   all there is, so the hatch is the whole cell. */
+/* Scoped to a CELL. Unscoped, the class painted the legend's own label with the
+   hatch it was there to explain. */
+.cell.k-unknown{background:repeating-linear-gradient(45deg,var(--unknown-bg) 0 3px,
+var(--unknown) 3px 4px);border-color:transparent}
+/* A day that DOES have local activity and an unresolved remote keeps its fill
+   and wears a ring. */
+.cell.q{box-shadow:inset 0 0 0 1.5px var(--unknown)}
+.calendar-legend{padding:2px var(--pad-x) 10px;align-items:center;gap:4px 16px}
+.calendar-legend>span{gap:6px}
+.calendar-legend .cell{width:11px;height:11px;flex:0 0 auto}
+.calendar-legend .t{margin-left:6px}
+.calendar-legend .k-local i{background:var(--ink)}
+.calendar-legend .k-remote i{background:var(--good)}
+.calendar-legend .k-split i{background:linear-gradient(135deg,var(--good) 0 50%,
+var(--ink) 50% 100%)}
+.calendar-legend .k-unknown i{background:repeating-linear-gradient(45deg,var(--unknown-bg)
+0 3px,var(--unknown) 3px 4px)}
+.calendar.recent{padding:2px 0 6px;overflow-x:auto}
+.calendar.recent .grid{grid-template-rows:repeat(7,9px);grid-auto-columns:9px;gap:2px}
+.calendar.recent .cell{width:9px;height:9px}
+.actmode{display:none}
+.actmode.on{display:block}
+.inspector{padding:8px var(--pad-x) 12px;border-top:1px solid var(--rule);
+background:var(--panel-2)}
+.inspector h4{margin:0 0 5px;font-size:var(--fs-micro);letter-spacing:.16em;
+text-transform:uppercase;color:var(--faint)}
+
 /* ---- quick find ------------------------------------------------------------- */
 .finder{display:none;position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.62);
 padding:8vh 16px 16px}
@@ -708,27 +772,312 @@ def _kind_table(sites: list, kind: str, columns, empty: str) -> str:
             "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>")
 
 
+# --- history: when code changed, and what the governed run was doing ------------------
+#
+# One experience, not two charts. The repository half answers *when was code
+# actually changed and how much of it is still only here*; the pack half answers
+# *what happened while it was*. They share a calendar so the two can be read
+# together, and nothing on this page claims one caused the other.
+#
+# Every cell is rendered from `activity.py`, which reads the local object graph
+# and durable artifacts and never touches the network. Three rules:
+#
+#   * **Local contains remote.** A pushed commit is one commit two refs reach.
+#   * **An unobserved remote is a question**, drawn as such and never as zero.
+#   * **A count is not a score.** More commits is not better and nothing here
+#     says otherwise.
+
+
+def _activity_scale(count: int, most: int) -> int:
+    """Which of five luminance steps a day falls in. Zero is its own step."""
+    if count <= 0 or most <= 0:
+        return 0
+    return min(4, 1 + int(3.99 * (count - 1) / max(1, most)))
+
+
+def _calendar(days, *, mode: str, most: int, label: str) -> str:
+    """A year of days as a contribution calendar.
+
+    A cell carries its exact counts in its label, so the numbers are available
+    to a reader who cannot see the shading and to one who has no pointer.
+    """
+    if not days:
+        return ("<p class=none>No commit in this period. That is a reading of this "
+                "repository, not a claim about anybody's week.</p>")
+    by_date = {day.date: day for day in days}
+    first = datetime.date.fromisoformat(min(by_date))
+    last = datetime.date.fromisoformat(max(by_date))
+    start = first - datetime.timedelta(days=first.weekday())
+    cells, months, at = [], [], start
+    while at <= last:
+        key = at.isoformat()
+        day = by_date.get(key)
+        local = day.local if day else 0
+        remote = day.remote if day else 0
+        only = day.local_only if day else 0
+        unknown = bool(day and day.remote_unknown)
+        if mode == "remote":
+            shown, kind = (0 if unknown else remote), ("unknown" if unknown else "remote")
+        elif mode == "local":
+            shown, kind = local, "local"
+        else:
+            shown, kind = local, ("split" if remote and only else
+                                  ("remote" if remote else
+                                   ("unknown" if unknown and not local else "local")))
+        step = _activity_scale(shown, most)
+        told = (f"{key}: {local} local"
+                + (f", {remote} represented by the remote" if not unknown else
+                   ", the remote has never been observed here")
+                + (f", {only} only here" if only else ""))
+        cells.append(
+            f"<i class='cell s{step} k-{kind}{' q' if unknown else ''}' "
+            f"data-day='{key}' data-local='{local}' data-remote='{remote}' "
+            f"data-only='{only}' title='{_ESC(told)}' role=img "
+            f"aria-label='{_ESC(told)}' tabindex=0></i>")
+        if at.day <= 7 and at.weekday() == 0:
+            months.append((len(cells) - 1, at.strftime("%b")))
+        at += datetime.timedelta(days=1)
+    ruler = "".join(
+        f"<span style='grid-column:{1 + index // 7}'>{_ESC(name)}</span>"
+        for index, name in months)
+    return (f"<div class=calendar aria-label='{_ESC(label)}'>"
+            f"<div class=months>{ruler}</div>"
+            f"<div class=grid>{''.join(cells)}</div></div>")
+
+
+def _activity_legend(mode: str) -> str:
+    if mode == "remote":
+        parts = [("represented by the remote", "remote"),
+                 ("never observed here", "unknown")]
+    elif mode == "local":
+        parts = [("commits in this repository", "local")]
+    else:
+        parts = [("only here", "local"), ("represented by the remote", "remote"),
+                 ("both, on one day", "split"), ("remote never observed", "unknown")]
+    return ("<div class='legend calendar-legend'>"
+            + "".join(f"<span class=k-{key}><i></i>{_ESC(text)}</span>" for text, key in parts)
+            + "<span class=t>a ring marks a day whose remote side is unresolved</span>"
+            + "<span class=t>less</span>"
+            + "".join(f"<i class='cell s{n} k-{parts[0][1]}'></i>" for n in range(5))
+            + "<span class=t>more</span></div>")
+
+
+def _period_of(scale: str, days):
+    """The window a scale shows, ending at the most recent day with anything in
+    it — so a page opened after a quiet fortnight still opens on the work."""
+    dates = [datetime.date.fromisoformat(day.date) for day in days] or [
+        datetime.datetime.now(datetime.timezone.utc).date()]
+    end = max(dates)
+    span = {"year": 365, "month": 31, "week": 7, "day": 1}.get(scale, 365)
+    return end - datetime.timedelta(days=span - 1), end
+
+
 def _history(sites: list) -> str:
-    """What publishing each project would expose, as its own record states it."""
+    """Publication intent and public safety, per project — kept as it was."""
     rows = []
     for site in sites:
         pin = site.one("pin")
         readings = {c.label: c for c in site.figures("evidence")}
         safety = readings.get("public safety")
         gates = readings.get("gates")
+        at = _INDEX.get(id(site))
+        named = (f"<button class=jump data-goto='project:{at}'>{_ESC(site.name)}</button>"
+                 if at is not None else f"<span class=s>{_ESC(site.name)}</span>")
         rows.append(
-            f"<tr><td><span class=s>{_ESC(site.name)}</span></td>"
-            + f"<td>{_ESC(pin.fields.get('publication', UNKNOWN)) if pin else UNKNOWN}</td>"
-            + (f"<td class='{safety.tone}'>{_ESC(safety.value)}</td>" if safety else
-               f"<td class=unknown><span class='s unknown'>{UNKNOWN}</span>"
-               f"<small>no public-safety reading is declared</small></td>")
-            + (f"<td class='{gates.tone}'>{_ESC(gates.value)}</td>" if gates else
-               f"<td class=unknown><span class='s unknown'>{UNKNOWN}</span></td>") + "</tr>")
+            f"<tr>{_td('project', named)}"
+            + _td("publication intent",
+                  _ESC(pin.fields.get("publication", UNKNOWN)) if pin else UNKNOWN)
+            + (_td("public-safety reading", f"<span class=clamp>{_ESC(safety.value)}</span>",
+                   safety.tone) if safety else
+               _td("public-safety reading", f"<span class='s unknown'>{UNKNOWN}</span>",
+                   "unknown", " title='no public-safety reading is declared'"))
+            + (_td("gates", f"<span class=clamp>{_ESC(gates.value)}</span>", gates.tone)
+               if gates else _td("gates", f"<span class='s unknown'>{UNKNOWN}</span>", "unknown"))
+            + "</tr>")
     if not rows:
         return "<p class=none>No project was named.</p>"
-    return ("<div class=tw><table><thead><tr><th>project</th><th>publication intent</th>"
-            "<th>public-safety reading</th><th>gates</th></tr></thead><tbody>"
-            + "".join(rows) + "</tbody></table></div>")
+    return ("<div class=tw><table><tbody>" + "".join(rows) + "</tbody></table></div>")
+
+
+def _repository_summary(activities, days) -> str:
+    """The exact values for the period, and not one of them a score."""
+    total = sum(day.local for day in days)
+    represented = sum(day.remote for day in days)
+    only = sum(day.local_only for day in days)
+    unresolved = [a for a in activities if not a.remote_established]
+    unknown_days = sum(1 for day in days if day.remote_unknown)
+    latest_local = max((day.date for day in days if day.local), default="")
+    latest_remote = max((day.date for day in days if day.remote), default="")
+
+    def cell(label, value, tone="plain", note=""):
+        return (f"<div class='sit {tone}'><i>{_ESC(label)}</i><em>{_ESC(str(value))}</em>"
+                + (f"<u>{_ESC(note)}</u>" if note else "") + "</div>")
+
+    return ("<div class=sit>"
+            + cell("local commits", total, note="every commit a local ref reaches")
+            + cell("represented by the remote",
+                   UNKNOWN if unknown_days and not represented else represented,
+                   "unknown" if unknown_days and not represented else "plain",
+                   note="a subset of the local total, never added to it")
+            + cell("only here", only, "warn" if only else "plain",
+                   note="reachable from no remote ref")
+            + cell("active days", sum(1 for day in days if day.local))
+            + cell("projects with activity",
+                   len([a for a in activities if a.total_local]))
+            + cell("latest local", latest_local or UNKNOWN,
+                   "plain" if latest_local else "unknown")
+            + cell("latest represented", latest_remote or UNKNOWN,
+                   "plain" if latest_remote else "unknown",
+                   note="" if latest_remote else "nothing observed")
+            + cell("remote", f"{len(unresolved)} of {len(activities)} unresolved"
+                   if unresolved else "observed everywhere",
+                   "unknown" if unresolved else "plain")
+            + cell("days counted in", activity.TIMEZONE,
+                   note="a commit belongs to its UTC day, wherever it was made")
+            + "</div>")
+
+
+def _repository_table(activities) -> str:
+    rows = []
+    for one in activities:
+        tone = ("unknown" if one.unreadable or not one.remote_established else "plain")
+        rows.append(
+            "<tr>" + _td("repository", f"<span class=s>{_ESC(one.name)}</span>"
+                         f"<small>{_ESC(one.repository)}</small>")
+            + _td("local", str(one.total_local), "num")
+            + _td("represented",
+                  str(one.total_remote) if one.remote_established
+                  else f"<span class='s unknown'>{UNKNOWN}</span>",
+                  "num" if one.remote_established else "num unknown")
+            + _td("only here", str(one.total_local_only), "num")
+            + _td("remote", f"<span class='s {tone}'>{_ESC(one.remote_state)}</span>", tone)
+            + _td("what is known", f"<span class=clamp>"
+                  f"{_ESC(one.unreadable or one.remote_note)}</span>")
+            + "</tr>")
+    if not rows:
+        return "<p class=none>No project declares a repository this console can read.</p>"
+    return f"<div class=tw><table><tbody>{''.join(rows)}</tbody></table></div>"
+
+
+def _event_timeline(events, *, limit: int = 400) -> str:
+    if not events:
+        return ("<p class=none>No durable artifact in these projects carries a timestamp for "
+                "anything that happened. That is a statement about what is recorded, not about "
+                "what was done.</p>")
+    rows = []
+    for event in events[:limit]:
+        rows.append(
+            f"<tr data-tone='{event.tone}' data-kind='{_ESC(event.kind)}' "
+            f"data-project='{_ESC(event.project)}' data-day='{_ESC(event.day)}'>"
+            + _td("when", _ESC(event.when or UNKNOWN),
+                  "" if event.when else "unknown")
+            + _td("project", f"<span class=s>{_ESC(event.project)}</span>")
+            + _td("event", f"<span class='s {event.tone}'>{_ESC(event.kind)}</span>", event.tone)
+            + _td("subject", _ESC(event.subject))
+            + _td("capability", _ESC(event.capability or "—"))
+            + _td("detail", f"<span class=clamp>{_ESC(event.detail)}</span>")
+            + _td("from", f"<span class=clamp>{_ESC(event.source)}</span>")
+            + "</tr>")
+    more = ("" if len(events) <= limit else
+            f"<p class=none>{len(events) - limit} further events are not listed here; "
+            f"narrow the period or the filter.</p>")
+    return f"<div class=tw><table><tbody>{''.join(rows)}</tbody></table></div>{more}"
+
+
+def _event_shape(events) -> str:
+    tally: dict = {}
+    for event in events:
+        tally[(event.kind, event.tone)] = tally.get((event.kind, event.tone), 0) + 1
+    return _distribution([(kind, count, tone) for (kind, tone), count in
+                          sorted(tally.items(), key=lambda row: -row[1])],
+                         "Nothing durable dates an event in these projects.")
+
+
+def _history_view(sites: list) -> str:
+    """Repository activity and governed events, on one calendar."""
+    activities, events = [], []
+    for site in sites:
+        pin = site.one("pin")
+        where = (pin.fields.get("repository") if pin else "") or ""
+        if where and where != UNKNOWN and Path(where).is_dir():
+            activities.append(activity.repository_activity(where, name=site.name))
+        else:
+            activities.append(activity.repository_activity(site.root, name=site.name))
+        events.extend(activity.pack_events(site.root, name=site.name))
+    events.sort(key=lambda e: (e.when == "", e.when))
+    days = activity.aggregate(activities)
+    most = max((day.local for day in days), default=0)
+
+    scales = "".join(
+        f"<button data-scale='{key}'{' aria-pressed=true' if key == 'year' else ''}>"
+        f"{_ESC(key)}</button>" for key in ("year", "month", "week", "day"))
+    modes = "".join(
+        f"<button data-actmode='{key}'{' aria-pressed=true' if key == 'combined' else ''}>"
+        f"{_ESC(label)}</button>" for key, label in
+        (("local", "local git"), ("remote", "remote"), ("combined", "local ↔ remote")))
+    projects = "".join(
+        f"<option value='{at}'>{_ESC(site.name)}</option>" for at, site in enumerate(sites))
+    kinds = "".join(
+        f"<button data-eventkind='{_ESC(kind)}'>{_ESC(kind)}</button>"
+        for kind in sorted({event.kind for event in events}))
+
+    return (
+        "<div class=filters><span class=t>scale</span>" + scales
+        + "<span class=t>show</span>" + modes
+        + f"<span class=t>project</span><select id=history-project>"
+        f"<option value=all>all projects</option>{projects}</select>"
+        "<button data-scale='year' id=history-today>most recent</button>"
+        f"<span class=t>days are {activity.TIMEZONE}</span></div>"
+        "<div class=stack>"
+        + f"<section class=setgroup id=history-repository><div class=head>"
+        f"<h2>repository activity</h2>"
+        f"<span class=chip>{len(activities)} repositories</span></div>"
+        f"<div class=setbody>{_repository_summary(activities, days)}</div>"
+        + "".join(
+            f"<div class=actmode data-actmode='{mode}'>"
+            + _calendar(days, mode=mode, most=most,
+                        label=f"repository activity, {mode}")
+            + _activity_legend(mode) + "</div>"
+            for mode in ("local", "remote", "combined"))
+        + _repository_table(activities) + "</section>"
+        + f"<section class=setgroup id=history-events><div class=head>"
+        f"<h2>runtime pack events</h2><span class=chip>{len(events)} dated</span></div>"
+        f"<div class=setbody>{_event_shape(events)}</div>"
+        "<div class=filters><span class=t>only</span>"
+        "<button data-eventkind='' aria-pressed=true>all events</button>"
+        + kinds + "</div>"
+        # NOT hidden. Nothing in this document is written hidden — an empty
+        # panel says it is empty instead, which is also what a reader needs.
+        + "<div class=inspector id=day-inspector><h4>a day</h4>"
+        "<p class=none style='padding:0'>Choose a cell above — with a pointer or with the "
+        "keyboard — and this says what both histories hold for that day.</p></div>"
+        + _event_timeline(events) + "</section>"
+        + "<section class=setgroup id=history-safety><div class=head>"
+        "<h2>publication intent and public safety</h2></div>"
+        + _history(sites) + "</section>"
+        + "<section class=setgroup id=history-what><div class=head>"
+        "<h2>what these two histories are</h2></div><ul>"
+        "<li><span class=k>local git</span><span class=v>every commit a local ref reaches, "
+        "counted once however many refs reach it.</span></li>"
+        "<li><span class=k>represented by the remote</span><span class=v>the subset of those "
+        "commits a remote-tracking ref also reaches. A subset — never added to the local "
+        "total, because a pushed commit is one commit.</span></li>"
+        "<li><span class=k>only here</span><span class=v>the rest: reachable from a local ref "
+        "and from no remote one.</span></li>"
+        "<li class=unknown><span class=k>never observed</span><span class=v>a remote is "
+        "declared and nothing here has ever seen what it holds. This page does not fetch, so "
+        "that stays an open question rather than becoming a zero.</span></li>"
+        f"<li><span class=k>days</span><span class=v>{activity.TIMEZONE}. A commit belongs to "
+        "its UTC day wherever it was made, so the calendar does not change shape when it is "
+        "opened somewhere else.</span></li>"
+        "<li><span class=k>events</span><span class=v>rebuilt from artifacts that carry their "
+        "own timestamps, each naming the artifact. Nothing is dated by inference: a capability "
+        "that is plainly open produces no *opened* event, because nothing durable says "
+        "when.</span></li>"
+        "<li class=action><span class=k>what a count is not</span><span class=v>evidence that "
+        "commits happened. Not of pace, not of quality, and not a verdict on anybody's "
+        "week.</span></li>"
+        "</ul></section></div>")
 
 
 def _identity(sites: list) -> str:
@@ -785,7 +1134,9 @@ def _widgets(sites: list) -> list:
              ("global:viz-capacity", "Capacity overview", "global"),
              ("global:viz-freshness", "Freshness overview", "global"),
              ("global:viz-budgets", "Budget shape", "global"),
-             ("global:viz-budget-meters", "Budget meters", "global")]
+             ("global:viz-budget-meters", "Budget meters", "global"),
+             ("global:viz-recent-activity", "Recent repository activity", "global"),
+             ("global:viz-recent-events", "Recent runtime pack events", "global")]
     for index, site in enumerate(sites):
         if site.view is None:
             continue
@@ -1700,6 +2051,123 @@ _SCRIPT = r"""
     }
   });
 
+  // ---- the two histories --------------------------------------------------------
+  // The scale chooses how much of the calendar to show and the mode chooses
+  // which population it colours. Both are presentation: neither changes a
+  // count, and the exact numbers are in the cell's own label either way.
+  function activityMode(name) {
+    if (['local', 'remote', 'combined'].indexOf(name) < 0) { name = 'combined'; }
+    [].forEach.call(document.querySelectorAll('.actmode'), function (block) {
+      block.classList.toggle('on', block.dataset.actmode === name);
+    });
+    [].forEach.call(document.querySelectorAll('button[data-actmode]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.actmode === name));
+    });
+    set('actmode', name);
+  }
+  [].forEach.call(document.querySelectorAll('button[data-actmode]'), function (b) {
+    b.addEventListener('click', function () { activityMode(b.dataset.actmode); });
+  });
+
+  var SPAN = { year: 366, month: 31, week: 7, day: 1 };
+  function activityScale(name) {
+    if (!SPAN[name]) { name = 'year'; }
+    var cells = [].slice.call(document.querySelectorAll('.calendar .cell[data-day]'));
+    var days = cells.map(function (c) { return c.dataset.day; }).filter(Boolean).sort();
+    var last = days[days.length - 1];
+    var cut = '';
+    if (last) {
+      var end = new Date(last + 'T00:00:00Z');
+      end.setUTCDate(end.getUTCDate() - (SPAN[name] - 1));
+      cut = end.toISOString().slice(0, 10);
+    }
+    cells.forEach(function (cell) { cell.hidden = !!cut && cell.dataset.day < cut; });
+    [].forEach.call(document.querySelectorAll('button[data-scale]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.scale === name));
+    });
+    // At a day or a week a calendar is the wrong shape; the timeline under it
+    // is what a reader wants, so the events narrow to the same window.
+    filterEvents(cut, name);
+    set('scale', name);
+  }
+  [].forEach.call(document.querySelectorAll('button[data-scale]'), function (b) {
+    b.addEventListener('click', function () { activityScale(b.dataset.scale); });
+  });
+
+  var eventKind = '';
+  function filterEvents(cut, scale) {
+    var project = document.getElementById('history-project');
+    var only = project && project.value !== 'all' ? project.options[project.selectedIndex]
+      .textContent : '';
+    [].forEach.call(document.querySelectorAll('#history-events tbody tr'), function (tr) {
+      var byKind = !eventKind || tr.dataset.kind === eventKind;
+      var byProject = !only || tr.dataset.project === only;
+      // An event with no readable time is never hidden by a period: it has no
+      // period, and dropping it would be the page losing a reading.
+      var byDay = !cut || !tr.dataset.day || tr.dataset.day >= cut;
+      tr.hidden = !(byKind && byProject && byDay);
+    });
+  }
+  [].forEach.call(document.querySelectorAll('button[data-eventkind]'), function (b) {
+    b.addEventListener('click', function () {
+      eventKind = b.dataset.eventkind;
+      [].forEach.call(document.querySelectorAll('button[data-eventkind]'), function (o) {
+        o.setAttribute('aria-pressed', String(o.dataset.eventkind === eventKind));
+      });
+      activityScale(prefs.scale || 'year');
+    });
+  });
+  var historyProject = document.getElementById('history-project');
+  if (historyProject) {
+    historyProject.addEventListener('change', function () {
+      activityScale(prefs.scale || 'year');
+      set('historyProject', historyProject.value);
+    });
+  }
+
+  // ---- the day inspector ----------------------------------------------------------
+  // Selecting a day says what happened on it, from both histories. A tooltip
+  // with a number in it is not an inspector.
+  function inspect(day) {
+    var host = document.getElementById('day-inspector');
+    if (!host || !day) { return; }
+    var cells = [].slice.call(document.querySelectorAll('.calendar .cell[data-day="' + day
+                                                        + '"]'));
+    var local = 0, remote = 0, only = 0;
+    cells.forEach(function (c) {
+      local = Math.max(local, Number(c.dataset.local) || 0);
+      remote = Math.max(remote, Number(c.dataset.remote) || 0);
+      only = Math.max(only, Number(c.dataset.only) || 0);
+    });
+    var events = [].slice.call(document.querySelectorAll('#history-events tbody tr'))
+      .filter(function (tr) { return tr.dataset.day === day; });
+    var kinds = {};
+    events.forEach(function (tr) {
+      kinds[tr.dataset.kind] = (kinds[tr.dataset.kind] || 0) + 1;
+    });
+    var listed = Object.keys(kinds).map(function (k) {
+      return k + ' ' + kinds[k]; }).join(' · ') || 'nothing durable dates an event on this day';
+    host.innerHTML = '';
+    var title = document.createElement('h4');
+    title.textContent = day + ' (UTC)';
+    var repo = document.createElement('p');
+    repo.className = 'none';
+    repo.style.padding = '0';
+    repo.textContent = 'repository: ' + local + ' local, ' + remote
+      + ' represented by the remote, ' + only + ' only here';
+    var pack = document.createElement('p');
+    pack.className = 'none';
+    pack.style.padding = '0';
+    pack.textContent = 'runtime pack: ' + listed;
+    host.appendChild(title); host.appendChild(repo); host.appendChild(pack);
+  }
+  [].forEach.call(document.querySelectorAll('.calendar .cell[data-day]'), function (cell) {
+    cell.addEventListener('click', function () { inspect(cell.dataset.day); });
+    cell.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inspect(cell.dataset.day); }
+    });
+  });
+
   // ---- restore ---------------------------------------------------------------
   lens(typeof prefs.lens === 'string' ? prefs.lens : root.getAttribute('data-theme') || '');
   var picked = document.getElementById('lens-default');
@@ -1712,6 +2180,8 @@ _SCRIPT = r"""
   paintPresets();
   overviewDensity(typeof prefs.od === 'string' ? prefs.od : 'balanced');
   allDepth(typeof prefs.ad === 'string' ? prefs.ad : 'full');
+  activityMode(typeof prefs.actmode === 'string' ? prefs.actmode : 'combined');
+  activityScale(typeof prefs.scale === 'string' ? prefs.scale : 'year');
   chrome(prefs.chrome !== 'off');
   rebuildLayoutPresets();
   paint();
@@ -2027,6 +2497,35 @@ _STATES = (
 )
 
 _QUESTIONS = (
+    ("What is the difference between local git and remote?",
+     "Local is every commit a ref in your own clone reaches. Remote is the part of that a "
+     "remote-tracking ref also reaches — a subset, never a second population. The rest is "
+     "*only here*.", "history"),
+    ("Why does the remote say UNKNOWN rather than zero?",
+     "Because nothing on this machine has ever seen what that remote holds. This page does not "
+     "fetch, so it leaves the question open instead of answering it with a zero that would look "
+     "like an empty remote.", "history"),
+    ("Which day does a commit belong to?",
+     "Its UTC day, wherever in the world it was made. Bucketing by the committer's own offset "
+     "would split two commits a minute apart; bucketing by yours would move them when somebody "
+     "else opens the page.", "history"),
+    ("Does a busy calendar mean a good week?",
+     "No. A count is evidence that commits happened. It is not pace, not quality and not a "
+     "verdict on anybody's week, and nothing here scores it.", "history"),
+    ("What is Runtime Pack event history?",
+     "What durable artifacts can actually date: a reading written, a wait declared, a deadline "
+     "passed, output written, evidence recorded. Each row names the artifact it came from, and "
+     "nothing is dated by inference.", "history"),
+    ("Why is there no *capability opened* event?",
+     "Because nothing durable records when it opened. The release will show what an artifact "
+     "timestamps and will not date an event from the fact that the state implies it happened.",
+     "history"),
+    ("How do the year, month, week and day views differ?",
+     "Year and month are a calendar — the rhythm. Week narrows it. Day stops being a calendar "
+     "and becomes the timeline underneath, which is what you want for one day.", "history"),
+    ("How do I see what happened on one day?",
+     "Choose a cell in the calendar, with a pointer or with the keyboard. The inspector under "
+     "it gives both histories for that day rather than a number in a tooltip.", "history"),
     ("Where do I see everything at once?",
      "Control room, or All systems. The first is built to be left up on a wide screen; the "
      "second is one scrollable page with a section index.", "control"),
@@ -2243,6 +2742,67 @@ def _budget_meters(sites: list) -> str:
     return f"<div class=tw><table><tbody>{''.join(rows)}</tbody></table></div>"
 
 
+def _recent_activity(sites: list, *, weeks: int = 10) -> str:
+    """The last few weeks, compactly — for a screen somebody leaves up.
+
+    A year of calendar belongs in History; what a control room needs is whether
+    anything has happened lately, where, and how much of it is still only here.
+    The horizon is stated rather than implied.
+    """
+    activities = []
+    for site in sites:
+        pin = site.one("pin")
+        where = (pin.fields.get("repository") if pin else "") or ""
+        activities.append(activity.repository_activity(
+            where if where and where != UNKNOWN and Path(where).is_dir() else site.root,
+            name=site.name))
+    days = activity.aggregate(activities)
+    if not days:
+        return ("<p class=none>No project declares a repository this console can read, so "
+                "there is no repository history here. That is not the same as no work.</p>")
+    horizon = datetime.date.today() - datetime.timedelta(days=weeks * 7 - 1)
+    recent = [day for day in days if day.date >= horizon.isoformat()]
+    most = max((day.local for day in recent), default=0)
+    total = sum(day.local for day in recent)
+    only = sum(day.local_only for day in recent)
+    unresolved = [a for a in activities if a.total_local and not a.remote_established]
+    live = [a for a in activities
+            if any(day.date >= horizon.isoformat() and day.local for day in a.days)]
+    latest = max((day.date for day in days if day.local), default="")
+    strip = "".join(
+        f"<i class='cell s{_activity_scale(day.local, most)} k-local"
+        f"{' q' if day.remote_unknown else ''}' title='{_ESC(day.date)}: {day.local} local, "
+        f"{day.local_only} only here'></i>" for day in recent)
+    return ("<div class=instrument>"
+            f"<div class='calendar recent'><div class=grid>{strip}</div></div>"
+            "<div class=legend>"
+            f"<span><b>{total}</b> commits in {weeks} weeks</span>"
+            f"<span class='{'warn' if only else ''}'><b>{only}</b> only here</span>"
+            f"<span><b>{len(live)}</b> projects active</span>"
+            f"<span class='{'unknown' if unresolved else ''}'>"
+            f"<b>{len(unresolved)}</b> remotes unresolved</span>"
+            f"<span>latest <b>{_ESC(latest or UNKNOWN)}</b></span>"
+            "</div></div>")
+
+
+def _recent_events(sites: list, *, limit: int = 8) -> str:
+    """The last few things any durable artifact can date."""
+    events = []
+    for site in sites:
+        events.extend(activity.pack_events(site.root, name=site.name))
+    dated = sorted((e for e in events if e.when), key=lambda e: e.when, reverse=True)[:limit]
+    if not dated:
+        return ("<p class=none>Nothing durable in these projects carries a timestamp for "
+                "anything that happened.</p>")
+    rows = "".join(
+        f"<tr data-tone='{e.tone}'>" + _td("when", _ESC(e.when[:16]))
+        + _td("project", f"<span class=s>{_ESC(e.project)}</span>")
+        + _td("event", f"<span class='s {e.tone}'>{_ESC(e.kind)}</span>", e.tone)
+        + _td("subject", f"<span class=clamp>{_ESC(e.subject)}</span>") + "</tr>"
+        for e in dated)
+    return f"<div class=tw><table><tbody>{rows}</tbody></table></div>"
+
+
 def _telemetry(sites: list, *, kinds=()) -> str:
     """The instrument band. `kinds` chooses which, so a density can carry a few
     and a control room can carry all of them."""
@@ -2255,6 +2815,8 @@ def _telemetry(sites: list, *, kinds=()) -> str:
         "freshness": ("freshness", _freshness_shape),
         "budgets": ("budgets", _budget_shape),
         "budget-meters": ("every budget", _budget_meters),
+        "recent-activity": ("recent repository activity", _recent_activity),
+        "recent-events": ("recent runtime pack events", _recent_events),
     }
     chosen = [key for key in (kinds or every) if key in every]
     return ("<div class=instruments>" + "".join(
@@ -2593,7 +3155,8 @@ def _control_room(sites: list) -> str:
                   f"<div class=setbody>{banner}</div>", "room-wide")
         + "<div class='room-wide instruments-wide'>"
         + _telemetry(sites, kinds=("projects", "workers", "attention", "audits", "capacity",
-                                   "freshness", "budgets"))
+                                   "freshness", "budgets", "recent-activity",
+                                   "recent-events"))
         + "</div>"
         + section("needs a person or a look",
                   f"{len(attention_rows)}" if attention_rows else "clear",
@@ -2738,7 +3301,8 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                                 _attention_across(sites), "global").replace(
                           "<section ", "<section id=attention-widget ", 1)
                       + "<div class=onlyfull>"
-                      + _telemetry(sites, kinds=("audits", "capacity", "budgets"))
+                      + _telemetry(sites, kinds=("audits", "capacity", "budgets",
+                                                "recent-activity", "recent-events"))
                       + _telemetry(sites, kinds=("budget-meters",))
                       + _widget("global:full-workers", "Every job", _kind_table(
                           sites, "job",
@@ -2805,9 +3369,10 @@ def render_console(sites: list, title: str = "Runtime Pack — console", *,
                                    ("resets", "resets"), ("observed", "observed")],
                                   "No project declares a capacity observation."), "global")))
     body.append(_view("history", "History & public safety",
-                      "what would publishing this expose?",
-                      _widget("global:history", "History & public safety", _history(sites),
-                              "global")))
+                      "when did code change, what was the run doing, and what would "
+                      "publishing this expose?",
+                      _widget("global:history", "History & public safety",
+                              _history_view(sites), "global")))
     body.append(_view("identity", "Identity & release",
                       "what release is each project actually on?",
                       _widget("global:identity", "Identity & release", _identity(sites),
