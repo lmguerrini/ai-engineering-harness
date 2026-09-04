@@ -2749,6 +2749,28 @@ The lesson is the one this release keeps relearning: the source was correct as
 text, the suite was green, and the defect was visible only to something that
 draws.
 
+## One read per project, and a project's own two histories
+
+The history view answers *across every project*. A project's own page had to
+leave the reader to find out when its code last changed, which is the wrong
+place to send somebody who is already looking at that project. Both
+instruments are on each project's page now, scoped to it.
+
+That would have been four reads of the same two histories per page — the
+history view, the control room's band, the full overview and each project's
+detail — which is four chances to disagree and slower for the privilege. Each
+project's history is read once and shared, with the site held beside the
+reading because `id()` is only unique among objects that are alive.
+
+Adding two instruments to every project's page made the console **faster**:
+831 ms to render twelve projects where it was 2104, and 1.2 seconds as a
+command where it was 2.4. Two oracles hold it: every readable project's page
+states its own commit count and a project with no readable repository says so
+rather than drawing a zero, and one page performs exactly one activity read
+per project. The first needed **two repositories of different sizes** — with
+one, the aggregate and the project agree and a band drawn from every site
+passes anyway, and that mutant survived the first version of the test.
+
 ## A period of the reader's own choosing
 
 Four scales answer *the last N days*, which is the question a reader asks most
