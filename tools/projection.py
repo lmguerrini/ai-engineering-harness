@@ -1121,8 +1121,6 @@ _STYLE = """
   --action-bg:#0a2430;
 }
 
-}
-
 :root[data-theme="matrix"]{
   /* MATRIX — a green-phosphor console, and unmistakably one. The ground is
      nearly black with green in it, every structural surface and rule is a

@@ -1484,3 +1484,58 @@ def test_the_readability_floor_rises_with_the_screen():
     widest = tiers[-1]
     assert widest[1]["fs"] >= 15, f"at {widest[0]}px the body is {widest[1]['fs']}px"
     assert widest[1]["fs-micro"] >= 10.5, "the field labels are below the floor on an ultrawide"
+
+
+def test_the_stylesheet_parses_and_every_lens_block_is_reachable():
+    """**Every lens rendered as the default for several commits and no test
+    noticed.**
+
+    A stray `}` sat between the default palette and the first lens. Every check
+    in this file reads `_STYLE` as TEXT — it finds the block, reads the hex out
+    of it, and confirms the hues are right — so a syntax error that stops a
+    browser reaching the block is invisible to all of them. It was found by
+    looking at a screenshot of the matrix lens and seeing graphite.
+
+    This is the cheap structural half: the braces balance, and every lens block
+    begins at the top level rather than inside another rule. The other half is a
+    browser being asked what colour it is actually drawing, which the session's
+    interaction driver does.
+    """
+    import console
+
+    for name, style in (("projection", projection._STYLE), ("console", console._SHELL_STYLE)):
+        assert style.count("{") == style.count("}"), (
+            f"{name}: {style.count('{')} opening braces and {style.count('}')} closing")
+        depth = 0
+        for index, character in enumerate(style):
+            if character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                assert depth >= 0, (
+                    f"{name}: a closing brace at {index} with nothing open — every rule after "
+                    f"it is at the mercy of the parser's error recovery")
+        assert depth == 0
+
+    style = projection._STYLE
+    for lens in projection.LENSES:
+        if not lens:
+            continue
+        at = style.index(f'[data-theme="{lens}"]')
+        opened = style.count("{", 0, at) - style.count("}", 0, at)
+        assert opened == 0, (
+            f"the {lens} block starts {opened} level(s) inside another rule, so a browser "
+            f"never reaches it")
+
+
+def test_each_lens_actually_changes_what_would_be_drawn():
+    """Not *the block exists* — *the values differ*. Two lenses whose tokens
+    happened to be identical would pass every other check in this file."""
+    default = _theme_tokens("")
+    for lens in projection.LENSES:
+        if not lens:
+            continue
+        tokens = _theme_tokens(lens)
+        moved = [name for name in _THEME_TOKENS if tokens[name] != default[name]]
+        assert len(moved) >= 6, (
+            f"the {lens} lens moves only {moved}, which is not a lens")
