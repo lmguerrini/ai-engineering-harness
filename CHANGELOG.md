@@ -252,9 +252,10 @@ stronger one.
   its oracles; `MATERIAL` needs the whole thing. The class is the caller's
   declaration, because Core cannot know which of a project's changes are
   material — a project may declare `requires.design: true` instead.
-- **Freezing is bound to a revision.** The base must resolve, be an ancestor of
-  `HEAD`, and be a strict ancestor of where mutation began. A design frozen
-  against a tree that already holds the work it governs is refused.
+- **Freezing is bound to a revision.** The base must resolve and be an ancestor
+  of `HEAD`, and where the coordinator names where mutation began
+  (`--mutation-begins-at`) it must be a strict ancestor of that too. A design
+  frozen against a tree that already holds the work it governs is refused.
 - **`skills/core/design-falsification.md`** is the discipline;
   `skills/core/repair.md` remains the other half. One governs what must exist
   before there is a defect; the other what happens once there is one.

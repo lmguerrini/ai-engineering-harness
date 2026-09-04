@@ -1635,14 +1635,24 @@ def test_no_container_paints_the_rule_across_everything_its_children_miss():
     """
     import re
 
+    # ANY CONTAINER WITH A GAP, whatever its display mode, and either rule token.
+    # The first version rejected the literal `background:var(--rule)` and only
+    # on `display:grid`: an independent reader restored the same field with
+    # `--rule-strong`, and again with `display:flex`, and both survived.
     for name, sheet in (("projection", projection._STYLE), ("console", _console_style())):
         for rule in re.findall(r"([^{}]*)\{([^{}]*)\}", sheet):
             selector, body = rule[0].strip().splitlines()[-1].strip(), rule[1]
-            if "background:var(--rule)" not in body.replace(" ", ""):
+            flat = body.replace(" ", "")
+            paints = ("background:var(--rule)" in flat
+                      or "background:var(--rule-strong)" in flat)
+            if not paints:
                 continue
-            assert "display:grid" not in body.replace(" ", ""), (
-                f"{name}: `{selector}` is a grid that paints --rule behind everything its "
-                f"children do not cover")
+            spaced = re.search(r"gap:(?!0[a-z;}]|0$)", flat) is not None
+            lays_out = "display:grid" in flat or "display:flex" in flat
+            assert not (spaced and lays_out), (
+                f"{name}: `{selector}` lays its children out with a gap and paints a rule "
+                f"token behind every area they do not cover. That is a field, not a "
+                f"hairline, wherever one child is shorter than its row")
     assert "--seam:0 0 0 1px var(--rule)" in projection._STYLE, "the hairline token is gone"
 
     # AND EVERY CONVERTED CONTAINER STILL DRAWS ITS SEAM. Moving a grid to the
@@ -1665,6 +1675,28 @@ def _console_style() -> str:
     import console
 
     return console._SHELL_STYLE
+
+
+def _perceptible(before: str, after: str) -> bool:
+    """Whether a reader could see the difference between two substrate values.
+
+    A tenth of a pixel is not a presentation identity. An independent reader
+    made Matrix differ from Terminal by `13px` against `13.0001px` and the
+    uniqueness check accepted it, because the check compared strings.
+    """
+    if before is None or after is None:
+        return True
+    def number(value):
+        match = re.match(r"^(-?[\d.]+)", str(value).strip())
+        return float(match.group(1)) if match else None
+
+    a, b = number(before), number(after)
+    if a is None or b is None:
+        return str(before).strip() != str(after).strip()
+    #: a whole pixel, or a tenth of a line-height — the smallest steps the
+    #: settings panel itself offers a reader.
+    floor = 0.08 if max(abs(a), abs(b)) < 4 else 1.0
+    return abs(a - b) >= floor
 
 
 def test_the_lenses_differ_in_rhythm_and_not_only_in_hue():
@@ -1712,7 +1744,8 @@ def test_the_lenses_differ_in_rhythm_and_not_only_in_hue():
 
     seen: dict = {}
     for lens, found in shapes.items():
-        differs = {k: v for k, v in found.items() if base.get(k) != v}
+        differs = {k: v for k, v in found.items()
+                   if base.get(k) != v and _perceptible(base.get(k), v)}
         assert len(differs) >= 2, (
             f"{lens} resolves to the default's rhythm except for {sorted(differs)}: that is a "
             f"recolour, not a presentation identity. It declares {sorted(found)} and the "
@@ -1722,3 +1755,47 @@ def test_the_lenses_differ_in_rhythm_and_not_only_in_hue():
             f"{lens} and {seen[key]} have identical rhythm as well as identical structure")
         seen[key] = lens
     assert len(seen) == len(shapes) >= 4, f"only {sorted(shapes)} are named lenses"
+
+
+
+#: What the page paints as an area a reader has to tell apart from the area
+#: beside it — the meters, the calendar cells, the hour bars and the
+#: distribution segments. Text is not in it: every state's text also carries a
+#: glyph, and the accent is deliberately close to the type in the quiet lenses
+#: because the founder asked for a restrained accent, not a second state.
+_CHART_FILLS = ("ink", "bad", "warn", "unknown", "good")
+
+
+def test_no_two_things_the_charts_paint_are_the_same_colour():
+    """The tone-separation test compares the five semantics against each other
+    and never against `ink` — which is exactly the collision a single-hue lens
+    creates, because `ink` is what the local bars and the local calendar cells
+    are drawn in.
+
+    An independent reader found Matrix's `--good` 13° from its `--dim` at a
+    brightness ratio of 1.36, under this release's own 22°/1.6 threshold. In a
+    phosphor lens *good green* beside *dim green* is the collision worth
+    moving, and it moved. The pairs left close are text against text, where the
+    glyph carries the meaning too — recorded as a limitation rather than forced
+    into a rule that would contradict the design brief.
+    """
+    import itertools
+
+    for lens in projection.LENSES:
+        tokens = _theme_tokens(lens)
+        for first, second in itertools.combinations(_CHART_FILLS, 2):
+            a = _hue_and_luminance(tokens[first])
+            b = _hue_and_luminance(tokens[second])
+            apart = min(abs(a[0] - b[0]), 360 - abs(a[0] - b[0]))
+            ratio = ((max(a[1], b[1]) + 0.05) / (min(a[1], b[1]) + 0.05))
+            assert apart >= 22 or ratio >= 1.6, (
+                f"{lens or 'monochrome'}: --{first} {tokens[first]} and --{second} "
+                f"{tokens[second]} are {apart:.0f}° apart at {ratio:.2f}:1 — two areas of "
+                f"a chart a reader could not tell apart")
+
+    #: NOT VACUOUS: the fills must actually be the tokens the stylesheet paints
+    #: with, or this compares a list nobody uses.
+    for token in _CHART_FILLS:
+        assert f"background:var(--{token})" in projection._STYLE \
+            or f"background:var(--{token})" in _console_style(), (
+                f"--{token} is in the chart-fill list and nothing paints with it")

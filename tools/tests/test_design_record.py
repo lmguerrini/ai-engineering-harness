@@ -313,12 +313,122 @@ def test_an_incomplete_design_blocks_and_names_every_thing_it_does_not_state(rep
 def test_the_design_of_this_capability_is_itself_a_frozen_design(repo):
     """The mechanism, used on itself. If this file's own design record does not
     satisfy the rule it introduced, the rule is one nobody has ever met."""
-    own = PACK.parent / "rp2.3-session" / "DESIGN-C31-design-gate.md"
-    if not own.is_file():
-        pytest.skip("the evolution session's design record is not beside this checkout")
+    # IN THE PACK, not beside it. It lived in the session directory, so the
+    # documents cited a file no consumer receives and this test skipped
+    # everywhere except the one checkout that happened to sit next to it — a
+    # test that silently does not run, cited as the evidence that it did.
+    own = PACK / "docs" / "RP2.3-DESIGN-C31-design-gate.md"
+    assert own.is_file(), "the release cites its own design record and does not ship it"
     record = design_record.read(own)
     assert record.change_class == design_record.MATERIAL
     assert record.problems(repository=PACK) == []
     assert len(record.rejected) >= 3, "the alternatives were not really considered"
     assert record.of_kind(design_record.MUTATION)
     assert record.of_kind(design_record.REHEARSAL)
+
+
+# --- what an independent reader got past the first version -----------------------------
+
+
+def test_a_material_record_that_states_nothing_is_refused(repo):
+    """B1. An independent reader wrote a MATERIAL record whose every cell was
+    empty — two unnamed designs, a rejection with no reason, a failure mode with
+    no mitigation, three oracles settling nothing — and it verified, and the
+    readiness report said less about it than about a complete one.
+
+    The documents had said the rule all along: *a rejected design with no
+    reason is not a rejection; it is a list.* Nothing checked it.
+    """
+    hollow = design_record.read(_write(
+        repo,
+        candidates="| 1 |  | REJECTED |  |\n| 2 |  | SELECTED |  |",
+        modes="| 1 | . |  |",
+        oracles=("| O1 | ACCEPTANCE |  |  |\n| O2 | NEGATIVE |  |  |\n"
+                 "| O3 | MUTATION |  |  |")))
+    problems = hollow.problems(repository=repo)
+    assert any("unnamed" in p for p in problems), problems
+    assert any("it is a list" in p for p in problems), problems
+    assert any("state no property" in p for p in problems), problems
+
+    #: and each is refused on its own, not only all together
+    named = design_record.read(_write(
+        repo, candidates="| 1 | lock it all | REJECTED |  |\n| 2 | version it | SELECTED | x |"))
+    assert any("it is a list" in p for p in named.problems(repository=repo))
+    reasoned = design_record.read(_write(
+        repo, oracles="| O1 | ACCEPTANCE |  | t |\n| O2 | NEGATIVE | b | t |\n"
+                      "| O3 | MUTATION | c | t |"))
+    assert any("state no property" in p for p in reasoned.problems(repository=repo))
+
+
+def test_a_design_note_a_project_never_asked_for_does_not_stop_it(repo):
+    """B2. `DESIGN.md` is one of the commonest filenames there is. A project
+    with an architecture note beside its contract has not opted into this
+    mechanism, and every existing consumer that has one would otherwise have
+    lost readiness the moment it adopted this release."""
+    (repo / "DESIGN.md").write_text("# Design\n\nSome notes about the architecture.\n",
+                                    encoding="utf-8")
+    report = capability_open.open_capability(_contract(repo), capability="C1")
+    design = report.component("design")
+    assert design.state == capability_open.UNVERIFIABLE, "the note should still be reported"
+    assert not design.required
+    assert not design.blocking, "a note nobody declared stopped the open"
+    assert design.satisfied
+    assert design not in report.blocking
+    assert any("not declared" in note for note in design.notes), design.notes
+
+    #: but the moment the project asks for one, the same file stops it
+    asked = capability_open.open_capability(_contract(repo, "requires:\n  design: true\n"),
+                                            capability="C1")
+    assert asked.component("design").blocking
+    #: and so does a class that requires one
+    classed = capability_open.open_capability(_contract(repo), capability="C1",
+                                              change_class="MATERIAL")
+    assert classed.component("design").blocking
+
+
+def test_the_report_says_as_much_about_an_empty_record_as_a_full_one(repo):
+    """The summary used to hang on the selected design having a name, so the
+    emptier the record the less the report said about it."""
+    _write(repo, candidates="| 1 |  | REJECTED |  |\n| 2 |  | SELECTED |  |")
+    report = capability_open.open_capability(_contract(repo), capability="C1",
+                                             change_class="MATERIAL")
+    notes = " ".join(report.component("design").notes)
+    assert "selected:" in notes and "design(s) considered" in notes and "rejected" in notes
+
+
+def test_a_design_frozen_on_a_branch_that_never_led_to_the_work_is_refused(repo):
+    """T6. Every test of the freeze binding exercised `base == mutation_begins_at`
+    and none exercised the strict-ancestor property the packet, the changelog,
+    D25 and the skill all state. The implementation was right; nothing held it
+    there, and deleting the comparison left the suite green."""
+    _git(repo, "checkout", "-q", "-b", "sideline")
+    (repo / "aside.txt").write_text("aside")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "a commit on a branch the work never came from")
+    sideline = _head(repo)
+    _git(repo, "checkout", "-q", "main")
+    (repo / "work.txt").write_text("work")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "where the work began")
+    began = _head(repo)
+    _git(repo, "merge", "-q", "--no-ff", "-m", "bring the sideline in", "sideline")
+
+    record = design_record.read(_write(repo, base=sideline))
+    #: the base resolves and IS an ancestor of HEAD after the merge
+    assert not any("does not resolve" in p for p in record.problems(repository=repo))
+    assert not any("ancestor of HEAD" in p for p in record.problems(repository=repo))
+    #: and is still not where the work started from
+    problems = record.problems(mutation_begins_at=began, repository=repo)
+    assert any("not frozen before the implementation" in p for p in problems), problems
+
+
+def test_declaring_a_change_trivial_cannot_bypass_a_project_that_requires_a_design(repo):
+    """T7. A project that declares `requires.design: true` has said the question
+    is unconditional. A caller answering `TRIVIAL` must not be able to retract
+    that on the project's behalf — the honest bound is a project that never
+    declared one, not one that did."""
+    report = capability_open.open_capability(_contract(repo, "requires:\n  design: true\n"),
+                                             capability="C1", change_class="TRIVIAL")
+    design = report.component("design")
+    assert design.state == capability_open.NOT_PRESENT
+    assert design.required and design.blocking and not design.satisfied

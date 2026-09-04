@@ -684,7 +684,7 @@ preserved no design rationale. **DOCUMENTED_ONLY.**
     and rejected in writing before any of it was implemented — an intercepting
     gate process, a template-and-skill with no detector, a check in the commit
     gate, and a new blocking lifecycle state — and the record of that is
-    `rp2.3-session/DESIGN-C31-design-gate.md`, which is itself the first thing
+    `docs/RP2.3-DESIGN-C31-design-gate.md`, which is itself the first thing
     the mechanism was run against.
 *   **It reports and authorises nothing.** It reads a file and answers whether
     that file states what it claims to state. It never judges whether the

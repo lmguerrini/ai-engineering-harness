@@ -317,15 +317,20 @@ judge. `ROUTINE` states the mechanism and its oracles. `TRIVIAL` states
 nothing, because a rule that demands a design document for a typo is a rule
 that gets routed around.
 
-Freezing is bound to a revision: the base must resolve, be an ancestor of
-`HEAD`, and be a strict ancestor of where mutation began. **It reports and
+Freezing is bound to a revision: the base must resolve and be an ancestor of
+`HEAD`, and **where the coordinator names the revision at which mutation
+began** — `--mutation-begins-at`, which the skill and the template now both
+print — the base must be a strict ancestor of it. Without that argument the
+gate establishes that the base is real and in this history, which a design
+written after the work also satisfies; an independent reader got one past the
+command the skill used to give. **It reports and
 authorises nothing** — it adds no HITL row, removes none, weakens none, and has
 no opinion about whether the selected design is good, which is product meaning
 and not Core's to adjudicate.
 
 The mechanism's own design was falsified before it was written, against four
 rejected alternatives, and is the first record it was run on:
-`rp2.3-session/DESIGN-C31-design-gate.md`. **The bound is stated rather than
+`docs/RP2.3-DESIGN-C31-design-gate.md`. **The bound is stated rather than
 dressed up:** a caller who declares a material change `TRIVIAL` gets no record
 and no block. The declaration is visible in the readiness report, which makes
 it a claim somebody can dispute — not prevention, and D25 says so.

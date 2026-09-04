@@ -1140,7 +1140,7 @@ _STYLE = """
   --rule:#0f2a15; --rule-strong:#18441f;
   --ink:#8df56a; --dim:#4fbf3a; --faint:#38912a;
   --accent:#62f542; --select:#0a2a07;
-  --bad:#ff6a5e; --warn:#ffc33f; --unknown:#7d8f9c; --good:#23a52a;
+  --bad:#ff6a5e; --warn:#ffc33f; --unknown:#7d8f9c; --good:#d6ff8a;
   --action:#62f542;
   --bad-bg:#1d0c09; --warn-bg:#1b1505; --unknown-bg:#081a21; --good-bg:#072105;
   --action-bg:#0a2606;
@@ -1334,7 +1334,10 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 bottom:-1px;width:1px;background:var(--ink);opacity:.55}
 
 /* a categorical distribution: one segment per answer, none of them omitted */
-.dist{display:block;height:6px;display:flex;gap:1px;margin:5px 0 4px;background:var(--rule)}
+/* A TRACK IS A SURFACE, not a rule. It is the whole a distribution's segments
+   are parts of, so it belongs to the surface scale — and a rule token used as
+   a fill is the thing that painted a field under a short column. */
+.dist{display:block;height:6px;display:flex;gap:1px;margin:5px 0 4px;background:var(--panel-3)}
 .dist span{display:block;min-width:2px}
 .dist .bad{background:var(--bad)} .dist .warn{background:var(--warn)}
 .dist .unknown{background:var(--unknown)} .dist .good{background:var(--good)}

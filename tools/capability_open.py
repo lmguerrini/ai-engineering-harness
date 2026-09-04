@@ -537,12 +537,17 @@ def _design_component(contract: ProjectContract, capability: str | None,
         )
 
     where = Path(record_path) if record_path else None
+    # DISCOVERED, or NAMED. `DESIGN.md` is one of the commonest filenames there
+    # is, and a project that has an architecture note beside its contract has
+    # not thereby opted into this mechanism. A discovered record is read and
+    # reported; only a record this project asked for can stop the open.
+    discovered = False
     if where is None:
         beside = Path(contract.path).parent if getattr(contract, "path", None) else Path(".")
         for candidate in ([beside / f"DESIGN-{capability}.md"] if capability else []) + \
                 [beside / "DESIGN.md"]:
             if candidate.is_file():
-                where = candidate
+                where, discovered = candidate, True
                 break
 
     # A DECLARED record that cannot be read blocks whether or not it was
@@ -580,14 +585,18 @@ def _design_component(contract: ProjectContract, capability: str | None,
     problems = record.problems(mutation_begins_at=mutation_begins_at,
                                repository=Path(where).parent)
     chosen = record.selected.name if record.selected else ""
-    notes = [f"design record: {where}"]
-    if chosen:
-        notes.append(f"selected: {chosen}")
-        notes.append(f"{len(record.rejected)} alternative(s) rejected, "
-                     f"{len(record.failure_modes)} failure mode(s) stated, "
-                     f"{len(record.oracles)} oracle(s) frozen")
+    # THE SUMMARY IS UNCONDITIONAL. It used to hang on the selected design
+    # having a name, so the emptier the record the less the report said about
+    # it — the rubber stamp rendered as one line.
+    notes = [f"design record: {where}" + (" (found beside the contract, not declared)"
+                                          if discovered else ""),
+             f"selected: {chosen or UNKNOWN}",
+             f"{len(record.candidates)} design(s) considered, {len(record.rejected)} rejected, "
+             f"{len(record.failure_modes)} failure mode(s) stated, "
+             f"{len(record.oracles)} oracle(s) frozen"]
     if problems:
         return ComponentResult(name="design", state=UNVERIFIABLE, required=bool(must),
+                               blocking=bool(must) or not discovered,
                                findings=tuple(problems), notes=tuple(notes))
     return ComponentResult(name="design", state=VERIFIED, required=bool(must),
                            notes=tuple(notes))

@@ -230,7 +230,8 @@ padding:5px 14px;cursor:pointer}
 .gbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:7px 16px;
 background:var(--panel);border-bottom:1px solid var(--rule-strong);font-size:var(--fs-forensic)}
 .gbar .t{color:var(--faint);text-transform:uppercase;letter-spacing:.13em;font-size:var(--fs-micro)}
-.gbar .lens{margin-left:auto;display:flex;gap:1px;background:var(--rule);flex-wrap:wrap}
+.gbar .lens>*{box-shadow:var(--seam)}
+.gbar .lens{margin-left:auto;display:flex;gap:1px;background:var(--ground);flex-wrap:wrap}
 .lens button{background:var(--panel-2);border:0;color:var(--dim);font:inherit;font-size:var(--fs-forensic);
 letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;cursor:pointer}
 .lens button:hover{color:var(--ink)}
@@ -243,6 +244,12 @@ letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;cursor:pointer}
    assertion about content caught it: nothing was hidden, including the thing
    that should have been. Found by looking at a screenshot. */
 .view[hidden]{display:none}
+/* AND EVERY OTHER THING THIS PAGE HIDES. `[hidden]` is a user-agent rule and any
+   author `display` beats it, which is how navigation once showed every view at
+   once. The calendar cells carry `display:block` and `display:flex`, so four
+   scale buttons and a date range narrowed the timeline and left the year and
+   month pictures fully painted under a label saying otherwise. */
+.cell[hidden],.mcell[hidden],.daycol[hidden],.dayhours[hidden],tr[hidden],li[hidden],section[hidden],div[hidden],span[hidden]{display:none!important}
 .view>h2.vh{margin:0;padding:12px 16px 4px;font-size:calc(var(--fs) + 2px);letter-spacing:-.01em;color:var(--ink)}
 .view>p.vq{margin:0;padding:0 16px 11px;font-size:var(--fs-forensic);color:var(--dim);
 border-bottom:1px solid var(--rule)}
@@ -590,7 +597,8 @@ text-transform:uppercase;color:var(--faint)}
 .finder{display:none;position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.62);
 padding:8vh 16px 16px}
 .finder.open{display:block}
-.finderbox{display:flex;gap:1px;max-width:720px;margin:0 auto;background:var(--rule)}
+.finderbox>*{box-shadow:var(--seam)}
+.finderbox{display:flex;gap:1px;max-width:720px;margin:0 auto;background:var(--ground)}
 .finderbox input{flex:1;background:var(--panel);border:0;color:var(--ink);font:inherit;
 font-size:calc(var(--fs) + 2px);padding:11px 14px}
 .finderbox button{background:var(--panel-2);border:0;color:var(--faint);font:inherit;
@@ -876,26 +884,17 @@ def _calendar(days, *, mode: str, most: int, label: str) -> str:
     cells, months, at = [], [], start
     while at <= last:
         key = at.isoformat()
-        day = by_date.get(key)
-        local = day.local if day else 0
-        remote = day.remote if day else 0
-        only = day.local_only if day else 0
-        unknown = bool(day and day.remote_unknown)
-        if mode == "remote":
-            shown, kind = (0 if unknown else remote), ("unknown" if unknown else "remote")
-        elif mode == "local":
-            shown, kind = local, "local"
-        else:
-            shown, kind = local, ("split" if remote and only else
-                                  ("remote" if remote else
-                                   ("unknown" if unknown and not local else "local")))
+        day = by_date.get(key) or activity.Day(date=key)
+        local, remote, only = day.local, day.remote, day.local_only
+        # THE SAME FUNCTION the month, the week and the day use. This carried
+        # its own copy of the three branches and its own copy of the label, and
+        # the comment on the shared one claimed to be the only place — which
+        # was one edit away from being false and read as though it were.
+        shown, _exact, kind = _mode_counts(day, mode)
         step = _activity_scale(shown, most)
-        told = (f"{key}: {local} local"
-                + (f", {remote} represented by the remote" if not unknown else
-                   ", the remote has never been observed here")
-                + (f", {only} only here" if only else ""))
+        told = _told(day)
         cells.append(
-            f"<i class='cell s{step} k-{kind}{' q' if unknown else ''}' "
+            f"<i class='cell s{step} k-{kind}{' q' if day.remote_unknown else ''}' "
             f"data-day='{key}' data-local='{local}' data-remote='{remote}' "
             f"data-only='{only}' title='{_ESC(told)}' role=img "
             f"aria-label='{_ESC(told)}' tabindex=0></i>")
@@ -916,6 +915,10 @@ def _calendar(days, *, mode: str, most: int, label: str) -> str:
 #: rather than implied, and a range older than it falls back to days and says so.
 HOURLY_DAYS = 62
 
+#: What a cell prints when the reading it would show was never established.
+#: Not zero, and not blank: blank is what a quiet day looks like.
+UNKNOWN_MARK = "?"
+
 
 def _mode_counts(day, mode: str):
     """`(shown, exact, kind)` for one day under one reading.
@@ -925,7 +928,10 @@ def _mode_counts(day, mode: str):
     """
     unknown = bool(day.remote_unknown)
     if mode == "remote":
-        return (0 if unknown else day.remote), day.remote, ("unknown" if unknown else "remote")
+        # NOT A PARTIAL COUNT. An aggregate day can hold a represented figure
+        # from one repository and an unobserved remote from another; printing
+        # the figure beside `never observed` is two statements about one cell.
+        return (0, None, "unknown") if unknown else (day.remote, day.remote, "remote")
     if mode == "local":
         return day.local, day.local, "local"
     kind = ("split" if day.remote and day.local_only else
@@ -934,9 +940,15 @@ def _mode_counts(day, mode: str):
 
 
 def _told(day) -> str:
-    return (f"{day.date}: {day.local} local"
-            + (f", {day.remote} represented by the remote" if not day.remote_unknown else
-               ", the remote has never been observed here")
+    """What one day holds, in words. **`only here` is a difference against an
+    observed remote**, so a day whose remote side was never observed does not
+    have one: it has a local count and an open question. Saying `4 only here`
+    beside `the remote has never been observed` is two answers to one question,
+    and an independent reader found the page giving both."""
+    if day.remote_unknown:
+        return (f"{day.date}: {day.local} local, and the remote has never been observed "
+                f"here, so how much of that it already holds is unknown")
+    return (f"{day.date}: {day.local} local, {day.remote} represented by the remote"
             + (f", {day.local_only} only here" if day.local_only else ""))
 
 
@@ -970,7 +982,8 @@ def _month_grid(days, *, mode: str, most: int) -> str:
                 f"data-local='{day.local}' data-remote='{day.remote}' "
                 f"data-only='{day.local_only}' title='{_ESC(told)}' role=img "
                 f"aria-label='{_ESC(told)}' tabindex=0>"
-                f"<b>{walk.day}</b><em>{exact if exact else ''}</em></i>")
+                f"<b>{walk.day}</b><em>"
+                f"{UNKNOWN_MARK if exact is None else (exact or '')}</em></i>")
             walk += datetime.timedelta(days=1)
         blocks.append(
             f"<div class=month data-month='{at.isoformat()[:7]}'>"
@@ -1024,6 +1037,8 @@ def _day_columns(days, events, *, mode: str) -> str:
             f"<span class=what>{_ESC(e.project)}</span></li>" for e in here[:8])
         remote = (f"<span class='s unknown'>{UNKNOWN}</span>" if day.remote_unknown
                   else f"<b>{day.remote}</b>")
+        only = ("<span class='s unknown'>" + UNKNOWN + "</span>" if day.remote_unknown
+                else f"<b>{day.local_only}</b>")
         when = datetime.date.fromisoformat(day.date)
         columns.append(
             f"<div class='daycol k-{kind}' data-day='{day.date}' data-local='{day.local}' "
@@ -1032,8 +1047,8 @@ def _day_columns(days, events, *, mode: str) -> str:
             f"<h4>{when.strftime('%a')} <span>{day.date[5:]}</span></h4>"
             f"<div class=daynums><span><b>{day.local}</b> local</span>"
             f"<span>{remote} represented</span>"
-            f"<span class='{'warn' if day.local_only else ''}'><b>{day.local_only}</b> "
-            f"only here</span></div>"
+            f"<span class='{'warn' if day.local_only and not day.remote_unknown else ''}'>"
+            f"{only} only here</span></div>"
             + (f"<ul class='rows dayevents'>{rows}</ul>" if rows else
                "<p class=nodata>no dated event</p>")
             + "</div>")
@@ -1055,7 +1070,10 @@ def _day_hours(days, events, *, mode: str) -> str:
     midnight."""
     if not days:
         return _nothing_here()
-    horizon = (datetime.date.today() - datetime.timedelta(days=HOURLY_DAYS - 1)).isoformat()
+    # UTC, because the buckets are UTC. `date.today()` is the host's local day and
+    # shifts the horizon west of Greenwich.
+    horizon = (datetime.datetime.now(datetime.timezone.utc).date()
+               - datetime.timedelta(days=HOURLY_DAYS - 1)).isoformat()
     by_date = {day.date: day for day in days}
     last = datetime.date.fromisoformat(max(by_date))
     walk = max(datetime.date.fromisoformat(horizon),
@@ -1096,8 +1114,12 @@ def _day_hours(days, events, *, mode: str) -> str:
         under = "".join(f"<i class='hbar hsub' "
                         f"style='height:{max(0, round(100 * series[h] / peak))}%'></i>"
                         for h in range(24))
-        exact = ", ".join(f"{h:02d}:00 <b>{day.hours[h]}</b>" for h in range(24)
-                          if day.hours[h]) or "no commit carries an hour on this day"
+        # FROM THE SERIES IT IS LABELLED WITH. It read `day.hours` under every
+        # label, so *represented by the remote by hour* printed the local
+        # counts — contradicting the bars drawn immediately above it from the
+        # right series, and disagreeing with the summary.
+        exact = ", ".join(f"{h:02d}:00 <b>{series[h]}</b>" for h in range(24)
+                          if series[h]) or f"no commit is {_ESC(label)} on this day"
         here = by_day.get(day.date, [])
         rows = "".join(
             f"<li data-tone='{e.tone}'><span class='nw t'>{_ESC(_clock(e.when))}</span>"
@@ -1343,6 +1365,19 @@ def _events_of(site) -> list:
     return _reading("events", site, lambda: activity.pack_events(site.root, name=site.name))
 
 
+def _window_bounds(days) -> str:
+    """`min` and `max` for a date box, from the window that was actually read.
+
+    Without them a reader can pick 2020 against a reading that went back a
+    year, and get an empty panel with no explanation. The picker refuses the
+    date instead, which is the honest answer and needs no prose.
+    """
+    if not days:
+        return ""
+    return (f" min='{_ESC(min(day.date for day in days))}'"
+            f" max='{_ESC(max(day.date for day in days))}'")
+
+
 def _history_view(sites: list) -> str:
     """Repository activity and governed events, on one calendar."""
     activities, events = [], []
@@ -1375,9 +1410,9 @@ def _history_view(sites: list) -> str:
         # UTC dates compared against the day a cell already carries, so the
         # range needs no conversion and cannot disagree with the calendar.
         + "<span class=t>range</span>"
-        "<input type=date id=history-from aria-label='from, UTC'>"
+        f"<input type=date id=history-from aria-label='from, UTC'{_window_bounds(days)}>"
         "<span class=t>to</span>"
-        "<input type=date id=history-to aria-label='to, UTC'>"
+        f"<input type=date id=history-to aria-label='to, UTC'{_window_bounds(days)}>"
         + "<span class=t>show</span>" + modes
         + f"<span class=t>project</span><select id=history-project>"
         f"<option value=all>all projects</option>{projects}</select>"
@@ -1389,7 +1424,7 @@ def _history_view(sites: list) -> str:
         "<span class=t>as</span><b id=history-aggregation>weeks of days</b>"
         f"<span class=t>days are {activity.TIMEZONE}</span>"
         f"<span class=t>hourly since <b id=history-hourly-from>"
-        f"{(datetime.date.today() - datetime.timedelta(days=HOURLY_DAYS - 1)).isoformat()}"
+        f"{(datetime.datetime.now(datetime.timezone.utc).date() - datetime.timedelta(days=HOURLY_DAYS - 1)).isoformat()}"
         f"</b></span></div>"
         "<div class=stack>"
         + f"<section class=setgroup id=history-repository><div class=head>"
@@ -2478,11 +2513,16 @@ _SCRIPT = r"""
     // WHICH PICTURE, not only which days. A year, a month, a week and a day are
     // four different questions, and filtering one grid four ways answers the
     // first one four times.
+    // AN OPEN END AT EITHER END, which is what the help says and what the page
+    // did in one direction only: with just a `to`, `span` stayed 0, the hourly
+    // aggregation was chosen, and every cell in every picture was outside it —
+    // a blank panel labelled `hours of one day` running from the beginning.
     var span = 0;
-    if (from) {
-      var a = new Date(from + 'T00:00:00Z');
-      var b = new Date((to || (days && days[days.length - 1]) || from) + 'T00:00:00Z');
-      span = Math.round((b - a) / 86400000) + 1;
+    if (from || to) {
+      var lo = from || (days && days[0]) || to;
+      var hi = to || (days && days[days.length - 1]) || from;
+      span = Math.round((new Date(hi + 'T00:00:00Z') - new Date(lo + 'T00:00:00Z'))
+                        / 86400000) + 1;
     }
     var picked = period.scale, why = '';
     if (custom) {
@@ -2490,13 +2530,21 @@ _SCRIPT = r"""
       else if (span <= 31) { picked = 'week'; }
       else if (span <= 120) { picked = 'month'; }
       else { picked = 'year'; }
-      if (picked === 'day' && from && from < HOURLY_FROM) {
+      var earliest = from || (days && days[0]) || '';
+      if (picked === 'day' && earliest && earliest < HOURLY_FROM) {
         picked = 'week';
         why = ' (hourly detail is not kept that far back)';
       }
     }
     [].forEach.call(document.querySelectorAll('.scaleview'), function (v) {
       v.classList.toggle('on', v.dataset.scaleview === picked);
+    });
+    // THE MONTH RULER LABELS THE CELLS UNDER IT. Left alone over a filtered
+    // grid it named months that were no longer painted — `Mar Apr May` over an
+    // empty field.
+    [].forEach.call(document.querySelectorAll('.calendar .months'), function (ruler) {
+      var shown = ruler.parentNode.querySelectorAll('.cell[data-day]:not([hidden])').length;
+      ruler.hidden = !shown;
     });
     var says2 = document.getElementById('history-aggregation');
     if (says2) { says2.textContent = AGGREGATION[picked] + why; }

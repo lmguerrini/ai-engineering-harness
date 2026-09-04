@@ -2,6 +2,11 @@
 
 **Change class:** TRIVIAL | ROUTINE | MATERIAL
 **Base revision:** <the full 40-character revision this design was frozen against>
+<!-- Verified with:
+     capability_open.py <contract> --capability <id> --change-class MATERIAL \
+         --mutation-begins-at <the first commit of the implementation>
+     Without --mutation-begins-at the base is only checked for being real and in
+     this history, which a design written after the work also satisfies. -->
 **Frozen:** yes
 
 Written **before** the implementation it governs, and read by

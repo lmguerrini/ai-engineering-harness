@@ -59,12 +59,12 @@ changes it. Measure it:
 Held prose, measured at this point in the session and re-measured at close
 (`policy/BUDGETS.md`):
 
-    in-release (skills/core/*.md + policy/*.md)   1737
+    in-release (skills/core/*.md + policy/*.md)   1749
     installed adapters, outside the envelope      1023
     total against a ~2,000 target                 2675   33.8% over the ~2,000
 
 **The breach is inherited, and its composition is the part 2.2.0's disclosure
-did not separate.** 1737 lines are in-release and **that half is under the
+did not separate.** 1749 lines are in-release and **that half is under the
 ~2,000 target**; the 1023 that put the total over are the two installed adapters,
 which this pack did not write, cannot freeze, and counts anyway because they are
 loaded every session. Both figures are stated because `policy/BUDGETS.md` already
@@ -1011,7 +1011,7 @@ as owed.
 
 Recorded because it is the most informative half of a report. The suite and the
 manifest's test count agreed exactly. The release identity verified. **Every
-held-prose number recomputed correctly** — 1737 in-release, 1023 adapters, 2675,
+held-prose number recomputed correctly** — 1749 in-release, 1023 adapters, 2675,
 33.8% — and the baseline figure quoted from 2.2.0 was checked against 2.2.0's own
 frozen manifest. Every `D<n> clause <m>` citation in every file was parsed
 against `DECISIONS.md` and matched: **zero dangling pointers**, which one auditor
@@ -2816,7 +2816,7 @@ authority). The selected one composes a `design` component into
 governed capability opens.
 
 **The record of that reasoning is itself the first thing the mechanism was run
-on**, at `rp2.3-session/DESIGN-C31-design-gate.md`, and a test asserts it
+on**, at `docs/RP2.3-DESIGN-C31-design-gate.md`, and a test asserts it
 satisfies the rule it introduced — because a rule nobody has ever met is a rule
 nobody will meet.
 
@@ -2850,8 +2850,15 @@ year view, the week view replaced by the year view, month cells stripped of
 their counts, every commit placed at midnight, a represented commit added to the
 local total, a linked worktree counted twice, a derived deadline reading as
 recorded, and an undatable stamp given a date. **Fourteen killed, none
-survived** — but only on the third attempt, and the two survivors of the second
-were both real:
+survived** — but only on the third attempt, and read the label *month cells
+stripped of their counts* carefully: the mutant that was run emptied
+`data-local`, which a test does read. An independent reader then emptied the
+`<em>` a reader actually sees and watched the whole suite stay green. The claim
+was true of the mutant that ran and false of the one its words described. Both
+run now, and the oracle reads the rendered number rather than the attribute the
+renderer copies into it.
+
+Of that third attempt's two survivors, both were real:
 
 *   **The seam guard asked only that the token existed.** Emptying `main>*`
     left every converted container with no dividers at all and nothing noticed.
@@ -2864,3 +2871,95 @@ were both real:
     substrate against the default's and requires two real differences — which
     found that Futuristic and Matrix were still very close to recolours, and
     both were given rhythm of their own.
+
+## The final independent reading, and the seven things it found
+
+`514bf66d151e78dddbaa7f719d48ffd4a4f89f08`, digest `ca9610c5…`, blind and
+bounded to `4d754b4..HEAD` — 21 files, +2951/−152. **NOT READY.** Seven claims
+that did not hold and nine tests that passed for reasons they did not state.
+The reader independently recomputed the digest, the tracked-file count and the
+test total, found all three agree, and ran the suite itself: 2020 passed.
+
+**The design gate accepted a design that stated nothing.** Two unnamed
+candidates, a rejection with no reason, oracles settling nothing — and it
+verified. Every document had carried the rule for as long as the mechanism had
+existed: *a rejected design with no reason is not a rejection; it is a list.*
+The code checked only that the list was non-empty. Worse, the readiness note
+hung on the selected design having a name, so **the emptier the record the less
+the report said about it**. Names, a reason and an oracle's property are
+required now, and the summary is unconditional.
+
+**It blocked projects that never asked for it.** A `DESIGN.md` beside a contract
+was auto-discovered, parsed, and — having no change class — returned
+`UNVERIFIABLE` with blocking left at its default. That is one of the commonest
+filenames there is: every consumer with an architecture note would have lost
+readiness on adopting this release, to a component it never opted into. A
+discovered record is reported and never blocking; a declared one, or one the
+project's `requires.design` asked for, still stops the open.
+
+**The freeze binding was off by default and undocumented.** The strict-ancestor
+comparison runs only when the caller names where mutation began, and no shipped
+artifact mentioned `--mutation-begins-at` — the skill printed only
+`--change-class`. The reader committed a whole capability, then wrote its
+design, then named the honest pre-work revision as its base, and the gate said
+VERIFIED. The flag is in the skill and the template now, and the packet and the
+changelog say what the mechanism establishes without it.
+
+**Four scale buttons and a date range narrowed the timeline and left two of the
+four pictures fully painted.** `applyPeriod` sets `hidden`; `.cell` carries
+`display:block` and `.mcell` `display:flex`, and an author `display` beats the
+user-agent `[hidden]` rule. Clicking *month* showed eight month grids from
+February to September, at full opacity, under the words *showing month*. **The
+stylesheet already knew** — `.view[hidden]{display:none}` exists for exactly
+this, after navigation once showed every view at once — and the new cells never
+got the same treatment. The rule covers every element the script hides now, and
+a browser property asserts a narrowed day has zero painted area in every
+representation.
+
+**An end date with no start rendered a blank panel labelled *hours of one
+day*.** The span was computed only inside `if (from)`, so a lone `to` left it at
+zero, chose the hourly aggregation, and put every cell in every picture outside
+it — against help text that says in as many words that an end with no start runs
+from the beginning.
+
+**The hourly line stated local counts under a remote label.** `_day_hours`
+switched its label by mode and always read `day.hours`, so *represented by the
+remote by hour* printed the local figures, contradicting the bars drawn
+immediately above it from the correct series and disagreeing with the summary.
+
+**A month cell printed a remote count beside a tooltip saying the remote had
+never been observed** — three statements in one cell. It prints UNKNOWN now, as
+does the week column's *only here*, which is a difference against an observed
+remote and is not defined without one.
+
+### The nine tests that were not evidence
+
+Six survived a mutant that changes what a reader sees. The agreement tests read
+`data-local`, an attribute the renderer copies verbatim from the reading, so a
+mutant making the combined mode return `local + remote` printed the sum in every
+visible cell and the suite stayed green. The hour test read the tooltip rather
+than the bar. The container guard rejected one literal string on one display
+mode, and the reader restored the same field twice — once with `--rule-strong`,
+once with `display:flex`. The rhythm guard compared strings, so `13px` against
+`13.0001px` counted as a presentation identity. The freeze binding was exercised
+only where the base equals the mutation point. Nothing covered
+`requires.design: true` against a `TRIVIAL` declaration. And the test asserting
+the mechanism had been run on its own design **silently skipped everywhere
+except the one checkout that happened to sit beside the session directory** —
+the pack cited a file it did not ship. It ships it now, at
+`docs/RP2.3-DESIGN-C31-design-gate.md`, and the test asserts rather than skips.
+
+Every one of those fourteen defects was then restored deliberately against a
+green baseline in the real checkout: **fourteen killed, none survived.**
+
+### What the reading found correct
+
+Containment held under three attacks — a repository registered twice through a
+linked worktree, an unfetched remote, and the hour buckets against the day
+totals. The hour is read from the commit's own instant and bucket zero stays
+empty. Every surface in every lens is below the dark ceiling, with Matrix's
+brightest at 0.0443 and its ground at 0.0010. `policy/` is untouched: the design
+gate adds no HITL row, removes none, changes none. Cold reconstruction recovers
+the decision and its rationale. The exemplar design record's base is the
+immediate parent of the commit that adds the module — **the design genuinely
+preceded the implementation.**

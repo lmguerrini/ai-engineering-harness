@@ -149,9 +149,21 @@ class DesignRecord:
                 found.append(
                     f"{len(self.candidates)} design(s) considered. A material change states at "
                     f"least two, because a single candidate is a decision nobody made")
+            nameless = [i for i, c in enumerate(self.candidates, 1) if not c.name.strip()]
+            if nameless:
+                found.append(
+                    f"design(s) {nameless} are considered and unnamed. A row with no design in "
+                    f"it is a row, and the whole record was written to be read by somebody")
             if not self.rejected:
                 found.append("no alternative was rejected. A design with nothing rejected "
                              "records a preference, not a choice")
+            elif not any(c.why.strip() for c in self.rejected):
+                # THE DOCUMENTS ALREADY SAID THIS and the code did not check it:
+                # *a rejected design with no reason is not a rejection; it is a
+                # list*. An independent reader got an empty MATERIAL record past
+                # the whole mechanism.
+                found.append("no rejected design says why it was rejected. A rejection with no "
+                             "reason is not a rejection; it is a list")
             if self.selected is None:
                 chosen = [c for c in self.candidates if c.verdict == SELECTED]
                 found.append(f"{len(chosen)} designs are marked {SELECTED}; exactly one must be")
@@ -165,6 +177,11 @@ class DesignRecord:
                 found.append("no mutation oracle. A guard nobody has tried to break is a claim, "
                              "not evidence")
 
+        empty = [o.ident or "?" for o in self.oracles if not o.property.strip()]
+        if empty and self.change_class in (ROUTINE, MATERIAL):
+            found.append(
+                f"oracle(s) {empty} state no property. An oracle that does not say what it "
+                f"settles cannot be the thing the implementation is not allowed to choose")
         for kind in (ACCEPTANCE, NEGATIVE):
             if not self.of_kind(kind):
                 found.append(f"no {kind} oracle. Acceptance says what must hold; negative says "

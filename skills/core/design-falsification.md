@@ -54,7 +54,19 @@ defect it produces.
 The record names the exact forty-character revision it was frozen against. That
 revision must resolve in the repository and be an ancestor of `HEAD`, and where
 the coordinator can name the revision at which mutation began, the base must be
-a strict ancestor of it. A design frozen against a tree that already contains
+a strict ancestor of it.
+
+**Name it.** The strict-ancestor comparison is the only thing standing between
+this mechanism and a design written after the code, and it runs only when you
+pass the revision:
+
+    python3 <pack>/tools/capability_open.py <contract> --capability <id> \
+        --change-class MATERIAL --mutation-begins-at "$(git rev-parse <first commit>)"
+
+Without it the gate checks that the base is real and in this history, which a
+revision from before the work satisfies whether the design was written before
+the work or after it. An independent reader got a design written three commits
+late past the command this skill used to print. A design frozen against a tree that already contains
 the work it governs is refused — backdating is the obvious cheat and the only
 one worth building for.
 

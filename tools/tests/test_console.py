@@ -1425,3 +1425,83 @@ def test_a_quiet_day_keeps_its_place_in_the_week_and_the_day(with_repository):
     assert set(quiet) & set(hourly), (
         "a quiet day has no hourly block at all, so the day scale shows nothing on it")
     assert "No commit on this day" in block
+
+
+def test_the_number_a_month_cell_actually_prints_is_the_reading(with_repository):
+    """T1 and T3. Every earlier agreement test read `data-local`, which the
+    renderer copies verbatim from the reading — so a mutant that made the
+    *combined* mode return `local + remote` printed the sum in every visible
+    cell and the whole suite stayed green, and a mutant that emptied `<em>`
+    removed every count a reader can see and nothing noticed.
+
+    This reads what the browser would show, per mode, and compares it with the
+    reading the page was built from.
+    """
+    import re
+
+    import activity as activity_module
+
+    three, _repo = with_repository
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    block = _history_block(page)
+    truth = {day.date: day for day in
+             activity_module.aggregate([console._activity_of(site) for site in sites])}
+    assert truth, "the fixture has no activity, so this proves nothing"
+
+    modes = re.findall(r"<div class=actmode data-actmode='([a-z]+)'>(.*?)(?=<div class=actmode|$)",
+                       block, re.S)
+    assert len(modes) == 3, f"{len(modes)} activity modes rendered"
+    printed_any = False
+    for mode, body in modes:
+        cells = re.findall(r"<i class='mcell cell [^']*' data-day='(\d{4}-\d{2}-\d{2})'[^>]*>"
+                           r"<b>\d+</b><em>([^<]*)</em>", body)
+        assert cells, f"the {mode} month grid printed no cell"
+        for date, shown in cells:
+            day = truth.get(date) or activity_module.Day(date=date)
+            expected, exact, _kind = console._mode_counts(day, mode)
+            want = console.UNKNOWN_MARK if exact is None else (str(exact) if exact else "")
+            assert shown == want, (
+                f"{mode} {date}: the cell prints {shown!r} and the reading is {want!r} "
+                f"(local {day.local}, represented {day.remote}, "
+                f"unknown {day.remote_unknown})")
+            printed_any = printed_any or bool(shown)
+    assert printed_any, "every cell printed nothing, so the comparison was vacuous"
+
+
+def test_an_hour_bar_is_drawn_from_the_number_beside_it(with_repository):
+    """T2. The earlier test read the tooltip — `N local, M represented` — which
+    the renderer writes from the reading and the bar geometry never touches. A
+    mutant taking the bar heights from the represented series while leaving the
+    tooltip truthful survived the whole suite.
+
+    This reads the heights.
+    """
+    import re
+
+    import activity as activity_module
+
+    three, _repo = with_repository
+    sites = console.survey(three)
+    page = console.render_console(sites)
+    block = _history_block(page)
+    truth = {day.date: day for day in
+             activity_module.aggregate([console._activity_of(site) for site in sites])}
+
+    blocks = re.findall(r"<div class=dayhours data-day='(\d{4}-\d{2}-\d{2})'>(.*?)</div></div>",
+                        block, re.S)
+    assert blocks, "the day representation drew no block"
+    checked = 0
+    for date, body in blocks:
+        heights = re.findall(r"<i class='hbar' style='height:(\d+)%' data-hour='(\d+)'", body)
+        if not heights:
+            continue
+        day = truth[date]
+        peak = max(max(day.hours), 1)
+        for percent, hour in heights:
+            want = max(2, round(100 * day.hours[int(hour)] / peak))
+            assert int(percent) == want, (
+                f"{date} {hour}:00 — the bar is {percent}% and {day.hours[int(hour)]} "
+                f"commits against a peak of {peak} is {want}%")
+            checked += 1
+    assert checked >= 24, f"only {checked} bars were checked; the fixture drew too few"

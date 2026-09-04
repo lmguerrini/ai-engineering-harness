@@ -129,7 +129,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── pathmatch.py            one path-pattern semantics, oracled against git
     │   ├── scope_check.py          one containment rule, for every gate that asks
     │   ├── evidence_put.py         content-addressed, owner-only, write-then-verify
-    │   ├── design_record.py       a design frozen before the implementation it governs
+    │   ├── design_record.py        a design frozen before the implementation it governs
     │   ├── projection.py           one read-only view, rebuilt from disk and storing nothing
     │   ├── console.py              many projects, one page; it arranges projections and decides nothing
     │   ├── activity.py             two histories: when code changed, and what durable artifacts can date
