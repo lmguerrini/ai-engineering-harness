@@ -528,8 +528,13 @@ def test_the_control_room_and_all_systems_are_recomposed_and_not_concatenated(th
     banner in one, an anchored index in the other."""
     page = console.render_console(console.survey(three))
     room = page[page.index("data-view='control'"):page.index("data-view='projects'")]
-    assert "the situation" in room and room.count("<section class=setgroup") >= 6
-    assert "what happens next, per project" in room
+    assert "the situation" in room and room.count("<section class='setgroup") >= 7
+    # Each section leads with a summary, which is what makes it a recomposition
+    # rather than the other views stacked: the tables here are the notable rows.
+    assert room.count("<div class=summary>") >= 4, "the sections do not summarise"
+    for question in ("needs a person or a look", "every project", "workers", "durable output",
+                     "audits", "capacity", "release and safety"):
+        assert question in room, question
     everything = page[page.index("data-view='all'"):page.index("data-view='control'")]
     assert len(re.findall(r"data-anchor-target='all-[a-z]+'", everything)) >= 10
     assert len(re.findall(r"data-anchor='all-[a-z]+'", everything)) >= 10

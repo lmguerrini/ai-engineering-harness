@@ -1359,3 +1359,126 @@ def test_the_visual_system_holds_no_purple():
                 continue
             assert not (255 <= hue <= 330), (
                 f"{theme or 'default'}: --{name} is {colour}, a purple at {hue:.0f}°")
+
+
+#: The tokens a lens uses for its own character — ground, surfaces, rules, the
+#: neutral text and the interaction accent. NOT the semantics: those are four
+#: answers whose hues belong to the meaning, not to the lens.
+_THEME_TOKENS = ("ground", "panel", "panel-2", "panel-3", "rule", "rule-strong",
+                 "ink", "dim", "faint", "accent")
+
+
+def test_the_matrix_lens_reads_green_and_never_teal():
+    """**The founder's review: it looked cyan.**
+
+    It did — its greens sat at about 150°, which is mint, and the eye reads mint
+    beside a dark ground as blue-green. A phosphor terminal is a warmer green,
+    nearer 105°, and the difference is the whole character of the lens.
+
+    Checked by hue family rather than by comparing CSS strings, because two
+    greens that differ in every digit can both be the wrong green.
+    """
+    tokens = _theme_tokens("matrix")
+    for name in _THEME_TOKENS:
+        hue, _lum = _hue_and_luminance(tokens[name])
+        if hue is None:
+            continue
+        assert 75 <= hue <= 150, (
+            f"matrix --{name} is {tokens[name]} at {hue:.0f}°, outside the green family")
+        assert not (155 <= hue <= 210), f"matrix --{name} is teal or cyan"
+    for name in ("ink", "accent"):
+        hue, _lum = _hue_and_luminance(tokens[name])
+        assert 90 <= hue <= 135, (
+            f"matrix --{name} is {tokens[name]} at {hue:.0f}° — phosphor green is nearer 105 "
+            f"than 150, and past 140 it reads as mint")
+    #: And the semantics keep their own hues on top of it.
+    assert _hue_and_luminance(tokens["bad"])[0] < 30 or \
+        _hue_and_luminance(tokens["bad"])[0] > 340, "a defect is not red under matrix"
+    assert 25 <= _hue_and_luminance(tokens["warn"])[0] <= 60, "a warning is not amber"
+    assert 75 <= _hue_and_luminance(tokens["good"])[0] <= 150, "an established good is not green"
+
+
+@pytest.mark.parametrize("lens", ["", "minimal"])
+def test_the_lenses_the_founder_reads_in_are_not_cold(lens):
+    """Neutral-to-warm, said as a measurement.
+
+    A grey with more blue in it than red reads cold, and a whole console built
+    from them reads like a spreadsheet at night. Monochrome and Minimal are the
+    two the founder actually works in, so their surfaces and their type are
+    required to be neutral or warm. The semantics are exempt: an unestablished
+    reading is steel because that is what it means.
+    """
+    tokens = _theme_tokens(lens)
+    for name in _THEME_TOKENS:
+        colour = tokens[name].lstrip("#")
+        if len(colour) == 3:                        # `#000` is three digits, not six
+            colour = "".join(c * 2 for c in colour)
+        red, blue = int(colour[0:2], 16), int(colour[4:6], 16)
+        assert red >= blue, (
+            f"{lens or 'monochrome'} --{name} is {tokens[name]}: more blue than red, which "
+            f"reads cold")
+
+
+def test_the_shipped_lens_accents_in_warm_amber_without_becoming_the_warning():
+    """The founder asked for a restrained warm amber accent on the default lens.
+    An amber accent beside an amber warning is one hue doing two jobs, so they
+    are separated by brightness instead — and the separation test above is what
+    holds that true."""
+    tokens = _theme_tokens("")
+    accent_hue, accent_lum = _hue_and_luminance(tokens["accent"])
+    warn_hue, warn_lum = _hue_and_luminance(tokens["warn"])
+    assert 20 <= accent_hue <= 55, f"the accent is at {accent_hue:.0f}°, which is not amber"
+    assert abs(accent_hue - warn_hue) < 20, "they are different hues, so this test is not needed"
+    brighter = (max(accent_lum, warn_lum) + 0.05) / (min(accent_lum, warn_lum) + 0.05)
+    assert brighter >= 1.6, (
+        f"the accent and the warning are {brighter:.2f}:1 apart in brightness and share a hue")
+
+
+def test_no_size_in_either_stylesheet_escapes_the_tokens():
+    """**The readability floor, held in the portable suite.**
+
+    A wide screen raises the type by moving four variables. Any size written as
+    a literal ignores that — and fifty-four of them did, which is why the first
+    ultrawide capture fitted a great deal of text at eleven and a half pixels
+    and the founder could not read it. Measuring in a browser found them; this
+    keeps them out, on a machine with no browser.
+
+    Only the token declarations themselves may carry a number.
+    """
+    import re
+
+    import console
+
+    for name, style in (("projection", projection._STYLE), ("console", console._SHELL_STYLE)):
+        for line in style.splitlines():
+            if re.search(r"--fs[a-z-]*:\s*[0-9.]+px", line):
+                continue                      # the declarations the rest refer to
+            found = re.search(r"font-size:\s*([0-9.]+)px", line)
+            assert not found, (
+                f"{name}: `{line.strip()}` fixes a size at {found.group(1)}px, so it does not "
+                f"grow with the screen or move when the operator changes it")
+
+
+def test_the_readability_floor_rises_with_the_screen():
+    """A wider display is for seeing MORE, not the same thing smaller. Each
+    breakpoint must raise the body, label and state sizes rather than lower
+    them."""
+    import re
+
+    import console
+
+    tiers = []
+    for match in re.finditer(r"@media\(min-width:(\d+)px\)\{([^@]*?)\}\n", console._SHELL_STYLE,
+                             re.S):
+        width, block = int(match.group(1)), match.group(2)
+        sizes = dict(re.findall(r"--(fs|fs-micro|fs-state|fs-forensic):([0-9.]+)px", block))
+        if sizes:
+            tiers.append((width, {k: float(v) for k, v in sizes.items()}))
+    tiers.sort()
+    assert len(tiers) >= 3, f"only {len(tiers)} widths change the type"
+    for key in ("fs", "fs-micro", "fs-state"):
+        values = [sizes[key] for _w, sizes in tiers if key in sizes]
+        assert values == sorted(values), f"--{key} does not rise with the screen: {values}"
+    widest = tiers[-1]
+    assert widest[1]["fs"] >= 15, f"at {widest[0]}px the body is {widest[1]['fs']}px"
+    assert widest[1]["fs-micro"] >= 10.5, "the field labels are below the floor on an ultrawide"

@@ -209,27 +209,27 @@ body{min-height:100vh}
 .rail{background:var(--panel-2);border-right:1px solid var(--rule-strong);
 display:flex;flex-direction:column;gap:2px;padding:0 0 10px;min-width:0}
 .brand{padding:11px 14px 9px;border-bottom:1px solid var(--rule)}
-.brand b{display:block;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
-.brand span{display:block;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+.brand b{display:block;font-size:var(--fs-forensic);letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
+.brand span{display:block;font-size:var(--fs-micro);letter-spacing:.16em;text-transform:uppercase;
 color:var(--faint);margin-top:2px}
-.rail h4{margin:11px 14px 3px;font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;
+.rail h4{margin:11px 14px 3px;font-size:var(--fs-micro);letter-spacing:.2em;text-transform:uppercase;
 color:var(--faint);font-weight:700}
 .go{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;
-border:0;border-left:2px solid transparent;color:var(--dim);font:inherit;font-size:11.5px;
+border:0;border-left:2px solid transparent;color:var(--dim);font:inherit;font-size:var(--fs-forensic);
 padding:5px 14px;cursor:pointer}
 .go:hover{color:var(--ink);background:var(--panel-3)}
 .go[aria-current="true"]{color:var(--ink);border-left-color:var(--accent);background:var(--panel-3)}
-.go .n{margin-left:auto;font-size:9.5px;color:var(--faint)}
+.go .n{margin-left:auto;font-size:var(--fs-micro);color:var(--faint)}
 .go .dot{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:var(--rule-strong)}
 .go .dot.bad{background:var(--bad)} .go .dot.warn{background:var(--warn)}
 .go .dot.unknown{background:var(--unknown)} .go .dot.good{background:var(--good)}
 .surface{min-width:0}
 
 .gbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:7px 16px;
-background:var(--panel);border-bottom:1px solid var(--rule-strong);font-size:11px}
-.gbar .t{color:var(--faint);text-transform:uppercase;letter-spacing:.13em;font-size:9px}
+background:var(--panel);border-bottom:1px solid var(--rule-strong);font-size:var(--fs-forensic)}
+.gbar .t{color:var(--faint);text-transform:uppercase;letter-spacing:.13em;font-size:var(--fs-micro)}
 .gbar .lens{margin-left:auto;display:flex;gap:1px;background:var(--rule);flex-wrap:wrap}
-.lens button{background:var(--panel-2);border:0;color:var(--dim);font:inherit;font-size:10px;
+.lens button{background:var(--panel-2);border:0;color:var(--dim);font:inherit;font-size:var(--fs-forensic);
 letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;cursor:pointer}
 .lens button:hover{color:var(--ink)}
 .lens button[aria-pressed="true"]{background:var(--accent);color:var(--ground);font-weight:700}
@@ -241,14 +241,14 @@ letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;cursor:pointer}
    assertion about content caught it: nothing was hidden, including the thing
    that should have been. Found by looking at a screenshot. */
 .view[hidden]{display:none}
-.view>h2.vh{margin:0;padding:12px 16px 4px;font-size:15px;letter-spacing:-.01em;color:var(--ink)}
-.view>p.vq{margin:0;padding:0 16px 11px;font-size:11.5px;color:var(--dim);
+.view>h2.vh{margin:0;padding:12px 16px 4px;font-size:calc(var(--fs) + 2px);letter-spacing:-.01em;color:var(--ink)}
+.view>p.vq{margin:0;padding:0 16px 11px;font-size:var(--fs-forensic);color:var(--dim);
 border-bottom:1px solid var(--rule)}
 
 /* ---- tables: the cross-project views -------------------------------------- */
 .tw{overflow-x:auto;border-bottom:1px solid var(--rule)}
-table{border-collapse:collapse;width:100%;font-size:11.5px;min-width:640px}
-th{text-align:left;font-size:8.5px;letter-spacing:.15em;text-transform:uppercase;
+table{border-collapse:collapse;width:100%;font-size:var(--fs-forensic);min-width:640px}
+th{text-align:left;font-size:var(--fs-micro);letter-spacing:.15em;text-transform:uppercase;
 color:var(--faint);font-weight:700;padding:7px 10px;background:var(--panel-2);
 border-bottom:1px solid var(--rule-strong);white-space:nowrap;position:sticky;top:0}
 th[data-sort]{cursor:pointer} th[data-sort]:hover{color:var(--ink)}
@@ -261,7 +261,7 @@ td.bad .s,.s.bad{color:var(--bad)} td.warn .s,.s.warn{color:var(--warn)}
 td.unknown .s,.s.unknown{color:var(--unknown)} td.good .s,.s.good{color:var(--good)}
 .s.bad::before{content:"✕ "} .s.warn::before{content:"▲ "}
 .s.unknown::before{content:"? "} .s.good::before{content:"✓ "}
-td small{display:block;color:var(--faint);font-size:10px;
+td small{display:block;color:var(--faint);font-size:var(--fs-forensic);
 overflow-wrap:normal;word-break:normal}
 /* Long prose in a table cell: clamped, never cut. The whole string stays in the
    document and in the element's title, so nothing is removed — a row simply
@@ -270,46 +270,46 @@ overflow-wrap:normal;word-break:normal}
 line-clamp:2}
 .clamp1{-webkit-line-clamp:1;line-clamp:1}
 .pill{display:inline-block;padding:0 6px;border:1px solid var(--rule-strong);color:var(--dim);
-font-size:10px;margin-right:3px;white-space:nowrap}
+font-size:var(--fs-forensic);margin-right:3px;white-space:nowrap}
 .pill.bad{color:var(--bad);border-color:var(--bad);background:var(--bad-bg)}
 .pill.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-bg)}
 .pill.unknown{color:var(--unknown);border-color:var(--unknown);background:var(--unknown-bg)}
 .pill.good{color:var(--good);border-color:var(--good)}
-.none{padding:10px 16px;color:var(--faint);font-size:11.5px}
+.none{padding:10px 16px;color:var(--faint);font-size:var(--fs-forensic)}
 
 /* ---- filters -------------------------------------------------------------- */
 .filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 16px;
 background:var(--panel-2);border-bottom:1px solid var(--rule)}
 .filters input[type=search],.filters input[type=text]{background:var(--ground);
-border:1px solid var(--rule-strong);color:var(--ink);font:inherit;font-size:11.5px;
+border:1px solid var(--rule-strong);color:var(--ink);font:inherit;font-size:var(--fs-forensic);
 padding:3px 8px;min-width:170px}
 .filters button{background:var(--panel);border:1px solid var(--rule-strong);color:var(--dim);
-font:inherit;font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;
+font:inherit;font-size:var(--fs-forensic);letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;
 cursor:pointer}
 .filters button:hover{color:var(--ink);border-color:var(--accent)}
 .filters button[aria-pressed="true"]{background:var(--accent);color:var(--ground);
 border-color:var(--accent);font-weight:700}
-.filters .t{color:var(--faint);text-transform:uppercase;letter-spacing:.13em;font-size:9px}
+.filters .t{color:var(--faint);text-transform:uppercase;letter-spacing:.13em;font-size:var(--fs-micro)}
 
 /* ---- the custom view builder ---------------------------------------------- */
 .builder{display:grid;grid-template-columns:1fr;gap:1px;background:var(--rule)}
 @media(min-width:1000px){.builder{grid-template-columns:262px 1fr}}
 .catalog{background:var(--panel);padding:10px 14px;max-height:78vh;overflow-y:auto}
-.catalog details>summary{cursor:pointer;list-style:none;font-size:11px;color:var(--dim);
+.catalog details>summary{cursor:pointer;list-style:none;font-size:var(--fs-forensic);color:var(--dim);
 padding:4px 0;border-top:1px solid var(--rule);user-select:none}
 .catalog details>summary::-webkit-details-marker{display:none}
 .catalog details>summary::before{content:"▸ "}
 .catalog details[open]>summary::before{content:"▾ "}
-.catalog details>summary .n{color:var(--faint);font-size:9.5px}
+.catalog details>summary .n{color:var(--faint);font-size:var(--fs-micro)}
 @media(max-width:999px){.catalog{max-height:none}}
-.catalog h5{margin:9px 0 5px;font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;
+.catalog h5{margin:9px 0 5px;font-size:var(--fs-micro);letter-spacing:.18em;text-transform:uppercase;
 color:var(--faint)}
-.catalog label{display:flex;gap:7px;align-items:baseline;font-size:11.5px;padding:2px 0;
+.catalog label{display:flex;gap:7px;align-items:baseline;font-size:var(--fs-forensic);padding:2px 0;
 cursor:pointer;color:var(--dim)}
 .catalog label:hover{color:var(--ink)}
 .catalog .ord{margin-left:auto;display:flex;gap:2px}
 .catalog .ord button{background:var(--panel-2);border:1px solid var(--rule);color:var(--faint);
-font:inherit;font-size:10px;line-height:1;padding:1px 5px;cursor:pointer}
+font:inherit;font-size:var(--fs-forensic);line-height:1;padding:1px 5px;cursor:pointer}
 .canvas{background:var(--ground);padding:10px;display:grid;gap:10px;
 grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));align-content:start}
 @media(max-width:760px){.canvas{grid-template-columns:1fr}}
@@ -319,7 +319,7 @@ overflow:auto;min-height:0;min-width:0}
    It scrolls sideways inside its own cell instead — the page does not. */
 .canvas table{min-width:760px}
 .canvas .tw{overflow-x:auto}
-.canvas .empty{grid-column:1/-1;color:var(--faint);font-size:11.5px;padding:16px;
+.canvas .empty{grid-column:1/-1;color:var(--faint);font-size:var(--fs-forensic);padding:16px;
 border:1px dashed var(--rule-strong);text-align:center}
 
 /* ---- settings: a control surface, not a debug form ------------------------- */
@@ -344,25 +344,35 @@ label.set select,#preset-name,.filters select{background:var(--ground);
 border:1px solid var(--rule-strong);color:var(--ink);font:inherit;font-size:var(--fs);
 padding:2px 6px;max-width:20ch}
 label.set button{background:var(--panel-2);border:1px solid var(--rule);color:var(--faint);
-font:inherit;font-size:11px;line-height:1;padding:2px 6px;cursor:pointer}
+font:inherit;font-size:var(--fs-forensic);line-height:1;padding:2px 6px;cursor:pointer}
 label.set button:hover{color:var(--ink);border-color:var(--accent)}
 .setgroup .note{margin:9px 0 0;color:var(--faint);font-size:var(--fs-forensic);max-width:56ch}
 #refusals li.bad .k{color:var(--bad)}
 [data-density="compact"] li{padding-top:1px;padding-bottom:1px}
-[data-density="compact"] .state{font-size:22px}
+[data-density="compact"] .state{font-size:calc(var(--fs-state) * 0.78)}
 [data-density="comfortable"] li{padding-top:5px;padding-bottom:5px;line-height:1.6}
-[data-density="comfortable"] .state{font-size:34px}
+[data-density="comfortable"] .state{font-size:calc(var(--fs-state) * 1.15)}
 
 
 /* ---- one page for everything, and one screen to leave up ------------------- */
 .stack{display:grid;gap:var(--gap);background:var(--rule)}
 .filters.index{gap:4px}
+/* a section's own answer, before its rows */
+.summary{display:flex;flex-wrap:wrap;gap:0 14px;padding:6px var(--pad-x) 7px;
+border-bottom:1px solid var(--rule);font-size:var(--fs-forensic);color:var(--dim)}
+.summary span{white-space:nowrap}
+.c-jobs b{font-weight:700;display:inline-block;min-width:1.6ch;text-align:right}
+.c-jobs{white-space:nowrap;color:var(--dim)}
+.summary .bad{color:var(--bad)} .summary .warn{color:var(--warn)}
+.summary .unknown{color:var(--unknown)} .summary .good{color:var(--good)}
+.summary .bad::before{content:"✕ "} .summary .warn::before{content:"▲ "}
+.summary .unknown::before{content:"? "}
 .jump{background:none;border:1px solid transparent;color:var(--accent);font:inherit;
 font-size:inherit;padding:0 3px;cursor:pointer;text-align:left}
 .jump:hover{border-color:var(--accent)}
 td .jump{font-weight:700}
 .filters .jump{border-color:var(--rule-strong);color:var(--dim);padding:3px 9px;
-font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+font-size:var(--fs-forensic);letter-spacing:.08em;text-transform:uppercase}
 .filters .jump:hover{color:var(--ink);border-color:var(--accent)}
 .guide{display:grid;gap:var(--gap);background:var(--rule);
 grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start}
@@ -391,24 +401,32 @@ align-items:start}
 /* ULTRAWIDE. At this width a single column would be a very tall page nobody
    scrolls; four columns put the whole operating picture on one screen without
    shrinking the type to do it. */
-@media(min-width:2600px){
-  .room{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .room>section{max-height:42vh}
-  .room-wide{grid-column:span 2}
-  main{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .settings,.guide{grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr))}
-  body{--fs:13.5px;--fs-state:34px;--fs-micro:9.5px}
+/* ---- the readability floor -------------------------------------------------
+   A wide screen is for seeing MORE, not for seeing the same thing smaller. The
+   founder's review of the first ultrawide capture was that it fitted a great
+   deal and could not be read from a normal desk distance — so the type grows
+   with the screen instead of shrinking to fit, and what the extra width buys
+   is more columns and shorter summaries rather than more rows of small text. */
+@media(min-width:1900px){
+  body{--fs:13.5px;--fs-micro:9.5px;--fs-forensic:12.5px;--fs-state:33px}
+}
+@media(min-width:2400px){
+  body{--fs:15px;--fs-micro:10.5px;--fs-forensic:13.5px;--fs-state:37px;--pad-x:20px}
+  .room{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .room>section{max-height:44vh}
+  .room-wide{grid-column:1/-1}
+  main{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .settings,.guide{grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr))}
 }
 @media(min-width:3400px){
-  .room{grid-template-columns:repeat(5,minmax(0,1fr))}
-  .room>section{max-height:38vh}
-  /* The banner is short and must never scroll; the project matrix is long and
-     is bounded like everything else, so the row beneath it is on the screen
-     rather than just under it. */
-  .room-wide{grid-column:span 5}
+  body{--fs:16px;--fs-micro:11px;--fs-forensic:14.5px;--fs-state:42px;--pad-x:22px}
+  .room{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .room>section{max-height:40vh}
+  .room-wide{grid-column:1/-1}
   .room>section.room-wide:first-child{max-height:none}
-  .room>section:nth-child(2),.room>section:nth-child(3){grid-column:span 2}
-  .room>section.room-wide:not(:first-child){max-height:34vh;overflow:auto}
+  /* attention and the health matrix are the two an operator reads most, so they
+     get the width; everything else is a summary beside them. */
+  .room>section.wide2{grid-column:span 2}
 }
 /* the chrome folds away, and comes back with the same key */
 body[data-chrome="off"] .rail{display:none}
@@ -433,9 +451,9 @@ padding:8vh 16px 16px}
 .finder.open{display:block}
 .finderbox{display:flex;gap:1px;max-width:720px;margin:0 auto;background:var(--rule)}
 .finderbox input{flex:1;background:var(--panel);border:0;color:var(--ink);font:inherit;
-font-size:15px;padding:11px 14px}
+font-size:calc(var(--fs) + 2px);padding:11px 14px}
 .finderbox button{background:var(--panel-2);border:0;color:var(--faint);font:inherit;
-font-size:10px;letter-spacing:.12em;text-transform:uppercase;padding:0 12px;cursor:pointer}
+font-size:var(--fs-forensic);letter-spacing:.12em;text-transform:uppercase;padding:0 12px;cursor:pointer}
 #find-list{max-width:720px;margin:1px auto 0;background:var(--panel);max-height:62vh;
 overflow-y:auto;padding:0}
 #find-list li{padding:6px 14px;gap:10px;cursor:pointer;border-bottom:1px solid var(--rule)}
@@ -451,7 +469,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34ch}
 @media(max-width:999px){
   .app{grid-template-columns:1fr;min-width:0}
   .surface{min-width:0}
-  .gbar{gap:6px 12px;font-size:10.5px}
+  .gbar{gap:6px 12px;font-size:var(--fs-forensic)}
   .gbar .lens{margin-left:0;width:100%;overflow-x:auto;scrollbar-width:none}
   .gbar .lens::-webkit-scrollbar{display:none}
   .rail{position:sticky;bottom:0;order:2;flex-direction:row;overflow-x:auto;gap:0;
@@ -460,10 +478,10 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34ch}
   .rail::-webkit-scrollbar{display:none}
   .brand,.rail h4{display:none}
   .go{width:auto;white-space:nowrap;border-left:0;border-top:2px solid transparent;
-  padding:8px 12px;font-size:11px}
+  padding:8px 12px;font-size:var(--fs-forensic)}
   .go[aria-current="true"]{border-left-color:transparent;border-top-color:var(--accent)}
   .surface{order:1}
-  .view>h2.vh{padding-top:10px;font-size:14px}
+  .view>h2.vh{padding-top:10px;font-size:calc(var(--fs) + 2px)}
   /* A TABLE IS THE WRONG SHAPE FOR A PHONE. Twelve columns squeezed into
      390px wrapped every value mid-word — the "stacked desktop" this layout
      exists not to be. Below the breakpoint each row becomes a card and each
@@ -479,7 +497,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34ch}
   tr:hover td{background:none}
   td{border:0;padding:0;max-width:none;background:none;grid-column:1/-1;
   overflow-wrap:anywhere}
-  td::before{content:attr(data-label);display:block;font-size:8px;letter-spacing:.14em;
+  td::before{content:attr(data-label);display:block;font-size:var(--fs-micro);letter-spacing:.14em;
   text-transform:uppercase;color:var(--faint);margin-bottom:1px}
   td.num{text-align:left}
   td:empty{display:none}
@@ -489,7 +507,7 @@ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34ch}
      may not do — so each gets its own. */
   .c-project,.c-state{grid-column:1/-1}
   .c-running,.c-complete,.c-unknown,.c-stalled{grid-column:span 1}
-  .c-project .s{font-size:14.5px} .c-state .s{font-size:13px}
+  .c-project .s{font-size:calc(var(--fs) + 2px)} .c-state .s{font-size:var(--fs)}
   .c-attention .s,.c-attention{font-weight:700}
 }
 """
@@ -1081,22 +1099,23 @@ _SCRIPT = r"""
     var all = prefs.presets;
     return (all && typeof all === 'object' && !Array.isArray(all)) ? all : {};
   }
+  function anyLook(name) {
+    var saved = presets();
+    return Object.prototype.hasOwnProperty.call(saved, name) ? saved[name]
+                                                             : BUILT_IN_LOOKS[name];
+  }
   function paintPresets() {
     var host = document.getElementById('preset-list');
     if (!host) { return; }
     host.innerHTML = '';
-    var names = Object.keys(presets());
-    if (!names.length) {
-      var none = document.createElement('span');
-      none.className = 't'; none.textContent = 'none saved';
-      host.appendChild(none);
-    }
+    var names = Object.keys(BUILT_IN_LOOKS).concat(Object.keys(presets()))
+      .filter(function (n, i, a) { return a.indexOf(n) === i; });
     names.forEach(function (name) {
       var b = document.createElement('button');
       b.textContent = name;
       b.setAttribute('aria-pressed', String(name === prefs.preset));
       b.addEventListener('click', function () {
-        var one = presets()[name] || {};
+        var one = anyLook(name) || {};
         prefs.settings = (one.settings && typeof one.settings === 'object') ? one.settings : {};
         prefs.lens = typeof one.lens === 'string' ? one.lens : '';
         prefs.density = typeof one.density === 'string' ? one.density : 'normal';
@@ -1263,7 +1282,19 @@ _SCRIPT = r"""
   // each is a list of sections already on this page, in an order somebody found
   // useful. An operator may switch to one, edit it, and save it under their own
   // name; the built-in stays where it was.
+  // A look the founder can always get back to in one click. It is not an
+  // example: it is exactly what the release ships in — monochrome, warm
+  // graphite, a restrained amber accent — named so that any amount of
+  // customising has a way home.
+  var BUILT_IN_LOOKS = {
+    'founder': { settings: {}, lens: '', density: 'normal', hidden: [] }
+  };
   var BUILT_IN = {
+    'founder control room': { cols: 3, scope: 'all', density: 'normal', widgets: [
+      { id: 'global:overview', span: 3 }, { id: 'global:attention', span: 2 },
+      { id: 'global:workers', span: 1 }, { id: 'global:audits', span: 1 },
+      { id: 'global:capacity', span: 1 }, { id: 'global:output', span: 1 },
+      { id: 'global:identity', span: 3 }] },
     'minimal overview': { cols: 1, widgets: [
       { id: 'global:overview', span: 1 }] },
     'daily operations': { cols: 2, widgets: [
@@ -2096,10 +2127,43 @@ def _all_systems(sites: list) -> str:
     index = "".join(
         f"<button class=jump data-anchor='all-{key}'>{_ESC(title)}</button>"
         for key, title, _body in sections)
+    #: EACH DOMAIN LEADS WITH ITS OWN ANSWER. The first version put every
+    #: table at equal weight and read as a diagnostic log — complete, and
+    #: nothing in it stood out. A summary line per domain, then its rows.
+    counted = {
+        "attention": [(f"{sum(sum(s.attention.values()) for s in sites)} readings marked",
+                       Tone.WARN if any(s.attention for s in sites) else "")],
+        "matrix": [(f"{len(sites)} projects", ""),
+                   (f"{len([s for s in sites if s.view is None])} unreadable",
+                    Tone.UNKNOWN if any(s.view is None for s in sites) else "")],
+        "workers": [(f"{sum(1 for s in sites for c in s.figures('job'))} jobs", ""),
+                    (f"{sum(1 for s in sites for c in s.figures('job') if 'EXPIRED' in
+                            c.fields.get('deadline', ''))} past a deadline",
+                     Tone.BAD if any('EXPIRED' in c.fields.get('deadline', '')
+                                     for s in sites for c in s.figures('job')) else "")],
+        "output": [(f"{sum(1 for s in sites for c in s.figures('output'))} output roots", "")],
+        "audits": [(f"{sum(1 for s in sites for c in s.figures('audit'))} audits", ""),
+                   (f"{sum(1 for s in sites for c in s.figures('audit')
+                           if c.tone == Tone.BAD)} about another tree",
+                    Tone.BAD if any(c.tone == Tone.BAD for s in sites
+                                    for c in s.figures('audit')) else "")],
+        "capacity": [(f"{sum(1 for s in sites for c in s.figures('capacity'))} pools", ""),
+                     (f"{sum(1 for s in sites for c in s.figures('capacity')
+                             if c.tone == Tone.UNKNOWN)} unmeasured",
+                      Tone.UNKNOWN if any(c.tone == Tone.UNKNOWN for s in sites
+                                          for c in s.figures('capacity')) else "")],
+    }
+
+    def line(key):
+        parts = [(text, tone) for text, tone in counted.get(key, []) if text]
+        return ("<div class=summary>"
+                + "".join(f"<span class='{tone}'>{_ESC(text)}</span>" for text, tone in parts)
+                + "</div>") if parts else ""
+
     body = "".join(
         f"<section class='setgroup{"" if key in minimal else " later"}' id='all-{key}' "
         f"data-anchor-target='all-{key}'>"
-        f"<div class=head><h2>{_ESC(title)}</h2></div>{content}</section>"
+        f"<div class=head><h2>{_ESC(title)}</h2></div>{line(key)}{content}</section>"
         for key, title, content in sections)
     return ("<div class=filters><span class=t>show</span>"
             "<button data-ad='minimal'>minimal</button>"
@@ -2111,20 +2175,34 @@ def _all_systems(sites: list) -> str:
 def _control_room(sites: list) -> str:
     """One screen to leave up while the work runs.
 
-    Built for width. On an ultrawide it lays the whole operating picture across
-    the screen at once instead of producing a very tall page nobody scrolls: the
-    situation on the left, every project beside it, and the cross-project
-    tables filling the rest. The chrome folds away and comes back with one key.
+    Recomposed around the questions an operator actually asks, in the order
+    they ask them: what is the shape of all of it, what needs me, how is each
+    project, what are the workers doing, is the evidence current, can anything
+    be dispatched, and what is the release. Each section leads with a
+    **summary** and carries only its notable rows; the complete table for every
+    one of them is its own view in the sidebar.
+
+    The first version put whole tables here and, on an ultrawide, fitted a
+    great deal of text nobody could read from a desk. Width buys columns and
+    summaries now, not smaller type.
     """
     readable = [s for s in sites if s.view is not None]
-    needing = [s for s in sites if sum(s.attention.values())]
-    running = sum(1 for s in sites for c in s.figures("job") if c.value == "RUNNING")
-    complete = sum(1 for s in sites for c in s.figures("job") if c.value == "COMPLETE")
-    unknown = sum(1 for s in sites for c in s.figures("job") if c.value == UNKNOWN)
+    jobs = [(s, c) for s in sites for c in s.figures("job")]
+    running = [pair for pair in jobs if pair[1].value == "RUNNING"]
+    complete = [pair for pair in jobs if pair[1].value == "COMPLETE"]
+    unobserved = [pair for pair in jobs if pair[1].value == UNKNOWN]
+    overdue = [pair for pair in jobs if "EXPIRED" in pair[1].fields.get("deadline", "")]
+    outputs = [(s, c) for s in sites for c in s.figures("output")]
+    partial = [pair for pair in outputs if "PARTIAL" in pair[1].value]
+    audits = [(s, c) for s in sites for c in s.figures("audit")]
+    mismatched = [pair for pair in audits if pair[1].tone == Tone.BAD]
+    pools = [(s, c) for s in sites for c in s.figures("capacity")]
+    unmeasured = [pair for pair in pools if pair[1].tone == Tone.UNKNOWN]
     blocked = [s for s in readable
                if (s.one("intervention") or Cell("", "none declared")).value != "none declared"]
-    stale = [c for s in sites for c in s.figures("freshness") if c.note == "STALE"]
+    stale = [(s, c) for s in sites for c in s.figures("freshness") if c.note == "STALE"]
     unreadable = [s for s in sites if s.view is None]
+    marked = [(s, line) for s in readable for line in s.view.attention]
 
     def cell(label, value, tone=Tone.PLAIN, note=""):
         return (f"<div class='sit {tone}'><i>{_ESC(label)}</i><em>{_ESC(str(value))}</em>"
@@ -2132,62 +2210,186 @@ def _control_room(sites: list) -> str:
 
     banner = ("<div class=sit>"
               + cell("projects", len(sites), note=f"{len(readable)} readable")
-              + cell("needing a look", len(needing),
-                     Tone.WARN if needing else Tone.PLAIN)
-              + cell("running", running)
-              + cell("complete, unconsumed", complete, Tone.WARN if complete else Tone.PLAIN)
-              + cell("jobs nobody can observe", unknown,
-                     Tone.UNKNOWN if unknown else Tone.PLAIN)
-              + cell("waiting on a person", len(blocked),
-                     Tone.WARN if blocked else Tone.PLAIN)
+              + cell("running", len(running))
+              + cell("complete, unconsumed", len(complete),
+                     Tone.WARN if complete else Tone.PLAIN)
+              + cell("past a deadline", len(overdue), Tone.BAD if overdue else Tone.PLAIN)
+              + cell("nobody can observe", len(unobserved),
+                     Tone.UNKNOWN if unobserved else Tone.PLAIN)
+              + cell("stalled", "·", note="two readings needed")
+              + cell("waiting on a person", len(blocked), Tone.WARN if blocked else Tone.PLAIN)
               + cell("stale readings", len(stale), Tone.WARN if stale else Tone.PLAIN)
               + cell("unreadable", len(unreadable),
                      Tone.UNKNOWN if unreadable else Tone.PLAIN)
-              + cell("stalled", "·", note="two readings needed")
+              + cell("marked", len(marked), Tone.WARN if marked else Tone.PLAIN)
               + "</div>")
-    next_actions = "".join(
-        f"<tr>{_td('project', f'<span class=s>{_ESC(s.name)}</span>')}"
-        f"{_td('state', f'<span class=&#39;s {s.tone}&#39;>{_ESC(s.state)}</span>', s.tone)}"
-        f"{_td('next authorised action', _ESC(s.view.next_action or (chr(8212))))}</tr>"
-        for s in readable)
+
+    def summary(*parts):
+        shown = [(text, tone) for text, tone in parts if text]
+        return ("<div class=summary>"
+                + "".join(f"<span class='{tone}'>{_ESC(text)}</span>" for text, tone in shown)
+                + "</div>") if shown else ""
+
+    def project_link(site):
+        at = _INDEX.get(id(site))
+        return (f"<button class=jump data-goto='project:{at}'>{_ESC(site.name)}</button>"
+                if at is not None else f"<span class=s>{_ESC(site.name)}</span>")
+
+    acting = []
+    for site in readable:
+        block = site.one("intervention")
+        if block is not None and block.value != "none declared":
+            acting.append((site, Tone.WARN, block.value))
+    for site, line in marked:
+        if line.tone == Tone.BAD:
+            acting.append((site, Tone.BAD, line.text))
+    seen, attention_rows = set(), []
+    for site, tone, text in sorted(acting, key=lambda row: 0 if row[1] == Tone.BAD else 1):
+        if (site.name, text) in seen:
+            continue
+        seen.add((site.name, text))
+        fresh = site.one("freshness")
+        attention_rows.append(
+            f"<tr data-tone='{tone}'>" + _td("project", project_link(site))
+            + _td("severity", f"<span class='s {tone}'>{_ESC(tone)}</span>", tone)
+            + _td("what it says", f"<span class=clamp>{_ESC(text)}</span>")
+            + _td("next authorised action",
+                  f"<span class=clamp>{_ESC(site.view.next_action or '—')}</span>")
+            + _td("read", _ESC(fresh.value if fresh else UNKNOWN),
+                  fresh.tone if fresh else Tone.UNKNOWN) + "</tr>")
+    attention = (f"<div class=tw><table><tbody>{''.join(attention_rows)}</tbody></table></div>"
+                 if attention_rows else
+                 "<p class=none>Nothing is marked and nobody is waiting on a person.</p>")
+
+    health = []
+    for site in sites:
+        if site.view is None:
+            health.append("<tr data-tone=unknown>" + _td("project", project_link(site))
+                          + _td("state", "<span class='s unknown'>unreadable</span>", "unknown")
+                          + _td("next authorised action",
+                                f"<span class=clamp>{_ESC(site.unreadable)}</span>", "unknown")
+                          + _td("jobs", "—") + _td("audit", "—")
+                          + _td("capacity", "—") + _td("read", "—")
+                          + _td("needs a person", "—") + "</tr>")
+            continue
+        counted = {}
+        for figure in site.figures("job"):
+            counted[figure.value] = counted.get(figure.value, 0) + 1
+        audit = site.one("audit")
+        fresh = site.one("freshness")
+        pool = next(iter(site.figures("capacity")), None)
+        block = site.one("intervention")
+        health.append(
+            f"<tr data-tone='{site.tone}'>" + _td("project", project_link(site))
+            + _td("state", f"<span class='s {site.tone}'>{_ESC(site.state)}</span>", site.tone)
+            + _td("next authorised action",
+                  f"<span class=clamp>{_ESC(site.view.next_action or '—')}</span>")
+            + _td("jobs", " ".join(
+                f"<b>{counted.get(k, 0)}</b>" for k in ("RUNNING", "COMPLETE", UNKNOWN)) + " ·",
+                  extra=" title='running, complete, nobody can observe, and a stall this "
+                        "single reading cannot establish'")
+            + (_td("audit", f"<span class='s {audit.tone}'>{_ESC(audit.value)}</span>",
+                   audit.tone) if audit else
+               _td("audit", "<span class='s unknown'>none</span>", "unknown"))
+            + (_td("capacity", _ESC(pool.value), pool.tone) if pool else
+               _td("capacity", f"<span class='s unknown'>{UNKNOWN}</span>", "unknown"))
+            + (_td("read", _ESC(fresh.value), fresh.tone) if fresh else
+               _td("read", f"<span class='s unknown'>{UNKNOWN}</span>", "unknown"))
+            + _td("needs a person",
+                  f"<span class=clamp>{_ESC(block.value)}</span>" if block else "—",
+                  block.tone if block else "")
+            + "</tr>")
+
+    def compact(rows, empty):
+        return (f"<div class=tw><table><tbody>{''.join(rows)}</tbody></table></div>"
+                if rows else f"<p class=none>{_ESC(empty)}</p>")
+
+    notable = overdue + [p for p in complete if p not in overdue] + \
+        [p for p in running if p not in overdue]
+    job_rows = [
+        f"<tr data-tone='{c.tone}'>" + _td("project", project_link(s))
+        + _td("job", f"<span class=s>{_ESC(c.fields.get('job', c.label))}</span>")
+        + _td("state", f"<span class='s {c.tone}'>{_ESC(c.value)}</span>", c.tone)
+        + _td("deadline",
+              f"<span class=clamp>{_ESC(c.fields.get('deadline', UNKNOWN))}</span>",
+              Tone.BAD if "EXPIRED" in c.fields.get("deadline", "") else "")
+        + "</tr>" for s, c in notable]
+    output_rows = [
+        f"<tr data-tone='{c.tone}'>" + _td("project", project_link(s))
+        + _td("recovery", f"<span class='s {c.tone}'>{_ESC(c.value)}</span>", c.tone)
+        + _td("what is there", _ESC(c.fields.get("examined", UNKNOWN))) + "</tr>"
+        for s, c in outputs]
+    audit_rows = [
+        f"<tr data-tone='{c.tone}'>" + _td("project", project_link(s))
+        + _td("subject vs candidate",
+              f"<span class='s {c.tone}'>{_ESC(c.value)}</span>", c.tone)
+        + _td("subject", _ESC(c.fields.get("subject", UNKNOWN))) + "</tr>"
+        for s, c in audits]
+    pool_rows = [
+        f"<tr data-tone='{c.tone}'>" + _td("project", project_link(s))
+        + _td("pool", _ESC(c.fields.get("pool", c.label)))
+        + _td("remaining", f"<span class='s {c.tone}'>{_ESC(c.value)}</span>", c.tone)
+        + _td("resets", _ESC(c.fields.get("resets", UNKNOWN))) + "</tr>"
+        for s, c in pools]
+    release_rows = []
+    for site in readable:
+        pack, pin = site.one("pack"), site.one("pin")
+        safety = {c.label: c for c in site.figures("evidence")}.get("public safety")
+        release_rows.append(
+            "<tr>" + _td("project", project_link(site))
+            + (_td("pinned", f"<span class='s {pin.tone}'>{_ESC(pin.value)}</span>", pin.tone)
+               if pin else
+               _td("pinned", f"<span class='s unknown'>{UNKNOWN}</span>", "unknown"))
+            + (_td("pack in the root", _ESC(pack.fields.get("state", UNKNOWN)), pack.tone)
+               if pack else _td("pack in the root", UNKNOWN, "unknown"))
+            + (_td("public safety",
+                   f"<span class=clamp>{_ESC(safety.value)}</span>", safety.tone) if safety else
+               _td("public safety", f"<span class='s unknown'>{UNKNOWN}</span>", "unknown"))
+            + "</tr>")
+
+    def section(title, chip, body, span=""):
+        return (f"<section class='setgroup {span}'><div class=head><h2>{_ESC(title)}</h2>"
+                + (f"<span class=chip>{_ESC(chip)}</span>" if chip else "")
+                + f"</div>{body}</section>")
+
+    defects = len([1 for _s, tone, _t in acting if tone == Tone.BAD])
     return (
         "<div class='filters index'>"
         "<button id=fullscreen>full screen</button>"
         "<button id=chrome-toggle>hide the chrome</button>"
         "<span class=t>the sidebar comes back with the same button, or Escape</span></div>"
         "<div class=room>"
-        f"<section class='setgroup room-wide'><div class=head><h2>the situation</h2>"
-        f"<span class=chip>{len(sites)} projects</span></div>"
-        f"<div class=setbody>{banner}</div></section>"
-        f"<section class=setgroup><div class=head><h2>what happens next, per project</h2></div>"
-        f"<div class=tw><table><tbody>{next_actions}</tbody></table></div></section>"
-        f"<section class=setgroup><div class=head><h2>needs a person or a look</h2></div>"
-        f"{_attention_across(sites)}</section>"
-        f"<section class='setgroup room-wide'><div class=head><h2>every project</h2></div>"
-        f"{_overview(sites)}</section>"
-        f"<section class=setgroup><div class=head><h2>jobs</h2></div>"
-        + _kind_table(sites, "job",
-                      [("·state", "state"), ("job", "job"), ("owner", "owner"),
-                       ("deadline", "deadline")], "No project declares an outstanding job.")
-        + "</section>"
-        f"<section class=setgroup><div class=head><h2>audits</h2></div>"
-        + _kind_table(sites, "audit",
-                      [("·state", "subject vs candidate"), ("audit", "audit"),
-                       ("subject", "subject")], "No audit states a subject.")
-        + "</section>"
-        f"<section class=setgroup><div class=head><h2>capacity</h2></div>"
-        + _kind_table(sites, "capacity",
-                      [("·state", "remaining"), ("pool", "pool"), ("resets", "resets")],
-                      "No project declares a capacity observation.")
-        + "</section>"
-        f"<section class=setgroup><div class=head><h2>durable output</h2></div>"
-        + _kind_table(sites, "output",
-                      [("·state", "recovery state"), ("task", "task"),
-                       ("examined", "what is there")], "No project declares an output root.")
-        + "</section>"
-        f"<section class=setgroup><div class=head><h2>identity and release</h2></div>"
-        + _identity(sites) + "</section>"
-        "</div>")
+        + section("the situation", f"{len(sites)} projects",
+                  f"<div class=setbody>{banner}</div>", "room-wide")
+        + section("needs a person or a look",
+                  f"{len(attention_rows)}" if attention_rows else "clear",
+                  summary((f"{len(blocked)} waiting on a person", Tone.WARN if blocked else ""),
+                          (f"{defects} marked as a defect", Tone.BAD if defects else ""))
+                  + attention, "wide2")
+        + section("every project", f"{len(sites)}",
+                  compact(health, "No project was named."), "wide2")
+        + section("workers", f"{len(jobs)}",
+                  summary((f"{len(running)} running", ""),
+                          (f"{len(complete)} complete, unconsumed",
+                           Tone.WARN if complete else ""),
+                          (f"{len(overdue)} past a deadline", Tone.BAD if overdue else ""),
+                          (f"{len(unobserved)} nobody can observe",
+                           Tone.UNKNOWN if unobserved else ""))
+                  + compact(job_rows, "No project declares an outstanding job."))
+        + section("durable output", f"{len(outputs)}",
+                  summary((f"{len(partial)} partially written", Tone.WARN if partial else ""))
+                  + compact(output_rows, "No project declares an output root."))
+        + section("audits", f"{len(audits)}",
+                  summary((f"{len(mismatched)} about another tree",
+                           Tone.BAD if mismatched else ""))
+                  + compact(audit_rows, "No audit states a subject."))
+        + section("capacity", f"{len(pools)}",
+                  summary((f"{len(unmeasured)} unmeasured",
+                           Tone.UNKNOWN if unmeasured else ""))
+                  + compact(pool_rows, "No project declares a capacity observation."))
+        + section("release and safety", "",
+                  compact(release_rows, "No project was named."), "wide2")
+        + "</div>")
 
 
 def _help(sites: list) -> str:

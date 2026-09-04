@@ -1011,21 +1011,21 @@ _STYLE = """
      an established good state. Everything structural is neutral, so the four
      places carrying hue are the four places worth looking at. */
 
-  --ground:#000; --panel:#0b0b0c; --panel-2:#131315; --panel-3:#1a1a1d;
-  --rule:#232326; --rule-strong:#36363b;
-  --ink:#f4f4f5; --dim:#a8a8ad; --faint:#78787e;
-  --accent:#e8e8ea; --select:#26262a;
-  --bad:#f2635c; --warn:#d6a029; --unknown:#7d8f9c; --good:#54b98a;
-  --action:#e8e8ea;
-  --bad-bg:#1d0f0e; --warn-bg:#1c1707; --unknown-bg:#141b21; --good-bg:#0b1d16;
-  --action-bg:#1c1c1f;
+  --ground:#000; --panel:#0e0d0c; --panel-2:#171614; --panel-3:#1f1d1a;
+  --rule:#282521; --rule-strong:#3b3831;
+  --ink:#f5f2ed; --dim:#b0aba3; --faint:#807b73;
+  --accent:#f0c68a; --select:#2b2620;
+  --bad:#f2635c; --warn:#c9821f; --unknown:#7d8f9c; --good:#54b98a;
+  --action:#f0c68a;
+  --bad-bg:#1e100e; --warn-bg:#1d1408; --unknown-bg:#141b21; --good-bg:#0b1d16;
+  --action-bg:#241d13;
 }
 
 :root[data-theme="terminal"]{
-  --ground:#08090b; --panel:#101113; --panel-2:#161719; --panel-3:#1c1e21;
-  --rule:#232529; --rule-strong:#343840;
-  --ink:#e6e9ed; --dim:#9aa1ab; --faint:#727a85;
-  --accent:#4cc9f0; --select:#123240;
+  --ground:#09090a; --panel:#111112; --panel-2:#171718; --panel-3:#1d1d1f;
+  --rule:#252528; --rule-strong:#37373d;
+  --ink:#e7e7e9; --dim:#9d9da4; --faint:#75757d;
+  --accent:#4cc9f0; --select:#12303c;
 
   /* ---- semantics -------------------------------------------------------
      Four answers, four hues, in every lens. UNKNOWN is STEEL: a desaturated
@@ -1047,14 +1047,14 @@ _STYLE = """
      The semantics are NOT: a defect is red, a warning is amber, an
      unestablished reading is steel. A console where everything is green is a
      console where nothing means anything. */
-  --ground:#010704; --panel:#03120a; --panel-2:#051c10; --panel-3:#082716;
-  --rule:#0d3d23; --rule-strong:#15653a;
-  --ink:#7dfab4; --dim:#3cc47f; --faint:#2a9862;
-  --accent:#5cff9f; --select:#06341d;
-  --bad:#ff6f62; --warn:#ffc93f; --unknown:#7d8f9c; --good:#1fbd75;
-  --action:#5cff9f;
-  --bad-bg:#26100c; --warn-bg:#231c06; --unknown-bg:#0a2029; --good-bg:#04331d;
-  --action-bg:#04301c;
+  --ground:#030702; --panel:#071206; --panel-2:#0b1c09; --panel-3:#10270d;
+  --rule:#1c4a16; --rule-strong:#2b7524;
+  --ink:#8df56a; --dim:#4fbf3a; --faint:#38912a;
+  --accent:#62f542; --select:#0d3a09;
+  --bad:#ff6a5e; --warn:#ffc33f; --unknown:#7d8f9c; --good:#23a52a;
+  --action:#62f542;
+  --bad-bg:#25100c; --warn-bg:#221b06; --unknown-bg:#0a2029; --good-bg:#0a2c08;
+  --action-bg:#0c3208;
 }
 
 :root[data-theme="minimal"]{
@@ -1063,14 +1063,14 @@ _STYLE = """
      deliberately LESS dense than monochrome, which is the difference between
      the two — one is a precision operations console, the other is a
      workspace to sit in front of for an hour. */
-  --ground:#000; --panel:#08080a; --panel-2:#0d0d10; --panel-3:#121216;
-  --rule:#191920; --rule-strong:#2a2a33;
-  --ink:#ededf0; --dim:#9d9da6; --faint:#6f6f78;
-  --accent:#c9d1d9; --select:#1b1b21;
-  --bad:#ef6f68; --warn:#cfa03f; --unknown:#7d8f9c; --good:#54bd8d;
-  --action:#c9d1d9;
-  --bad-bg:#1a0e0d; --warn-bg:#191507; --unknown-bg:#121a1f; --good-bg:#091b14;
-  --action-bg:#16161a;
+  --ground:#000; --panel:#0a0908; --panel-2:#100e0d; --panel-3:#161413;
+  --rule:#1f1c19; --rule-strong:#2f2b27;
+  --ink:#efebe5; --dim:#a6a099; --faint:#767069;
+  --accent:#d8cfc2; --select:#1d1a16;
+  --bad:#ef6f68; --warn:#c98a2f; --unknown:#7d8f9c; --good:#54bd8d;
+  --action:#d8cfc2;
+  --bad-bg:#1a0e0d; --warn-bg:#191307; --unknown-bg:#121a1f; --good-bg:#091b14;
+  --action-bg:#191614;
   --lh:1.65; --pad-y:4px; --fs-micro:9px; --gap:1px;
 }
 
@@ -1110,8 +1110,8 @@ b,i,em,u{font-style:normal;font-weight:inherit;text-decoration:none}
 /* ============ IDENTITY BAR — what this is, in one line ================ */
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:0 20px;
 padding:6px var(--pad-x);background:var(--panel-2);border-bottom:1px solid var(--rule-strong);
-font-size:11px;letter-spacing:.01em}
-.bar b{color:var(--faint);text-transform:uppercase;letter-spacing:.12em;font-size:9px;
+font-size:var(--fs-forensic);letter-spacing:.01em}
+.bar b{color:var(--faint);text-transform:uppercase;letter-spacing:.12em;font-size:var(--fs-micro);
 margin-right:6px}
 .bar span{color:var(--dim)}
 .bar .id{color:var(--accent);font-weight:600}
@@ -1132,12 +1132,12 @@ gap:22px;align-items:start}}
 word-break:break-word}
 .v-bad .state{color:var(--bad)} .v-warn .state{color:var(--warn)}
 .v-good .state{color:var(--good)} .v-unknown .state{color:var(--unknown)}
-.said{font-size:12.5px;color:var(--dim);max-width:74ch;margin:0}
+.said{font-size:var(--fs);color:var(--dim);max-width:74ch;margin:0}
 
 .next{margin-top:12px;padding:9px 12px;background:var(--action-bg);
 border:1px solid var(--action);border-left-width:3px}
-.next b{display:block;font-size:9px;letter-spacing:.18em;color:var(--action);margin-bottom:3px}
-.next span{font-size:15px;font-weight:600;color:var(--ink);word-break:break-word}
+.next b{display:block;font-size:var(--fs-micro);letter-spacing:.18em;color:var(--action);margin-bottom:3px}
+.next span{font-size:calc(var(--fs) + 2px);font-weight:600;color:var(--ink);word-break:break-word}
 
 /* the situation grid: level-1 readings as cells, never as sentences */
 .sit{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:1px;
@@ -1145,9 +1145,9 @@ background:var(--rule);border:1px solid var(--rule)}
 .sit>div{background:var(--panel-2);padding:6px 9px;min-width:0}
 .sit i{display:block;font-size:var(--fs-micro);letter-spacing:.14em;text-transform:uppercase;
 color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sit em{display:block;font-size:13px;font-weight:700;color:var(--ink);
+.sit em{display:block;font-size:var(--fs);font-weight:700;color:var(--ink);
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sit u{display:block;font-size:10px;color:var(--dim);margin-top:1px;
+.sit u{display:block;font-size:var(--fs-forensic);color:var(--dim);margin-top:1px;
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sit .good em{color:var(--good)} .sit .warn em{color:var(--warn)}
 .sit .bad em{color:var(--bad)} .sit .unknown em{color:var(--unknown)}
@@ -1156,19 +1156,19 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sit .warn em::before{content:"▲ "} .sit .bad em::before{content:"✕ "}
 .sit .unknown em::before{content:"? "} .sit .good em::before{content:"✓ "}
 .sit-head{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
-.sit-head b{font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
-.sit-head span{font-size:10.5px;color:var(--dim)}
+.sit-head b{font-size:var(--fs-micro);letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.sit-head span{font-size:var(--fs-forensic);color:var(--dim)}
 
 /* attention: never collapsed away, always counted */
 .attn{background:var(--panel-2);border-top:1px solid var(--rule)}
-.attn>summary{cursor:pointer;padding:7px var(--pad-x);font-size:9.5px;letter-spacing:.16em;
+.attn>summary{cursor:pointer;padding:7px var(--pad-x);font-size:var(--fs-micro);letter-spacing:.16em;
 text-transform:uppercase;color:var(--dim);list-style:none;user-select:none}
 .attn>summary::-webkit-details-marker{display:none}
 .attn>summary::before{content:"▸ "} .attn[open]>summary::before{content:"▾ "}
 .attn ul{padding:0 0 7px}
-.attn li{font-size:12px;padding-top:2px;padding-bottom:2px}
+.attn li{font-size:var(--fs);padding-top:2px;padding-bottom:2px}
 .count{display:inline-block;min-width:16px;text-align:center;padding:0 6px;
-font-size:10px;font-weight:700;margin-left:5px;letter-spacing:0;border:1px solid}
+font-size:var(--fs-forensic);font-weight:700;margin-left:5px;letter-spacing:0;border:1px solid}
 .count.bad{background:var(--bad-bg);color:var(--bad)}
 .count.warn{background:var(--warn-bg);color:var(--warn)}
 .count.unknown{background:var(--unknown-bg);color:var(--unknown)}
@@ -1180,9 +1180,9 @@ background:var(--rule);border-bottom:1px solid var(--rule-strong)}
 .fact{background:var(--panel);padding:6px 10px 7px;min-width:0}
 .fact i{display:block;font-size:var(--fs-micro);letter-spacing:.13em;text-transform:uppercase;
 color:var(--faint);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fact em{font-size:12.5px;font-weight:700;color:var(--ink);display:block;
+.fact em{font-size:var(--fs);font-weight:700;color:var(--ink);display:block;
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fact u{font-size:10px;color:var(--faint);display:block;
+.fact u{font-size:var(--fs-forensic);color:var(--faint);display:block;
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fact.good em{color:var(--good)} .fact.warn em{color:var(--warn)}
 .fact.bad em{color:var(--bad)} .fact.unknown em{color:var(--unknown)}
@@ -1207,9 +1207,9 @@ background:var(--panel-2);border-bottom:1px solid var(--rule)}
 section{background:var(--panel);border-bottom:1px solid var(--rule);overflow:hidden}
 .head{display:flex;justify-content:space-between;gap:9px;align-items:baseline;
 padding:7px var(--pad-x);background:var(--panel-3);border-bottom:1px solid var(--rule)}
-.head h2{margin:0;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--dim);
+.head h2{margin:0;font-size:var(--fs-micro);letter-spacing:.15em;text-transform:uppercase;color:var(--dim);
 font-weight:600}
-.chip{font-size:9.5px;padding:1px 7px;background:var(--ground);color:var(--dim);
+.chip{font-size:var(--fs-micro);padding:1px 7px;background:var(--ground);color:var(--dim);
 white-space:nowrap;border:1px solid var(--rule-strong);max-width:22ch;overflow:hidden;
 text-overflow:ellipsis}
 .chip.good{color:var(--good);border-color:var(--good)}
@@ -1249,13 +1249,13 @@ footer{padding:14px var(--pad-x) 30px;color:var(--faint);font-size:var(--fs-fore
 
 /* ============ NARROW — a deliberate order, not a stack ================ */
 @media(max-width:760px){
-  body{font-size:12.5px}
-  .bar{gap:0 14px;padding:5px 12px;font-size:10.5px}
+  body{font-size:var(--fs)}
+  .bar{gap:0 14px;padding:5px 12px;font-size:var(--fs-forensic)}
   h1{padding:8px 12px 0}
   .cmd{padding:9px 12px 12px;gap:11px}
-  .state{font-size:24px}
-  .said{font-size:12px}
-  .next span{font-size:14px}
+  .state{font-size:calc(var(--fs-state) * 0.8)}
+  .said{font-size:var(--fs)}
+  .next span{font-size:calc(var(--fs) + 2px)}
   .sit{grid-template-columns:repeat(auto-fill,minmax(min(100%,132px),1fr))}
   .strip{grid-template-columns:repeat(auto-fill,minmax(min(100%,146px),1fr))}
   .attn>summary{padding:7px 12px}
