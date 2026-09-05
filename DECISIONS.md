@@ -717,3 +717,132 @@ it is.
 **Reverses on:** an adopting project showing that the record is being written
 after the fact and passing, which would mean the revision binding is
 insufficient rather than that the rule is wrong.
+
+## D26 — qualification is a property of a configuration, not of a family (RP2.4)
+
+**Question the release opened with:** model discovery is already dynamic and a
+new frontier model reached this pack with no Core change at all. So what breaks?
+
+**Answered by execution, against the shipped log and the shipped module.** A
+model with zero observations returned
+
+    qualified_for("blind_closure_audit_cross_vendor") -> True
+
+on seven observations, none of which recorded any observed model. Not a
+hypothetical: `backend_contract.grades_from_observations` keys on
+`(family, task_class)`, and `policy/routing-policy.md` has said since 2.1 that
+evidence is never pooled across distinct configuration strings. The prose was
+right and the code did the opposite, and nothing compared them.
+
+**Decided: a second derivation, keyed on the evidence, beside the first.**
+
+*   **Nine dimensions, closed and reasoned.** Surface, family, client, observed
+    model, effort, isolation, network, authentication class, task class. Each is
+    in the key for a stated reason and the set does not grow by parameter. The
+    client build and the capacity pool are carried, reported, and deliberately
+    out — no A/B pair in this evidence base shows a build change altering an
+    outcome, and keying on it would reset every qualification at every patch
+    release.
+*   **Availability is a separate axis, and preconditions are part of its key.**
+    The shipped log holds one configuration where standard input decided whether
+    the dispatch started at all. What a configuration *can do* and whether it
+    *can start* are different questions with different evidence, and answering
+    the second with the first is what routed to a dispatch known to hang.
+*   **Incomplete identities answer nothing.** An identity with `UNKNOWN` in a
+    keyed dimension, or whose provenance says it was not observed, holds
+    observations and can never qualify a concrete configuration. Every
+    observation recorded before this release is therefore prior evidence and none
+    is a track record. Nothing was rewritten and nothing was invented.
+*   **Family history is display-only.** It is printed beside an `unprobed`
+    answer so a coordinator is not left with nothing. It ranks nothing, satisfies
+    no eligibility test and breaks no tie.
+*   **A declared alias moves no grade.** It surfaces the other identity's
+    evidence as prior, labelled. Two independent readings found the same
+    laundering path through a rule that transferred a grade on a reason string.
+*   **Independence is derivation, never configuration.** The producer, the
+    session and — where a leg is declared cross-provider — the provider. Key
+    equality is wrong in both directions and an independent reader demonstrated
+    both.
+*   **An unprobed configuration takes work only through a declared probe**,
+    whose outcome becomes evidence for what it tested and nothing else. Without
+    it an empty table could never acquire its first observation. A probe never
+    fills a mandatory independent leg or a critical-domain promotion.
+
+**This narrows a governance control, and that is HITL row 7.** An earlier draft
+of the design claimed no control was touched; an independent reader falsified it
+and the claim is withdrawn. `policy/routing-policy.md` says evidence is never
+pooled across distinct configuration strings, and this release pools across two
+named non-identity fields while widening the key from one dimension to nine. Net
+tightening is still a change to a control. **The founder authorised the narrowing
+before this entry was written**, which is row 7's application point, and the
+authorisation is recorded in `docs/RP2.4-FOUNDER-AUTHORISATIONS.md` with the
+conditions it carries. Those conditions are not prose:
+`tools/tests/test_founder_authorisation.py` fails if any of the ten invariants
+the authorisation was granted on stops holding, so a later change that broadens
+this decision past what was authorised breaks the suite rather than passing
+quietly.
+
+**Rows 12 and 16 keep their human and are strengthened in the direction they
+already point:** the evidence behind a critical-domain promotion becomes
+per-configuration rather than per-family, so an unavailable qualified worker is
+still never authorization to use an unqualified one.
+
+**Reverses on:** an A/B pair showing a client version changing what a
+configuration can do, which would move `build` into the key; or an adopting
+project finding the key so fine-grained that every real dispatch is a probe,
+which would mean the granularity is wrong rather than the principle.
+
+## D27 — one governed waiting path, and a run that executed nothing is not evidence (RP2.4)
+
+**This entry engages no HITL row: it weakens no control and adds none**, which is
+why it is recorded here rather than held for authorisation beside D26. The
+founder's pilot-run directive then required the mechanism it describes as a
+release property rather than as a session correction, and section 7 of that
+directive is the acceptance.
+
+**Question the evidence put:** the pack shipped a correct waiter builder, and
+the coordinator hand-wrote three monitors that could never terminate. Is that a
+session mistake or a release defect?
+
+**Answered by execution: a release defect, of the class this pack exists to
+close.** `progress.waiter_command` treats a zombie as ended and says so in its
+own docstring; `continuation._process_is_gone` asked `os.kill(pid, 0)`, which
+succeeds for a zombie — so **the pack held two answers to one question and the
+durable state model had the wrong one.** A finished producer read as running
+forever. Reproduced against a real unreaped child.
+
+**Decided: extend the wait that already exists, rather than add a registry.**
+
+*   **One liveness answer.** `progress.process_has_ended` reads `ps`, treats a
+    zombie as ended, and `continuation` delegates to it. Two mechanisms that
+    answer one question will drift, and these had.
+*   **The waiter belongs to the wait.** `Wait.waiter` records the command, and
+    a waiter that matches a COMMAND LINE is refused **where the wait is
+    declared** — not reported later, because a check that runs afterwards
+    describes a wait already entered.
+*   **Refused as a class.** `pgrep`, `pkill`, `ps | grep`, whatever the pattern.
+    Deciding which patterns are safe is an argument, and the argument produced
+    the incident.
+*   **The producer decides.** `continuation.reconcile` derives eight
+    dispositions from the record and the process table. A monitor is not an
+    input; a job is running because its process is.
+*   **The gap is named.** A declared wait recording no waiter is
+    `UNGOVERNED_BACKGROUND_WORK`. The pack cannot see a wait nobody declared,
+    and says so rather than presenting an empty list.
+*   **A run that executed nothing is `NOT_EVIDENCE`**, whatever it exited with,
+    and two runs are comparable only over one test population.
+
+**What it does not claim.** A coordinator can still wait in a shell and record
+nothing. That is not closed and is not claimable as closed: acquiring the power
+to see it would mean policing the coordinator's own shell, which is the thing
+this pack refuses to become. What changed is that the recorded path now carries
+the waiter, so an unrecorded wait is a choice rather than a gap in the
+mechanism.
+
+**No HITL row is added, removed or weakened.** Row 4 keeps its human for ending
+a worker — and this makes the ending unnecessary in the common case rather than
+easier.
+
+**Reverses on:** an adopting project finding that declaring the waiter is so
+much friction that coordinators route around it, which would mean the
+declaration is in the wrong place rather than that the rule is wrong.

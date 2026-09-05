@@ -1,0 +1,22 @@
+# THE PIN IS A DIGEST OVER WORKING-TREE BYTES, so any checkout that rewrites a
+# byte breaks it. `core.autocrlf=true` is the default on Git for Windows, and it
+# rewrites LF to CRLF for every file Git guesses is text — which changed the
+# digest of all 172 tracked files at once and made `pack_pin.py` report
+# PACK PIN NOT VERIFIED against a checkout of the correct revision.
+#
+# Reproduced before this file existed:
+#
+#     git -c core.autocrlf=true clone --branch <b> <repo> c && cd c
+#     python3 tools/pack_pin.py .
+#     -> tree digest 17c73eebe349749e… does not match the manifest's 6404bbe8…
+#
+# `-text` tells Git that no file here is subject to end-of-line conversion, so a
+# checkout is byte-identical to the stored blob on every platform and under every
+# user configuration. Fixing it here rather than by normalising inside the digest
+# is deliberate: a digest that silently ignores some bytes is not a digest of the
+# tree, and deciding WHICH bytes to ignore needs a text/binary vocabulary — the
+# kind of open-ended list this release removed elsewhere.
+#
+# Held by tools/tests/test_release_integrity.py, which asks Git itself whether
+# any tracked path still has the `text` attribute set.
+* -text

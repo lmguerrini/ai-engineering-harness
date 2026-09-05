@@ -1692,3 +1692,41 @@ def test_every_oracle_the_matrix_names_selects_at_least_one_test():
         if not resolved[(tuple(files), keyword)]
     ]
     assert not empty, f"these oracles select no test at all: {empty}"
+
+
+def test_no_tracked_path_is_subject_to_end_of_line_conversion():
+    """A checkout that rewrites a byte breaks a digest computed over bytes.
+
+    REPRODUCED, not hypothetical. `core.autocrlf=true` is the default on Git for
+    Windows; cloning this branch under it rewrote LF to CRLF in all 172 tracked
+    files and `pack_pin.py` reported PACK PIN NOT VERIFIED against a checkout of
+    the correct revision — the exact failure an adopting project would hit first
+    and have no reason to attribute to its own Git configuration.
+
+    The oracle asks GIT, not the file. A test that read `.gitattributes` and
+    looked for `* -text` would pass against a file Git ignores — wrong section,
+    wrong precedence, a later overriding pattern — and would be checking that
+    somebody typed a string rather than that the property holds.
+    """
+    paths = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split("\0")
+    paths = [p for p in paths if p]
+    assert len(paths) > 100, f"only {len(paths)} tracked path(s); this oracle is inert"
+
+    reported = subprocess.run(
+        ["git", "check-attr", "--stdin", "-z", "text"],
+        cwd=ROOT, input="\0".join(paths), capture_output=True, text=True, check=True,
+    ).stdout
+    fields = reported.split("\0")
+    converted = []
+    for index in range(0, len(fields) - 2, 3):
+        path, attribute, value = fields[index], fields[index + 1], fields[index + 2]
+        assert attribute == "text", f"unexpected attribute {attribute!r} in check-attr output"
+        if value != "unset":
+            converted.append(f"{path}: text={value}")
+    assert not converted, (
+        "these tracked paths still carry Git's `text` attribute, so a checkout may rewrite "
+        "their line endings and the pin will not verify on that machine: "
+        + "; ".join(converted[:10])
+    )
