@@ -7,8 +7,9 @@ A **MINOR** release (`DECISIONS.md` D11, and proposed D26 in
 no authority, contract or migration change is incompatible — `requires.routing`
 is new and defaults to false, no public name is removed, no pinned project moves
 — and the release ships tools that did not exist, which PATCH does not cover.
-**State `IN_PROGRESS` — a candidate. No project may pin it.** Gate:
-`docs/RP2.4-GATE.md`.
+**State `QUALIFIED_AND_FROZEN`** — a project may pin it, at the revision and digest
+its own `PROJECT.yaml` records and verifies. Frozen is not published: no push, tag,
+remote or consumer migration is authorised. Gate: `docs/RP2.4-GATE.md`.
 
 ### The defect, reproduced before anything was written
 

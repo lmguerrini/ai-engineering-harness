@@ -11,7 +11,7 @@ every audit round while its stateless checkers survived every one
 | | |
 |---|---|
 | Version | **2.4.0** — `VERSION` is the single machine-readable authority |
-| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, not a release. **No project may pin it.** Moving it to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) and carries a row-7 authorisation as well (`docs/RP2.4-D26-PROPOSED.md`, which is where the entry is held **until** that authorisation) |
+| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) — a project may pin it. The transition was a human decision (`policy/hitl-matrix.md` row 2) against a named candidate, and the row-7 governance narrowing it carries was authorised separately and beforehand (`DECISIONS.md` D26, `docs/RP2.4-FOUNDER-AUTHORISATIONS.md`). **Frozen is not published**: no push, tag, remote or consumer migration is authorised |
 | Gate record | `docs/RP2.4-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
@@ -19,15 +19,16 @@ Verify a checkout — run it, do not read it:
 
 ```bash
 python3 tools/pack_pin.py . --version 2.4.0 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
 ```
 
 `--state` is the state this checkout actually declares. **A project may only
-adopt `QUALIFIED_AND_FROZEN`**, and this checkout declares `IN_PROGRESS`, so the
-command above verifies the checkout and the checkout is **not adoptable**.
-Passing `QUALIFIED_AND_FROZEN` against it fails — correctly, and that is the
-whole point of carrying the state in the pin: a candidate that verifies perfectly
-is still a candidate.
+adopt `QUALIFIED_AND_FROZEN`**, and this release declares it, so the command
+above both verifies the checkout and establishes that it is adoptable. Passing
+`IN_PROGRESS` against it fails — correctly. That is the point of carrying the
+state in the pin: while this was a candidate the same command verified it
+perfectly and refused it as unadoptable, and the only thing that changed is a
+recorded human decision.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a
