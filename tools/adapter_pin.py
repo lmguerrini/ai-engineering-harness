@@ -427,7 +427,7 @@ def verify(
         if declaration.executable is None:
             report.executables_undeclared.append(declaration.id)
         else:
-            problem = _executable_problem(declaration)
+            problem = _executable_problem(declaration, relative_to=relative_to)
             if problem is not None:
                 report.findings.append(AdapterFinding(declaration.id, problem))
                 continue
@@ -438,13 +438,23 @@ def verify(
     return report
 
 
-def _executable_problem(declaration: AdapterDeclaration) -> str | None:
+def _executable_problem(declaration: AdapterDeclaration,
+                        *, relative_to: str | Path | None = None) -> str | None:
     """Whether the program this adapter drives is the qualified one.
 
     A **property** check rather than a shape one: the version is obtained by
     asking the program, not by reading a sentence in a note beside it. One such
     note said a particular version was "verified installed at bootstrap" while a
     later one was on the path, and nothing compared them.
+
+    **THE COMMAND RUNS IN THE PROJECT'S DIRECTORY**, supplied as ``relative_to``.
+    It inherited the process's, so a declaration naming `./tool` asked whichever
+    directory the caller happened to be in — and once the FILE half of the
+    locator was repaired to look in the project, a verification run from
+    elsewhere could combine the project's own definition file with another
+    directory's executable and report both verified. A bounded reading of that
+    repair found it, and found that the repair had made the combination newly
+    reachable: before it, the missing definition file refused the fixture first.
     """
     radius = instrument.BlastRadius(
         launches=(declaration.executable,),
@@ -457,6 +467,7 @@ def _executable_problem(declaration: AdapterDeclaration) -> str | None:
         result = instrument.launch(
             list(declaration.version_command), radius=radius,
             capture_output=True, text=True, timeout=30,
+            **({"cwd": str(relative_to)} if relative_to is not None else {}),
         )
     except Exception as exc:  # OSError, timeout, and the refusal above
         return (

@@ -335,39 +335,31 @@ def identity_from_observation(row: dict) -> ConfigurationIdentity:
                 f"reads. Known: {', '.join(IDENTITY_FIELDS)}")
         supplied = {name: str(value) for name, value in declared.items() if str(value).strip()}
         if supplied:
-            # A MAPPING CLEARS ONLY THE AMBIGUITY IT ACTUALLY RESOLVES. This
-            # cleared every note whenever ANY field was supplied, so a row whose
-            # string said `model_observed=MODEL WITH SPACES` — which truncates to
-            # `MODEL` — became COMPLETE by adding an unrelated `build`, and two
-            # such rows graded `confirmed` for a configuration nothing had
-            # dispatched. That is the transfer this release exists to prevent,
-            # reached through the parser. Found by an independent reader of the
-            # candidate.
+            # **AN AMBIGUOUS STRING IS REFUSED, WHATEVER THE MAPPING SAYS.**
             #
-            # Two kinds of note, resolved differently:
+            # This cleared every ambiguity note whenever ANY field was supplied,
+            # so a row whose string said `model_observed=MODEL WITH SPACES` —
+            # which truncates to `MODEL` — became COMPLETE by adding an unrelated
+            # `build`, and two such rows graded `confirmed` for a configuration
+            # nothing had dispatched. That is the transfer this release exists to
+            # prevent, reached through the parser.
             #
-            # *   `"<key>= appears N times"` says WHICH key was written twice, so
-            #     a mapping that states that key resolves it outright.
-            # *   A bare token says a value was lost at a space and does NOT say
-            #     which key lost it. It is resolved when a SUPPLIED VALUE
-            #     ACCOUNTS FOR IT — the token appears as one of that value's own
-            #     words — which is precisely the case the structured mapping
-            #     exists for: a string cannot carry `MODEL WITH SPACES`, so the
-            #     row states it in the mapping and the two bare tokens are then
-            #     explained. An unrelated `build` explains nothing and clears
-            #     nothing.
-            accounted = {word for value in supplied.values() for word in str(value).split()}
-            covers_every_dimension = all(name in supplied for name in CONFIGURATION_DIMENSIONS)
-            remaining = []
-            for token in identity.ambiguous_tokens:
-                text = str(token)
-                key, _, rest = text.partition("= appears ")
-                if rest and key in supplied:
-                    continue
-                if not rest and (text in accounted or covers_every_dimension):
-                    continue
-                remaining.append(token)
-            identity = replace(identity, ambiguous_tokens=tuple(remaining), **supplied)
+            # THE FIRST REPAIR WAS TOO CLEVER AND A SECOND READER BROKE IT. It
+            # cleared a bare token when some supplied VALUE contained it as a
+            # word, which the same defect walks straight through:
+            # `identity: {"build": "WITH SPACES"}` accounts for the words without
+            # saying anything about the model. Its all-dimensions shortcut let a
+            # lossy `identity_method=not observed` through as `not`, because
+            # provenance is not one of the keyed dimensions.
+            #
+            # So the rule is the one the comment above already states: the
+            # mapping is carried **instead of** a lossy string, not alongside
+            # one. A string that could not be read unambiguously means nothing
+            # parsed out of it may be trusted, and a mapping cannot say which
+            # part of it was lost. The identity stays incomplete, which is the
+            # answer that loses nothing — the row is prior evidence and qualifies
+            # nothing.
+            identity = replace(identity, **supplied)
     pool = row.get("pool_id")
     if pool:
         identity = replace(identity, pool_id=str(pool))

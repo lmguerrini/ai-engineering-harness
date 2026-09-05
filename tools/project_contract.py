@@ -807,15 +807,22 @@ class ProjectContract:
         declared = Path(self.repo_path)
         if declared.is_absolute():
             return self.repo_path
-        # NORMALISED, NOT RESOLVED, so both branches treat symlinks the same way.
-        # An absolute declaration is returned verbatim precisely so `.resolve()`
-        # cannot rewrite a path the project chose to name through a link; a
-        # relative one was being `.resolve()`d, which does follow links — two
-        # different answers to one question, and an independent reader found that
-        # a mutant dropping the call survived the whole suite, so neither
-        # behaviour was pinned. `self.path` is already absolute, so joining and
-        # normalising is enough to make this absolute without touching links.
-        return os.path.normpath(self.path.parent / declared)
+        # JOINED, AND NOTHING ELSE. An absolute declaration is returned verbatim
+        # precisely so nothing rewrites a path the project chose; the relative
+        # branch does the one thing it must — make it absolute against the
+        # contract — and then also leaves it alone.
+        #
+        # TWO WRONG ANSWERS PRECEDED THIS ONE. `.resolve()` follows symlinks, so
+        # it rewrote a declaration made through a link while the absolute branch
+        # preserved it: two answers to one question, and a reader showed a mutant
+        # dropping the call survived, so neither behaviour was pinned.
+        # `os.path.normpath` then collapsed `..` LEXICALLY, before the filesystem
+        # interpreted the link — so `link/..`, where `link` points into another
+        # tree, named the contract's own directory instead of the link's parent.
+        # A bounded reading of that repair found it. The filesystem resolves both
+        # correctly when the path is used; this returns what the project wrote,
+        # rooted where the project wrote it.
+        return str(self.path.parent / declared)
 
 
 def _load_adapters(raw: dict) -> tuple | None:

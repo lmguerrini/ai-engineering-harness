@@ -241,11 +241,30 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
     Each worker now blocks on a release file this test writes, so the window in
     which the producer is alive and its result absent is deterministic.
     """
+    workers = {}
+    try:
+        _run_the_concurrent_background_rehearsal(two_projects, workers)
+    finally:
+        # THE WORKERS BLOCK UNTIL RELEASED, so a failure anywhere above would
+        # leave two processes waiting for a file that will never be written.
+        # A bounded reading injected an exception and found both alive after the
+        # test returned — a rehearsal about not leaking background work, leaking
+        # background work.
+        for _process, _out, release in workers.values():
+            release.write_text("go", encoding="utf-8")
+        for process, _out, _release in workers.values():
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:  # pragma: no cover - belt and braces
+                process.kill()
+                process.wait(timeout=30)
+
+
+def _run_the_concurrent_background_rehearsal(two_projects, workers):
     from dataclasses import replace as _replace
 
     from continuation import Disposition
 
-    workers = {}
     for key in ("a", "b"):
         root = two_projects[key]
         out = root / "work"

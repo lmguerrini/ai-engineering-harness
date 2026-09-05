@@ -401,3 +401,89 @@ def test_an_absolute_adapter_locator_is_untouched(tmp_path):
         id="w", locator=str(installed),
         digest=hashlib.sha256(installed.read_bytes()).hexdigest(), required=True)
     assert declaration.resolved(relative_to=tmp_path / "unrelated") == installed
+
+
+def test_the_version_command_runs_in_the_project_and_not_in_the_callers_directory(
+        tmp_path, monkeypatch):
+    """THE REPAIR OF THE LOCATOR MADE THIS NEWLY REACHABLE, which is why it is
+    pinned here rather than assumed.
+
+    Before the locator was resolved against the contract, a verification run from
+    another directory failed on the missing definition FILE first. With the file
+    half repaired, the executable half still inherited the process's directory —
+    so a project's own `adapter.md` could be combined with a DECOY directory's
+    `./tool`, and the report said one file and one executable verified. Found by
+    a bounded reading of that repair.
+    """
+    import project_contract
+
+    project = tmp_path / "proj"
+    decoy = tmp_path / "decoy"
+    project.mkdir()
+    decoy.mkdir()
+    definition = "name: w\n\nthe qualified definition\n"
+    (project / "adapter.md").write_text(definition, encoding="utf-8")
+    for root, version in ((project, "9.0"), (decoy, "1.0")):
+        tool = root / "tool"
+        tool.write_text(f"#!/bin/sh\necho tool {version}\n", encoding="utf-8")
+        tool.chmod(0o755)
+
+    (project / "PROJECT.yaml").write_text(
+        'project:\n  name: p\n  repo_path: "."\n'
+        'pack:\n  root_path: "/nowhere"\n'
+        "adapters:\n  - id: w\n    locator: adapter.md\n"
+        f"    digest: {hashlib.sha256(definition.encode()).hexdigest()}\n"
+        "    required: true\n"
+        "    executable: ./tool\n"
+        "    version_command: ./tool --version\n"
+        "    qualified_version: 1.0\n"
+        "capabilities:\n  - id: C1\n", encoding="utf-8")
+
+    contract = project_contract.ProjectContract.load(project / "PROJECT.yaml")
+
+    monkeypatch.chdir(decoy)
+    report = adapter_pin.verify_contract(contract)
+    assert not report.clean, (
+        "the project's own definition file was combined with the DECOY directory's "
+        f"executable and the report was clean:\n{report.render()}")
+    assert any("9.0" in finding.sentence() if hasattr(finding, "sentence") else "9.0" in str(finding)
+               for finding in report.findings), (
+        f"the refusal does not name the version the PROJECT's tool actually reports:\n"
+        f"{report.render()}")
+
+    # And from the project itself, the same declaration must still refuse — the
+    # project's tool is 9.0 and it qualified against 1.0. A fixture that passed
+    # here would be testing the directory rather than the version.
+    monkeypatch.chdir(project)
+    assert not adapter_pin.verify_contract(contract).clean
+
+
+def test_a_matching_executable_in_the_project_verifies(tmp_path, monkeypatch):
+    """The positive case, so the test above cannot pass by refusing everything."""
+    import project_contract
+
+    project = tmp_path / "proj"
+    elsewhere = tmp_path / "elsewhere"
+    project.mkdir()
+    elsewhere.mkdir()
+    definition = "name: w\n\nthe qualified definition\n"
+    (project / "adapter.md").write_text(definition, encoding="utf-8")
+    tool = project / "tool"
+    tool.write_text("#!/bin/sh\necho tool 1.0\n", encoding="utf-8")
+    tool.chmod(0o755)
+    (project / "PROJECT.yaml").write_text(
+        'project:\n  name: p\n  repo_path: "."\n'
+        'pack:\n  root_path: "/nowhere"\n'
+        "adapters:\n  - id: w\n    locator: adapter.md\n"
+        f"    digest: {hashlib.sha256(definition.encode()).hexdigest()}\n"
+        "    required: true\n"
+        "    executable: ./tool\n"
+        "    version_command: ./tool --version\n"
+        "    qualified_version: 1.0\n"
+        "capabilities:\n  - id: C1\n", encoding="utf-8")
+
+    contract = project_contract.ProjectContract.load(project / "PROJECT.yaml")
+    monkeypatch.chdir(elsewhere)
+    report = adapter_pin.verify_contract(contract)
+    assert report.clean, report.render()
+    assert report.executables_verified == ["w"], report.render()

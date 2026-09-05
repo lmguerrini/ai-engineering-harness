@@ -444,30 +444,51 @@ def test_a_contract_loaded_by_a_relative_path_answers_the_same_from_anywhere(tmp
         f"{contract.repository()} from another")
 
 
-def test_a_relative_declaration_through_a_symlink_is_treated_like_an_absolute_one(tmp_path):
-    """Both branches must answer the same question the same way.
+@pytest.mark.parametrize("declared,names", [
+    ("link/..", "external"),
+    ("link", "child"),
+    (".", "proj"),
+    ("../external", "external"),
+])
+def test_a_relative_declaration_names_what_the_filesystem_says_it_names(
+        tmp_path, declared, names):
+    """TWO WRONG ANSWERS PRECEDED THE RIGHT ONE, and both are parametrised here.
 
-    An absolute declaration is returned verbatim so `.resolve()` cannot rewrite a
-    path the project named through a link. A relative one was `.resolve()`d,
-    which does follow links — and an independent reader showed a mutant dropping
-    the call survived the whole suite, so neither behaviour was pinned in either
-    direction. This pins both.
+    `.resolve()` follows symlinks, so it rewrote a declaration the project made
+    through a link while the absolute branch preserved it. `os.path.normpath`
+    then collapsed `..` LEXICALLY, before the filesystem interpreted the link —
+    so `link/..`, where `link` points into another tree, named the contract's own
+    directory instead of the link's parent, and a caller would have scanned the
+    wrong repository again. Found by a bounded reading of that repair.
+
+    The property is not about the SPELLING of the answer: it is that the answer
+    names what the project named. So each case is compared by what the
+    filesystem resolves it to.
     """
-    real = tmp_path / "real-repository"
-    real.mkdir()
-    link = tmp_path / "named-through-a-link"
-    link.symlink_to(real, target_is_directory=True)
-
+    (tmp_path / "external" / "child").mkdir(parents=True)
     project = tmp_path / "proj"
     project.mkdir()
+    (project / "link").symlink_to(tmp_path / "external" / "child", target_is_directory=True)
+    expected = {"external": tmp_path / "external",
+                "child": tmp_path / "external" / "child",
+                "proj": project}[names]
+
     (project / "PROJECT.yaml").write_text(
-        "project:\n  name: p\n"
-        '  repo_path: "../named-through-a-link"\n'
+        f'project:\n  name: p\n  repo_path: "{declared}"\n'
         'pack:\n  root_path: "/nowhere"\n'
         "capabilities:\n  - id: C1\n", encoding="utf-8")
 
     resolved = ProjectContract.load(project / "PROJECT.yaml").repository()
-    assert Path(resolved).is_absolute(), resolved
-    assert resolved == str(link), (
-        f"a relative declaration naming a symlink came back as {resolved!r} rather than "
-        f"{str(link)!r}; the absolute branch preserves the link and this one must too")
+    assert Path(resolved).is_absolute(), f"{resolved} is not absolute"
+    assert Path(resolved).resolve() == expected.resolve(), (
+        f"`repo_path: {declared!r}` names {expected}, and the contract returned {resolved}, "
+        f"which the filesystem reads as {Path(resolved).resolve()}")
+
+    # AND THE SPELLING, because the absolute branch returns a declaration
+    # verbatim and the two branches must not disagree about whether the pack
+    # rewrites what a project wrote. `.resolve()` reaches the same destination
+    # for every case above and still rewrites the path, which is why the
+    # destination assertion alone let a mutant restoring it survive.
+    assert resolved == str(project / declared), (
+        f"the contract rewrote `{declared}` to {resolved!r}. An absolute declaration is "
+        f"returned as declared; a relative one is rooted and otherwise left alone")

@@ -178,11 +178,12 @@ def test_this_checkout_verifies_against_its_own_manifest(manifest, version):
 
 
 def test_the_manifest_is_the_only_thing_excluded_from_its_own_digest(manifest):
-    """**NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
-    including a semantically null one, because it compares a recorded identity
-    against the checkout. Exclude it when scoring mutants: two independent
-    readers recorded spurious "killed" verdicts from this test and had to
-    re-run their passes."""
+    """**NOT A MUTATION ORACLE.** This fails whenever the number of tracked files
+    or collected tests changes, which a semantically null edit can do — adding a
+    file, adding a test. Exclude it when scoring mutants: independent readers
+    recorded spurious "killed" verdicts from this family and had to re-run.
+    (It compares a COUNT, not a digest; an earlier version of this note said
+    digest, and a bounded reading checked and found it wrong.)"""
     tracked = subprocess.run(
         ["git", "ls-files", "-z"], cwd=str(ROOT), capture_output=True, text=True, check=True
     ).stdout.split("\0")
@@ -200,11 +201,11 @@ def test_the_recorded_test_count_is_the_count_the_suite_actually_collects(manife
     its place in the total, which is the failure mode the count exists to
     catch.
 
-    **NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
-    including a semantically null one, because it compares a recorded digest
-    against the checkout. Exclude it when scoring mutants: two independent
-    readers recorded spurious "killed" verdicts from this test and had to
-    re-run their passes.
+    **NOT A MUTATION ORACLE.** This fails whenever a COUNT changes — the
+    number of tracked files, or of collected tests — which a semantically
+    null edit can do. Exclude it when scoring mutants. (An earlier version
+    of this note said it compares a digest; a bounded reading checked and
+    found it wrong.)
     """
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tools/tests/", "--collect-only", "-q",
@@ -1777,3 +1778,56 @@ def test_no_tracked_path_is_rewritten_between_the_blob_and_the_checkout():
         "these tracked paths may be rewritten between the stored blob and the checkout, so "
         "the pin will not verify on a machine configured that way: " + "; ".join(rewritten[:10])
     )
+
+
+#: Ways a release record can assert that nothing in this repository's history
+#: names a real person or machine. The adjudication says one occurrence does, so
+#: any surviving assertion of the opposite is a contradiction, not a summary.
+_UNIVERSAL_DENIALS = (
+    "none names a person",
+    "no occurrence at this tier names",
+    "names no person, machine",
+    "nothing in this history names",
+)
+
+
+def test_no_release_record_denies_the_occurrence_the_adjudication_records():
+    """A correction in one document that its own summaries contradict.
+
+    `docs/RP2.4-PUBLICATION-ADJUDICATION.md` originally claimed that no
+    occurrence at the tiered tier names a person, a machine or an account. An
+    independent reader falsified it against a historical blob and the document
+    was corrected — and three release records went on repeating the original
+    claim, so the release shipped a public-safety conclusion and its own
+    contradiction at once. A bounded reading found that.
+
+    The same shape as `test_the_release_packet_and_the_manifest_agree_on_the_prose_breach`:
+    a conclusion has one owner, and a summary that disagrees with its owner is
+    the defect, whichever of them is right.
+    """
+    import json
+
+    adjudication = ROOT / "docs" / f"{_release_doc_prefix()}-PUBLICATION-ADJUDICATION.md"
+    if not adjudication.is_file():
+        pytest.skip("this release ships no publication adjudication")
+    owner = adjudication.read_text(encoding="utf-8")
+    records_an_occurrence = "names a real machine account" in owner
+    assert records_an_occurrence, (
+        "the adjudication no longer records the occurrence this guard exists for; if it was "
+        "genuinely remediated, remove the guard in the same change that remediates it")
+
+    surfaces = [ROOT / "PACK_MANIFEST.json"]
+    surfaces += sorted((ROOT / "docs").glob(f"{_release_doc_prefix()}-*.md"))
+    contradictions = []
+    for path in surfaces:
+        if path == adjudication:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if path.name == "PACK_MANIFEST.json":
+            text = " ".join(json.loads(text).get("known_limitations") or [])
+        for denial in _UNIVERSAL_DENIALS:
+            if denial in text.lower():
+                contradictions.append(f"{path.name}: {denial!r}")
+    assert not contradictions, (
+        "these release records deny an occurrence the adjudication records: "
+        + "; ".join(contradictions))

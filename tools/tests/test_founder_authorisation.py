@@ -191,13 +191,43 @@ def _unprobed_candidate(model, *, prior=None, provider="P"):
                                 provider=provider, fresh=True))
 
 
-def _loud_prior(grade_name="confirmed", observations=15):
+#: EVERY SHAPE A FAMILY PRIOR CAN TAKE, because a rank function can consult any
+#: field of it. A bounded reading defeated the first version of these oracles
+#: with a mutant keyed on the prior's CONTRADICTION count, which every fixture
+#: here had set to zero — so the oracles compared two ranks that were equal for
+#: a reason unrelated to the property.
+PRIOR_SHAPES = (
+    ("confirmed", dict(observations=15, validated=15)),
+    ("provisional", dict(observations=1, validated=1)),
+    ("contradicted", dict(observations=9, validated=2, contradicted=7)),
+    ("environmental-unknown", dict(observations=5, environmental=5)),
+)
+
+
+def _loud_prior(grade_name="confirmed", **counts):
+    if not counts:
+        counts = dict(next(c for name, c in PRIOR_SHAPES if name == grade_name))
     return q.Prior(
         family=COMPLETE["family"], task_class="design_falsification_review",
         grade=backend_contract.TaskClassGrade(
             "design_falsification_review", grade_name,
-            observations=observations, validated=observations),
+            field_observations=counts.get("observations", 0), **counts),
         because="the family has history and this configuration has none")
+
+
+@pytest.mark.parametrize("grade_name", [name for name, _ in PRIOR_SHAPES])
+def test_3_no_field_of_a_family_prior_changes_a_candidates_rank(grade_name):
+    """EVERY FIELD, not only the grade word. A mutant that subtracted the prior's
+    CONTRADICTION count survived the first version of this oracle, because every
+    prior it built had zero contradictions — the two ranks were equal for a
+    reason that had nothing to do with the property under test."""
+    with_history = _unprobed_candidate("a-model-whose-family-has-history",
+                                       prior=_loud_prior(grade_name))
+    without = _unprobed_candidate("a-model-whose-family-has-none")
+    assert _loud_prior(grade_name).grade.observations > 0, "the fixture prior is empty"
+    assert r._rank(with_history) == r._rank(without), (
+        f"a {grade_name!r} family prior changed a candidate's rank: {r._rank(with_history)} "
+        f"vs {r._rank(without)}. That is the family bucket back under a new name")
 
 
 def test_3_a_family_prior_does_not_order_two_unprobed_candidates():
@@ -216,7 +246,7 @@ def test_3_a_family_prior_does_not_order_two_unprobed_candidates():
 
 
 @pytest.mark.parametrize("order", ["as given", "reversed"])
-@pytest.mark.parametrize("louder", ["confirmed", "provisional"])
+@pytest.mark.parametrize("louder", [name for name, _ in PRIOR_SHAPES])
 def test_3_attaching_a_family_prior_does_not_change_which_candidate_is_seated(order, louder):
     """THE DISCRIMINATING COMPARISON, and not the one a first draft reached for.
 
@@ -378,23 +408,73 @@ def test_5_an_unrelated_structured_field_does_not_resolve_a_lossy_string(tmp_pat
         "three rows whose model identifier was truncated at a space produced a grade")
 
 
-def test_5_the_mapping_does_resolve_the_ambiguity_it_actually_states(tmp_path):
-    """The other half, so the repair is not merely a refusal.
+@pytest.mark.parametrize("mapping", [
+    {"model_requested": "MODEL WITH SPACES"},
+    {"build": "WITH SPACES"},
+    {"model_observed": "MODEL WITH SPACES"},
+    {name: "x" for name in ("surface", "family", "client", "model_observed", "effort",
+                            "isolation", "network", "authentication_class")},
+])
+def test_5_no_mapping_rescues_a_lossy_string(tmp_path, mapping):
+    """A SECOND READER BROKE THE FIRST REPAIR, so this is parametrised over the
+    ways it was broken.
 
-    The structured mapping exists BECAUSE a packed string cannot carry an
-    identifier with a space. A row that states the identifier in the mapping has
-    resolved the ambiguity, and must be usable — otherwise the repair breaks the
-    one case the mapping was added for.
+    The first repair cleared a bare token when some supplied VALUE contained it
+    as a word — which `{"build": "WITH SPACES"}` satisfies while saying nothing
+    about the model — and cleared everything when the mapping covered all eight
+    keyed dimensions, which let a lossy `identity_method=not observed` through as
+    `not`, provenance not being one of them.
+
+    The rule is the one the parser's own comment states: the mapping is carried
+    **instead of** a lossy string, not alongside one.
     """
     lossy = ("surface=codex-cli family=OPENAI agent=codex-exec model=M "
              "model_observed=MODEL WITH SPACES identity_method=rollout auth=subscription "
              "effort_observed=high isolation=read-only network=restricted build=1.0")
-    stated = q.identity_from_observation(
-        {"configuration": lossy, "identity": {"model_observed": "MODEL WITH SPACES"}})
-    assert stated.complete, (
-        f"a row that states the whole identifier in the mapping is still incomplete: "
-        f"{stated.incompleteness()}")
-    assert stated.model_observed == "MODEL WITH SPACES"
+    identity = q.identity_from_observation({"configuration": lossy, "identity": mapping})
+    assert not identity.complete, (
+        f"identity: {mapping} rescued a string that could not be read unambiguously; "
+        f"model_observed came out as {identity.model_observed!r}")
+
+
+def test_5_a_lossy_provenance_is_refused_even_when_every_dimension_is_supplied(tmp_path):
+    """`identity_method` is not one of the eight keyed dimensions, so a rule that
+    cleared ambiguity once all eight were supplied let a truncated provenance
+    through. Found by a bounded reading of the first repair."""
+    lossy = ("surface=codex-cli family=OPENAI agent=codex-exec model=M model_observed=M2 "
+             "identity_method=not observed auth=subscription effort_observed=high "
+             "isolation=read-only network=restricted build=1.0")
+    every = {name: "x" for name in q.CONFIGURATION_DIMENSIONS}
+    identity = q.identity_from_observation({"configuration": lossy, "identity": every})
+    assert not identity.complete, (
+        f"a truncated provenance survived as {identity.identity_method!r}")
+
+
+def test_5_the_documented_shape_still_works(tmp_path):
+    """The repair must not break the case the mapping exists for.
+
+    The parser's own comment says a row needing an identifier with a space
+    carries the mapping INSTEAD of putting it in the string. That row — an
+    unambiguous string plus a mapping naming the identifier — must be usable, or
+    the structured mapping has no purpose left.
+    """
+    clean = ("surface=codex-cli family=OPENAI agent=codex-exec model=M "
+             "identity_method=rollout auth=subscription effort_observed=high "
+             "isolation=read-only network=restricted build=1.0")
+    identity = q.identity_from_observation(
+        {"configuration": clean, "identity": {"model_observed": "MODEL WITH SPACES"}})
+    assert identity.complete, identity.incompleteness()
+    assert identity.model_observed == "MODEL WITH SPACES"
+
+    row = {"configuration": clean, "identity": {"model_observed": "MODEL WITH SPACES"},
+           "task_class": "design_falsification_review", "outcome": "validated",
+           "qualification_basis": "field"}
+    log = tmp_path / "observations.jsonl"
+    log.write_text("\n".join([json.dumps(row)] * 2) + "\n")
+    graded = q.qualifications_from_observations(log)
+    assert len(graded) == 1
+    assert list(graded)[0][3] == "MODEL WITH SPACES", (
+        "the grade was filed under a truncated identifier")
 
 
 def test_5_a_backend_record_without_an_observed_model_is_not_qualified():

@@ -295,8 +295,9 @@ client update — the only change this session made outside this repository.
     rules applied: 35 term(s), 15 identity-only, 7 pattern(s), 1 identity-only
 
 **They are now ADJUDICATED**, in `docs/RP2.4-PUBLICATION-ADJUDICATION.md`,
-which resolves each finding class to the text behind it rather than counting it:
-at the tier a governed project runs, every occurrence is a home-relative form, a
+which resolves each finding class to the text behind it rather than counting it.
+**One occurrence names a real machine account and is stated there**; at the tier
+a governed project runs, every other occurrence is a home-relative form, a
 fixture path, a template placeholder or a synthetic identifier, and every
 credential-shaped token is a negative fixture in a test that exists to prove the
 scanner finds that shape. At the strict tier the dominant classes are this
@@ -984,12 +985,15 @@ Five Evolution Candidates are now recorded in the manifest, which had none.
 
 ### The pack's own history
 
-`docs/RP2.4-PUBLICATION-ADJUDICATION.md`. Adjudicated rather than owed: at the
-tier that governs a project every occurrence resolves to a home-relative form, a
-fixture path, a template placeholder or a synthetic identifier, and none names a
-person, machine, account, session or credential. At the strict tier the
-population is this pack's own governance vocabulary appearing in its own
-documentation, which is the case `skills/core/public-safety.md` describes.
+`docs/RP2.4-PUBLICATION-ADJUDICATION.md`. Adjudicated rather than owed — and
+the adjudication is not that everything is harmless. **One occurrence names a
+real machine account**, in a historical blob reachable from the release branch,
+redacted from the TREE at RP2.2 and not reachable by that redaction in history.
+Remediable only by a rewrite: rows 2 and 4, not taken. Every other occurrence at
+that tier is a home-relative form, a fixture path, a template placeholder or a
+synthetic identifier. At the strict tier the population is this pack's own
+governance vocabulary appearing in its own documentation, which is the case
+`skills/core/public-safety.md` describes.
 
 ## The freeze procedure
 

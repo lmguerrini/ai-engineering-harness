@@ -90,12 +90,21 @@ figures are in `docs/RP2.4-GATE.md`.
 
 ### B4. The pack's own history carried unadjudicated occurrences
 
-**Closed as adjudicated** in `docs/RP2.4-PUBLICATION-ADJUDICATION.md`. At the
-tier that governs a project, every occurrence resolves to a home-relative form,
-a fixture path, a placeholder or a synthetic identifier — none names a person,
-machine, account, session or credential. At the strict tier the population is
-the pack's own vocabulary appearing in its own documentation, which is the case
+**Closed as adjudicated** in `docs/RP2.4-PUBLICATION-ADJUDICATION.md`, and the
+adjudication is not that everything is harmless. **One occurrence names a real
+machine account**: a historical blob reachable from the release branch carries a
+home directory that was redacted from the TREE at RP2.2 — where a guard now
+holds it — and the redaction does not reach history. It is remediable only by a
+rewrite, which is rows 2 and 4, and it is not taken. Every other occurrence at
+that tier is a home-relative form, a fixture path, a template placeholder or a
+synthetic identifier. At the strict tier the population is the pack's own
+vocabulary appearing in its own documentation, which is the case
 `skills/core/public-safety.md` describes.
+
+*An earlier version of this paragraph, and of the two release records beside it,
+repeated the adjudication's original false universal — that no occurrence names
+a person, a machine or an account. A bounded reading found that correcting the
+adjudication itself had left its summaries contradicting it.*
 
 ### B5. The executable half of the adapter contract was unexercised by any adopter
 
