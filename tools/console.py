@@ -1337,10 +1337,24 @@ _READINGS: dict = {}
 
 
 def _repository_of(site) -> str:
-    """The repository a project declares, or the project root it lives in."""
+    """The repository a project declares, or the project root it lives in.
+
+    **RESOLVED AGAINST THE PROJECT, not against wherever this page was
+    rendered from.** `Path(where).is_dir()` is answered relative to the process,
+    so `repo_path: "."` — the template's own example — passed the test and was
+    then read as the renderer's own directory. Two adopting projects showed the
+    coordinator's commit count under both of their names, and the panel that
+    reports `same repository as a row above` said so correctly about an answer
+    that was wrong for both.
+    """
     pin = site.one("pin")
     where = (pin.fields.get("repository") if pin else "") or ""
-    return where if where and where != UNKNOWN and Path(where).is_dir() else str(site.root)
+    if not where or where == UNKNOWN:
+        return str(site.root)
+    declared = Path(where)
+    if not declared.is_absolute():
+        declared = Path(site.root) / declared
+    return str(declared) if declared.is_dir() else str(site.root)
 
 
 def _reading(kind: str, site, read):

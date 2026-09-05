@@ -552,3 +552,62 @@ def test_a_published_submodule_makes_the_scan_incomplete(repo, tmp_path):
         "was never read")
     assert any("dependency" in note for note in report.skipped), report.skipped
     assert "INCOMPLETE" in report.render()
+
+
+def test_a_blob_reachable_only_from_a_linked_worktrees_branch_is_scanned(tmp_path):
+    """Composition: the complete-history scan against the layout this pack uses.
+
+    Every evolution workspace here is a linked worktree with its own branch, so
+    "complete reachable history" is worth nothing if it means the main
+    worktree's refs. A blob committed from a linked worktree is reachable only
+    from that worktree's branch.
+
+    THE CONTROL COMES FIRST. The same string is committed on the main branch and
+    asserted found, because a scan that finds nothing and a scan that reaches
+    nothing produce the same number.
+    """
+    main = tmp_path / "main"
+    main.mkdir()
+
+    def git(*args, cwd=main):
+        result = subprocess.run(["git", "-C", str(cwd), *args],
+                                capture_output=True, text=True, timeout=120)
+        assert not result.returncode, f"git {args}: {result.stderr}"
+        return result
+
+    git("init", "-q", "--initial-branch", "main")
+    git("config", "user.name", "Ordinary Human")
+    git("config", "user.email", "human@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    (main / "ordinary.txt").write_text("nothing private here\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "seed")
+
+    def scan():
+        return publication_history.scan_complete_history(
+            main, outgoing_scan.Scanner(outgoing_scan.TermSet(terms=("zzprivatezz",)),
+                                        strict=True))
+
+    (main / "on-main.txt").write_text("zzprivatezz on the main branch\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "control")
+    control = scan()
+    assert "on-main.txt" in control.render(), (
+        "the control was not found, so this oracle cannot tell reaching nothing from "
+        f"finding nothing:\n{control.render()}")
+    before_refs = control.refs_examined
+
+    linked = tmp_path / "linked"
+    git("worktree", "add", "-q", "-b", "side", str(linked))
+    (linked / "only-here.txt").write_text("zzprivatezz reachable only from the worktree\n",
+                                          encoding="utf-8")
+    git("add", "-A", cwd=linked)
+    git("commit", "-q", "-m", "committed from the linked worktree", cwd=linked)
+
+    after = scan()
+    assert after.refs_examined > before_refs, (
+        f"the worktree's branch added no ref to the scan ({before_refs} -> "
+        f"{after.refs_examined}); it is reading one worktree's refs, not the repository's")
+    assert "only-here.txt" in after.render(), (
+        "a blob reachable only from a linked worktree's branch was not scanned:\n"
+        + after.render())

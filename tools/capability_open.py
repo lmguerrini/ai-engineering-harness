@@ -38,6 +38,7 @@ from pathlib import Path
 
 import adapter_pin
 import pack_migration
+import pack_pin
 import project_context
 from project_contract import ContractError, ProjectContract
 
@@ -286,11 +287,20 @@ def _pin_components(contract: ProjectContract) -> tuple[ComponentResult, Compone
             name="pack_pin", state=UNVERIFIABLE, required=True, findings=tuple(problems)
         )
     else:
+        notes = [f"{pin.version} at {pin.root_path}"]
+        # WHAT KIND OF ROOT IT IS, reported beside the verification. A linked
+        # worktree that is on its pinned revision verifies correctly and is
+        # still a root somebody else can move — which is the 2.3.0 layout
+        # incident, and the project should hear about it at adoption rather
+        # than the morning the pin stops verifying.
+        kind, why = pack_pin.root_kind(pack_migration.canonical_root(pin.root_path))
+        if kind != "checkout":
+            notes.append(why)
         pin_result = ComponentResult(
             name="pack_pin",
             state=VERIFIED,
             required=True,
-            notes=(f"{pin.version} at {pin.root_path}",),
+            notes=tuple(notes),
         )
 
     return pin_result, _release_state_component(pin)

@@ -194,3 +194,95 @@ def test_every_parametrised_test_collected_at_least_one_case():
     assert not empty, (
         f"these parametrised tests collected no cases at all, so they pass by running "
         f"nothing: {empty}")
+
+
+#: Marker shapes that make a test report a non-failure without running its body.
+#: Named separately from the expression shapes above because they are invisible
+#: in the source of the test itself — the body looks like an ordinary oracle and
+#: the decorator above it decides that nothing will execute.
+_SILENT_MARKERS = (
+    ("xfail(run=False)", "the body never executes and the run exits 0"),
+    ("xfail without strict", "an xfail that starts passing keeps reporting a non-failure"),
+    ("unconditional skip", "the body never executes and the run exits 0"),
+)
+
+
+def _marker_calls(node):
+    for decorator in node.decorator_list:
+        call = decorator if isinstance(decorator, ast.Call) else None
+        target = call.func if call else decorator
+        parts = []
+        while isinstance(target, ast.Attribute):
+            parts.append(target.attr)
+            target = target.value
+        if isinstance(target, ast.Name):
+            parts.append(target.id)
+        yield list(reversed(parts)), call
+
+
+@pytest.mark.parametrize("module", _modules(), ids=lambda p: p.name)
+def test_no_test_reports_a_non_failure_without_running(module):
+    """Three ways a suite goes green having executed nothing in the test itself.
+
+    A `-k` that selects nothing is caught by `selector_evidence`; these are the
+    per-test equivalents, and they are worse because the count still looks right:
+    a suite of 2400 with four `xfail(run=False)` reports 2396 passed and 4 xfailed,
+    and nobody reads the second number.
+    """
+    tree = ast.parse(module.read_text(encoding="utf-8"))
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith("test_"):
+            continue
+        for parts, call in _marker_calls(node):
+            if "mark" not in parts:
+                continue
+            kind = parts[-1]
+            keywords = {k.arg: k.value for k in (call.keywords if call else [])}
+            if kind == "xfail":
+                run = keywords.get("run")
+                if isinstance(run, ast.Constant) and run.value is False:
+                    found.append(f"{node.name}: xfail(run=False) — the body never executes")
+                strict = keywords.get("strict")
+                if not (isinstance(strict, ast.Constant) and strict.value is True):
+                    found.append(
+                        f"{node.name}: xfail without strict=True — a test that starts passing "
+                        f"still reports a non-failure, so the day it is fixed is invisible")
+            if kind == "skip":
+                # A skip with no condition is unconditional. `skipif` is a
+                # different marker and is deliberately not caught: a skip that
+                # depends on the environment is a statement about the
+                # environment, not a silenced oracle.
+                found.append(f"{node.name}: an unconditional skip — the body never executes")
+    assert not found, (
+        f"{module.name} carries markers that report a non-failure without running the test: "
+        + "; ".join(found)
+    )
+
+
+@pytest.mark.parametrize("shape,source", [
+    ("xfail run=False", "import pytest\n@pytest.mark.xfail(run=False)\ndef test_x():\n    assert 0\n"),
+    ("xfail not strict", "import pytest\n@pytest.mark.xfail\ndef test_x():\n    assert 0\n"),
+    ("unconditional skip", "import pytest\n@pytest.mark.skip\ndef test_x():\n    assert 0\n"),
+])
+def test_the_marker_sweep_catches_each_shape_it_claims_to(shape, source, tmp_path):
+    """The sweep, run against a module that has the defect. Without this the sweep
+    passes over the real suite and nobody knows whether it can fail at all."""
+    module = tmp_path / "test_silenced.py"
+    module.write_text(source)
+    with pytest.raises(AssertionError):
+        test_no_test_reports_a_non_failure_without_running(module)
+
+
+@pytest.mark.parametrize("shape,source", [
+    ("an ordinary test", "def test_x():\n    assert 1 == 1\n"),
+    ("a strict xfail", "import pytest\n@pytest.mark.xfail(strict=True)\ndef test_x():\n    assert 0\n"),
+    ("an environment skipif",
+     "import pytest\n@pytest.mark.skipif(True, reason='r')\ndef test_x():\n    assert 0\n"),
+])
+def test_the_marker_sweep_does_not_flag_an_honest_test(shape, source, tmp_path):
+    module = tmp_path / "test_honest.py"
+    module.write_text(source)
+    test_no_test_reports_a_non_failure_without_running(module)

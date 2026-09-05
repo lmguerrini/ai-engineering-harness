@@ -251,6 +251,57 @@ def _manifest_problems(root: Path, manifest: dict) -> list[str]:
 UNESTABLISHED = "IDENTITY COULD NOT BE ESTABLISHED"
 
 
+def root_kind(root: str | Path) -> "tuple[str, str]":
+    """What kind of directory this release root is, and why that matters.
+
+    **THE 2.3.0 INCIDENT, MADE EXECUTABLE.** A release root that is a LINKED
+    GIT WORKTREE is not immutable: whoever owns the main repository can move it
+    to another revision, and the pin then stops verifying for a reason the
+    adopting project did not cause and cannot see coming. That happened here —
+    the pack's own evolution workspaces are linked worktrees, one of them was a
+    pinned root, and it verified only because it happened to be sitting on its
+    pinned revision.
+
+    Reported, never blocking. A linked worktree that IS on its pinned revision
+    is a correct checkout of the right tree, and refusing it would refuse a
+    working adoption over a hazard that has not happened. What the project gets
+    is the sentence at adoption time instead of at breakage time.
+
+    Returns ``(kind, why)`` where kind is one of ``checkout``,
+    ``linked-worktree`` or ``not-a-checkout``.
+    """
+    root = Path(root)
+    marker = root / ".git"
+    if marker.is_dir():
+        return "checkout", "the release root is an ordinary checkout with its own repository"
+    if marker.is_file():
+        # A linked worktree's `.git` is a FILE holding `gitdir: <path>`. A
+        # submodule's is too, so the two are separated by asking Git rather than
+        # by reading the file — `--path-format` is not needed because what is
+        # wanted is only whether this is the main worktree.
+        try:
+            common = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+                capture_output=True, text=True, timeout=60).stdout.strip()
+            own = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "--git-dir"],
+                capture_output=True, text=True, timeout=60).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return "not-a-checkout", f"{root}/.git is a file and Git could not be asked about it"
+        if common and own and Path(common).resolve() != Path(own).resolve():
+            return "linked-worktree", (
+                f"the release root is a LINKED GIT WORKTREE of {common}. It is not an "
+                f"immutable root: whoever owns that repository can move this checkout to "
+                f"another revision, and this pin would stop verifying for a reason this "
+                f"project did not cause. Adopt a root nothing else moves"
+            )
+        return "checkout", "the release root is an ordinary checkout"
+    return "not-a-checkout", (
+        f"{root} carries no .git, so it is a copy rather than a checkout; the digest still "
+        f"answers about its bytes and the revision cannot be established here"
+    )
+
+
 def verify_pin(
     root: str | Path,
     *,

@@ -1580,3 +1580,40 @@ def test_a_bounded_representation_states_a_total_that_is_actually_bounded(three,
     assert sum(columns) // 3 == covered, (
         f"the columns total {sum(columns) // 3} and the view states {covered}")
     assert len(columns) // 3 <= console.COLUMN_DAYS
+
+
+def test_each_project_reports_its_own_repository_and_not_the_renderers(tmp_path, monkeypatch):
+    """The multiproject failure, at the resolver.
+
+    `repo_path: "."` is what the contract template shows, so every adopting
+    project declares it. Rendered from anywhere but a project's own directory,
+    both projects reported the RENDERER's repository — one commit count, shown
+    under two names, correct for neither. Found by rendering the history view
+    over two synthetic consumers and reading the pack's own 165 commits under
+    both of them.
+    """
+    import console
+
+    roots = []
+    for name in ("project-one", "project-two"):
+        root = tmp_path / name
+        root.mkdir()
+        (root / "PROJECT.yaml").write_text(
+            f"project:\n  name: {name}\n  repo_path: \".\"\n"
+            'pack:\n  root_path: "/nowhere"\n'
+            "capabilities:\n  - id: C1\n", encoding="utf-8")
+        roots.append(root)
+
+    somewhere_else = tmp_path / "rendered-from-here"
+    somewhere_else.mkdir()
+    monkeypatch.chdir(somewhere_else)
+
+    sites = console.survey(roots)
+    resolved = [console._repository_of(site) for site in sites]
+    assert len(set(resolved)) == 2, (
+        f"two projects resolved to one repository: {resolved}")
+    for root, where in zip(roots, resolved):
+        assert Path(where).resolve() == root.resolve(), (
+            f"{root.name} resolved to {where}, which is not its own root")
+    assert str(somewhere_else) not in resolved, (
+        "a project's repository resolved to the directory the page was rendered from")

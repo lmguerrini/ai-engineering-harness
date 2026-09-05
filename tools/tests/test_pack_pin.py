@@ -477,3 +477,92 @@ def test_the_projection_shows_an_undecidable_pin_as_unknown_and_not_as_a_defect(
     pin = next(l for panel in view.panels for l in panel.rows() if l.label == "pin")
     assert pin.tone == projection.Tone.UNKNOWN, f"{pin.tone}: {pin.text[:90]}"
     assert "PIN DOES NOT VERIFY" not in view.render()
+
+
+# --- the 2.3.0 linked-worktree incident, as an executable property ---------------
+
+
+def _repo_with_a_linked_worktree(tmp_path):
+    """A main checkout and a linked worktree of it, both at one revision."""
+    main = tmp_path / "main"
+    main.mkdir()
+
+    def git(*args, cwd=main, check=True):
+        result = subprocess.run(["git", "-C", str(cwd), *args],
+                                capture_output=True, text=True, timeout=120)
+        assert not (check and result.returncode), f"git {args}: {result.stderr}"
+        return result
+
+    git("init", "-q", "--initial-branch", "main")
+    git("config", "user.name", "Ordinary Human")
+    git("config", "user.email", "human@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    (main / "VERSION").write_text("9.9.9\n", encoding="utf-8")
+    (main / "PACK_MANIFEST.json").write_text(json.dumps({
+        "pack": "p", "version": "9.9.9", "state": "QUALIFIED_AND_FROZEN",
+        "tree_digest_sha256": "", "digest_excludes": "PACK_MANIFEST.json",
+        "digest_algorithm": "sha256-framed-v1"}), encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "seed")
+    digest, count = pack_pin.tree_digest(main)
+    manifest = json.loads((main / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    manifest.update({"tree_digest_sha256": digest, "digest_file_count": count})
+    (main / "PACK_MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "record the digest")
+    sha = git("rev-parse", "HEAD").stdout.strip()
+    linked = tmp_path / "linked"
+    git("worktree", "add", "-q", "--detach", str(linked), sha)
+    return main, linked, sha, digest, git
+
+
+def test_a_release_root_that_is_a_linked_worktree_is_reported_as_one(tmp_path):
+    """THE 2.3.0 INCIDENT. The pack's own evolution workspaces are linked
+    worktrees, one was a pinned root, and it verified only because it happened
+    to be sitting on its pinned revision. That was recorded as prose in two
+    manifests and detected by nothing."""
+    main, linked, _sha, _digest, _git = _repo_with_a_linked_worktree(tmp_path)
+
+    kind, why = pack_pin.root_kind(linked)
+    assert kind == "linked-worktree", f"a linked worktree read as {kind!r}: {why}"
+    assert "immutable" in why and "move" in why, why
+
+    assert pack_pin.root_kind(main)[0] == "checkout", (
+        "an ordinary checkout was reported as a linked worktree, which would make the "
+        "report noise and get it ignored")
+
+
+def test_a_directory_that_is_not_a_checkout_is_named_as_a_copy(tmp_path):
+    """A vendored or unpacked release. Its digest still answers; its revision cannot."""
+    plain = tmp_path / "unpacked"
+    plain.mkdir()
+    kind, why = pack_pin.root_kind(plain)
+    assert kind == "not-a-checkout", kind
+    assert "copy" in why
+
+
+def test_the_hazard_is_real_and_the_pin_fails_loudly_rather_than_quietly(tmp_path):
+    """What the report is warning about, executed.
+
+    The pin does NOT silently accept a moved root — it reports four separate
+    problems — so the cost of the layout is a project blocked for a reason it
+    did not cause, which is exactly what a note at adoption time prevents.
+    """
+    main, linked, sha, digest, git = _repo_with_a_linked_worktree(tmp_path)
+    assert pack_pin.verify_pin(linked, expect_version="9.9.9", expect_sha=sha,
+                               expect_digest=digest,
+                               expect_state="QUALIFIED_AND_FROZEN") == []
+
+    (main / "VERSION").write_text("9.9.10\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "ordinary development, by somebody else")
+    moved = git("rev-parse", "HEAD").stdout.strip()
+    git("checkout", "-q", "--detach", moved, cwd=linked)
+
+    problems = pack_pin.verify_pin(linked, expect_version="9.9.9", expect_sha=sha,
+                                   expect_digest=digest,
+                                   expect_state="QUALIFIED_AND_FROZEN")
+    assert problems, (
+        "a release root moved out from under its pin still verified; the whole hazard is "
+        "that this root is movable, and a movable root that verifies anyway is worse")
+    assert any("digest" in problem for problem in problems), problems

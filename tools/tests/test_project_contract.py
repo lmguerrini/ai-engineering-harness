@@ -11,6 +11,8 @@ import json
 
 import pytest
 
+from pathlib import Path
+
 from project_contract import ContractError, ProjectContract, parse_yaml_subset
 
 
@@ -335,3 +337,81 @@ def test_a_contract_records_where_it_read_its_vocabulary_from(tmp_path):
     assert source.canonical and source.how == "canonical"
     assert len(source.digest) == 64
     assert "private-terms.default.json" in source.summary()
+
+
+# --- a declared repository is the PROJECT's, not the process's --------------------
+
+
+def _contract_at(root, repo_path='"."'):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "PROJECT.yaml").write_text(
+        "project:\n  name: p\n"
+        f"  repo_path: {repo_path}\n"
+        'pack:\n  root_path: "/nowhere"\n'
+        "capabilities:\n  - id: C1\n", encoding="utf-8")
+    return root / "PROJECT.yaml"
+
+
+def test_a_relative_repository_resolves_against_the_project_not_the_process(tmp_path, monkeypatch):
+    """`repo_path: "."` is the template's own example, so this is what every
+    adopting project declares.
+
+    REPRODUCED BEFORE THE REPAIR: it returned the literal `"."`, so every CLI
+    that falls back to it — the commit gate over a range, the outgoing scan, the
+    workspace report, the publication gate — ran against whatever repository the
+    invoking shell happened to be in. Two projects on one machine got the same
+    answer, and it was the answer for neither of them.
+    """
+    project = tmp_path / "a-project"
+    contract = ProjectContract.load(_contract_at(project))
+
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    resolved = Path(contract.repository())
+    assert resolved.is_absolute(), (
+        f"repository() returned {resolved!s}, which is relative — so it names whatever "
+        f"directory the caller is standing in"
+    )
+    assert resolved == project.resolve(), (
+        f"repository() resolved to {resolved} from a working directory of {elsewhere}; "
+        f"the contract lives in {project}"
+    )
+
+
+def test_two_projects_declaring_the_same_relative_path_are_two_repositories(tmp_path):
+    """The failure as a reader meets it: one number, shown twice, for two projects."""
+    one = ProjectContract.load(_contract_at(tmp_path / "one"))
+    two = ProjectContract.load(_contract_at(tmp_path / "two"))
+    assert one.repository() != two.repository(), (
+        f"two projects both declaring `repo_path: \".\"` resolved to one repository "
+        f"({one.repository()})"
+    )
+
+
+def test_an_absolute_declared_repository_is_left_exactly_as_declared(tmp_path):
+    """The repair must not rewrite a declaration that already names a place.
+
+    THROUGH A SYMLINK, deliberately. `parent / absolute` already yields the
+    absolute path, so a first version of this oracle passed against a repair
+    that dropped the short-circuit and called `.resolve()` on everything — and
+    `.resolve()` follows symlinks, which silently rewrites a declaration the
+    project made on purpose. On this platform `/tmp` is itself such a link, so
+    the difference is not exotic.
+    """
+    real = tmp_path / "real-place"
+    real.mkdir()
+    linked = tmp_path / "declared-through-a-link"
+    linked.symlink_to(real, target_is_directory=True)
+
+    contract = ProjectContract.load(_contract_at(tmp_path / "proj", repo_path=f'"{linked}"'))
+    assert contract.repository() == str(linked), (
+        f"an absolute declaration came back as {contract.repository()!r} rather than as "
+        f"{str(linked)!r}; the project named a path and the pack rewrote it"
+    )
+
+
+def test_an_explicit_override_still_wins_over_the_declaration(tmp_path):
+    """The override is how a caller says *this repository, not the declared one*."""
+    contract = ProjectContract.load(_contract_at(tmp_path / "proj"))
+    assert contract.repository("/somewhere/given/explicitly") == "/somewhere/given/explicitly"

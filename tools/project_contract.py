@@ -773,14 +773,34 @@ class ProjectContract:
         )
 
     def repository(self, override: str | None = None) -> str:
-        """The repository these declarations describe."""
+        """The repository these declarations describe.
+
+        **A RELATIVE DECLARATION IS RELATIVE TO THE CONTRACT, never to the
+        process.** This returned `repo_path` verbatim, and `repo_path: "."` is
+        the template's own example — so every caller that falls back to the
+        declaration (`commit_gate --range`, `outgoing_scan`, `workspace_report`,
+        `publication_gate`, `publication_history`) ran against whatever
+        repository the invoking shell happened to be standing in. Two projects on
+        one machine resolved to one repository and it was neither of theirs;
+        found in this release by rendering the multiproject history view over two
+        adopting projects and reading the coordinator's own commit count under
+        both of their names.
+
+        Resolved here rather than at each caller because the callers cannot each
+        be relied on to remember, and the seventh one has not been written yet.
+        An override still wins, and an absolute declaration is returned as
+        declared.
+        """
         if override:
             return override
         if not self.repo_path:
             raise ContractError(
                 f"{self.path} declares no project.repo_path, so the repository must be given explicitly"
             )
-        return self.repo_path
+        declared = Path(self.repo_path)
+        if declared.is_absolute():
+            return self.repo_path
+        return str((self.path.parent / declared).resolve())
 
 
 def _load_adapters(raw: dict) -> tuple | None:

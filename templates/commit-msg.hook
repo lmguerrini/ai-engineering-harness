@@ -1,0 +1,52 @@
+#!/bin/sh
+# The public commit contract, enforced by Git rather than by the caller.
+#
+# WHY THIS EXISTS. `commit_gate.py` is a separate process, so whether its
+# refusal stops a commit depends on the caller reading its exit status. In this
+# pack's own 2.4.0 development that dependency failed exactly once and it was
+# enough: the gate was run, printed VIOLATION and exited non-zero, and the
+# commit happened anyway, because the `&&` in
+#
+#     python3 tools/commit_gate.py "$MSG" ... | tail -1 && git commit -F "$MSG"
+#
+# attached to `tail`, which succeeded. Repairing that message needed a founder
+# authorisation and a history rewrite.
+#
+# A `commit-msg` hook removes the dependency instead of adding another check:
+# Git runs it and refuses the commit on a non-zero exit, whatever the caller's
+# shell does with pipes, `&&`, `;` or a swallowed status.
+#
+# INSTALL IT — the pack does not, because writing into a project's `.git` is the
+# project's decision:
+#
+#     cp <pack-root>/templates/commit-msg.hook .git/hooks/commit-msg
+#     chmod +x .git/hooks/commit-msg
+#
+# and point it at the pack:
+#
+#     git config runtimepack.root <pack-root>
+#
+# `--no-verify` still bypasses it, and deliberately: a hook that cannot be
+# bypassed is a hook people stop installing. What it removes is the ACCIDENTAL
+# bypass, which is the one that actually happened.
+set -eu
+
+MESSAGE_FILE="$1"
+
+PACK_ROOT=$(git config --get runtimepack.root || true)
+if [ -z "$PACK_ROOT" ]; then
+    echo "commit-msg: runtimepack.root is not configured, so the commit contract cannot be" >&2
+    echo "            checked. Run: git config runtimepack.root <pack-root>" >&2
+    echo "            REFUSING, because a check that cannot run is not a check that passed." >&2
+    exit 1
+fi
+
+GATE="$PACK_ROOT/tools/commit_gate.py"
+if [ ! -f "$GATE" ]; then
+    echo "commit-msg: no commit gate at $GATE — REFUSING rather than passing." >&2
+    exit 1
+fi
+
+# No pipe. The exit status of the gate is the exit status of this hook, which is
+# the entire point of the file.
+python3 "$GATE" "$MESSAGE_FILE" --default-terms "$PACK_ROOT"

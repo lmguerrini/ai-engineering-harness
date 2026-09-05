@@ -715,3 +715,112 @@ def test_the_pack_defaults_are_additive_to_the_flags_like_everything_else(tmp_pa
     term_set = _commit_gate._term_set_from_args(
         _Args(default_terms=str(_pack(tmp_path)), term=["a project term"]))
     assert "a project term" in term_set.terms and "engineering harness" in term_set.terms
+
+
+# --- the contract, enforced by Git rather than by the caller ---------------------
+
+
+HOOK = Path(__file__).resolve().parents[2] / "templates" / "commit-msg.hook"
+
+
+def _repo_with_the_hook(tmp_path, *, configure=True):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args, check=True):
+        result = subprocess.run(["git", "-C", str(repo), *args],
+                                capture_output=True, text=True, timeout=120)
+        assert not (check and result.returncode), f"git {args}: {result.stderr}"
+        return result
+
+    git("init", "-q", "--initial-branch", "main")
+    git("config", "user.name", "Ordinary Human")
+    git("config", "user.email", "human@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    hooks = repo / ".git" / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    installed = hooks / "commit-msg"
+    installed.write_bytes(HOOK.read_bytes())
+    installed.chmod(0o755)
+    if configure:
+        git("config", "runtimepack.root", str(HOOK.resolve().parents[1]))
+    (repo / "a-file.txt").write_text("content\n", encoding="utf-8")
+    git("add", "-A")
+    return repo, git
+
+
+VALID_MESSAGE = (
+    "Say what changed in words a reader of this project would use\n"
+    "\n"
+    "- Do the thing the title says, which is the outcome and not the mechanism\n"
+    "- Leave the second bullet saying something the first one does not\n")
+
+#: The exact defect. A private term in a message the gate refuses.
+REFUSED_MESSAGE = (
+    "Point the record at what the coordinator produced\n"
+    "\n"
+    "- Say what changed, in a message this pack's own gate refuses\n"
+    "- Leave the second bullet saying something the first one does not\n")
+
+
+def test_the_hook_lets_a_conforming_message_through(tmp_path):
+    repo, git = _repo_with_the_hook(tmp_path)
+    message = tmp_path / "ok.txt"
+    message.write_text(VALID_MESSAGE, encoding="utf-8")
+    result = git("commit", "-q", "-F", str(message), check=False)
+    assert result.returncode == 0, f"a conforming message was refused: {result.stderr}"
+    assert git("rev-list", "--count", "HEAD").stdout.strip() == "1"
+
+
+def test_a_refused_message_cannot_be_committed_through_a_shell_chain_that_ignores_the_gate(
+        tmp_path):
+    """THE DEFECT THIS FILE EXISTS FOR, REPRODUCED AND THEN PREVENTED.
+
+    `gate "$MSG" | tail -1 && git commit -F "$MSG"` runs the gate, sees it print
+    VIOLATION, and commits anyway — because `&&` attaches to `tail`, which
+    succeeded. That happened in this pack's own development and cost a founder
+    authorisation and a history rewrite.
+
+    Run here as a shell chain, exactly as it was written, so the property under
+    test is that the CALLER'S MISTAKE no longer produces a commit.
+    """
+    repo, git = _repo_with_the_hook(tmp_path)
+    message = tmp_path / "refused.txt"
+    message.write_text(REFUSED_MESSAGE, encoding="utf-8")
+
+    gate = HOOK.resolve().parents[1] / "tools" / "commit_gate.py"
+    chain = (f'python3 {gate} {message} --default-terms {HOOK.resolve().parents[1]} '
+             f'| tail -1 && git -C {repo} commit -q -F {message}')
+    result = subprocess.run(["sh", "-c", chain], capture_output=True, text=True, timeout=120)
+
+    assert result.returncode != 0, (
+        "the shell chain succeeded, so the commit was created despite the gate refusing the "
+        "message — which is the exact bypass this hook removes")
+    assert git("rev-list", "--count", "HEAD", check=False).returncode != 0 or \
+        git("rev-list", "--count", "HEAD").stdout.strip() == "0", (
+        "a commit exists carrying a message the gate refused")
+
+
+def test_an_unconfigured_hook_refuses_rather_than_passing(tmp_path):
+    """A check that cannot run is not a check that passed.
+
+    The failure mode a hook is most likely to have — installed, not pointed at
+    the pack — must not be the one that silently permits everything.
+    """
+    repo, git = _repo_with_the_hook(tmp_path, configure=False)
+    message = tmp_path / "ok.txt"
+    message.write_text(VALID_MESSAGE, encoding="utf-8")
+    result = git("commit", "-q", "-F", str(message), check=False)
+    assert result.returncode != 0, (
+        "a hook that could not find the gate allowed the commit through")
+    assert "runtimepack.root" in result.stderr, result.stderr
+
+
+def test_the_hook_refuses_when_the_gate_is_missing_from_the_configured_root(tmp_path):
+    repo, git = _repo_with_the_hook(tmp_path)
+    git("config", "runtimepack.root", str(tmp_path / "not-a-pack"))
+    message = tmp_path / "ok.txt"
+    message.write_text(VALID_MESSAGE, encoding="utf-8")
+    result = git("commit", "-q", "-F", str(message), check=False)
+    assert result.returncode != 0
+    assert "no commit gate" in result.stderr, result.stderr
