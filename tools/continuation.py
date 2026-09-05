@@ -64,6 +64,10 @@ import task_output
 from errors import IntegrityError, PreconditionError
 
 __all__ = [
+    "Disposition",
+    "Reconciliation",
+    "reconcile",
+    "ungoverned_waits",
     "State",
     "WaitKind",
     "Wait",
@@ -136,6 +140,17 @@ class WaitKind:
     ALL = OBSERVABLE + (HUMAN,)
 
 
+#: The identity fields a wait may name, stated here rather than imported so
+#: that `continuation` does not depend on `qualification` — the dependency would
+#: run the wrong way, since a durable record must be readable by a process that
+#: does not care about routing. `test_continuation` compares the two lists, so
+#: they cannot drift apart in silence.
+_IDENTITY_FIELDS = (
+    "surface", "family", "client", "model_observed", "effort", "isolation",
+    "network", "authentication_class", "identity_method", "build", "model_requested",
+)
+
+
 @dataclass(frozen=True)
 class Wait:
     """One thing the coordinator is waiting for, and how anyone can check it.
@@ -186,6 +201,33 @@ class Wait:
     #: How the route was qualified for this task class, if it was. UNKNOWN is
     #: the ordinary answer and is rendered as one.
     routing_qualification: str = ""
+    #: **The evidence-relevant configuration this dispatch went to**, as the
+    #: structured mapping `qualification.IDENTITY_FIELDS` names — not the packed
+    #: string, which is space-separated `key=value` and therefore cannot carry an
+    #: identifier containing a space or a key stated twice.
+    #:
+    #: `executor` above is prose for a reader. This is the identity, and the
+    #: difference is what the release's own invariant turns on: **remove every
+    #: vendor artifact and the project must still reconstruct and continue.**
+    #: Without this, the only place saying what a still-running dispatch is
+    #: running on is the provider's own rollout file — so an interrupted
+    #: dispatch's observation could only be recorded with an UNKNOWN identity,
+    #: which makes it prior evidence and loses it. Found by attacking model
+    #: identity against continuation rather than either on its own.
+    #:
+    #: Empty is the ordinary answer for a wait nobody declared one for, and it
+    #: reads as UNKNOWN rather than as anything reassuring.
+    configuration: dict = field(default_factory=dict)
+    #: **The command that ends this wait**, recorded with the wait rather than
+    #: living only in the shell running it. Refused unless it is governed
+    #: (`progress.waiter_problems`), because the measured failure was a monitor
+    #: whose own command line contained the pattern it searched for: it matched
+    #: itself, and could not terminate even after its producer exited. Three of
+    #: them survived about an hour in this release's own session.
+    #:
+    #: Empty is allowed and means the coordinator did not record one — which is
+    #: a gap a reader can see, not a waiter the pack has approved.
+    waiter: str = ""
     declared_at: str = ""
     #: Set once the coordinator has taken the result up. An unconsumed
     #: completion is the state this whole module exists to name.
@@ -238,6 +280,33 @@ class Wait:
                 job_id=self.job_id,
             )
         object.__setattr__(self, "obligation", (self.obligation or self.job_id).strip())
+        if self.configuration is None:
+            object.__setattr__(self, "configuration", {})
+        if not isinstance(self.configuration, dict):
+            raise PreconditionError(
+                "a wait's configuration is the structured identity mapping, not a packed string",
+                job_id=self.job_id, found=type(self.configuration).__name__)
+        if self.waiter:
+            from progress import waiter_problems
+
+            problems = waiter_problems(self.waiter)
+            if problems:
+                # REFUSED WHERE THE WAIT IS DECLARED, not reported afterwards.
+                # A check that runs later describes a wait that has already been
+                # entered, and the wait that could not end is the one nobody
+                # looked at again.
+                raise PreconditionError(
+                    "this waiter cannot be trusted to end, so it is not recorded against a wait",
+                    job_id=self.job_id, why="; ".join(problems))
+        unknown = sorted(set(self.configuration) - set(_IDENTITY_FIELDS))
+        if unknown:
+            # Refused rather than carried. A field nothing reads is a field a
+            # writer believes is being checked, which is the shape this pack
+            # refuses everywhere else it appears.
+            raise PreconditionError(
+                "a wait's configuration names field(s) nothing reads",
+                job_id=self.job_id, unknown=", ".join(unknown),
+                known=", ".join(_IDENTITY_FIELDS))
         if not (self.declared_at or "").strip():
             object.__setattr__(self, "declared_at", now())
         if self.kind in WaitKind.OBSERVABLE:
@@ -387,23 +456,21 @@ class ContinuationRecord:
 
 
 def _process_is_gone(pid: int) -> tuple[bool, str]:
-    """``(finished, how it was established)``.
+    """``(finished, how it was established)`` — one answer, and it lives in `progress`.
 
-    `os.kill(pid, 0)` answers whether *a* process with that number exists. It
-    does not answer whether it is the same one, because process numbers are
-    reused, and this says so rather than implying a certainty it does not have.
-    A stronger discriminator is a progress question rather than a liveness one,
-    and it belongs with the progress model, not here.
+    This asked `os.kill(pid, 0)`, which SUCCEEDS for a process that has exited
+    and not been reaped. `progress.waiter_command` had already learned that a
+    zombie is ended, and this had not, so the pack carried two answers to one
+    question and **the durable state model held the wrong one**: a finished
+    producer read as running forever. Reproduced against a real unreaped child
+    before it was repaired.
+
+    Kept as a name because callers and tests use it, and delegated so that the
+    two cannot drift apart again — which is the whole shape of the finding.
     """
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True, f"no process {pid} exists"
-    except PermissionError:
-        return False, f"process {pid} exists and belongs to another user"
-    except (OverflowError, ValueError, OSError) as exc:
-        return False, f"process {pid} could not be asked about: {exc}"
-    return False, f"process {pid} exists (a reused number would look the same)"
+    from progress import process_has_ended
+
+    return process_has_ended(pid)
 
 
 @dataclass(frozen=True)
@@ -601,6 +668,164 @@ class LivenessReport:
         if self.actionable:
             lines.append(f"  authorised and outstanding: {len(self.actionable)} item(s)")
         return "\n".join(lines)
+
+
+class Disposition:
+    """What became of one declared background job.
+
+    A separate vocabulary from `State`, and deliberately: `State` answers *where
+    is the coordinator*, and this answers *what happened to this producer*. One
+    run can be `ACTIONABLE_WORK_READY` while three of its waits are
+    `ORPHANED_WAITER`, and collapsing the two hid exactly that — three monitors
+    displayed as running work for about an hour, against producers that had
+    finished and whose results had already been read.
+    """
+
+    #: The producer is running and inside the patience its declaration states.
+    LIVE_AND_PROGRESSING = "LIVE_AND_PROGRESSING"
+    #: The producer is running and past that patience. A live process satisfies
+    #: a liveness question forever; the deadline is what ends the wait.
+    LIVE_BUT_STALLED = "LIVE_BUT_STALLED"
+    #: Finished, and nothing has taken the result up. Work is owed.
+    COMPLETED_UNCONSUMED = "COMPLETED_UNCONSUMED"
+    #: Finished and taken up. Nothing is owed.
+    COMPLETED_CONSUMED = "COMPLETED_CONSUMED"
+    #: Finished, taken up, and the wait is STILL DECLARED. Whatever is waiting is
+    #: waiting for something that already happened.
+    ORPHANED_WAITER = "ORPHANED_WAITER"
+    #: About a subject this candidate is no longer. It cannot block the current
+    #: one and it must not be re-run.
+    SUPERSEDED = "SUPERSEDED"
+    #: The producer exited and has not been reaped. **Ended**, and named
+    #: separately because a liveness question asked the old way says otherwise.
+    ZOMBIE = "ZOMBIE"
+    #: Not established. Never rendered as any of the others.
+    UNKNOWN = "UNKNOWN"
+
+    ALL = (LIVE_AND_PROGRESSING, LIVE_BUT_STALLED, COMPLETED_UNCONSUMED, COMPLETED_CONSUMED,
+           ORPHANED_WAITER, SUPERSEDED, ZOMBIE, UNKNOWN)
+
+    #: Dispositions that hold nothing open. A candidate is not blocked by these.
+    SETTLED = (COMPLETED_CONSUMED, ORPHANED_WAITER, SUPERSEDED)
+
+
+@dataclass(frozen=True)
+class Reconciliation:
+    """One job, what became of it, why, and what a coordinator may do about it."""
+
+    job_id: str
+    disposition: str
+    why: str
+    #: What the COORDINATOR may do. Reconciliation performs none of it: it
+    #: signals nothing, ends nothing and retires nothing. Ending a worker is a
+    #: human decision (`policy/hitl-matrix.md` row 4) and this does not touch it.
+    action: str = "none"
+    #: Whether this job holds the candidate open.
+    blocks: bool = False
+
+    def sentence(self) -> str:
+        return f"{self.job_id}: {self.disposition} — {self.why}"
+
+
+def reconcile(
+    record: "ContinuationRecord",
+    *,
+    relative_to: str | Path = ".",
+    candidate_revision: str = "",
+    now: str | None = None,
+) -> "tuple[Reconciliation, ...]":
+    """What became of every declared background job, from the record and the machine.
+
+    **The producer decides.** Not the existence of a monitor, not the age of a
+    UI row, not whether something is still on screen: a job is running because
+    its process is running, and finished because its process is not. That
+    inversion is the whole finding — three monitors were displayed as work in
+    progress while every producer they watched had exited and been read.
+
+    Reads and reports. It ends nothing, signals nothing and retires nothing;
+    asking `ps` for a state is an observation, and acting on the answer is the
+    coordinator's.
+    """
+    base = Path(relative_to)
+    moment = now or _now()
+    out: list[Reconciliation] = []
+    for wait in record.waits:
+        if wait.kind == WaitKind.HUMAN:
+            out.append(Reconciliation(
+                wait.job_id, Disposition.UNKNOWN,
+                "a person is not a producer and their completion is not observable; this is a "
+                "human decision, and the blockers are where it is recorded", blocks=True))
+            continue
+        if (candidate_revision and wait.subject_revision
+                and wait.subject_revision != candidate_revision):
+            out.append(Reconciliation(
+                wait.job_id, Disposition.SUPERSEDED,
+                f"declared against {wait.subject_revision[:12]} and the candidate is "
+                f"{candidate_revision[:12]}; it cannot answer about this one and must not be "
+                f"re-run against it", action="retire the wait"))
+            continue
+
+        observation = _observe(wait, relative_to=base)
+        if observation.unobservable:
+            out.append(Reconciliation(
+                wait.job_id, Disposition.UNKNOWN,
+                f"nothing observable says whether this finished: {observation.how}",
+                action="recover", blocks=True))
+            continue
+
+        if observation.finished:
+            zombie = "has not been reaped" in (observation.how or "")
+            if wait.retired:
+                out.append(Reconciliation(
+                    wait.job_id, Disposition.COMPLETED_CONSUMED,
+                    "finished, and the wait was retired after recovery"))
+            elif wait.consumed:
+                out.append(Reconciliation(
+                    wait.job_id, Disposition.ORPHANED_WAITER,
+                    "the producer finished and its result was taken up, and the wait is still "
+                    "declared; whatever is waiting is waiting for something that already "
+                    "happened", action="retire the wait"))
+            elif zombie:
+                out.append(Reconciliation(
+                    wait.job_id, Disposition.ZOMBIE,
+                    f"{observation.how}. It is ENDED: a liveness question asked the old way "
+                    f"says otherwise, which is how a finished producer stayed running",
+                    action="take up the result, then retire the wait", blocks=True))
+            else:
+                out.append(Reconciliation(
+                    wait.job_id, Disposition.COMPLETED_UNCONSUMED,
+                    "finished, and nothing has taken the result up", action="take up the result",
+                    blocks=True))
+            continue
+
+        if wait.expired_at(moment):
+            out.append(Reconciliation(
+                wait.job_id, Disposition.LIVE_BUT_STALLED,
+                "running, and past the patience its declaration states. A live process satisfies "
+                "a liveness question forever, so the deadline is what ends the wait",
+                action="classify from the artifacts and recover", blocks=True))
+            continue
+        out.append(Reconciliation(
+            wait.job_id, Disposition.LIVE_AND_PROGRESSING,
+            f"running, within its declared patience: {observation.how}", blocks=True))
+    return tuple(out)
+
+
+def ungoverned_waits(record: "ContinuationRecord") -> "tuple[str, ...]":
+    """Every declared wait that records no waiter the pack can vouch for.
+
+    Not an error. A NAME, so a reader is shown the gap rather than an empty
+    list: the pack cannot see a wait the coordinator never declared, and saying
+    so is the honest bound.
+    """
+    from progress import UNGOVERNED_BACKGROUND_WORK
+
+    return tuple(
+        f"{wait.job_id}: {UNGOVERNED_BACKGROUND_WORK} — the wait records no waiter, so what "
+        f"would end it is not stated anywhere durable"
+        for wait in record.waits
+        if wait.kind != WaitKind.HUMAN and not wait.waiter and not wait.retired
+    )
 
 
 def derive(
@@ -816,7 +1041,7 @@ def _checked_wait(entry) -> dict:
     checked = dict(entry)
     for name in ("job_id", "kind", "expects", "obligation", "path", "task_id",
                  "subject_revision", "subject_digest", "executor", "declared_at", "retry_reason",
-                 "routing_qualification"):
+                 "routing_qualification", "waiter"):
         if name in checked:
             checked[name] = _a_string(checked[name], f"wait {name}") or (
                 None if name in ("path", "task_id") else "")

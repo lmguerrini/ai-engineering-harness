@@ -90,3 +90,60 @@ still never authorization to use an unqualified one.
 configuration can do, which would move `build` into the key; or an adopting
 project finding the key so fine-grained that every real dispatch is a probe,
 which would mean the granularity is wrong rather than the principle.
+
+---
+
+## PROPOSED D27 — one governed waiting path, and a run that executed nothing is not evidence (RP2.4)
+
+**Held here for the same reason as D26: it has not landed in the decision layer.**
+This one engages no HITL row — it weakens no control and adds none — so it is a
+decision the founder may simply accept with the release. It is kept beside D26
+so that a reader sees both at once and neither is written into `DECISIONS.md`
+ahead of its authorisation.
+
+**Question the evidence put:** the pack shipped a correct waiter builder, and
+the coordinator hand-wrote three monitors that could never terminate. Is that a
+session mistake or a release defect?
+
+**Answered by execution: a release defect, of the class this pack exists to
+close.** `progress.waiter_command` treats a zombie as ended and says so in its
+own docstring; `continuation._process_is_gone` asked `os.kill(pid, 0)`, which
+succeeds for a zombie — so **the pack held two answers to one question and the
+durable state model had the wrong one.** A finished producer read as running
+forever. Reproduced against a real unreaped child.
+
+**Decided: extend the wait that already exists, rather than add a registry.**
+
+*   **One liveness answer.** `progress.process_has_ended` reads `ps`, treats a
+    zombie as ended, and `continuation` delegates to it. Two mechanisms that
+    answer one question will drift, and these had.
+*   **The waiter belongs to the wait.** `Wait.waiter` records the command, and
+    a waiter that matches a COMMAND LINE is refused **where the wait is
+    declared** — not reported later, because a check that runs afterwards
+    describes a wait already entered.
+*   **Refused as a class.** `pgrep`, `pkill`, `ps | grep`, whatever the pattern.
+    Deciding which patterns are safe is an argument, and the argument produced
+    the incident.
+*   **The producer decides.** `continuation.reconcile` derives eight
+    dispositions from the record and the process table. A monitor is not an
+    input; a job is running because its process is.
+*   **The gap is named.** A declared wait recording no waiter is
+    `UNGOVERNED_BACKGROUND_WORK`. The pack cannot see a wait nobody declared,
+    and says so rather than presenting an empty list.
+*   **A run that executed nothing is `NOT_EVIDENCE`**, whatever it exited with,
+    and two runs are comparable only over one test population.
+
+**What it does not claim.** A coordinator can still wait in a shell and record
+nothing. That is not closed and is not claimable as closed: acquiring the power
+to see it would mean policing the coordinator's own shell, which is the thing
+this pack refuses to become. What changed is that the recorded path now carries
+the waiter, so an unrecorded wait is a choice rather than a gap in the
+mechanism.
+
+**No HITL row is added, removed or weakened.** Row 4 keeps its human for ending
+a worker — and this makes the ending unnecessary in the common case rather than
+easier.
+
+**Reverses on:** an adopting project finding that declaring the waiter is so
+much friction that coordinators route around it, which would mean the
+declaration is in the wrong place rather than that the rule is wrong.

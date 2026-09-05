@@ -646,25 +646,43 @@ def test_no_tool_cli_ever_prints_a_traceback_for_an_input_it_refuses(tmp_path):
         [str(empty)],
     ]
 
-    tracebacks = []
-    refusals = 0
-    for path in sorted(ROOT.glob("tools/*.py")):
-        source = path.read_text(encoding="utf-8")
-        if 'if __name__ == "__main__":' not in source:
-            continue
-        for argv in argv_forms:
-            result = subprocess.run(
-                [sys.executable, str(path), *argv],
-                capture_output=True, text=True, cwd=str(tmp_path), timeout=120,
-            )
-            if "Traceback (most recent call last)" in result.stderr:
-                first = [
-                    line for line in result.stderr.strip().splitlines()
-                    if line and not line.startswith(" ")
-                ]
-                tracebacks.append(f"tools/{path.name} {' '.join(argv[:2])}: {first[-1][:70]}")
-            if "REFUSED" in result.stdout or "REFUSED" in result.stderr:
-                refusals += 1
+    # EVERY CLI × EVERY FORM, run concurrently. The work is hundreds of
+    # interpreter startups against refusal paths that write nothing, so the wall
+    # time was startup rather than anything the test verifies. Nothing about
+    # WHAT is executed or asserted changes: the same argv reach the same tools
+    # with the same working directory, and the counting is done after the fact
+    # rather than by incrementing shared state, so the result does not depend on
+    # the order they finish in.
+    from concurrent.futures import ThreadPoolExecutor
+
+    invocations = [
+        (path, argv)
+        for path in sorted(ROOT.glob("tools/*.py"))
+        if 'if __name__ == "__main__":' in path.read_text(encoding="utf-8")
+        for argv in argv_forms
+    ]
+
+    def invoke(invocation):
+        path, argv = invocation
+        result = subprocess.run(
+            [sys.executable, str(path), *argv],
+            capture_output=True, text=True, cwd=str(tmp_path), timeout=120,
+        )
+        traceback = None
+        if "Traceback (most recent call last)" in result.stderr:
+            first = [
+                line for line in result.stderr.strip().splitlines()
+                if line and not line.startswith(" ")
+            ]
+            traceback = f"tools/{path.name} {' '.join(argv[:2])}: {first[-1][:70]}"
+        refused = "REFUSED" in result.stdout or "REFUSED" in result.stderr
+        return traceback, refused
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        outcomes = list(pool.map(invoke, invocations))
+
+    tracebacks = [traceback for traceback, _refused in outcomes if traceback]
+    refusals = sum(1 for _traceback, refused in outcomes if refused)
 
     assert not tracebacks, "these printed a traceback instead of a refusal:\n  " + "\n  ".join(
         sorted(set(tracebacks))
@@ -1633,12 +1651,45 @@ def test_every_oracle_the_matrix_names_selects_at_least_one_test():
         f"{len(expected) - len(selectors)} row(s) name an oracle the parser did not read: "
         f"{sorted(set(expected) - {s[0] for s in selectors})}")
     command = [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"]
-    empty = []
-    for mechanism, files, keyword in selectors:
-        result = subprocess.run(
-            command + [str(ROOT / f) for f in files] + (["-k", keyword] if keyword else []),
-            capture_output=True, text=True, timeout=300, cwd=ROOT)
-        collected = [l for l in result.stdout.splitlines() if "::" in l]
-        if not collected:
-            empty.append((mechanism, files, keyword))
+
+    # THE SAME COMMANDS, THE SAME ASSERTION, RUN CONCURRENTLY AND ONCE EACH.
+    # This was the slowest check in the suite by a factor of two, spending its
+    # time in interpreter startup rather than in anything it verifies.
+    #
+    # Reimplementing pytest's `-k` expression in-process would collapse it to a
+    # single collection and was rejected: the guard exists to be trustworthy
+    # about whether a selector resolves, and a second implementation of the
+    # selector language makes the guard's own correctness the new risk. Nothing
+    # about WHAT is checked changes here — only when the processes run, and how
+    # many times an identical selector is run at all.
+    from concurrent.futures import ThreadPoolExecutor
+
+    import selector_evidence
+
+    def collects(selector):
+        files, keyword = selector
+        # THROUGH `selector_evidence`, so this guard answers in the vocabulary
+        # the release now requires of any targeted run used as evidence: a
+        # selector that names nothing is NOT_EVIDENCE, whatever the command's
+        # exit status was. Reading `::` out of stdout was the same check written
+        # by hand, and a hand-written version of a rule is how the rule comes to
+        # have two meanings.
+        run = selector_evidence.run_selector(
+            [str(ROOT / f) for f in files] + (["-k", keyword] if keyword else []),
+            cwd=ROOT, timeout=300, collect_only=True)
+        return not selector_evidence.problems(run, expect_at_least=1)
+
+    # Sorted on a total order: `keyword` is None for a file-only selector and
+    # None does not compare with str, so the key states the absence explicitly.
+    distinct = sorted(
+        {(tuple(files), keyword) for _mechanism, files, keyword in selectors},
+        key=lambda pair: (pair[0], pair[1] or ""))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        resolved = dict(zip(distinct, pool.map(collects, distinct)))
+
+    empty = [
+        (mechanism, files, keyword)
+        for mechanism, files, keyword in selectors
+        if not resolved[(tuple(files), keyword)]
+    ]
     assert not empty, f"these oracles select no test at all: {empty}"

@@ -639,3 +639,99 @@ def test_the_rehearsal_refuses_rather_than_substituting_when_nothing_qualifies(t
                                 roles=(Role("MANDATORY", purpose=CRITICAL),), allow_probe=True)
     assert report.seats[0]["candidate"] is None
     assert any("rows 12 and 16" in reason for reason in report.seats[0]["reasons"])
+
+
+# =============================================================================
+# The governed waiting path, inside the lifecycle rather than beside it
+# =============================================================================
+
+
+def test_the_rehearsal_declares_its_background_work_and_reconstructs_it_cold(tmp_path):
+    """A capability that dispatches, is interrupted, and comes back to a machine
+    where the producer has finished — with no vendor artifact and no monitor.
+
+    The incident this closes: three monitors displayed as work in progress for
+    about an hour, against producers that had exited and been read. The
+    reconstruction must reach that conclusion from the record and the process
+    table alone.
+    """
+    import subprocess
+    import sys
+
+    import progress
+    from continuation import Disposition, Wait, WaitKind
+
+    rows = [json.loads(line) for line
+            in (PACK / "policy" / "observations.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    root = _synthetic_project(tmp_path, name="demo-background",
+                              observations=[r for r in rows if r.get("recorded_at", "") < "2026-09-05"],
+                              discovery_slugs=["a-model"])
+
+    # A producer that finishes while the coordinator is away.
+    report = root / "audit-report.md"
+    worker = subprocess.Popen(
+        [sys.executable, "-c", f"open({str(report)!r}, 'w').write('findings')"])
+    worker.wait()
+
+    wait = Wait(
+        job_id="audit", kind=WaitKind.PATH_EXISTS, expects="an audit report",
+        path=str(report), not_beyond_seconds=600, declared_at=continuation.now(),
+        subject_revision="a" * 40,
+        waiter=" ".join(progress.waiter_command("audit", worker.pid, sentinel=str(report))),
+        configuration={"surface": "a-surface", "family": "a-family", "client": "a-client",
+                       "model_observed": "a-model", "effort": "high", "isolation": "read-only",
+                       "network": "none", "authentication_class": "subscription",
+                       "identity_method": "execution_surface_turn_record", "build": "1.0.0"})
+    record_path = root / "CONTINUATION.json"
+    continuation.save(continuation.ContinuationRecord(
+        capability="C1", updated_at=continuation.now(), waits=(wait,)), record_path)
+
+    # THE WAITER IS GOVERNED, and the record says which configuration ran.
+    assert progress.is_governed_waiter(continuation.load(record_path).waits[0].waiter)
+    assert continuation.load(record_path).waits[0].configuration["model_observed"] == "a-model"
+    assert continuation.ungoverned_waits(continuation.load(record_path)) == ()
+
+    # A FRESH PROCESS, with only the record.
+    cold = subprocess.run(
+        [sys.executable, "-c",
+         "import sys, json; sys.path.insert(0, sys.argv[1]); import continuation;"
+         "r = continuation.load(sys.argv[2]);"
+         "print(json.dumps([(x.job_id, x.disposition, x.blocks, x.action)"
+         " for x in continuation.reconcile(r, relative_to=sys.argv[3])]))",
+         str(PACK / "tools"), str(record_path), str(root)],
+        capture_output=True, text=True, check=True, timeout=120)
+    (job, disposition, blocks, action), = json.loads(cold.stdout)
+    assert job == "audit"
+    assert disposition == Disposition.COMPLETED_UNCONSUMED
+    assert blocks and action == "take up the result", (
+        "a finished producer whose result nobody has taken up must read as work owed"
+    )
+
+    # Take the result up; the job settles and holds nothing open.
+    continuation.save(continuation.ContinuationRecord(
+        capability="C1", updated_at=continuation.now(),
+        waits=(replace(wait, consumed=True),)), record_path)
+    settled = continuation.reconcile(continuation.load(record_path), relative_to=root)
+    assert settled[0].disposition == Disposition.ORPHANED_WAITER
+    assert not settled[0].blocks, "a consumed job held the capability open"
+
+    # And a reading against a LATER candidate cannot be blocked by it at all.
+    superseded = continuation.reconcile(continuation.load(record_path), relative_to=root,
+                                        candidate_revision="b" * 40)
+    assert superseded[0].disposition == Disposition.SUPERSEDED
+    assert not superseded[0].blocks
+
+
+def test_a_capability_cannot_be_opened_carrying_a_waiter_that_cannot_end(tmp_path):
+    """The refusal at the boundary where a wait is written, inside a project."""
+    import progress
+    from continuation import Wait, WaitKind
+
+    assert not progress.is_governed_waiter(
+        'while pgrep -qf "pytest tools/tests"; do sleep 20; done')
+    with pytest.raises(Exception) as caught:
+        Wait(job_id="j", kind=WaitKind.PATH_EXISTS, expects="x", path=str(tmp_path / "r"),
+             not_beyond_seconds=60, declared_at=continuation.now(),
+             waiter='while pgrep -qf "pytest tools/tests"; do sleep 20; done')
+    assert "cannot be trusted to end" in str(caught.value)

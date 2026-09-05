@@ -200,7 +200,7 @@ def test_the_contract_and_the_count_cannot_drift_apart():
     # fields and not the number, so a reading could be dropped from the contract
     # and every check would still pass — the file would simply require less of
     # the implementation. An independent reader pointed that out.
-    assert len(rows) == 49, (
+    assert len(rows) == 51, (
         f"the contract holds {len(rows)} readings. Changing that is a decision about what a "
         f"reader of a long autonomous run must be able to see, so it changes here and in this "
         f"number together")
@@ -225,6 +225,7 @@ def test_a_reading_removed_from_the_projection_fails_this_contract(tmp_path):
 #: the header. Everything else must come from the record.
 _FROM_THE_PACK_OR_THE_CHROME = {
     "pack version", "pack state", "pack digest", "pack revision", "adoptability",
+    "background jobs", "ungoverned background work",
     "UNKNOWN", "projection versus authority", "coordinator state",
     "project identity and pin", "durable output",
     "freshness of the reading", "budgets used and remaining",

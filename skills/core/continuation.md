@@ -127,3 +127,49 @@ without the Core being wrong.
 *   **Context reduction is a reconstruction, never a compression.** When context
     must be shed, the recovery path is the four reads above. A summary of a
     summary is the failure mode this whole file exists to prevent.
+
+## One waiting path, and the reason there is only one
+
+A background producer the coordinator intends to wait for is **declared**, and
+the declaration carries the waiter. Not because ad-hoc waiting is forbidden —
+the pack cannot see the coordinator's own shell and will not try — but because
+the recorded path is the only one anything can reconcile.
+
+Measured, in the session that shipped the tool which prevents it: three monitors
+of the shape
+
+    while pgrep -qf "<pattern>"; do sleep 20; done
+
+ran for about an hour against producers that had exited and whose results had
+already been read. `pgrep -f` matches a whole command line **including the
+waiter's own**, which contains the pattern it is searching for, so each loop
+matched itself and could never end.
+
+*   **Never match a command line.** `pgrep`, `pkill`, `ps | grep` are refused
+    outright by `progress.waiter_problems` — as a class, because deciding which
+    patterns are safe is an argument and the argument is what produced three
+    monitors that could not terminate.
+*   **`progress.waiter_command` builds the waiter.** It watches a process
+    NUMBER and a completion artifact, so it cannot match itself.
+*   **A zombie is ended.** One answer, in `progress.process_has_ended`, used by
+    the durable state model too — the two disagreed, and the durable one was
+    wrong.
+*   **The producer decides, never the monitor.** `continuation.reconcile`
+    classifies each declared job as `LIVE_AND_PROGRESSING`, `LIVE_BUT_STALLED`,
+    `COMPLETED_UNCONSUMED`, `COMPLETED_CONSUMED`, `ORPHANED_WAITER`,
+    `SUPERSEDED`, `ZOMBIE` or `UNKNOWN`. It reports; retiring a wait and ending
+    a worker stay the coordinator's, and the second is HITL row 4.
+*   **A wait with no waiter is `UNGOVERNED_BACKGROUND_WORK`** — named, so a
+    reader sees the gap instead of an empty list.
+
+## A command that ran nothing is not evidence
+
+The same session nearly accepted a forty-five-fold speed-up from a run that had
+selected **zero** tests, because the selector said `never_prints` and the test
+is called `ever_prints`. **Exit status is not evidence that a check ran.**
+
+A targeted run used as evidence goes through `tools/selector_evidence.py`,
+which records the intended selector, what was collected, executed, skipped and
+deselected, and answers `NOT_EVIDENCE` below the count the caller expected. It
+binds performance work hardest: **two runs are comparable only over the same
+test population**, and a faster run over fewer tests is not a faster run.

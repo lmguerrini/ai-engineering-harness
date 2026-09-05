@@ -952,14 +952,22 @@ def _routing_panel(contract_path: Path) -> Panel:
             "family prior beside it",
             Tone.WARN, label="qualification")
     for key, grade in sorted(graded.items()):
-        surface, family, client, model = key[0], key[1], key[2], key[3]
+        import qualification as _qualification
+
+        named = dict(zip(_qualification.KEYED_DIMENSIONS, key))
         tone = {"confirmed": Tone.GOOD, "contradicted": Tone.BAD,
                 "provisional": Tone.WARN}.get(grade.grade, Tone.UNKNOWN)
         panel.say(f"{grade.grade} on {grade.observations} observation(s)", tone,
-                  label=f"{model} @ {key[-1]}")
-        panel.say(f"{surface}/{family}/{client} — availability is a separate axis and this "
-                  f"reading dispatches nothing, so it is {UNKNOWN} here",
-                  Tone.MUTED, depth=1)
+                  label=f"{named['model_observed']} @ {named['task_class']}")
+        # EVERY KEYED DIMENSION. Showing four of nine renders two different
+        # configurations identically — one model at three efforts read as one
+        # configuration qualified at three task classes, which is the conflation
+        # this whole release exists to prevent, reappearing in its own view.
+        panel.say("  ".join(f"{name}={named[name]}"
+                            for name in _qualification.CONFIGURATION_DIMENSIONS
+                            if name != "model_observed"), Tone.MUTED, depth=1)
+        panel.say(f"availability is a separate axis and this reading dispatches nothing, so it "
+                  f"is {UNKNOWN} here", Tone.MUTED, depth=1)
 
     panel.say(f"{len(priors)} family row(s) — ADVISORY, and they rank nothing",
               Tone.MUTED, label="prior")
@@ -992,6 +1000,73 @@ def _routing_panel(contract_path: Path) -> Panel:
 
     panel.summary = f"{len(graded)} configuration(s), {len(priors)} prior(s)"
     panel.summary_tone = Tone.GOOD if graded else Tone.WARN
+    return panel
+
+
+def _background_panel(record, base: Path) -> Panel:
+    """What became of every declared background job — read from the producer.
+
+    **A monitor is not an input to this panel.** That inversion is the whole
+    reason it exists: three monitors were displayed as work in progress for
+    about an hour while every producer they watched had exited and had already
+    been read. A job is running because its process is running.
+
+    It also names what it cannot see. A wait recording no waiter is
+    `UNGOVERNED_BACKGROUND_WORK` — a gap a reader is shown, rather than an empty
+    list they would read as *nothing outstanding*.
+    """
+    panel = Panel("background jobs, as their producers report them", group="now")
+    if record is None:
+        panel.unknown.append(
+            "no continuation record, so what the background holds is UNKNOWN — which is not the "
+            "same as nothing")
+        panel.summary, panel.summary_tone = UNKNOWN, Tone.UNKNOWN
+        return panel
+
+    import continuation
+
+    results = continuation.reconcile(record, relative_to=base)
+    if not results:
+        panel.say("no background job is declared", Tone.MUTED, label="declared")
+        panel.summary, panel.summary_tone = "none declared", Tone.PLAIN
+        return panel
+
+    tone_of = {
+        continuation.Disposition.LIVE_AND_PROGRESSING: Tone.PLAIN,
+        continuation.Disposition.LIVE_BUT_STALLED: Tone.BAD,
+        continuation.Disposition.COMPLETED_UNCONSUMED: Tone.WARN,
+        continuation.Disposition.COMPLETED_CONSUMED: Tone.GOOD,
+        continuation.Disposition.ORPHANED_WAITER: Tone.WARN,
+        continuation.Disposition.SUPERSEDED: Tone.MUTED,
+        continuation.Disposition.ZOMBIE: Tone.WARN,
+        continuation.Disposition.UNKNOWN: Tone.UNKNOWN,
+    }
+    blocking = [item for item in results if item.blocks]
+    for item in results:
+        panel.say(item.disposition, tone_of.get(item.disposition, Tone.UNKNOWN),
+                  label=item.job_id)
+        panel.say(item.why, Tone.MUTED, depth=1)
+        if item.action != "none":
+            panel.say(f"the coordinator may: {item.action}", Tone.MUTED, depth=1)
+
+    for note in continuation.ungoverned_waits(record):
+        panel.say(note, Tone.WARN, label="ungoverned")
+
+    # SAID AS A LINE FIRST. A cell restates a reading; it may never be the only
+    # place one appears, and the panel guard is what holds that.
+    panel.say(f"{len(results)} declared, {len(blocking)} holding the capability open",
+              Tone.WARN if blocking else Tone.GOOD, label="background jobs")
+    panel.figure("background jobs", str(len(results)), band="telemetry", kind="background",
+                 note=f"{len(blocking)} holding the capability open")
+    panel.summary = f"{len(blocking)} of {len(results)} holding open"
+    panel.summary_tone = Tone.WARN if blocking else Tone.GOOD
+    # WORDED WITHOUT THE STATE VOCABULARY. The dashboard contract requires every
+    # state marker to come from the RECORD, and prose containing one satisfies
+    # the marker from the page — which is the same class of defect this panel
+    # exists to close, one layer up.
+    panel.say(
+        "derived from each producer's own state; a monitor that has not exited is not evidence "
+        "about the job it watches", Tone.MUTED, label="how")
     return panel
 
 
@@ -1114,6 +1189,8 @@ def project(
                    title="audit subject vs candidate", group="evidence"),
             _panel(_output_panel, record, base,
                    title="durable worker output", group="now"),
+            _panel(_background_panel, record, base,
+                   title="background jobs, as their producers report them", group="now"),
             _panel(_budget_panel, record,
                    title="budgets and standing evidence", group="evidence"),
             _panel(_capacity_panel, base / capacity_observation,

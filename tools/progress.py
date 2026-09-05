@@ -59,6 +59,10 @@ from typing import Mapping, Sequence
 from errors import IntegrityError, PreconditionError
 
 __all__ = [
+    "UNGOVERNED_BACKGROUND_WORK",
+    "process_has_ended",
+    "waiter_problems",
+    "is_governed_waiter",
     "SignalKind",
     "Sample",
     "ProgressState",
@@ -374,6 +378,94 @@ class Waiter:
                     waiter_id=self.waiter_id, pattern=self.match_pattern,
                     own_command=self.own_command,
                 )
+
+
+#: A background wait the pack cannot see. Not an error state — a NAME, so a
+#: reader is shown the gap instead of an empty list. The pack cannot police the
+#: coordinator's own shell without becoming the thing it refuses to be, so what
+#: it can do is refuse an ungoverned waiter where a wait is DECLARED, and call
+#: an undeclared one by a name.
+UNGOVERNED_BACKGROUND_WORK = "UNGOVERNED_BACKGROUND_WORK"
+
+#: Shapes that match a COMMAND LINE. Every one of them can match the waiter's
+#: own command, because the waiter's command line contains the pattern it is
+#: searching for. Refused as a class rather than pattern by pattern: a rule that
+#: has to decide whether a particular pattern is safe is a rule that can be
+#: argued with, and the argument is what produced three monitors that could
+#: never terminate.
+_COMMAND_LINE_MATCHERS = ("pgrep", "pkill", "ps -ef", "ps aux", "ps -A")
+
+
+def process_has_ended(pid: int) -> "tuple[bool, str]":
+    """Whether the process with this number has finished, and how that was established.
+
+    **A ZOMBIE IS ENDED.** `os.kill(pid, 0)` succeeds for a process that has
+    exited and not yet been reaped, and the commonest topology puts producer and
+    waiter under one coordinator shell — so the producer exits, nobody reaps it,
+    and every liveness question answers *still running* forever.
+    `waiter_command` below learned that and `continuation` did not, so the pack
+    held two answers to one question and the durable state model had the wrong
+    one. Reproduced against a real unreaped child. This is the one answer both
+    use now.
+
+    A process NUMBER is not a process identity: numbers are reused, and this
+    says so rather than implying a certainty it does not have. A completion
+    artifact is what distinguishes producers, and the wait kinds that use one are
+    preferred for exactly that reason.
+    """
+    import subprocess as _subprocess
+
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False, f"{pid!r} is not a process number, so nothing was asked"
+    try:
+        state = _subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                                capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, _subprocess.SubprocessError) as exc:
+        return False, f"process {pid} could not be asked about: {exc}"
+    if not state:
+        return True, f"no process {pid} exists"
+    if state.startswith("Z"):
+        return True, f"process {pid} has exited and has not been reaped (state {state})"
+    return False, f"process {pid} is running (state {state}; a reused number would look the same)"
+
+
+def waiter_problems(command: object) -> "tuple[str, ...]":
+    """Every reason this waiter cannot be trusted to end.
+
+    The measured failure: a monitor of the shape
+
+        while pgrep -qf "pytest tools/tests"; do sleep 20; done
+
+    has its own pattern inside its own command line, so `pgrep` matches the
+    waiter and the loop cannot terminate — **even after the producer exits.**
+    Three of them survived roughly an hour in this session, against producers
+    that had finished and whose results had already been read.
+
+    Returns the reasons rather than a boolean, because *this waiter is not
+    governed* with no cause is the kind of unanswerable answer this pack refuses.
+    """
+    text = " ".join(command) if isinstance(command, (list, tuple)) else str(command or "")
+    if not text.strip():
+        return ("no waiter command was given, so what would end this wait is not stated",)
+    found = []
+    for matcher in _COMMAND_LINE_MATCHERS:
+        if matcher in text:
+            found.append(
+                f"it matches a COMMAND LINE ({matcher}), which can match the waiter's own — the "
+                f"pattern being searched for is inside the command doing the searching, so the "
+                f"loop need never end. Watch a process NUMBER instead: `waiter_command` builds one"
+            )
+    if not found and "ps -o stat=" not in text and "[ -s " not in text and "[ -e " not in text:
+        found.append(
+            "it observes neither a process state nor a completion artifact, so nothing in it is "
+            "an authoritative statement that the producer finished"
+        )
+    return tuple(found)
+
+
+def is_governed_waiter(command: object) -> bool:
+    """Whether this waiter may be recorded against a declared wait."""
+    return not waiter_problems(command)
 
 
 def waiter_command(run_id: str, pid: int, *, sentinel: str, poll_seconds: int = 20) -> list[str]:

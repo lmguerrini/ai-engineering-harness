@@ -27,6 +27,8 @@ Unchanged from 2.3.0: `MUST_THIS_RELEASE`, `SHOULD_THIS_RELEASE`,
 | C44 | Routing state in the readiness path and the projection | SHOULD | C43 |
 | C45 | Generation-agnostic publication vocabulary | MUST | — |
 | C46 | Adversarial rehearsals and the synthetic adoption drill | MUST | C43, C44 |
+| C47 | One governed background-waiting path, and reconciliation | MUST | C44 |
+| C48 | A targeted run that executed nothing is not evidence | MUST | — |
 
 C40 is first because every other capability is a claim about it. C45 is
 independent and was done alongside; it is `MUST` because the vocabulary had
@@ -61,6 +63,16 @@ a corpus in both directions.
 
 **C46.** Sixteen deterministic fixtures and one lifecycle drill, run five ways.
 
+**C47.** One liveness answer shared by `progress` and `continuation`; the waiter
+recorded with the wait and refused where it is declared if it matches a command
+line; eight dispositions derived from the producer; a dashboard panel over them.
+Added because the coordinator produced the failure class in the session that
+ships the tool preventing it — which is evidence that documenting the tool was
+not enough, not that the coordinator was careless.
+
+**C48.** `tools/selector_evidence.py`. Added because a run that selected zero
+tests exited cleanly and was nearly recorded as a forty-five-fold speed-up.
+
 ## DEFER_WITH_TRIGGER
 
 | Item | Trigger that reopens it |
@@ -69,6 +81,8 @@ a corpus in both directions.
 | A durable availability-observation record | today `AvailabilityObservation` is constructed by the caller from what it observed; a project that wants availability to survive a restart needs a file for it. Trigger: the first coordinator that asks the same availability question twice across sessions |
 | Per-effort context-fit gating | the router does not read a context window at all, deliberately. Trigger: a dispatch refused for window size that the evidence could have predicted |
 | Automatic identity capture in the adapter | the observed identity is read by hand from the execution surface today. Trigger: the first configuration that stays `unprobed` only because nobody transcribed what ran |
+| Seeing a wait the coordinator never declared | the pack cannot observe an undeclared shell waiter and will not police the coordinator's shell to try. Trigger: an adopting project reporting phantom background work whose wait WAS declared — which would mean the reconciliation is wrong rather than the visibility bounded |
+| A durable background-job log separate from the continuation record | today a job's history lives only in the wait, so a retired wait's history goes with it. Trigger: the first coordinator that needs to answer *what did this producer do last time* across capability boundaries |
 
 ## RP2.3 deferrals
 

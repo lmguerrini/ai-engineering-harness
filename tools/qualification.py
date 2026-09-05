@@ -184,9 +184,11 @@ class ConfigurationIdentity:
     #: What the dispatch asked for. Held so a report can show the request beside
     #: the observation — the two differing is a finding, not a detail.
     model_requested: str = UNKNOWN
-    #: Tokens in the source configuration string that carried no `key=`. Their
-    #: presence means the string could not be read unambiguously, so nothing
-    #: parsed out of it may be trusted as an identity.
+    #: Every way the source configuration string could not be read
+    #: unambiguously — a token carrying no `key=`, or a key carrying more than
+    #: one value. Either means nothing parsed out of it may be trusted as an
+    #: identity, because the format is space-separated `key=value` and both
+    #: shapes make it lossy in silence.
     ambiguous_tokens: tuple = ()
 
     def dimensions(self) -> dict:
@@ -211,9 +213,9 @@ class ConfigurationIdentity:
             )
         if self.ambiguous_tokens:
             reasons.append(
-                "the configuration string carries token(s) with no `key=` "
-                f"({', '.join(repr(token) for token in self.ambiguous_tokens)}), so it could not "
-                "be read unambiguously and no value parsed from it identifies a configuration"
+                "the configuration string could not be read unambiguously "
+                f"({'; '.join(str(token) for token in self.ambiguous_tokens)}), so no value "
+                "parsed from it identifies a configuration"
             )
         return tuple(reasons)
 
@@ -269,14 +271,29 @@ def identity_from_configuration(text: str) -> ConfigurationIdentity:
     # row that needs an identifier with a space carries the structured
     # `identity:` mapping instead, which has no tokenisation to lose it to.
     ambiguous = [token for token in str(text).split() if "=" not in token]
+    # A REPEATED KEY IS THE SAME AMBIGUITY WITH BETTER PUNCTUATION. The parser
+    # builds a mapping, so the last occurrence silently wins and nothing says a
+    # choice was made: appending `model_observed=` to a string that already has
+    # one changes which configuration the observation is filed under, in
+    # silence. That is the whitespace truncation again by another route, and it
+    # is refused the same way — the identity goes incomplete, which is the answer
+    # that loses nothing.
+    #
+    # Refusing only when the two values DIFFER was considered and rejected: a
+    # writer that emits a key twice is defective either way, and a rule that
+    # tolerates the harmless case is a rule that has to decide which case it is.
+    seen: dict[str, int] = {}
     extra: dict[str, str] = {}
     for token in str(text).split():
         key, _, value = token.partition("=")
         if not _:
             continue
         key, value = key.strip(), value.strip()
+        seen[key] = seen.get(key, 0) + 1
         if key in ("surface", "pool_id"):
             extra[key] = UNKNOWN if value.lower() in ("", "unknown") else value
+    ambiguous.extend(
+        f"{key}= appears {count} times" for key, count in sorted(seen.items()) if count > 1)
     return ConfigurationIdentity(
         surface=extra.get("surface", UNKNOWN),
         family=parsed.family,
@@ -762,10 +779,19 @@ def _cli(argv: list[str]) -> int:
     print("PER-CONFIGURATION QUALIFICATION — the only thing that answers about a configuration")
     if not graded:
         print("  (none: no observation carries a complete identity yet)")
+    # EVERY KEYED DIMENSION, because printing four of nine makes two DIFFERENT
+    # configurations look like one. Three rows for one model differing only in
+    # effort rendered identically, which reads as one configuration qualified at
+    # three task classes — the exact conflation this module exists to prevent,
+    # reappearing in the view of it.
     for key, grade in sorted(graded.items()):
-        print(f"  {'/'.join(str(part) for part in key[:4])}")
-        print(f"      {key[-1]:48} {grade.grade:22} ({grade.validated} validated, "
+        named = dict(zip(KEYED_DIMENSIONS, key))
+        print(f"  {named['model_observed']} @ {named['task_class']}")
+        print(f"      {grade.grade:22} ({grade.validated} validated, "
               f"{grade.contradicted} contradicted, {grade.environmental} environmental)")
+        print("      " + "  ".join(
+            f"{name}={named[name]}" for name in CONFIGURATION_DIMENSIONS
+            if name != "model_observed"))
     print()
     print("FAMILY PRIOR — advisory, display-only, never a track record and never a ranking input")
     for (family, task_class), grade in sorted(priors.items()):

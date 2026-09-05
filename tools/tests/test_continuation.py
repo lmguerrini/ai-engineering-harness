@@ -13,10 +13,15 @@ import subprocess
 import sys
 import time
 
+from pathlib import Path
+
 import pytest
 
 import continuation
 import task_output
+
+#: The toolbelt, for the fresh-process reader below.
+PACK_TOOLS = Path(__file__).resolve().parent.parent
 from continuation import Blocker, ContinuationRecord, State, Wait, WaitKind
 from errors import IntegrityError, PreconditionError
 
@@ -641,3 +646,81 @@ def test_a_saved_field_of_the_wrong_type_is_a_named_refusal_at_the_boundary(tmp_
     path.write_text(json.dumps(document))
     with pytest.raises(PreconditionError):
         continuation.load(path)
+
+
+# --- a wait says what configuration it dispatched to --------------------------
+
+
+def _identity():
+    return {
+        "surface": "codex-cli", "family": "codex-cli", "client": "codex-exec",
+        "model_observed": "a-model", "effort": "xhigh", "isolation": "read-only",
+        "network": "none", "authentication_class": "subscription",
+        "identity_method": "execution_surface_turn_record", "build": "1.2.3",
+    }
+
+
+def test_a_wait_carries_the_configuration_it_dispatched_to_across_a_restart(tmp_path):
+    """The invariant this closes: **remove every vendor artifact and the project
+    must still reconstruct and continue.**
+
+    Without it the only thing saying what a still-running dispatch is running on
+    is the provider's own rollout file, so an interrupted dispatch's observation
+    could only be recorded with an UNKNOWN identity — which makes it prior
+    evidence and loses it. Found by attacking model identity against
+    continuation rather than either on its own.
+    """
+    record_path = tmp_path / "CONTINUATION.json"
+    wait = continuation.Wait(
+        job_id="audit-1", kind=continuation.WaitKind.PATH_EXISTS, expects="a report",
+        path=str(tmp_path / "report.md"), not_beyond_seconds=600,
+        declared_at=continuation.now(), configuration=_identity())
+    continuation.save(continuation.ContinuationRecord(
+        capability="C1", updated_at=continuation.now(), waits=(wait,)), record_path)
+
+    # A SEPARATE PROCESS, reading the file and nothing else.
+    import json as _json
+    import subprocess
+    import sys
+
+    read = subprocess.run(
+        [sys.executable, "-c",
+         "import sys, json; sys.path.insert(0, sys.argv[1]); import continuation;"
+         "r = continuation.load(sys.argv[2]);"
+         "print(json.dumps(r.waits[0].configuration))",
+         str(PACK_TOOLS), str(record_path)],
+        capture_output=True, text=True, check=True, timeout=120)
+    assert _json.loads(read.stdout) == _identity(), (
+        "the configuration did not survive to a fresh process reading the record alone"
+    )
+
+
+def test_a_wait_that_declares_no_configuration_reads_as_nothing_rather_than_something():
+    wait = continuation.Wait(job_id="j", kind=continuation.WaitKind.HUMAN, expects="a decision")
+    assert wait.configuration == {}
+
+
+def test_a_wait_configuration_naming_a_field_nothing_reads_is_refused():
+    with pytest.raises(Exception) as caught:
+        continuation.Wait(job_id="j", kind=continuation.WaitKind.HUMAN, expects="x",
+                          configuration={"vibes": "good"})
+    assert "nothing reads" in str(caught.value)
+
+
+def test_a_wait_configuration_must_be_the_mapping_and_not_the_packed_string():
+    """The packed form is what the ambiguity repairs were about; a wait may not
+    reintroduce it."""
+    with pytest.raises(Exception) as caught:
+        continuation.Wait(job_id="j", kind=continuation.WaitKind.HUMAN, expects="x",
+                          configuration="model_observed=a-model")
+    assert "not a packed string" in str(caught.value)
+
+
+def test_the_two_identity_field_lists_cannot_drift_apart():
+    """`continuation` states the field list rather than importing it, so that a
+    durable record stays readable by a process that does not care about routing.
+    Stating it twice is a drift hazard, and this is the guard that makes the
+    drift loud instead of silent."""
+    import qualification
+
+    assert tuple(continuation._IDENTITY_FIELDS) == tuple(qualification.IDENTITY_FIELDS)

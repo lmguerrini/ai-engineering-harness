@@ -109,6 +109,44 @@ process on every render, holding nothing. Per-configuration qualification and
 family prior are shown as two things and never summed; `UNKNOWN` renders as
 `UNKNOWN`.
 
+### One governed waiting path
+
+The coordinator hand-wrote three background monitors that could never terminate:
+`pgrep -f` matches a whole command line including the waiter's own, so each
+matched itself and survived about an hour against producers that had already
+finished and been read. The first reading was a session mistake. The correct one
+is that **the pack held two answers to one question** — `waiter_command` treated
+a zombie as ended, `continuation._process_is_gone` asked `os.kill(pid, 0)` which
+succeeds for one, and the durable state model had the wrong answer.
+
+- **One liveness answer**, `progress.process_has_ended`, which `continuation`
+  delegates to so the two cannot drift apart again.
+- **The waiter belongs to the wait**, and one matching a command line is refused
+  where the wait is declared — as a class, because deciding which patterns are
+  safe is the argument that produced the incident.
+- **`continuation.reconcile`** derives eight dispositions from the record and
+  the process table; a monitor is not an input to any of them.
+- **`UNGOVERNED_BACKGROUND_WORK`** names a declared wait carrying no waiter.
+- A dashboard panel over the reconciliation, and a cold reconstruction that
+  reaches the same answers from disk alone.
+- Not closed and not claimed: a coordinator can still wait in a shell and record
+  nothing. Seeing that would mean policing the coordinator's own shell.
+
+### A run that executed nothing is not evidence
+
+A targeted run exited in 0.56s and was nearly recorded as a forty-five-fold
+speed-up; it had selected zero tests, because the selector said `never_prints`
+and the test is called `ever_prints`. `tools/selector_evidence.py` records the
+intended selector and the collected, executed, skipped and deselected counts,
+and answers `NOT_EVIDENCE` below what the caller expected. **Two runs are
+comparable only over the same test population.**
+
+### Verification cost
+
+Two subprocess fan-outs were a third of the suite. Both now run concurrently
+over the same commands with the same assertions, mutation-tested afterwards to
+prove no detection was lost: **291s to 229.5s over an identical population.**
+
 ### Erratum against 2.3.0
 
 None. 2.3.0 is untouched and verifies byte-identical throughout this evolution.

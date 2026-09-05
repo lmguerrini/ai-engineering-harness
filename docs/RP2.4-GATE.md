@@ -45,9 +45,9 @@ The suite count is not written here — adding a test changes it, and a figure t
 document's own edit invalidates is one it must not carry. It lives in
 `PACK_MANIFEST.json` `tests.passed`.
 
-    in-release (skills/core/*.md + policy/*.md) 1850
+    in-release (skills/core/*.md + policy/*.md) 1896
     installed adapters                          1035
-    total against a ~2000 target                2885
+    total against a ~2000 target                2931
 
 Delta against the frozen baseline: **not stated here.** Editing this file changes it.
 Measure it:
@@ -498,6 +498,115 @@ verdict rests on reasoning and targeted execution, not on a suite run.
 
 **These repairs are themselves unaudited.** That is the standing condition of any
 final repair, and it is why the closure ceiling is stated rather than reached.
+
+## The overnight convergence pass, and the two failure classes it closed
+
+### The composition pass
+
+Seventeen combinations attacked, each individually correct. Fourteen behaved.
+Two did not, and both were repaired design-first with mutants that die:
+
+**A key stated twice resolved silently to one of its values.** The configuration
+string is space-separated `key=value` and the parser builds a mapping, so
+appending `model_observed=` to a string that already carried one changed which
+configuration the observation was filed under, in silence — the whitespace
+truncation again, by better punctuation. Refused now, the same way, and refused
+even when both values agree: a writer that emits a key twice is defective either
+way, and a rule that tolerates the harmless case has to decide which case it is.
+
+**A wait could not say what configuration its dispatch was running on.** Found
+by attacking model identity against continuation rather than either alone. The
+only thing naming a still-running dispatch was the provider's own rollout file
+— so with the vendor state removed, as this release's own invariant requires, an
+interrupted dispatch's observation could only be recorded with an UNKNOWN
+identity, which makes it prior evidence and loses it. `Wait.configuration` now
+carries the structured identity, and a fresh process reading only the record
+gets it back.
+
+### The waiting path, closed structurally
+
+Three monitors this session ran survived roughly an hour against producers that
+had exited and whose results had already been read. Each was of the shape
+
+    while pgrep -qf "pytest tools/tests"; do sleep 20; done
+
+and `pgrep -f` matches a whole command line — **including the waiter's own**,
+which contains the pattern it searches for. Each loop matched itself.
+
+The first reading of that was *the coordinator made a mistake*. The second, and
+the correct one, is that **the pack held two answers to one question**:
+`progress.waiter_command` treated a zombie as ended and said so in its docstring,
+while `continuation._process_is_gone` asked `os.kill(pid, 0)`, which succeeds for
+a zombie — so the DURABLE STATE MODEL reported a finished producer as running
+forever. Reproduced against a real unreaped child before anything was changed.
+That is a release defect, not a session mistake, and the design record for it is
+`docs/RP2.4-DESIGN-C47-governed-background-work.md`, frozen against `215a537`
+before implementation.
+
+What ships:
+
+*   **One liveness answer** — `progress.process_has_ended`, which `continuation`
+    delegates to, so the two cannot drift apart again.
+*   **The waiter belongs to the wait**, and one that matches a command line is
+    refused *where the wait is declared*, not reported afterwards. Refused as a
+    class: `pgrep`, `pkill`, `ps | grep`, whatever the pattern.
+*   **`continuation.reconcile`** derives eight dispositions from the record and
+    the process table. **A monitor is not an input.**
+*   **`UNGOVERNED_BACKGROUND_WORK`** names a declared wait with no waiter, so a
+    reader is shown the gap rather than an empty list.
+*   A dashboard panel deriving from the reconciliation, and a cold
+    reconstruction that reaches the same dispositions from disk alone.
+
+**What is NOT closed, and is not claimed to be:** a coordinator can still wait in
+a shell and record nothing. Acquiring the power to see that would mean policing
+the coordinator's own shell, which is what this pack refuses to become.
+
+### The zero-test false green
+
+A targeted run exited in 0.56 seconds and was nearly recorded as a
+forty-five-fold speed-up over the same guard's 25.7 seconds. It had selected
+**zero** tests: the selector said `never_prints` and the test is called
+`ever_prints`. **Exit status is not evidence that a check ran.**
+
+`tools/selector_evidence.py` records the intended selector, the collected,
+executed, skipped and deselected counts and the exit status, and answers
+`NOT_EVIDENCE` below what the caller expected — with the expectation an argument
+rather than something read back out of the result. It binds performance work
+hardest: two runs are comparable only over the same test population, and the
+rule is enforced against this session's own near-miss as a fixture. The release's
+own matrix guard now speaks this vocabulary instead of grepping stdout for `::`.
+
+### Three ill-formed mutants, recorded because they nearly counted
+
+A mutant that the subject does not read is not a mutant, and tonight produced
+three: a matrix row edited in a cell the guard never parses; a CLI wrapper
+removed from a tool that already handled the inputs itself; and a `-k` selector
+that matched nothing. Each first read as *the guard is weak*. Each was the
+measurement being wrong. The same rule as fixtures, one level up — **a mutant
+whose subject never sees it is not evidence** — and the third is the reason the
+selector tool exists.
+
+### Verification cost, measured rather than asserted
+
+The suite's time was two subprocess fan-outs: the oracle-selector guard at 52.4s
+and the CLI refusal guard at 25.7s, together a third of the run. Both are now
+run concurrently over the same commands with the same assertions — nothing about
+what is checked changed, only when the processes run — and both were
+mutation-tested afterwards with well-formed mutants to prove no detection was
+lost. **291s to 229.5s over an identical test population.**
+
+Reimplementing pytest's `-k` expression in-process would have collapsed the
+first to a single collection and was rejected: the guard exists to be
+trustworthy about whether a selector resolves, and a second implementation of
+the selector language makes the guard's own correctness the new risk.
+
+### Background reconciliation
+
+Every long-running activity displayed during this session was classified from
+the process table, producer exit status and durable output rather than from the
+display: three orphaned self-matching waiters, retired without terminating
+anything; every producer completed and every result consumed; no zombies. The
+record is `docs/RP2.4-BACKGROUND-RECONCILIATION.md`.
 
 ## The freeze procedure
 

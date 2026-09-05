@@ -448,3 +448,68 @@ def test_the_unobserved_marker_that_got_past_the_first_denylist_grades_nothing(t
     unobserved = replace(COMPLETE, identity_method="unobserved")
     log = _log(tmp_path, [_row(unobserved, "T", "validated")] * 2)
     assert q.qualifications_from_observations(log) == {}
+
+
+# --- a key stated twice is the same ambiguity with better punctuation --------
+
+
+def test_a_repeated_key_makes_the_identity_incomplete(tmp_path):
+    """The parser builds a mapping, so the last occurrence silently wins.
+
+    Appending `model_observed=` to a string that already carries one changes
+    which configuration the observation is filed under, and nothing says a
+    choice was made. Found by attacking configuration serialisation against
+    qualification rather than either alone.
+    """
+    row = _row(COMPLETE, "T", "validated")
+    row["configuration"] += " model_observed=SOMETHING-ELSE"
+    identity = q.identity_from_observation(row)
+    assert not identity.complete
+    assert any("appears 2 times" in reason for reason in identity.incompleteness())
+
+    log = _log(tmp_path, [row, dict(row)])
+    assert q.qualifications_from_observations(log) == {}, (
+        "an ambiguous configuration string produced a per-configuration grade"
+    )
+
+
+def test_a_repeated_key_is_refused_even_when_both_values_agree():
+    """Refusing only on disagreement was considered and rejected: a writer that
+    emits a key twice is defective either way, and a rule that tolerates the
+    harmless case has to decide which case it is."""
+    row = _row(COMPLETE, "T", "validated")
+    row["configuration"] += f" model_observed={COMPLETE.model_observed}"
+    assert not q.identity_from_observation(row).complete
+
+
+def test_a_clean_configuration_string_is_still_read():
+    """The bound in the other direction: the guard must not refuse every row."""
+    assert q.identity_from_observation(_row(COMPLETE, "T", "validated")).complete
+    for line in open("policy/observations.jsonl", encoding="utf-8"):
+        if line.strip():
+            q.identity_from_observation(json.loads(line))  # must not raise
+
+
+def test_the_structured_identity_carries_what_the_string_cannot(tmp_path):
+    """An identifier containing a space, round-tripped through an observation."""
+    spaced = replace(COMPLETE, model_observed="MODEL WITH SPACES")
+    row = _row(COMPLETE, "T", "validated")
+    row["identity"] = {"model_observed": "MODEL WITH SPACES"}
+    identity = q.identity_from_observation(row)
+    assert identity.model_observed == "MODEL WITH SPACES"
+    assert identity.complete
+
+    log = _log(tmp_path, [row, dict(row)])
+    graded = q.qualifications_from_observations(log)
+    assert graded[spaced.key("T")].grade == "confirmed"
+    # And the prefix gets nothing.
+    assert q.grade_for(replace(COMPLETE, model_observed="MODEL"), "T", graded, {})[0].grade == \
+        "unprobed"
+
+
+def test_a_structured_identity_field_nothing_reads_is_refused(tmp_path):
+    row = _row(COMPLETE, "T", "validated")
+    row["identity"] = {"vibes": "good"}
+    with pytest.raises(QualificationError) as caught:
+        q.identity_from_observation(row)
+    assert "nothing reads" in str(caught.value)

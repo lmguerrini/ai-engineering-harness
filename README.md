@@ -122,6 +122,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── qualification.py        per-configuration qualification, keyed on the evidence
     │   ├── model_discovery.py      what a surface offers now; no model vocabulary anywhere
     │   ├── routing.py              availability, eligibility and the design-audit route
+    │   ├── selector_evidence.py    whether a targeted run is evidence that anything ran
     │   ├── resource_observation.py documented resource truth as routing evidence
     │   ├── evidence_index.py       certification bound to one exact candidate
     │   ├── close_attestation.py    which gates ran, generated from the contract's own declarations
