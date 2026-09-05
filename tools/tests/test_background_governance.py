@@ -145,8 +145,12 @@ def test_refused_at_declaration_survives_the_durable_boundary(tmp_path):
     import json
 
     path = tmp_path / "CONTINUATION.json"
-    good = Wait(job_id="j", kind=WaitKind.HUMAN, expects="x",
-                waiter=" ".join(progress.waiter_command("r", 1, sentinel="/tmp/s")))
+    # A REAL PRODUCER WAIT, because a waiter must now watch the wait it belongs
+    # to — a person is not a producer and a human wait may carry no waiter.
+    report = tmp_path / "r.md"
+    good = Wait(job_id="j", kind=WaitKind.PATH_EXISTS, expects="a report", path=str(report),
+                not_beyond_seconds=600, declared_at=continuation.now(),
+                waiter=" ".join(progress.waiter_command("r", 1, sentinel=str(report))))
     continuation.save(ContinuationRecord(capability="C", updated_at=continuation.now(),
                                          waits=(good,)), path)
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -643,3 +647,80 @@ def test_the_zombie_signal_is_a_shared_constant_not_matched_prose():
     assert '"has not been reaped"' not in source, (
         "the zombie disposition is keyed on prose again"
     )
+
+
+# =============================================================================
+# What a bounded reading of the repairs found in the repairs
+# =============================================================================
+
+
+def test_an_unaskable_producer_is_unknown_and_not_running(tmp_path):
+    """`process_has_ended` gained a THIRD answer and `reconcile` read it as the
+    second: `if ended:` treats `None` as `False`, so a producer nobody could ask
+    about reported as running. This module's whole thesis is that an
+    unanswerable question is never rendered as its reassuring answer, and the
+    repair that introduced the third answer forgot to read it.
+    """
+    from unittest.mock import patch
+
+    wait = _path_wait(tmp_path, pid=4242)
+    denied = subprocess.CompletedProcess([], 2, "", "ps: permission denied")
+    with patch("subprocess.run", return_value=denied):
+        result = continuation.reconcile(_record(wait), relative_to=tmp_path)[0]
+    assert result.disposition == Disposition.UNKNOWN
+    assert result.blocks
+    assert "cannot be asked about" in result.why
+
+
+def test_a_pid_that_is_not_a_number_is_unknown_and_not_running(tmp_path):
+    """The same hole through a different door: a record carrying `pid` as TEXT.
+
+    The pid is deliberately carried rather than refused at construction — this
+    module decided that against an earlier reader, because a saved record is
+    untrusted input and must reach a STATE rather than a traceback. So the
+    reconciliation is where it has to be closed.
+    """
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    wait = _path_wait(tmp_path, pid=str(child.pid))
+    result = continuation.reconcile(_record(wait), relative_to=tmp_path)[0]
+    assert result.disposition == Disposition.UNKNOWN
+    assert result.blocks
+
+
+def test_a_waiter_must_watch_the_wait_it_is_recorded_against(tmp_path):
+    """`waiter_watches` was added so a caller could check this, and then no
+    caller did — so a perfectly reconstructed waiter over an unrelated
+    long-lived process was recorded as governing this wait. The module's own
+    docstring already said such a waiter is well-formed and wrong.
+    """
+    report = tmp_path / "r.md"
+    unrelated = " ".join(progress.waiter_command("r", 1, sentinel="/unrelated-sentinel"))
+    assert progress.is_governed_waiter(unrelated), "the fixture must be governed in itself"
+
+    # The detail is in the refusal's `detail`, not its headline — the headline
+    # is one sentence for every ungoverned waiter and would pass whatever the
+    # reason was.
+    with pytest.raises(Exception) as caught:
+        Wait(job_id="p", kind=WaitKind.PROCESS, expects="a run", pid=999999,
+             not_beyond_seconds=600, declared_at=continuation.now(), waiter=unrelated)
+    assert "watches process 1" in caught.value.detail["why"]
+
+    with pytest.raises(Exception) as caught:
+        Wait(job_id="j", kind=WaitKind.PATH_EXISTS, expects="a report", path=str(report),
+             not_beyond_seconds=600, declared_at=continuation.now(), waiter=unrelated)
+    assert "unrelated-sentinel" in caught.value.detail["why"]
+
+    # AND THE MATCHING ONE IS ACCEPTED, so the rule is not "refuse everything".
+    matching = " ".join(progress.waiter_command("r", 999999, sentinel=str(report)))
+    Wait(job_id="p", kind=WaitKind.PROCESS, expects="a run", pid=999999,
+         not_beyond_seconds=600, declared_at=continuation.now(), waiter=matching)
+    Wait(job_id="j", kind=WaitKind.PATH_EXISTS, expects="a report", path=str(report),
+         not_beyond_seconds=600, declared_at=continuation.now(), waiter=matching)
+
+
+def test_a_person_is_not_a_producer_and_carries_no_waiter():
+    with pytest.raises(Exception) as caught:
+        Wait(job_id="h", kind=WaitKind.HUMAN, expects="a decision",
+             waiter=" ".join(progress.waiter_command("r", 1, sentinel="/tmp/s")))
+    assert "a person is not a producer" in caught.value.detail["why"]

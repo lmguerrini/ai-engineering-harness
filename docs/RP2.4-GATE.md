@@ -290,17 +290,17 @@ client update — the only change this session made outside this repository.
 
     python3 tools/publication_history.py . --project <contract inheriting pack defaults>
 
-    complete reachable history [strict]: 4270 occurrence(s) to adjudicate
-                                         (4 refs, 1777 objects)
+    complete reachable history [strict]: 4705 occurrence(s) to adjudicate
+                                         (4 refs, 1892 objects)
     rules applied: 35 term(s), 15 identity-only, 7 pattern(s), 1 identity-only
 
-By finding class: 3596 declared private terms, 317 local filesystem paths, 299
-declared private patterns, 41 credential-shaped tokens, 17 UUID-shaped
+By finding class: 3970 declared private terms, 342 declared private patterns,
+332 local filesystem paths, 41 credential-shaped tokens, 20 UUID-shaped
 identifiers. **THEY ARE UNADJUDICATED**, and by this release's own rule a bare
 count is not a remediation list.
 
 Three things a reader should not misread here. The figure is **not** comparable
-to 2.3.0's 2090: this history has 1777 objects against 1179, and the generation
+to 2.3.0's 2090: this history has 1892 objects against 1179, and the generation
 pattern this release adds matches more than the literal it replaced — which is
 the point of it. The credential-shaped tokens are in the scanner's **own negative
 test fixtures**, which is the case `skills/core/public-safety.md` describes when
@@ -734,6 +734,59 @@ suite re-run. **All seventeen die.** Three survived their first pass — the
 repairs had been made and their oracles had not — which is the rule this pack
 states as *a repair with no oracle is a claim*, met by the coordinator in its own
 work, again.
+
+## The bounded reading of the repairs, and the two defects in them
+
+The fourteen repairs were themselves unaudited, which is the standing condition
+of any final repair. One bounded reading closed that delta: **the router chose
+the reader, and refused the obvious candidate by name.**
+
+    gpt-6-astra: not independent — the proposed reader is the producer of the
+    work (gpt-6-astra). A producer never closes its own finding, whatever task
+    class it is dispatched under
+
+Astra had produced most of the findings being repaired, so verifying the repairs
+would have been closing its own findings. The seat went to a configuration
+`unprobed` at that task class, seated as a declared probe, with the family prior
+printed beside it and explicitly ranking nothing. That is the whole mechanism of
+this release, deciding a real dispatch.
+
+**REPAIRS_NOT_SOUND — two majors, and both were defects in the repairs.**
+
+**An unanswerable question was rendered as its reassuring answer, by the repair
+that created the third answer.** `process_has_ended` was changed to return
+`None` where the process table cannot be read — and `reconcile` tests
+`if ended:`, which treats `None` as `False`. So a producer nobody could ask
+about reported `LIVE_AND_PROGRESSING`. In the module whose thesis is that an
+unanswerable question is never its reassuring answer. Reproduced with a denied
+`ps` and, by a second route, with a process number persisted as text.
+
+The second route is worth stating because of what it did NOT change. A `pid`
+that is not a number is deliberately **carried and named as a state** rather than
+refused at construction — this module decided that against an earlier blind
+reader, on the ground that a saved record is untrusted input and must reach a
+state rather than a traceback. A first draft of this repair started refusing such
+a pid at construction, which would have reversed that decision as a side effect
+of fixing something else. It was reverted: the hole was never the value, it was
+`reconcile` reading `None` as `False`, and it is closed where it happened.
+
+**A governed waiter was not bound to the wait it governs.** `waiter_watches` was
+added so a caller could check that a waiter watches the producer its wait names —
+and then no caller checked, so a perfectly reconstructed waiter over an unrelated
+long-lived process and an unrelated sentinel was recorded as governing this
+wait. The module's own docstring already said such a waiter is well-formed and
+wrong. A waiter is now refused unless it watches this wait's process number and
+this wait's path, and a human wait may carry none at all, because a person is not
+a producer.
+
+Five mutants over these two repairs; all five die.
+
+**And the coordinator moved the tree under the reader again.** Not `HEAD` this
+time — an uncommitted edit to this file, updating the history-scan figures while
+the reading was in flight. The reader noticed, said so, and correctly observed
+that the working directory therefore fails `pack_pin` while the candidate commit
+still verifies. Third instance of one class in one session: a subject must not
+change under a reading, and *uncommitted* is not an exemption.
 
 ## The freeze procedure
 

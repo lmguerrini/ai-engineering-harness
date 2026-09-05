@@ -280,6 +280,14 @@ class Wait:
                 job_id=self.job_id,
             )
         object.__setattr__(self, "obligation", (self.obligation or self.job_id).strip())
+        # A PID THAT IS NOT ONE IS CARRIED AND NAMED, NOT REFUSED HERE. That is
+        # this module's existing decision, made against a blind reader's finding:
+        # a saved record is untrusted input, and `pid: "not-a-pid"` must reach a
+        # STATE rather than a traceback out of `derive`. A repair for the
+        # reconciliation path started refusing it at construction, which would
+        # have reversed that decision as a side effect — the hole was never the
+        # value, it was `reconcile` reading `None` as `False`, and that is fixed
+        # where it happened.
         if self.configuration is None:
             object.__setattr__(self, "configuration", {})
         if not isinstance(self.configuration, dict):
@@ -287,9 +295,32 @@ class Wait:
                 "a wait's configuration is the structured identity mapping, not a packed string",
                 job_id=self.job_id, found=type(self.configuration).__name__)
         if self.waiter:
-            from progress import waiter_problems
+            from progress import waiter_problems, waiter_watches
 
-            problems = waiter_problems(self.waiter)
+            problems = list(waiter_problems(self.waiter))
+            # AND IT MUST WATCH THIS WAIT. `waiter_watches` was added so a caller
+            # could check that — and then no caller did, so a perfectly
+            # reconstructed waiter over an unrelated long-lived process was
+            # recorded as governing this one. The module's own docstring already
+            # said a governed waiter over somebody else's process is well-formed
+            # and wrong; a bounded reading of the repair found nothing enforcing
+            # it.
+            if not problems:
+                watched, sentinel = waiter_watches(self.waiter)
+                if self.kind == WaitKind.HUMAN:
+                    problems.append(
+                        "a person is not a producer, so no waiter ends this wait; the blockers "
+                        "are where a human decision is recorded")
+                if self.pid and watched != self.pid:
+                    problems.append(
+                        f"it watches process {watched} and this wait names {self.pid}")
+                if self.path and sentinel != self.path:
+                    problems.append(
+                        f"it watches {sentinel!r} and this wait names {self.path!r}")
+                if not self.pid and not self.path:
+                    problems.append(
+                        "this wait names neither a process nor a path, so nothing binds the "
+                        "waiter to it")
             if problems:
                 # REFUSED WHERE THE WAIT IS DECLARED, not reported afterwards.
                 # A check that runs later describes a wait that has already been
@@ -817,6 +848,20 @@ def reconcile(
             from progress import process_has_ended
 
             ended, how = process_has_ended(wait.pid)
+            # THREE ANSWERS, NOT TWO. `process_has_ended` returns `None` when the
+            # process table could not be read — and `if ended:` treated that as
+            # `False`, so a producer nobody could ask about reported as running.
+            # This module's whole thesis is that an unanswerable question is
+            # never rendered as its reassuring answer, and the repair that
+            # introduced the third answer forgot to read it. Found by a bounded
+            # reading of that repair.
+            if ended is None:
+                out.append(Reconciliation(
+                    wait.job_id, Disposition.UNKNOWN,
+                    f"the producer this wait names cannot be asked about ({how}), so whether it "
+                    f"is still running is not established",
+                    action="establish the producer's state, then classify"))
+                continue
             if ended:
                 out.append(Reconciliation(
                     wait.job_id, Disposition.UNKNOWN,
