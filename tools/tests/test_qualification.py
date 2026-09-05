@@ -513,3 +513,58 @@ def test_a_structured_identity_field_nothing_reads_is_refused(tmp_path):
     with pytest.raises(QualificationError) as caught:
         q.identity_from_observation(row)
     assert "nothing reads" in str(caught.value)
+
+
+# --- RP2.4.1 R3: one normalisation boundary for every identity ingestion path ---
+
+@pytest.mark.parametrize("spelling", [
+    "unknown", "UNKNOWN", "Unknown", "  unknown  ", "un_known", "un-known", "UN KNOWN", "",
+])
+@pytest.mark.parametrize("dimension", [
+    "effort", "model_observed", "surface", "family", "client",
+    "isolation", "network", "authentication_class",
+])
+def test_unknown_reads_the_same_through_both_identity_paths(spelling, dimension):
+    """A dimension nobody established cannot become established by its spelling.
+
+    2.4.0 normalised `unknown` in the packed configuration string and did not
+    normalise it in the structured mapping, so the same honest answer completed
+    an identity through one supported path and refused through the other.
+    """
+    complete = dict(surface="codex-cli", family="gpt-6", client="0.153.3",
+                    model_observed="a-model", effort="high", isolation="workspace-write",
+                    network="denied", authentication_class="subscription",
+                    identity_method="turn_context")
+    declared = dict(complete, **{dimension: spelling})
+    structured = q.identity_from_observation({"identity": declared})
+    assert not structured.complete, (
+        f"{dimension}={spelling!r} completed an identity through the structured path")
+    assert any(dimension in reason for reason in structured.incompleteness())
+
+
+def test_the_structured_path_still_carries_a_real_value():
+    """The repair must not swallow values that ARE established."""
+    declared = dict(surface="codex-cli", family="gpt-6", client="0.153.3",
+                    model_observed="a model with spaces", effort="xhigh",
+                    isolation="workspace-write", network="denied",
+                    authentication_class="subscription", identity_method="turn_context")
+    identity = q.identity_from_observation({"identity": declared})
+    assert identity.complete
+    assert identity.model_observed == "a model with spaces"
+    assert identity.effort == "xhigh"
+
+
+def test_a_structured_unknown_effort_cannot_reach_a_grade(tmp_path):
+    """The consumer-visible consequence: no affirmative qualification."""
+    declared = dict(surface="codex-cli", family="gpt-6", client="0.153.3",
+                    model_observed="gpt-6-nova", effort="unknown",
+                    isolation="workspace-write", network="denied",
+                    authentication_class="subscription", identity_method="turn_context")
+    log = tmp_path / "observations.jsonl"
+    log.write_text("".join(
+        json.dumps({"recorded_at": "2026-09-05", "configuration": "", "identity": declared,
+                    "task_class": "implementation", "outcome": "validated",
+                    "detail": f"row {n}", "evidence": "fixture", "provenance": "fixture"}) + "\n"
+        for n in (1, 2)))
+    graded = q.qualifications_from_observations(log)
+    assert not graded, "a configuration whose effort is unknown reached a per-configuration grade"

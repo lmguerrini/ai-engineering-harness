@@ -94,11 +94,29 @@ _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
+#: RP2.4.1 R4. Every Git read this module makes goes through `gitread`, which
+#: neutralises the configuration keys whose values Git executes and refuses the
+#: ones it has no named closure for. `gitread` said it did this "for *every*
+#: invocation rather than at the call sites somebody remembered", and this
+#: module was the call site nobody remembered: it ran `subprocess` directly, so
+#: a `core.fsmonitor` in the verified repository — or in the operator's global
+#: configuration, needing no write to the release at all — was executed by the
+#: act of verifying the pin, which then printed `pack pin verified`.
+#:
+#: Verification is what establishes that a checkout can be trusted. Doing it by
+#: running that checkout's own program is the wrong order, and a second
+#: neutralisation table here would have been a second answer to one question.
 def _git(root: str | Path, *arguments: str) -> str:
-    result = subprocess.run(
-        ["git", *arguments], cwd=str(root), capture_output=True, text=True, check=True
-    )
-    return result.stdout
+    import gitread
+
+    try:
+        return gitread._run(root, *arguments, timeout=60)
+    except Exception as exc:
+        # Translated, so every caller's existing handling of "Git could not
+        # answer" keeps working — including the branch that reports a copy
+        # outside a checkout as UNDECIDABLE rather than as a failed pin.
+        raise subprocess.CalledProcessError(
+            1, ["git", *arguments], output="", stderr=str(exc)) from exc
 
 
 def _nul_separated(output: str) -> list[str]:
@@ -128,8 +146,18 @@ def untracked_files(root: str | Path) -> list[str]:
     An untracked, non-ignored file is inside the tree a consumer will read,
     contributes nothing to the digest, and is exactly how an unreviewed module
     reaches a checkout that reports as verified.
+
+    **Ignored by the RELEASE's rules, not by the operator's.** RP2.4.1 R6:
+    `--exclude-standard` also honours `core.excludesFile` and
+    `.git/info/exclude`, neither of which the release ships, can see, or is a
+    claim about — so an operator whose global ignore file happens to carry
+    `*.jsonl` gave any `.jsonl` in a release root a place to sit unreported, and
+    anyone who could write `.git/info/exclude` could choose the exemption
+    themselves. `--exclude-per-directory` reads only the `.gitignore` files the
+    release actually tracks, which is the rule the release is entitled to state.
     """
-    return _nul_separated(_git(root, "ls-files", "--others", "--exclude-standard", "-z"))
+    return _nul_separated(
+        _git(root, "ls-files", "--others", "--exclude-per-directory=.gitignore", "-z"))
 
 
 def tree_digest(root: str | Path) -> tuple[str, int]:
@@ -280,12 +308,8 @@ def root_kind(root: str | Path) -> "tuple[str, str]":
         # by reading the file — `--path-format` is not needed because what is
         # wanted is only whether this is the main worktree.
         try:
-            common = subprocess.run(
-                ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
-                capture_output=True, text=True, timeout=60).stdout.strip()
-            own = subprocess.run(
-                ["git", "-C", str(root), "rev-parse", "--git-dir"],
-                capture_output=True, text=True, timeout=60).stdout.strip()
+            common = _git(root, "rev-parse", "--git-common-dir").strip()
+            own = _git(root, "rev-parse", "--git-dir").strip()
         except (OSError, subprocess.SubprocessError):
             return "not-a-checkout", f"{root}/.git is a file and Git could not be asked about it"
         if common and own and Path(common).resolve() != Path(own).resolve():
@@ -360,6 +384,35 @@ def verify_pin(
             f"the digest covers {actual_count} files, the manifest records {recorded_count}"
         )
 
+    # RP2.4.1 R5. THE ONE FILE THE DIGEST CANNOT COVER.
+    #
+    # `PACK_MANIFEST.json` is excluded from its own digest of necessity — it
+    # records that digest — and 2.4.0 compared it to nothing else. So every
+    # claim it carries that is not `version` or `state` sat outside every
+    # check: a root could say it had 999999 passing tests, or replace seventy
+    # known limitations with "nothing is wrong with this release", and still
+    # print `pack pin verified` to the consumer reading those very fields.
+    #
+    # WHAT THIS ESTABLISHES, EXACTLY: that the manifest in this directory is
+    # byte-for-byte the manifest committed at the pinned revision. It does NOT
+    # establish that the manifest's claims are TRUE — no mechanism here can
+    # count a release's tests or audit its own limitations, and pretending
+    # otherwise would be the kind of check whose message outruns its reason
+    # that this module exists to refuse. What it removes is the gap between
+    # what a reader verified and what a reader read.
+    try:
+        committed = _git(root, "show", f"HEAD:{MANIFEST_NAME}")
+    except (OSError, subprocess.CalledProcessError) as exc:
+        problems.append(
+            f"{UNESTABLISHED}: the committed manifest could not be read, so whether this "
+            f"directory's manifest is the one at the pinned revision cannot be decided ({exc})")
+    else:
+        if committed != manifest_path.read_text(encoding="utf-8"):
+            problems.append(
+                f"{MANIFEST_NAME} differs from the one committed at HEAD. It is excluded from "
+                f"its own digest, so every claim it makes — the test population, the known "
+                f"limitations, the gate records — is only as good as this comparison")
+
     try:
         strays = untracked_files(root)
     except (OSError, subprocess.CalledProcessError) as exc:
@@ -407,14 +460,15 @@ def verify_pin(
                 f"pinned digest {expect_digest.strip()[:16]}…, checkout digests to {actual_digest[:16]}…"
             )
 
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=str(root), capture_output=True, text=True
-    )
-    if head.returncode != 0:
+    try:
+        actual_head = _git(root, "rev-parse", "HEAD").strip()
+    except (OSError, subprocess.CalledProcessError):
+        actual_head = ""
+    if not actual_head:
         problems.append("HEAD could not be read, so the revision is unverified")
     elif expect_sha is not None:
         wanted = expect_sha.strip().lower()
-        actual_sha = head.stdout.strip()
+        actual_sha = actual_head
         if not _FULL_SHA.match(wanted):
             # An abbreviation is not a weaker pin, it is a different claim. The
             # previous `startswith` comparison accepted a single character.

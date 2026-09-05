@@ -45,6 +45,20 @@ def _write_manifest(root, **overrides):
     return manifest
 
 
+def _commit_manifest(root, why="manifest"):
+    """Commit the manifest a test just wrote.
+
+    RP2.4.1 R5 compares the manifest on disk with the one at HEAD, because it is
+    the single file the digest cannot cover. These tests are about what the
+    manifest's FIELDS mean, and they used to establish that by editing the file
+    and leaving it uncommitted — a shape no shipped release has. Committing it
+    keeps each test's real subject and stops it also asserting, incidentally,
+    that an uncommitted manifest verifies.
+    """
+    _git(root, "add", pack_pin.MANIFEST_NAME)
+    _git(root, "commit", "--quiet", "-m", why)
+
+
 def _head(root):
     return subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=str(root), capture_output=True, text=True, check=True
@@ -275,6 +289,7 @@ def test_a_plausible_but_untrue_test_count_is_not_this_tool_s_domain(pack):
     covers it.
     """
     _write_manifest(pack, tests={"passed": 99999})
+    _commit_manifest(pack, "an untrue but well-formed count")
     assert pack_pin.verify_pin(pack) == []
 
 
@@ -361,6 +376,7 @@ def test_a_manifest_written_by_2_1_1_still_verifies(pack):
     count = manifest.pop(pack_pin.DIGEST_COUNT_KEY)
     manifest[pack_pin.LEGACY_COUNT_KEY] = count
     (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    _commit_manifest(pack, "a 2.1.1-shaped manifest")
 
     assert pack_pin.verify_pin(pack) == []
     assert pack_pin.manifest_file_count(manifest) == (count, [])
@@ -392,10 +408,12 @@ def test_the_agreeing_counts_are_accepted_and_a_wrong_one_is_not(pack):
     manifest = _write_manifest(pack)
     manifest[pack_pin.LEGACY_COUNT_KEY] = manifest[pack_pin.DIGEST_COUNT_KEY]
     (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    _commit_manifest(pack, "both spellings, agreeing")
     assert pack_pin.verify_pin(pack) == []
 
     manifest[pack_pin.DIGEST_COUNT_KEY] = manifest[pack_pin.LEGACY_COUNT_KEY] = 999
     (pack / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    _commit_manifest(pack, "both spellings, wrong")
     problems = pack_pin.verify_pin(pack)
     assert any("the digest covers" in problem for problem in problems), problems
 
@@ -566,3 +584,97 @@ def test_the_hazard_is_real_and_the_pin_fails_loudly_rather_than_quietly(tmp_pat
         "a release root moved out from under its pin still verified; the whole hazard is "
         "that this root is movable, and a movable root that verifies anyway is worse")
     assert any("digest" in problem for problem in problems), problems
+
+
+# --- RP2.4.1 R4/R5/R6: the pin's own integrity boundary ----------------------
+
+def _hook(tmp_path, marker):
+    """A program Git would run, which records that it ran."""
+    script = tmp_path / "hook.sh"
+    script.write_text(f"#!/bin/sh\necho ran >> {marker}\nexit 0\n")
+    script.chmod(0o755)
+    return script
+
+
+def test_a_repository_local_program_valued_config_is_not_executed(pack, tmp_path):
+    """R4. Verifying a pin must not run a program the verified repository names.
+
+    `gitread` neutralises `core.fsmonitor` for every invocation it makes, and
+    said so; `pack_pin` called Git directly and so was a call site the promise
+    never reached. Verification is the act that establishes a checkout can be
+    trusted, and it ran the checkout's own program while reporting `verified`.
+    """
+    marker = tmp_path / "ran"
+    _git(pack, "config", "core.fsmonitor", str(_hook(tmp_path, marker)))
+    pack_pin.verify_pin(pack)
+    assert not marker.exists(), "verifying the pin executed a program the repository named"
+
+
+def test_a_global_program_valued_config_is_not_executed(pack, tmp_path, monkeypatch):
+    """R4, and the reachable half: no write to the release root is needed."""
+    marker = tmp_path / "ran-global"
+    config = tmp_path / "gitconfig"
+    config.write_text(f"[core]\n\tfsmonitor = {_hook(tmp_path, marker)}\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    pack_pin.verify_pin(pack)
+    assert not marker.exists(), "a global configuration reached the pin verifier"
+
+
+def test_a_program_valued_config_does_not_break_an_ordinary_verification(pack, tmp_path):
+    """The repair must refuse execution, not refuse the answer."""
+    marker = tmp_path / "ran-ordinary"
+    _git(pack, "config", "core.fsmonitor", str(_hook(tmp_path, marker)))
+    assert pack_pin.verify_pin(pack) == []
+
+
+def test_a_manifest_edited_away_from_its_commit_is_reported(pack):
+    """R5. The one file the digest cannot cover is the one nothing compared.
+
+    `PACK_MANIFEST.json` is excluded from its own digest of necessity, and
+    2.4.0 compared it to nothing else — so a root could claim any test
+    population and any set of known limitations and still verify.
+    """
+    manifest = pack / pack_pin.MANIFEST_NAME
+    claimed = json.loads(manifest.read_text())
+    claimed["tests"] = {"command": "python3 -m pytest", "passed": 999999}
+    manifest.write_text(json.dumps(claimed, indent=2))
+    problems = pack_pin.verify_pin(pack)
+    assert problems, "an edited manifest verified"
+    assert any("manifest" in problem.lower() for problem in problems)
+
+
+def test_an_unedited_manifest_is_not_reported(pack):
+    """R5's positive control: the ordinary frozen release still verifies."""
+    assert pack_pin.verify_pin(pack) == []
+
+
+def test_a_global_exclude_cannot_hide_untracked_material(pack, tmp_path, monkeypatch):
+    """R6. Untracked material is measured against the release's own rules.
+
+    `--exclude-standard` honours the operator's global excludes file and
+    `.git/info/exclude`, neither of which the release ships or can see, so a
+    file the release never reviewed sat in a verified root unreported.
+    """
+    excludes = tmp_path / "globalignore"
+    excludes.write_text("*.evil\n")
+    config = tmp_path / "gitconfig"
+    config.write_text(f"[core]\n\texcludesFile = {excludes}\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    (pack / "unreviewed.evil").write_text("payload\n")
+    problems = pack_pin.verify_pin(pack)
+    assert any("unreviewed.evil" in problem for problem in problems), problems
+
+
+def test_a_repository_local_info_exclude_cannot_hide_untracked_material(pack):
+    """R6, the second half: `.git/info/exclude` is not the release's rule either."""
+    (pack / ".git" / "info").mkdir(parents=True, exist_ok=True)
+    (pack / ".git" / "info" / "exclude").write_text("hidden.py\n")
+    (pack / "hidden.py").write_text("payload\n")
+    problems = pack_pin.verify_pin(pack)
+    assert any("hidden.py" in problem for problem in problems), problems
+
+
+def test_the_releases_own_ignore_rules_are_still_honoured(pack):
+    """R6's positive control: the pack's own `.gitignore` still governs."""
+    (pack / "build.log").write_text("noise\n")
+    assert pack_pin.verify_pin(pack) == []

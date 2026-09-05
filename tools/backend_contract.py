@@ -49,6 +49,7 @@ __all__ = [
     "TaskClassGrade",
     "BackendRecord",
     "parse_configuration",
+    "normalised_identity_value",
     "grades_from_observations",
     "ROLE_OBSERVATION_CLASSES",
     "role_grade",
@@ -59,6 +60,30 @@ __all__ = [
 #: happens to be empty, and the difference is the whole reason this constant
 #: exists rather than `None`.
 UNKNOWN = "UNKNOWN"
+
+
+def normalised_identity_value(value: object) -> str:
+    """One reading of *this dimension is not established*, whatever spelling arrives.
+
+    THE CANONICAL BOUNDARY, and there is deliberately only one. 2.4.0 normalised
+    `unknown` here, in the packed configuration string, and did not normalise it
+    in the structured identity mapping that `qualification` reads — so the same
+    honest answer from the same adapter refused through one supported path and
+    completed an identity through the other, and two such rows graded
+    `confirmed` for a configuration whose effort was never established.
+
+    Separators and case are removed before the comparison, for the reason
+    `_provenance_key` already gives about provenance markers: two spellings of
+    one claim are one claim, and a claim that evades a rule by being hyphenated
+    is a claim the rule was not really applied to. A value that says anything
+    else is returned stripped and otherwise untouched, because a real identifier
+    may contain spaces and this is not the place to be clever about it.
+    """
+    text = "" if value is None else str(value).strip()
+    word = "".join(character for character in text.lower() if character.isalnum())
+    if not word or word == "unknown":
+        return UNKNOWN
+    return text
 
 #: Ordinal only, and deliberately not numeric — the evidence base is small
 #: enough that a number would invite arithmetic it cannot support. How small is
@@ -278,7 +303,7 @@ def parse_configuration(text: str) -> BackendIdentity:
             continue
         key, _, value = token.partition("=")
         value = value.strip()
-        fields[key.strip()] = UNKNOWN if value.lower() in ("", "unknown") else value
+        fields[key.strip()] = normalised_identity_value(value)
 
     authentication = fields.get("auth", UNKNOWN)
     if authentication not in AUTHENTICATION_CLASSES:

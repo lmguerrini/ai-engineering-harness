@@ -51,6 +51,7 @@ from backend_contract import (
     BackendContractError,
     TaskClassGrade,
     grades_from_observations,
+    normalised_identity_value,
     parse_configuration,
 )
 
@@ -342,7 +343,17 @@ def identity_from_observation(row: dict) -> ConfigurationIdentity:
         # behaviour. A null is the absence of a value and is dropped here, which
         # leaves the dimension `UNKNOWN` and the identity incomplete — the answer
         # that loses nothing.
-        supplied = {name: str(value) for name, value in declared.items()
+        # NORMALISED THROUGH THE SAME BOUNDARY AS THE STRING, and this is the
+        # whole of the RP2.4.1 R3 repair. The mapping used to be carried
+        # verbatim, so `effort: "unknown"` — the honest answer an adapter writes
+        # when the surface did not report one — arrived as the literal string
+        # `"unknown"`, which is not the `UNKNOWN` sentinel `incompleteness`
+        # tests for. The identity came out COMPLETE and two such rows graded
+        # `confirmed` for a configuration nothing had established. A second
+        # normaliser here would have been a second answer to one question, so
+        # there is one function and both paths call it.
+        supplied = {name: normalised_identity_value(value)
+                    for name, value in declared.items()
                     if value is not None and not isinstance(value, bool)
                     and str(value).strip()}
         if supplied:
