@@ -43,8 +43,17 @@ and its tree did not. Ten commits before, ten after, same order.
 **Verified by execution, and reproducible:**
 
 ```
-git diff <pre-amend-tip> HEAD --stat        # empty: no content differs
-git rev-list --count ab7dea97..HEAD         # 10, unchanged
+# PINNED TO THE AMEND, not to HEAD. Written against HEAD, these stopped
+# reproducing the moment the next commit landed — a reader following them saw
+# 25 files changed and concluded the repair had altered content. An independent
+# reader ran them and reported exactly that.
+git diff 11dad7464221577dd6c7552a83f6813752c5d0e0 \
+         1dd2aa93ef89f0ea280f7565f353e6bc8327ee42 --stat    # empty: no content differs
+git rev-list --count ab7dea97..1dd2aa93                     # 10, unchanged
+git rev-parse 62386d4b^{tree} 5069b1c2^{tree}               # one tree, reused
+git rev-parse 11dad746^{tree} 1dd2aa93^{tree}               # one tree, reused
+
+# and the property that must hold at every later revision:
 python3 tools/commit_gate.py --range HEAD --baseline ab7dea97 --repo . --default-terms .
 ```
 

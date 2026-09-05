@@ -146,6 +146,11 @@ def test_the_readme_agrees_with_the_manifest_about_state_and_gate(readme, manife
 # --- the digest and the tree -------------------------------------------------
 
 def test_the_recorded_digest_recomputes_from_this_checkout(manifest):
+    """**NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
+    including a semantically null one, because it compares a recorded identity
+    against the checkout. Exclude it when scoring mutants: two independent
+    readers recorded spurious "killed" verdicts from this test and had to
+    re-run their passes."""
     digest, count = pack_pin.tree_digest(ROOT)
     assert digest == manifest["tree_digest_sha256"]
     assert count == manifest[pack_pin.DIGEST_COUNT_KEY]
@@ -159,6 +164,11 @@ def test_the_release_identity_fields_are_well_formed(manifest):
 
 
 def test_this_checkout_verifies_against_its_own_manifest(manifest, version):
+    """**NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
+    including a semantically null one, because it compares a recorded identity
+    against the checkout. Exclude it when scoring mutants: two independent
+    readers recorded spurious "killed" verdicts from this test and had to
+    re-run their passes."""
     assert pack_pin.verify_pin(
         ROOT,
         expect_version=version,
@@ -168,6 +178,11 @@ def test_this_checkout_verifies_against_its_own_manifest(manifest, version):
 
 
 def test_the_manifest_is_the_only_thing_excluded_from_its_own_digest(manifest):
+    """**NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
+    including a semantically null one, because it compares a recorded identity
+    against the checkout. Exclude it when scoring mutants: two independent
+    readers recorded spurious "killed" verdicts from this test and had to
+    re-run their passes."""
     tracked = subprocess.run(
         ["git", "ls-files", "-z"], cwd=str(ROOT), capture_output=True, text=True, check=True
     ).stdout.split("\0")
@@ -184,6 +199,12 @@ def test_the_recorded_test_count_is_the_count_the_suite_actually_collects(manife
     node id or by keyword would let a test that stopped being collected keep
     its place in the total, which is the failure mode the count exists to
     catch.
+
+    **NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
+    including a semantically null one, because it compares a recorded digest
+    against the checkout. Exclude it when scoring mutants: two independent
+    readers recorded spurious "killed" verdicts from this test and had to
+    re-run their passes.
     """
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tools/tests/", "--collect-only", "-q",
@@ -259,6 +280,11 @@ def test_the_readme_tree_reaches_every_tracked_top_level_directory(readme):
 # --- the pin instruction the README gives actually works --------------------
 
 def test_the_verification_command_the_readme_prints_is_the_real_one(readme, manifest, version):
+    """**NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
+    including a semantically null one, because it compares a recorded identity
+    against the checkout. Exclude it when scoring mutants: two independent
+    readers recorded spurious "killed" verdicts from this test and had to
+    re-run their passes."""
     assert "tools/pack_pin.py" in readme
     for flag in ("--version", "--sha", "--digest", "--state"):
         assert flag in readme
@@ -1694,12 +1720,21 @@ def test_every_oracle_the_matrix_names_selects_at_least_one_test():
     assert not empty, f"these oracles select no test at all: {empty}"
 
 
-def test_no_tracked_path_is_subject_to_end_of_line_conversion():
-    """A checkout that rewrites a byte breaks a digest computed over bytes.
+#: Every Git attribute that can make a checkout's bytes differ from the stored
+#: blob's. `text` and `eol` do end-of-line conversion; `filter` runs a smudge
+#: program over the content; `ident` substitutes `$Id$`; `working-tree-encoding`
+#: transcodes it. Checking `text` alone was not enough, and that is measured:
+#: a smudge filter took a file from 14 bytes to 17 while `git check-attr text`
+#: still said `unset` and this oracle passed. Found by an independent reader.
+_REWRITING_ATTRIBUTES = ("text", "eol", "filter", "ident", "working-tree-encoding")
+
+
+def test_no_tracked_path_is_rewritten_between_the_blob_and_the_checkout():
+    """A digest over working-tree bytes is broken by anything that rewrites them.
 
     REPRODUCED, not hypothetical. `core.autocrlf=true` is the default on Git for
-    Windows; cloning this branch under it rewrote LF to CRLF in all 172 tracked
-    files and `pack_pin.py` reported PACK PIN NOT VERIFIED against a checkout of
+    Windows; cloning this branch under it rewrote LF to CRLF in every tracked
+    file and `pack_pin.py` reported PACK PIN NOT VERIFIED against a checkout of
     the correct revision — the exact failure an adopting project would hit first
     and have no reason to attribute to its own Git configuration.
 
@@ -1707,6 +1742,14 @@ def test_no_tracked_path_is_subject_to_end_of_line_conversion():
     looked for `* -text` would pass against a file Git ignores — wrong section,
     wrong precedence, a later overriding pattern — and would be checking that
     somebody typed a string rather than that the property holds.
+
+    **What this establishes and what it does not.** It establishes that no
+    tracked path in THIS repository carries an attribute that rewrites its bytes
+    at checkout. It does not establish that no checkout anywhere can differ: a
+    consumer can define a smudge filter in its own configuration and attach it
+    through an attributes file of its own, and Git will run it. That is outside
+    anything this repository can declare, and the release states it as a bound
+    rather than claiming otherwise.
     """
     paths = subprocess.run(
         ["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, text=True, check=True,
@@ -1714,19 +1757,23 @@ def test_no_tracked_path_is_subject_to_end_of_line_conversion():
     paths = [p for p in paths if p]
     assert len(paths) > 100, f"only {len(paths)} tracked path(s); this oracle is inert"
 
-    reported = subprocess.run(
-        ["git", "check-attr", "--stdin", "-z", "text"],
-        cwd=ROOT, input="\0".join(paths), capture_output=True, text=True, check=True,
-    ).stdout
-    fields = reported.split("\0")
-    converted = []
-    for index in range(0, len(fields) - 2, 3):
-        path, attribute, value = fields[index], fields[index + 1], fields[index + 2]
-        assert attribute == "text", f"unexpected attribute {attribute!r} in check-attr output"
-        if value != "unset":
-            converted.append(f"{path}: text={value}")
-    assert not converted, (
-        "these tracked paths still carry Git's `text` attribute, so a checkout may rewrite "
-        "their line endings and the pin will not verify on that machine: "
-        + "; ".join(converted[:10])
+    rewritten = []
+    for attribute in _REWRITING_ATTRIBUTES:
+        reported = subprocess.run(
+            ["git", "check-attr", "--stdin", "-z", attribute],
+            cwd=ROOT, input="\0".join(paths), capture_output=True, text=True, check=True,
+        ).stdout
+        fields = reported.split("\0")
+        for index in range(0, len(fields) - 2, 3):
+            path, named, value = fields[index], fields[index + 1], fields[index + 2]
+            assert named == attribute, f"unexpected attribute {named!r} in check-attr output"
+            if value != "unset" and value != "unspecified":
+                rewritten.append(f"{path}: {attribute}={value}")
+            elif attribute == "text" and value == "unspecified":
+                rewritten.append(
+                    f"{path}: text is unspecified, so core.autocrlf decides and a checkout "
+                    f"on another machine may not digest to the same bytes")
+    assert not rewritten, (
+        "these tracked paths may be rewritten between the stored blob and the checkout, so "
+        "the pin will not verify on a machine configured that way: " + "; ".join(rewritten[:10])
     )

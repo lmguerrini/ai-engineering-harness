@@ -11,8 +11,16 @@
 #     -> tree digest 17c73eebe349749e… does not match the manifest's 6404bbe8…
 #
 # `-text` tells Git that no file here is subject to end-of-line conversion, so a
-# checkout is byte-identical to the stored blob on every platform and under every
-# user configuration. Fixing it here rather than by normalising inside the digest
+# checkout is byte-identical to the stored blob under every `core.autocrlf` and
+# `core.eol` setting, on every platform.
+#
+# WHAT IT DOES NOT COVER, because an in-tree attributes file is not the last word:
+# `$GIT_DIR/info/attributes` outranks this file in gitattributes precedence, and a
+# smudge filter attached there will still rewrite bytes at checkout. Demonstrated
+# in two commands by an independent reader, against this very repository. That is
+# a local override a consumer chooses, not something this repository can declare
+# away — and `pack_pin.py` reports it as a digest mismatch, which is the right
+# answer, if an unhelpful one. Fixing it here rather than by normalising inside the digest
 # is deliberate: a digest that silently ignores some bytes is not a digest of the
 # tree, and deciding WHICH bytes to ignore needs a text/binary vocabulary — the
 # kind of open-ended list this release removed elsewhere.

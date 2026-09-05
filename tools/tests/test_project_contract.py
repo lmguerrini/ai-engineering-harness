@@ -353,8 +353,8 @@ def _contract_at(root, repo_path='"."'):
 
 
 def test_a_relative_repository_resolves_against_the_project_not_the_process(tmp_path, monkeypatch):
-    """`repo_path: "."` is the template's own example, so this is what every
-    adopting project declares.
+    """`repo_path: "."` is what every rehearsal fixture in this pack declares,
+    and any project may declare a relative path.
 
     REPRODUCED BEFORE THE REPAIR: it returned the literal `"."`, so every CLI
     that falls back to it — the commit gate over a range, the outgoing scan, the
@@ -415,3 +415,59 @@ def test_an_explicit_override_still_wins_over_the_declaration(tmp_path):
     """The override is how a caller says *this repository, not the declared one*."""
     contract = ProjectContract.load(_contract_at(tmp_path / "proj"))
     assert contract.repository("/somewhere/given/explicitly") == "/somewhere/given/explicitly"
+
+
+def test_a_contract_loaded_by_a_relative_path_answers_the_same_from_anywhere(tmp_path, monkeypatch):
+    """The defect in the FIRST repair of this class, found by an independent reader.
+
+    `repository()` resolves against `self.path.parent`, and a contract loaded by
+    a relative path — which is exactly how a CLI invoked from the project loads
+    one — kept that parent relative. The same object then answered differently
+    from two working directories, so the repair moved the dependency rather than
+    removing it.
+    """
+    project = tmp_path / "A"
+    elsewhere = tmp_path / "B"
+    project.mkdir()
+    elsewhere.mkdir()
+    _contract_at(project)
+
+    monkeypatch.chdir(project)
+    contract = ProjectContract.load("PROJECT.yaml")
+    assert Path(contract.path).is_absolute(), (
+        f"the contract kept a relative path ({contract.path}); everything resolved against "
+        f"its parent is then relative to the process")
+    from_project = contract.repository()
+    monkeypatch.chdir(elsewhere)
+    assert contract.repository() == from_project, (
+        f"one contract object answered {from_project} from its own directory and "
+        f"{contract.repository()} from another")
+
+
+def test_a_relative_declaration_through_a_symlink_is_treated_like_an_absolute_one(tmp_path):
+    """Both branches must answer the same question the same way.
+
+    An absolute declaration is returned verbatim so `.resolve()` cannot rewrite a
+    path the project named through a link. A relative one was `.resolve()`d,
+    which does follow links — and an independent reader showed a mutant dropping
+    the call survived the whole suite, so neither behaviour was pinned in either
+    direction. This pins both.
+    """
+    real = tmp_path / "real-repository"
+    real.mkdir()
+    link = tmp_path / "named-through-a-link"
+    link.symlink_to(real, target_is_directory=True)
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "PROJECT.yaml").write_text(
+        "project:\n  name: p\n"
+        '  repo_path: "../named-through-a-link"\n'
+        'pack:\n  root_path: "/nowhere"\n'
+        "capabilities:\n  - id: C1\n", encoding="utf-8")
+
+    resolved = ProjectContract.load(project / "PROJECT.yaml").repository()
+    assert Path(resolved).is_absolute(), resolved
+    assert resolved == str(link), (
+        f"a relative declaration naming a symlink came back as {resolved!r} rather than "
+        f"{str(link)!r}; the absolute branch preserves the link and this one must too")

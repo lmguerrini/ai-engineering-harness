@@ -102,7 +102,13 @@ def test_a_new_project_starts_with_nothing_and_says_so(tmp_path):
 def test_a_project_verifies_the_pack_it_pins_rather_than_trusting_it(tmp_path):
     """The adoption contract: a project records root, version, revision, digest
     and state, and re-derives all of it. A pin that is merely written down is a
-    claim."""
+    claim.
+    **NOT A MUTATION ORACLE.** This fails on ANY byte change to the tree,
+    including a semantically null one, because it compares a recorded digest
+    against the checkout. Exclude it when scoring mutants: two independent
+    readers recorded spurious "killed" verdicts from this test and had to
+    re-run their passes.
+    """
     import pack_pin
 
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,

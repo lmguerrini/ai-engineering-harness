@@ -335,8 +335,39 @@ def identity_from_observation(row: dict) -> ConfigurationIdentity:
                 f"reads. Known: {', '.join(IDENTITY_FIELDS)}")
         supplied = {name: str(value) for name, value in declared.items() if str(value).strip()}
         if supplied:
-            # The string was only ambiguous about what the mapping now states.
-            identity = replace(identity, ambiguous_tokens=(), **supplied)
+            # A MAPPING CLEARS ONLY THE AMBIGUITY IT ACTUALLY RESOLVES. This
+            # cleared every note whenever ANY field was supplied, so a row whose
+            # string said `model_observed=MODEL WITH SPACES` — which truncates to
+            # `MODEL` — became COMPLETE by adding an unrelated `build`, and two
+            # such rows graded `confirmed` for a configuration nothing had
+            # dispatched. That is the transfer this release exists to prevent,
+            # reached through the parser. Found by an independent reader of the
+            # candidate.
+            #
+            # Two kinds of note, resolved differently:
+            #
+            # *   `"<key>= appears N times"` says WHICH key was written twice, so
+            #     a mapping that states that key resolves it outright.
+            # *   A bare token says a value was lost at a space and does NOT say
+            #     which key lost it. It is resolved when a SUPPLIED VALUE
+            #     ACCOUNTS FOR IT — the token appears as one of that value's own
+            #     words — which is precisely the case the structured mapping
+            #     exists for: a string cannot carry `MODEL WITH SPACES`, so the
+            #     row states it in the mapping and the two bare tokens are then
+            #     explained. An unrelated `build` explains nothing and clears
+            #     nothing.
+            accounted = {word for value in supplied.values() for word in str(value).split()}
+            covers_every_dimension = all(name in supplied for name in CONFIGURATION_DIMENSIONS)
+            remaining = []
+            for token in identity.ambiguous_tokens:
+                text = str(token)
+                key, _, rest = text.partition("= appears ")
+                if rest and key in supplied:
+                    continue
+                if not rest and (text in accounted or covers_every_dimension):
+                    continue
+                remaining.append(token)
+            identity = replace(identity, ambiguous_tokens=tuple(remaining), **supplied)
     pool = row.get("pool_id")
     if pool:
         identity = replace(identity, pool_id=str(pool))

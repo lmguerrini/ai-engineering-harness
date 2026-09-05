@@ -61,9 +61,9 @@ path still carries the `text` attribute.
 
 ### B2. A project's repository resolved against the process, not the project
 
-**Found by running the application.** `repo_path: "."` is the contract
-template's own example, so every adopting project declares it — and
-`ProjectContract.repository()` returned the literal `"."`. Every caller that
+**Found by running the application.** `ProjectContract.repository()` returned a
+relative `repo_path` verbatim — `"."` in every rehearsal fixture in this pack,
+and available to any project. Every caller that
 falls back to it (`commit_gate --range`, `outgoing_scan`, `workspace_report`,
 `publication_gate`, `publication_history`) therefore ran against whatever
 repository the invoking shell was standing in. The multiproject history view
@@ -164,10 +164,14 @@ the project's declaration because Core cannot know which of a project's changes
 are material. *Fails towards* a recorded claim somebody can dispute rather than
 a silent omission.
 
-**Family-level history is nearly all this evidence base has.** Eight
-configurations now carry a complete identity; every other answer is `unprobed`
-with a prior beside it. Nothing was fabricated to fill the table. *Reopens*
-continuously, as dispatches record observed identities.
+**Family-level history is nearly all this evidence base has.** A small number of
+configurations carry a complete identity; every other answer is `unprobed` with
+a prior beside it. **The number is not written here** — an earlier draft said
+"eight configurations", which was eight OBSERVATIONS over fewer configurations,
+and an independent reader caught it in the document that records the rule
+against restating a count the repository can compute. Run
+`python3 tools/qualification.py`. Nothing was fabricated to fill the table.
+*Reopens* continuously, as dispatches record observed identities.
 
 **Two dispatches at one configuration reach `confirmed` at that task class**,
 including two bounded probes. This is the grading rule `backend_contract` has

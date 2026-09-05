@@ -228,6 +228,18 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
     The failure this exists to catch is not arithmetic: it is one project's
     reconciliation reading the other's process, which is what a liveness model
     keyed on anything but the recorded pid would do.
+
+    **THE PRODUCERS ARE HELD ALIVE while the waits are declared and reconciled,
+    and that is the whole point of the shape.** A first version started workers
+    that finished in milliseconds, declared the waits afterwards and reconciled
+    once at the end — so the liveness branch was never entered. An independent
+    reader made both process-status functions raise if called and the test still
+    passed, with zero calls: it asserted producer reconciliation and established
+    none. It also left the outputs predating their own waits, which
+    `_observe` correctly refuses, so the shape was timing-dependent as well.
+
+    Each worker now blocks on a release file this test writes, so the window in
+    which the producer is alive and its result absent is deterministic.
     """
     from dataclasses import replace as _replace
 
@@ -240,19 +252,23 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
         out.mkdir()
         script = root / "worker.py"
         script.write_text(
-            "import json, sys\n"
-            "root = sys.argv[1]\n"
+            "import json, os, sys, time\n"
+            "root, release = sys.argv[1], sys.argv[2]\n"
+            "while not os.path.exists(release):\n"
+            "    time.sleep(0.02)\n"
             "total = sum(range(200000))\n"
             "open(root + '/result.json','w').write("
             f"json.dumps({{'project': {key!r}, 'total': total}}))\n",
             encoding="utf-8")
-        workers[key] = (subprocess.Popen([sys.executable, str(script), str(out)]), out)
+        release = root / "release"
+        workers[key] = (subprocess.Popen(
+            [sys.executable, str(script), str(out), str(release)]), out, release)
 
     paths = {}
-    for key, (process, out) in workers.items():
+    for key, (process, out, _release) in workers.items():
         result = out / "result.json"
         wait = Wait(job_id=f"work-{key}", kind=WaitKind.PATH_EXISTS,
-                    expects="the computed result", path=str(result),
+                    expects="the computed result", path=str(result), pid=process.pid,
                     not_beyond_seconds=600, declared_at=continuation.now(),
                     waiter=" ".join(progress.waiter_command(
                         f"work-{key}", process.pid, sentinel=str(result))))
@@ -261,10 +277,31 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
         continuation.save(ContinuationRecord(
             capability=f"C1-{key}", updated_at=continuation.now(), waits=(wait,)), paths[key])
 
-    for _key, (process, _out) in workers.items():
-        process.wait(timeout=120)
+    # WHILE BOTH PRODUCERS ARE ALIVE and neither result exists. This is the state
+    # the liveness model is for, and it is reached by the recorded pid — nothing
+    # else in the record could distinguish the two projects here.
+    for key in ("a", "b"):
+        live = continuation.reconcile(continuation.load(paths[key]),
+                                      relative_to=two_projects[key])
+        assert [item.disposition for item in live] == [Disposition.LIVE_AND_PROGRESSING], (
+            f"consumer-{key} did not read its own running producer as running: "
+            f"{[(i.disposition, i.why) for i in live]}")
 
-    for key, (_process, out) in workers.items():
+    # ONE PROJECT'S PRODUCER FINISHES. The other's must not move.
+    workers["a"][2].write_text("go", encoding="utf-8")
+    workers["a"][0].wait(timeout=120)
+    settled_a = continuation.reconcile(continuation.load(paths["a"]),
+                                       relative_to=two_projects["a"])
+    still_b = continuation.reconcile(continuation.load(paths["b"]),
+                                     relative_to=two_projects["b"])
+    assert settled_a[0].disposition == Disposition.COMPLETED_UNCONSUMED, settled_a[0].why
+    assert still_b[0].disposition == Disposition.LIVE_AND_PROGRESSING, (
+        f"consumer-b's producer changed state because consumer-a's finished: {still_b[0].why}")
+
+    workers["b"][2].write_text("go", encoding="utf-8")
+    workers["b"][0].wait(timeout=120)
+
+    for key, (_process, out, _release) in workers.items():
         assert json.loads((out / "result.json").read_text())["project"] == key, (
             "a project consumed another project's output")
         record = continuation.load(paths[key])
@@ -274,7 +311,7 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
         assert [item.disposition for item in reconciled] == [Disposition.COMPLETED_UNCONSUMED], (
             f"consumer-{key}: {[(i.disposition, i.why) for i in reconciled]}")
 
-    # ONE PROJECT TAKING UP ITS RESULT DOES NOT SETTLE THE OTHER'S.
+    # AND TAKING UP ONE RESULT DOES NOT SETTLE THE OTHER'S.
     record = continuation.load(paths["a"])
     continuation.save(ContinuationRecord(
         capability="C1-a", updated_at=continuation.now(),
@@ -286,6 +323,32 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
     assert not settled[0].blocks, "consumer-a held its capability open after consuming"
     assert still[0].blocks, (
         "consumer-b's outstanding result settled because consumer-a consumed its own")
+
+
+def test_the_background_rehearsal_actually_asks_the_process_table(two_projects, monkeypatch):
+    """The rehearsal above must ENTER the liveness path, not merely name it.
+
+    An independent reader established that an earlier version did not: with both
+    process-status functions made to raise, it passed with zero calls. This
+    counts the calls instead of trusting the shape.
+    """
+    import progress as progress_module
+
+    calls = []
+    real = progress_module.process_has_ended
+
+    def counting(pid):
+        calls.append(pid)
+        return real(pid)
+
+    monkeypatch.setattr(progress_module, "process_has_ended", counting)
+    test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(two_projects)
+    assert calls, (
+        "the rehearsal reconciled without ever asking the process table, so it establishes "
+        "nothing about producer liveness")
+    assert len(set(calls)) >= 2, (
+        f"only one distinct producer was ever asked about ({set(calls)}); two projects were "
+        f"running and each must be reconciled against its own")
 
 
 def test_a_cold_restart_reconstructs_both_projects_and_invents_no_work(two_projects):

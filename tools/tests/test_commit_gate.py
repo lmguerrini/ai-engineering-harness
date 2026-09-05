@@ -723,7 +723,7 @@ def test_the_pack_defaults_are_additive_to_the_flags_like_everything_else(tmp_pa
 HOOK = Path(__file__).resolve().parents[2] / "templates" / "commit-msg.hook"
 
 
-def _repo_with_the_hook(tmp_path, *, configure=True):
+def _repo_with_the_hook(tmp_path, *, configure=True, project_terms=()):
     repo = tmp_path / "repo"
     repo.mkdir()
 
@@ -744,6 +744,13 @@ def _repo_with_the_hook(tmp_path, *, configure=True):
     installed.chmod(0o755)
     if configure:
         git("config", "runtimepack.root", str(HOOK.resolve().parents[1]))
+    if project_terms:
+        (repo / "PROJECT.yaml").write_text(
+            'project:\n  name: p\n  repo_path: "."\n'
+            f'pack:\n  root_path: "{HOOK.resolve().parents[1]}"\n'
+            "private_terms:\n  project_additions:\n"
+            + "".join(f"    - {term}\n" for term in project_terms)
+            + "capabilities:\n  - id: C1\n", encoding="utf-8")
     (repo / "a-file.txt").write_text("content\n", encoding="utf-8")
     git("add", "-A")
     return repo, git
@@ -824,3 +831,46 @@ def test_the_hook_refuses_when_the_gate_is_missing_from_the_configured_root(tmp_
     result = git("commit", "-q", "-F", str(message), check=False)
     assert result.returncode != 0
     assert "no commit gate" in result.stderr, result.stderr
+
+
+def test_the_hook_refuses_a_term_the_project_itself_declared_private(tmp_path):
+    """THE HOOK'S OWN BYPASS, found by an independent reader of the release that
+    shipped it.
+
+    A project EXTENDS the default vocabulary in its `PROJECT.yaml`. The hook
+    passed `--default-terms` alone, so it checked the inherited words and none of
+    the project's own: `commit_gate.py --project` refused a message and
+    `git commit` created it, with no `--no-verify` and nothing disabled. A gate
+    that enforces a smaller vocabulary than the project declared is a gate that
+    reports success on the case the project cared enough to declare.
+    """
+    repo, git = _repo_with_the_hook(tmp_path, project_terms=("ProjectZephyr",))
+    message = tmp_path / "carries-a-project-term.txt"
+    message.write_text(
+        "Ship the thing ProjectZephyr needs\n"
+        "\n"
+        "- Do the first outcome this change produces for its readers\n"
+        "- Do the second outcome this change produces for its readers\n", encoding="utf-8")
+
+    # The gate itself refuses it, which is what makes this a bypass rather than a
+    # difference of opinion.
+    gate = subprocess.run(
+        [sys.executable, str(HOOK.resolve().parents[1] / "tools" / "commit_gate.py"),
+         str(message), "--project", str(repo / "PROJECT.yaml")],
+        capture_output=True, text=True, timeout=120)
+    assert gate.returncode != 0, (
+        "the fixture is inert: the gate does not refuse this message even with --project")
+
+    result = git("commit", "-q", "-F", str(message), check=False)
+    assert result.returncode != 0, (
+        "the hook allowed a message carrying a term the project declared private")
+    assert git("rev-list", "--count", "HEAD", check=False).returncode != 0 or \
+        git("rev-list", "--count", "HEAD").stdout.strip() == "0"
+
+
+def test_the_hook_still_enforces_the_defaults_where_a_project_declares_no_contract(tmp_path):
+    """A repository with no `PROJECT.yaml` must not lose the inherited vocabulary."""
+    repo, git = _repo_with_the_hook(tmp_path)
+    message = tmp_path / "refused.txt"
+    message.write_text(REFUSED_MESSAGE, encoding="utf-8")
+    assert git("commit", "-q", "-F", str(message), check=False).returncode != 0

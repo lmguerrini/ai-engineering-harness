@@ -158,12 +158,23 @@ class AdapterDeclaration:
                 adapter=self.id, declared=", ".join(declared),
             )
 
-    def resolved(self, *, home: str | Path | None = None) -> Path:
+    def resolved(self, *, home: str | Path | None = None,
+                 relative_to: str | Path | None = None) -> Path:
         """The locator as an absolute path, with `~` expanded.
 
         `~` is expanded against ``home`` when given, so a test can point the
         expansion somewhere other than the invoking user's home directory
         without setting an environment variable for the whole process.
+
+        **A RELATIVE LOCATOR IS RELATIVE TO THE CONTRACT**, supplied as
+        ``relative_to``. It was returned unchanged, so a project declaring
+        `locator: adapter.md` had its adapter verified against whatever directory
+        the tool ran in — and an independent reader showed a project's MODIFIED
+        adapter verifying successfully from another directory that happened to
+        hold the previously qualified bytes. Without ``relative_to`` the locator
+        is returned as given, because a caller that knows no contract directory
+        has nothing better to offer and guessing the process's would be the
+        defect again.
         """
         text = self.locator
         if text.startswith("~"):
@@ -171,7 +182,10 @@ class AdapterDeclaration:
                 return Path(text).expanduser()
             remainder = text[1:].lstrip("/")
             return Path(home) / remainder
-        return Path(text)
+        path = Path(text)
+        if not path.is_absolute() and relative_to is not None:
+            return Path(relative_to) / path
+        return path
 
 
 @dataclass(frozen=True)
@@ -336,12 +350,17 @@ def verify(
     declarations: tuple[AdapterDeclaration, ...] | list[AdapterDeclaration],
     *,
     home: str | Path | None = None,
+    relative_to: str | Path | None = None,
 ) -> AdapterReport:
-    """Every way the installed adapters are not what the project declared."""
+    """Every way the installed adapters are not what the project declared.
+
+    ``relative_to`` is the directory a RELATIVE locator is resolved against —
+    the contract's own, supplied by :func:`verify_contract`.
+    """
     report = AdapterReport()
 
     for declaration in declarations:
-        path = declaration.resolved(home=home)
+        path = declaration.resolved(home=home, relative_to=relative_to)
 
         if not path.exists():
             report.findings.append(
@@ -470,7 +489,11 @@ def verify_contract(contract: object, *, home: str | Path | None = None) -> Adap
             "dispatches through no adapter, and this will verify that claim instead of "
             "refusing to guess"
         )
-    return verify(declared, home=home)
+    # THE CONTRACT'S OWN DIRECTORY, so a relative locator names a file in the
+    # project rather than in whatever directory the tool was invoked from.
+    contract_path = getattr(contract, "path", None)
+    return verify(declared, home=home,
+                  relative_to=Path(contract_path).parent if contract_path else None)
 
 
 def _observe(paths: list[str]) -> int:

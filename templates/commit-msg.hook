@@ -26,9 +26,16 @@
 #
 #     git config runtimepack.root <pack-root>
 #
-# `--no-verify` still bypasses it, and deliberately: a hook that cannot be
-# bypassed is a hook people stop installing. What it removes is the ACCIDENTAL
-# bypass, which is the one that actually happened.
+# WHAT IT DOES NOT COVER, stated so `--no-verify` is not a reader's whole model:
+# Git does not run `commit-msg` when a commit is REPLAYED. `git cherry-pick` and
+# `git rebase` land a message this hook would refuse, with no `--no-verify` and
+# nothing disabled — verified by an independent reader against git 2.50.1.
+# `commit_gate.py --range` catches a replayed message afterwards, which is where
+# a replay is caught, and this release runs it over the whole delta.
+#
+# `--no-verify` bypasses it too, and deliberately: a hook that cannot be bypassed
+# is a hook people stop installing. What the hook removes is the ACCIDENTAL
+# bypass — a caller not reading an exit status — which is the one that happened.
 set -eu
 
 MESSAGE_FILE="$1"
@@ -47,6 +54,28 @@ if [ ! -f "$GATE" ]; then
     exit 1
 fi
 
+# THE PROJECT'S OWN VOCABULARY, NOT ONLY THE DEFAULTS. A project EXTENDS the
+# default term set in its `PROJECT.yaml`; a hook that passed `--default-terms`
+# alone checked the inherited words and none of the project's own, so a message
+# carrying a term the project had itself declared private was refused by
+# `commit_gate.py --project` and committed by `git commit`. Found by an
+# independent reader of the candidate that shipped this file.
+#
+# The contract is found by declaration first and by convention second, and where
+# one exists it REPLACES the defaults argument rather than adding to it —
+# `--project` already inherits the defaults, which is what "extends" means.
+CONTRACT=$(git config --get runtimepack.contract || true)
+if [ -z "$CONTRACT" ]; then
+    REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null || true)
+    if [ -n "$REPO_TOP" ] && [ -f "$REPO_TOP/PROJECT.yaml" ]; then
+        CONTRACT="$REPO_TOP/PROJECT.yaml"
+    fi
+fi
+
 # No pipe. The exit status of the gate is the exit status of this hook, which is
 # the entire point of the file.
-python3 "$GATE" "$MESSAGE_FILE" --default-terms "$PACK_ROOT"
+if [ -n "$CONTRACT" ]; then
+    python3 "$GATE" "$MESSAGE_FILE" --project "$CONTRACT"
+else
+    python3 "$GATE" "$MESSAGE_FILE" --default-terms "$PACK_ROOT"
+fi

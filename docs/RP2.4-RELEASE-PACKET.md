@@ -55,7 +55,7 @@ an adopting project first:
   file. Closed at the cause; three clones under three line-ending configurations
   now produce one identical digest.
 - **A project's repository resolved against the process rather than the
-  project.** `repo_path: "."` is the template's own example, and every governed
+  project.** A relative `repo_path` was returned verbatim, so every governed
   check that falls back to it ran against whatever repository the shell was in.
   Found by rendering the console over two projects and reading one repository's
   commit count under both their names.

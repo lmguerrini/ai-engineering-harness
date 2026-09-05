@@ -818,8 +818,15 @@ identifier changed because a commit names its parent; its message and its tree
 did not. The full before/after table is in
 `docs/RP2.4-FOUNDER-AUTHORISATIONS.md`, and the proof is three commands:
 
-    git diff <pre-amend-tip> HEAD --stat        # empty — no content differs
-    git rev-list --count ab7dea97..HEAD         # 10, unchanged, same order
+    # PINNED TO THE AMEND. Against HEAD these stopped reproducing as soon as the
+    # next commit landed, and an independent reader followed them and concluded
+    # the repair had changed content.
+    git diff 11dad746… 1dd2aa93… --stat        # empty — no content differs
+    git rev-list --count ab7dea97..1dd2aa93    # 10, unchanged, same order
+    git rev-parse 62386d4b^{tree} 5069b1c2^{tree}   # one tree object, reused
+    git rev-parse 11dad746^{tree} 1dd2aa93^{tree}   # one tree object, reused
+
+    # and at every later revision:
     python3 tools/commit_gate.py --range HEAD --baseline ab7dea97 --repo . --default-terms .
     # VALID every commit message in ab7dea97..HEAD conforms
 
@@ -859,8 +866,7 @@ Git ignores.
 **A project's repository resolved against the process, not the project.** Found
 by rendering the multiproject console over two adopting projects from a third
 directory and reading **the pack's own commit count under both of their names**.
-`repo_path: "."` is the contract template's own example, and
-`ProjectContract.repository()` returned the literal `"."`, so `commit_gate
+`ProjectContract.repository()` returned a relative `repo_path` verbatim, so `commit_gate
 --range`, `outgoing_scan`, `workspace_report` and `publication_gate` all ran
 against whatever repository the invoking shell was in. Repaired at the contract
 so every caller is correct at once, plus the console's own resolver. Five

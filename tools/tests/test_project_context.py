@@ -11,6 +11,7 @@ Two claims are under test, and the second is as important as the first.
     the bytes differ. That is the whole of its opinion.
 """
 
+import project_context
 import pytest
 
 from project_context import (
@@ -431,3 +432,62 @@ def test_report_declared_on_no_declaration_is_not_present():
     from project_context import report_declared
 
     assert report_declared(None).state == NOT_PRESENT
+
+
+def test_a_relative_reference_path_resolves_against_the_contract_not_the_process(
+        tmp_path, monkeypatch):
+    """A SILENT AFFIRMATIVE over another project's context, found by an
+    independent reader.
+
+    `resolved()` was `Path(reference_path).expanduser().resolve()`, so a relative
+    declaration resolved against whatever directory the tool ran in. Verified
+    from elsewhere, a contract reported `CURRENTLY_VERIFIED` having read a
+    DIFFERENT directory's context and never touched the project's own — a false
+    positive on the project's declared semantic authority, which is the state
+    `capability_open` treats as a stop when `requires.project_context: true`.
+    """
+    import project_contract
+
+    project = tmp_path / "proj"
+    decoy = tmp_path / "elsewhere"
+    for root, body in ((project, "THE PROJECT'S OWN CONTEXT\n"),
+                       (decoy, "SOMEBODY ELSE'S CONTEXT\n")):
+        root.mkdir()
+        (root / ".project_context").mkdir()
+        (root / ".project_context" / "a.md").write_text(body, encoding="utf-8")
+
+    decoy_digest, _ = project_context.tree_digest(decoy / ".project_context")
+    project_digest, _ = project_context.tree_digest(project / ".project_context")
+    assert decoy_digest != project_digest, "the fixture is inert: both contexts are identical"
+
+    (project / "PROJECT.yaml").write_text(
+        'project:\n  name: p\n  repo_path: "."\n'
+        'pack:\n  root_path: "/nowhere"\n'
+        "project_context:\n"
+        "  context_id: ctx\n"
+        '  reference_path: ".project_context"\n'
+        "  control_revision: 1\n"
+        f"  digest: {decoy_digest}\n"
+        "capabilities:\n  - id: C1\n", encoding="utf-8")
+
+    contract = project_contract.ProjectContract.load(project / "PROJECT.yaml")
+    monkeypatch.chdir(decoy)
+    resolved = contract.project_context.resolved()
+    assert resolved == (project / ".project_context").resolve(), (
+        f"the declared context resolved to {resolved}, which is not the project's own")
+
+    report = project_context.verify(contract.project_context)
+    assert report.state != project_context.CURRENTLY_VERIFIED, (
+        f"a contract carrying ANOTHER directory's context digest reported {report.state}, "
+        f"because the relative path was resolved against the process")
+
+
+def test_an_absolute_reference_path_is_unaffected(tmp_path):
+    """The repair must not move a declaration that already names a place."""
+    context = tmp_path / "somewhere" / ".project_context"
+    context.mkdir(parents=True)
+    (context / "a.md").write_text("x\n", encoding="utf-8")
+    declaration = project_context.ContextDeclaration(
+        context_id="c", reference_path=str(context), control_revision=1,
+        digest="0" * 64, declared_in=str(tmp_path / "unrelated"))
+    assert declaration.resolved() == context.resolve()

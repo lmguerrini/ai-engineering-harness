@@ -168,6 +168,104 @@ def test_4_the_prior_is_labelled_as_the_family_and_not_as_this_configuration(tmp
     )
 
 
+def _unprobed_candidate(model, *, prior=None, provider="P"):
+    """A candidate in the ONLY state that actually carries a prior.
+
+    `grade_for` returns a `Prior` exactly when the configuration has no grade of
+    its own, so a candidate holding one is always `unprobed`. Every earlier
+    oracle for "the prior ranks nothing" built candidates graded `provisional` or
+    `confirmed` — states in which production never attaches a prior at all — so
+    the guarantee was tested where it cannot apply and untested where it always
+    does. An independent reader ranked on the prior and passed 135 tests.
+    """
+    from dataclasses import replace as _replace
+
+    return r.Candidate(
+        identity=_replace(ConfigurationIdentity(**COMPLETE), model_observed=model),
+        task_class="design_falsification_review",
+        grade=backend_contract.TaskClassGrade("design_falsification_review"),
+        availability=r.AVAILABLE,
+        prior=prior,
+        discovered=True,
+        derivation=r.Derivation(producer=model, session=f"session-of-{model}",
+                                provider=provider, fresh=True))
+
+
+def _loud_prior(grade_name="confirmed", observations=15):
+    return q.Prior(
+        family=COMPLETE["family"], task_class="design_falsification_review",
+        grade=backend_contract.TaskClassGrade(
+            "design_falsification_review", grade_name,
+            observations=observations, validated=observations),
+        because="the family has history and this configuration has none")
+
+
+def test_3_a_family_prior_does_not_order_two_unprobed_candidates():
+    """CONDITION 3'S OTHER HALF. `Prior` is documented display-only: it "enters no
+    ranking, satisfies no eligibility test and breaks no tie", and D26 says it
+    ranks nothing. The grade half of that was executable; the ranking half was
+    prose."""
+    with_history = _unprobed_candidate("a-model-whose-family-has-history",
+                                       prior=_loud_prior())
+    without = _unprobed_candidate("a-model-whose-family-has-none")
+
+    assert r._rank(with_history) == r._rank(without), (
+        f"a family prior changed a candidate's rank: {r._rank(with_history)} vs "
+        f"{r._rank(without)}. That is the family bucket back under a new name, deciding "
+        f"which newly discovered model gets probed first")
+
+
+@pytest.mark.parametrize("order", ["as given", "reversed"])
+@pytest.mark.parametrize("louder", ["confirmed", "provisional"])
+def test_3_attaching_a_family_prior_does_not_change_which_candidate_is_seated(order, louder):
+    """THE DISCRIMINATING COMPARISON, and not the one a first draft reached for.
+
+    Asserting that both pool ORDERS seat the same candidate is wrong: two
+    identically-ranked unprobed candidates tie, and a tie broken by input order
+    is a tie the prior did not break. The subject does that today and it is not a
+    violation.
+
+    What must hold is that the ANSWER DOES NOT MOVE WHEN THE PRIOR MOVES. So the
+    same pool, in the same order, is routed twice — once with a loud family prior
+    on one candidate and once with none — and the seat must not change. Run in
+    both orders because a rank function consulting the prior looks identical in
+    whichever order already agreed with it.
+    """
+    subject = r.Derivation(producer="the-implementer", session="s0", provider="Z")
+
+    def seat_of(pool):
+        report = r.design_audit_route(pool, task_class="design_falsification_review",
+                                      subject=subject, allow_probe=True)
+        for seat in report.seats:
+            if seat["role"].name == "PRIMARY_DESIGN_READER" and seat["candidate"] is not None:
+                return seat["candidate"].identity.model_observed
+        return None
+
+    without = [_unprobed_candidate("model-a", provider="P"),
+               _unprobed_candidate("model-b", provider="Q")]
+    with_prior = [_unprobed_candidate("model-a", prior=_loud_prior(louder), provider="P"),
+                  _unprobed_candidate("model-b", provider="Q")]
+    if order == "reversed":
+        without = list(reversed(without))
+        with_prior = list(reversed(with_prior))
+
+    assert seat_of(without) is not None, "the fixture is inert: no seat was filled at all"
+    assert seat_of(with_prior) == seat_of(without), (
+        f"attaching a {louder!r} family prior to one unprobed candidate changed the seat from "
+        f"{seat_of(without)!r} to {seat_of(with_prior)!r}. The family's history decided which "
+        f"newly discovered model was probed first, which is the ranking the prior is "
+        f"forbidden to do")
+
+
+def test_3_the_prior_is_carried_and_reported_even_though_it_ranks_nothing():
+    """Display-only is not the same as discarded. If the prior stopped reaching the
+    reader, the two tests above would pass for the wrong reason."""
+    candidate = _unprobed_candidate("a-model", prior=_loud_prior())
+    assert candidate.prior is not None
+    assert "PRIOR" in candidate.prior.sentence()
+    assert "advisory" in candidate.prior.sentence()
+
+
 def test_4_a_declared_alias_surfaces_evidence_as_prior_and_moves_no_grade(tmp_path):
     """The laundering path two readers found: a grade transferred on a reason string."""
     source_model = dict(COMPLETE, model_observed="an-older-identifier")
@@ -210,13 +308,93 @@ def test_5_unknown_in_any_keyed_dimension_cannot_positively_qualify(tmp_path, di
     assert grade.grade == "unprobed"
 
 
-@pytest.mark.parametrize("provenance", sorted(q.UNOBSERVED_PROVENANCE - {""}))
+#: THE MARKERS THE AUTHORISATION NAMES, WRITTEN OUT. This was parametrised over
+#: `q.UNOBSERVED_PROVENANCE` — the implementation's own set — so an edit to that
+#: set silently edited the oracle's cases with it. An independent reader replaced
+#: one marker with a different word: `identity_method="none"` then reached
+#: `confirmed`, and the whole suite passed. An oracle whose cases come from its
+#: subject is this pack's own definition of not-evidence, and this file is where
+#: that mattered most.
+AUTHORISED_UNOBSERVED_MARKERS = (
+    "asrequested", "assumed", "declared", "default", "fromthebrief", "guessed",
+    "inferred", "na", "none", "notobserved", "presumed", "requested",
+    "requestedonly", "unknown", "unobserved",
+)
+
+
+def test_5_the_unobserved_marker_set_is_the_one_the_authorisation_was_granted_on():
+    """Removing a marker admits an identity the authorisation excluded; adding one
+    is a widening nobody authorised either. Equality, not containment."""
+    assert tuple(sorted(q.UNOBSERVED_PROVENANCE - {""})) == AUTHORISED_UNOBSERVED_MARKERS, (
+        f"the unobserved-provenance vocabulary changed to "
+        f"{tuple(sorted(q.UNOBSERVED_PROVENANCE - {''}))}. The row-7 authorisation was granted "
+        f"on {AUTHORISED_UNOBSERVED_MARKERS}; changing it is a new governance question"
+    )
+
+
+@pytest.mark.parametrize("provenance", AUTHORISED_UNOBSERVED_MARKERS)
 def test_5_a_provenance_that_says_it_was_not_observed_cannot_qualify(tmp_path, provenance):
     broken = dict(COMPLETE, identity_method=provenance)
     rows = [_observation(**broken), _observation(**broken)]
     assert q.qualifications_from_observations(_log(tmp_path, rows)) == {}, (
         f"identity_method={provenance!r} reached a grade. It states the identity was not observed"
     )
+
+
+def test_5_an_unrelated_structured_field_does_not_resolve_a_lossy_string(tmp_path):
+    """CONDITION 5, AT THE PARSER. Found by an independent reader of the candidate.
+
+    The configuration string is space-separated `key=value`, so a model
+    identifier containing a space is truncated at the space and its evidence
+    lands under the PREFIX. That is refused: the identity goes incomplete. But
+    the structured mapping cleared EVERY ambiguity note whenever ANY field was
+    supplied — so adding an unrelated `build` made the truncated identity
+    complete, and two such rows graded `confirmed` for a configuration nothing
+    had ever dispatched. The transfer this release exists to prevent, reached
+    through the parser rather than through the key.
+    """
+    lossy = ("surface=codex-cli family=OPENAI agent=codex-exec model=M "
+             "model_observed=MODEL WITH SPACES identity_method=rollout auth=subscription "
+             "effort_observed=high isolation=read-only network=restricted build=1.0")
+
+    alone = q.identity_from_observation({"configuration": lossy})
+    assert not alone.complete, "the fixture is inert: the lossy string was not refused"
+    assert alone.model_observed == "MODEL", (
+        "the fixture is inert: the identifier did not truncate, so nothing was lost")
+
+    unrelated = q.identity_from_observation(
+        {"configuration": lossy, "identity": {"build": "1.0"}})
+    assert not unrelated.complete, (
+        f"an unrelated structured field made a lossy string complete, with "
+        f"model_observed={unrelated.model_observed!r}. A mapping resolves the ambiguity it "
+        f"states and no other")
+
+    row = {"configuration": lossy, "identity": {"build": "1.0"},
+           "task_class": "design_falsification_review", "outcome": "validated",
+           "qualification_basis": "field"}
+    log = tmp_path / "observations.jsonl"
+    log.write_text("\n".join([json.dumps(row)] * 3) + "\n")
+    assert q.qualifications_from_observations(log) == {}, (
+        "three rows whose model identifier was truncated at a space produced a grade")
+
+
+def test_5_the_mapping_does_resolve_the_ambiguity_it_actually_states(tmp_path):
+    """The other half, so the repair is not merely a refusal.
+
+    The structured mapping exists BECAUSE a packed string cannot carry an
+    identifier with a space. A row that states the identifier in the mapping has
+    resolved the ambiguity, and must be usable — otherwise the repair breaks the
+    one case the mapping was added for.
+    """
+    lossy = ("surface=codex-cli family=OPENAI agent=codex-exec model=M "
+             "model_observed=MODEL WITH SPACES identity_method=rollout auth=subscription "
+             "effort_observed=high isolation=read-only network=restricted build=1.0")
+    stated = q.identity_from_observation(
+        {"configuration": lossy, "identity": {"model_observed": "MODEL WITH SPACES"}})
+    assert stated.complete, (
+        f"a row that states the whole identifier in the mapping is still incomplete: "
+        f"{stated.incompleteness()}")
+    assert stated.model_observed == "MODEL WITH SPACES"
 
 
 def test_5_a_backend_record_without_an_observed_model_is_not_qualified():

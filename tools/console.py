@@ -1341,8 +1341,8 @@ def _repository_of(site) -> str:
 
     **RESOLVED AGAINST THE PROJECT, not against wherever this page was
     rendered from.** `Path(where).is_dir()` is answered relative to the process,
-    so `repo_path: "."` — the template's own example — passed the test and was
-    then read as the renderer's own directory. Two adopting projects showed the
+    so a relative `repo_path` passed the test and was then read as the
+    renderer's own directory. Two adopting projects showed the
     coordinator's commit count under both of their names, and the panel that
     reports `same repository as a row above` said so correctly about an answer
     that was wrong for both.

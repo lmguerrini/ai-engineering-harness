@@ -166,8 +166,26 @@ class ContextDeclaration:
     #: "somebody suggested this" cannot be read as "the context says this".
     proposals_pending: int = 0
 
+    #: The directory a RELATIVE `reference_path` is relative to — the contract's
+    #: own. Empty when the declaration was built without one, in which case a
+    #: relative path is returned as given rather than resolved against the
+    #: process, because guessing the process's directory is the defect.
+    declared_in: str = ""
+
     def resolved(self) -> Path:
-        return Path(self.reference_path).expanduser().resolve()
+        """The context root, resolved against the CONTRACT and never the process.
+
+        This was `Path(reference_path).expanduser().resolve()`, so a relative
+        declaration resolved against whatever directory the tool ran in. An
+        independent reader verified a contract from another directory and got
+        `CURRENTLY_VERIFIED` over a DIFFERENT project's context — a silent
+        affirmative on the project's declared semantic authority, which is
+        exactly the state `capability_open` treats as a stop.
+        """
+        path = Path(self.reference_path).expanduser()
+        if not path.is_absolute() and self.declared_in:
+            path = Path(self.declared_in) / path
+        return path.resolve()
 
 
 #: What this verifier needs before it can check a context's identity at all.
@@ -233,7 +251,7 @@ class ContextReport:
         return "\n".join(lines)
 
 
-def declaration_from(value: object) -> ContextDeclaration | None:
+def declaration_from(value: object, *, declared_in: str | Path = "") -> ContextDeclaration | None:
     """Parse a `project_context:` block.
 
     Three outcomes, and the difference between them is the point:
@@ -301,6 +319,7 @@ def declaration_from(value: object) -> ContextDeclaration | None:
         context_id=context_id, reference_path=reference, control_revision=control_revision,
         digest=digest, authority_role=role, activated=activated,
         digest_algorithm=algorithm, proposals_pending=pending,
+        declared_in=str(declared_in),
     )
 
 

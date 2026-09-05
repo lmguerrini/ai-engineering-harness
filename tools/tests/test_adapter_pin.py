@@ -12,6 +12,7 @@ refuses exactly the ref that mode creates. Nothing failed, because nothing
 looked at adapters at all.
 """
 
+import hashlib
 import pytest
 
 import adapter_pin
@@ -346,3 +347,57 @@ def test_a_version_command_that_is_not_a_command_is_refused(tmp_path):
     for bad in ([], "", 7, ["codex", 3]):
         with pytest.raises(IntegrityError):
             adapter_pin.declarations_from([{**base, "version_command": bad}])
+
+
+# --- a declared locator names a file in the PROJECT, not in the caller's cwd ----
+
+
+def test_a_relative_adapter_locator_is_resolved_against_the_contract(tmp_path, monkeypatch):
+    """REPRODUCED BEFORE THE REPAIR by an independent reader: a project declaring
+    `locator: adapter.md` had its MODIFIED adapter verify successfully from
+    another directory that happened to hold the previously qualified bytes.
+
+    The oracle needs both directories, because a check run from the project's own
+    directory is right either way — which is why every earlier test missed it.
+    """
+    import project_contract
+
+    project = tmp_path / "proj"
+    decoy = tmp_path / "somewhere-else"
+    project.mkdir()
+    decoy.mkdir()
+    qualified = "name: w\n\nthe bytes this project qualified\n"
+    (project / "adapter.md").write_text(qualified, encoding="utf-8")
+    (decoy / "adapter.md").write_text(qualified, encoding="utf-8")
+    digest = hashlib.sha256(qualified.encode()).hexdigest()
+    (project / "PROJECT.yaml").write_text(
+        'project:\n  name: p\n  repo_path: "."\n'
+        'pack:\n  root_path: "/nowhere"\n'
+        "adapters:\n  - id: w\n    locator: adapter.md\n"
+        f"    digest: {digest}\n    required: true\n"
+        "capabilities:\n  - id: C1\n", encoding="utf-8")
+
+    contract = project_contract.ProjectContract.load(project / "PROJECT.yaml")
+    monkeypatch.chdir(decoy)
+    assert adapter_pin.verify_contract(contract).clean, (
+        "the unmodified adapter did not verify, so this fixture cannot show the defect")
+
+    # The PROJECT's adapter changes. The decoy keeps the qualified bytes.
+    (project / "adapter.md").write_text("name: w\n\nEDITED AFTER QUALIFICATION\n",
+                                        encoding="utf-8")
+    report = adapter_pin.verify_contract(contract)
+    assert not report.clean, (
+        "a project's modified adapter verified from another directory holding the qualified "
+        "bytes; the locator was resolved against the process rather than against the contract:\n"
+        + report.render())
+
+
+def test_an_absolute_adapter_locator_is_untouched(tmp_path):
+    """The repair must not rewrite a declaration that already names a place."""
+    installed = tmp_path / "installed" / "adapter.md"
+    installed.parent.mkdir()
+    installed.write_text("name: w\n\nbytes\n", encoding="utf-8")
+    declaration = adapter_pin.AdapterDeclaration(
+        id="w", locator=str(installed),
+        digest=hashlib.sha256(installed.read_bytes()).hexdigest(), required=True)
+    assert declaration.resolved(relative_to=tmp_path / "unrelated") == installed

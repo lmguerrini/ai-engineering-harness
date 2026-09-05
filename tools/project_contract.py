@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 from errors import GateRefusal
@@ -640,7 +641,14 @@ class ProjectContract:
 
     @classmethod
     def load(cls, path: str | Path, *, pack_root: str | Path | None = None) -> "ProjectContract":
-        contract_path = Path(path)
+        # ABSOLUTE FROM HERE ON. Everything this class resolves relative to a
+        # contract — the repository, an adapter locator — is resolved against
+        # `self.path.parent`, and a contract loaded by a relative path (which is
+        # exactly how a CLI invoked from the project loads one) left that parent
+        # relative too. The same object then answered differently from two
+        # working directories. Found by an independent reader of the repair that
+        # was supposed to close this class.
+        contract_path = Path(path).resolve()
         if contract_path.is_dir():
             contract_path = contract_path / "PROJECT.yaml"
         try:
@@ -766,7 +774,7 @@ class ProjectContract:
                 publication.get("publishable_refs"), field="publication.publishable_refs"
             ),
             adapters=_load_adapters(raw),
-            project_context=_load_project_context(raw),
+            project_context=_load_project_context(raw, contract_path),
             default_terms_source=default_terms_source,
             publication_intent=intent,
             reproducible_by=tuple(reproducible),
@@ -776,9 +784,8 @@ class ProjectContract:
         """The repository these declarations describe.
 
         **A RELATIVE DECLARATION IS RELATIVE TO THE CONTRACT, never to the
-        process.** This returned `repo_path` verbatim, and `repo_path: "."` is
-        the template's own example — so every caller that falls back to the
-        declaration (`commit_gate --range`, `outgoing_scan`, `workspace_report`,
+        process.** This returned `repo_path` verbatim, so every caller that falls back to a
+        RELATIVE declaration (`commit_gate --range`, `outgoing_scan`, `workspace_report`,
         `publication_gate`, `publication_history`) ran against whatever
         repository the invoking shell happened to be standing in. Two projects on
         one machine resolved to one repository and it was neither of theirs;
@@ -800,7 +807,15 @@ class ProjectContract:
         declared = Path(self.repo_path)
         if declared.is_absolute():
             return self.repo_path
-        return str((self.path.parent / declared).resolve())
+        # NORMALISED, NOT RESOLVED, so both branches treat symlinks the same way.
+        # An absolute declaration is returned verbatim precisely so `.resolve()`
+        # cannot rewrite a path the project chose to name through a link; a
+        # relative one was being `.resolve()`d, which does follow links — two
+        # different answers to one question, and an independent reader found that
+        # a mutant dropping the call survived the whole suite, so neither
+        # behaviour was pinned. `self.path` is already absolute, so joining and
+        # normalising is enough to make this absolute without touching links.
+        return os.path.normpath(self.path.parent / declared)
 
 
 def _load_adapters(raw: dict) -> tuple | None:
@@ -823,7 +838,7 @@ def _load_adapters(raw: dict) -> tuple | None:
         )) from exc
 
 
-def _load_project_context(raw: dict) -> object | None:
+def _load_project_context(raw: dict, contract_path: Path) -> object | None:
     """The declared Project Context, parsed at load like every other block.
 
     Lazily imported for the same reason `adapter_pin` is: `project_context`
@@ -835,7 +850,8 @@ def _load_project_context(raw: dict) -> object | None:
     import project_context
 
     try:
-        return project_context.declaration_from(raw.get("project_context"))
+        return project_context.declaration_from(
+            raw.get("project_context"), declared_in=contract_path.parent)
     except project_context.ContextError as exc:
         raise ContractError(str(exc)) from exc
 
