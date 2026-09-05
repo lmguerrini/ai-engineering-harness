@@ -294,10 +294,15 @@ client update — the only change this session made outside this repository.
                                          (4 refs, 1892 objects)
     rules applied: 35 term(s), 15 identity-only, 7 pattern(s), 1 identity-only
 
-By finding class: 3970 declared private terms, 342 declared private patterns,
-332 local filesystem paths, 41 credential-shaped tokens, 20 UUID-shaped
-identifiers. **THEY ARE UNADJUDICATED**, and by this release's own rule a bare
-count is not a remediation list.
+**They are now ADJUDICATED**, in `docs/RP2.4-PUBLICATION-ADJUDICATION.md`,
+which resolves each finding class to the text behind it rather than counting it:
+at the tier a governed project runs, every occurrence is a home-relative form, a
+fixture path, a template placeholder or a synthetic identifier, and every
+credential-shaped token is a negative fixture in a test that exists to prove the
+scanner finds that shape. At the strict tier the dominant classes are this
+pack's own governance words appearing in its own documentation. The counts
+themselves are not restated here — the tool prints both, and a count restated in
+two places goes stale in one.
 
 Three things a reader should not misread here. The figure is **not** comparable
 to 2.3.0's 2090: this history has 1892 objects against 1179, and the generation

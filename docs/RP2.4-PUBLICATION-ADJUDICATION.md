@@ -42,8 +42,19 @@ reachable object set, dominated by the pack's own governance words —
 `coordinator`, `hitl`, `claude`, `envelope`, `codex`, `harness`, `runtime pack`,
 `task class` — plus the model-generation pattern.
 
-**This is the case `skills/core/public-safety.md` describes, and it is a
-property of this repository rather than a defect in it.** The strict tier exists
+**The credential-shaped tokens are the class worth naming separately, and every
+one of them is a fixture.** Forty-one occurrences, in four objects:
+`tools/tests/test_commit_gate.py`, `tools/tests/test_outgoing_scan.py` and
+`tools/tests/test_publication_gate.py` — which exist to prove the scanner finds
+this shape, so a repository where they were absent would be one where the check
+was untested — and `docs/RP2.2-GATE.md`, whose single token is
+`AKIAIOSFODNN7EXAMPLE`, the vendor's own published documentation example, and
+which that record already adjudicated in the same terms. **No live credential
+is present.**
+
+**Everything else at this tier is the case `skills/core/public-safety.md`
+describes, and it is a property of this repository rather than a defect in
+it.** The strict tier exists
 to apply bare common words to blob content; this repository's blob content *is*
 the vocabulary those words come from, because its documentation is about them.
 A repository whose subject is a private vocabulary cannot be scanned clean at a
