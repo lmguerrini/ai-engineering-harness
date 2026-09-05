@@ -1963,9 +1963,21 @@ def test_this_versions_changelog_entry_names_what_this_release_added(manifest):
     assert len(report.named) + len(report.omitted) >= len(added), (
         f"the delta tool accounted for {len(report.named) + len(report.omitted)} additions "
         f"while this range added {len(added)} files; it is not looking at the whole range")
-    assert len(added) > 5, (
-        f"this range added {len(added)} file(s), which is too few for this guard to establish "
-        f"anything; if a release genuinely adds nothing, say so in the entry and remove this")
+    # THE FLOOR IS ZERO, NOT FIVE. The guard is vacuous only when the range adds
+    # NOTHING — then `report.complete` has no addition to check and would be
+    # green for the reason a broken guard is green. One addition is enough for it
+    # to establish something, and it establishes exactly as much about two as
+    # about twenty.
+    #
+    # It was written as `> 5` against a release that added fourteen files, and
+    # that number then made a bounded repair release — which legitimately adds a
+    # design record and a gate record and nothing else — impossible to ship
+    # without deleting the guard. A rule a legitimate case cannot satisfy is a
+    # rule that gets routed around, and this pack's own scaling rule says so.
+    # Rebound rather than removed: the property it protects is unchanged.
+    assert added, (
+        "this range added no files at all, so this guard can establish nothing about the "
+        "entry; a release that genuinely adds nothing must say so in its entry")
     assert report.complete, (
         "this version's changelog entry does not account for what the release added:\n"
         + report.render())

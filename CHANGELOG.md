@@ -1,5 +1,135 @@
 # Changelog
 
+## 2.4.1 — the six the full-release audit reproduced
+
+A **PATCH** release (`DECISIONS.md` D11), derived rather than assumed: every
+change here is *enforcement of an already-promised guarantee*, which is what
+PATCH covers. No new tool, policy or capability ships. No contract key, CLI
+input or public name is added or removed — `DesignRecord.problems` gains one
+keyword argument whose default is 2.4.0's behaviour, and `backend_contract`
+exports one function two existing callers now share. Nothing about authority,
+contracts or migration changes incompatibly. `tools/surface_diff.py` over the
+range is the check, not this paragraph.
+**State `IN_PROGRESS`** — a candidate. **No project may pin it.** The transition
+to `QUALIFIED_AND_FROZEN` is `policy/hitl-matrix.md` row 2 and has not been
+taken. Gate: `docs/RP2.4.1-GATE.md`. **2.4.0 is untouched**: same revision, same
+digest, same state, and it remains the release a project pins today.
+
+### Why this release exists
+
+A full behavioural audit of frozen 2.4.0 — two independent readers plus
+coordinator re-execution — reproduced six defects that a delta-scoped reading
+could not have found, because none of them was in what the last delta touched.
+That is limitation 67 of 2.4.0 happening on purpose rather than by accident.
+Every one of the six was reproduced by execution before a line was written, and
+each is a **recurrence of a class this pack already records** — `RECURRENCE` from
+`tools/evolution_evidence.py` for all six, no new class, none merged by guess.
+
+### What each one was, and what it is now
+
+- **A record could lower the bar the work was opened against.** A capability
+  honestly declared `MATERIAL`, on a contract declaring `requires.design: true`,
+  reached `capability open: READY` against a five-line record that declared
+  itself `TRIVIAL` and stated no alternatives, no failure modes and no oracles —
+  and the readiness report said `design VERIFIED`, which is an affirmative claim
+  that the gate was met, not the `NOT_REQUIRED` limitation 51 describes.
+  `DesignRecord.problems` now takes the strength the opening authority requires
+  and refuses a record weaker than it. The comparison lives in the reader,
+  because the module a second caller reaches directly was where the weaker
+  answer was.
+- **A design could be written after the implementation it governed.** The gate
+  established ancestry between two revisions the record *named*, and never asked
+  when the record itself came into being: a record first committed after the
+  work, naming a base that predates it, reported `DESIGN FROZEN` with
+  `--mutation-begins-at` correctly supplied. Its content must now already be
+  present, byte for byte, in the tree at the revision where mutation began —
+  which answers all three ways of getting this wrong (written after, edited
+  after, never committed) from history the repository already holds, with no new
+  input from any project.
+- **`unknown` meant two different things.** The packed configuration string
+  normalised it and the structured identity mapping — a supported path, and the
+  one an adapter uses for any identifier containing a space — carried it
+  verbatim. So `effort: "unknown"`, the honest answer when a surface does not
+  report one, completed an identity and two such rows graded `confirmed` for a
+  configuration nothing had established. One function now answers for both
+  paths, and it compares by word rather than by punctuation, for the reason
+  `_provenance_key` already gave about provenance markers.
+- **Verifying a pin executed the verified repository's own program.**
+  `gitread` neutralises the configuration keys whose values Git runs, "for
+  *every* invocation rather than at the call sites somebody remembered", and
+  `pack_pin` was the call site nobody remembered: it called `subprocess`
+  directly, so a `core.fsmonitor` — local, or **global, needing no write to the
+  release at all** — ran twice and the tool printed `pack pin verified`. Every
+  Git read the pin makes now goes through the guarded reader.
+- **The one file the digest cannot cover was compared to nothing.**
+  `PACK_MANIFEST.json` is excluded from its own digest of necessity, so a root
+  could claim any test population it liked, or replace every known limitation
+  with one sentence saying nothing was wrong, and still verify. It is now compared
+  with the manifest committed at the pinned revision. That establishes the
+  manifest is the one in the commit — **not** that its claims are true; no
+  mechanism here can count a release's tests or audit its own limitations, and a
+  check whose message outran its reason is the defect this module exists to
+  refuse.
+- **The operator's ignore rules hid release material.** `--exclude-standard`
+  honours `core.excludesFile` and `.git/info/exclude`, neither of which the
+  release ships, can see, or is a claim about — so on a machine whose global
+  ignore file carries `*.jsonl`, any `.jsonl` could sit in a verified root
+  unreported, and anyone able to write `.git/info/exclude` could choose their own
+  exemption. Untracked material is now measured against the `.gitignore` files
+  the release actually tracks.
+
+### One guard was rebound, and it is not a quiet edit
+
+`test_this_versions_changelog_entry_names_what_this_release_added` carried a
+floor requiring the range to add more than five files before it would assert
+anything. That floor exists so the guard cannot be vacuously green on a range
+with no additions — a real property, and it stays. But the number was calibrated
+against a release that added fourteen files, and it made a *bounded repair
+release* — which legitimately adds a design record and a gate record and nothing
+else — impossible to ship without deleting the guard outright.
+
+So the floor is now zero rather than five: the guard establishes something
+whenever there is at least one addition, and refuses only when there are none.
+The property it protects is unchanged and its completeness assertion is
+untouched. This is recorded here rather than made quietly, because re-scoping a
+rule to fit the release in front of it is the move this pack's own gate records
+say must not happen without being said out loud.
+
+### What this release does NOT claim
+
+The design gate reads provenance from the repository the contract declares, so a
+project whose design record lives outside that repository gets a stated refusal
+rather than an established answer when it supplies `--mutation-begins-at`. That
+is failure mode 3 of the frozen design, taken deliberately: fail closed, say so.
+Without `--mutation-begins-at` the binding is unchanged and still the documented
+weak path. Neither is widened here.
+
+### Designed before it was built
+
+R1 and R2 move the design-before-build authority boundary, so they were designed
+first: `docs/RP2.4.1-DESIGN-R1R2-design-strength-and-provenance.md`, frozen
+against the 2.4.0 release commit and **committed before any implementation
+commit in this release** — a claim checkable by the very mechanism it specifies,
+which is the point. Three whole architectures were considered and two rejected
+with reasons: caller-side comparison plus a self-declared freeze timestamp, and
+caller-side comparison plus git provenance. Both were rejected for the same
+half — a comparison that lives in one caller leaves the module a second caller
+reaches directly still holding the weaker answer.
+
+R3 to R6 carry no design record. They are enforcement of boundaries that already
+exist, in the modules that already own them, and a design document for each
+would be ceremony this pack's own scaling rule refuses.
+
+### Evidence
+
+Nine well-formed subject mutants, one per repaired mechanism plus a second for
+each of the three whose repair has two halves, scored against a **green 338-test
+baseline that excludes the tests failing on any byte change** — the exclusion
+limitation 70 of 2.4.0 records after this pack scored one of its own passes
+invalidly. All nine killed. Each repair also has the audit's own reproduction
+re-run against it, and both directions of the design gate are rehearsed through
+the real `capability_open` path rather than through its parts.
+
 ## 2.4.0 — qualification belongs to a configuration, not to a family
 
 A **MINOR** release (`DECISIONS.md` D11, and proposed D26 in

@@ -1,4 +1,4 @@
-# Runtime Pack 2.4.0
+# Runtime Pack 2.4.1
 
 A coordinator-governance layer for AI-delegated engineering: durable structured
 context, Skills, and a small stateless toolbelt — no deterministic software
@@ -10,24 +10,24 @@ every audit round while its stateless checkers survived every one
 
 | | |
 |---|---|
-| Version | **2.4.0** — `VERSION` is the single machine-readable authority |
-| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) — a project may pin it. The transition was a human decision (`policy/hitl-matrix.md` row 2) against a named candidate, and the row-7 governance narrowing it carries was authorised separately and beforehand (`DECISIONS.md` D26, `docs/RP2.4-FOUNDER-AUTHORISATIONS.md`). **Frozen is not published**: no push, tag, remote or consumer migration is authorised |
-| Gate record | `docs/RP2.4-GATE.md` |
+| Version | **2.4.1** — `VERSION` is the single machine-readable authority |
+| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, and **no project may pin it**. It closes six defects an independent full-release audit reproduced in 2.4.0, and the transition to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) that has not been taken. The procedure is at the end of `docs/RP2.4.1-GATE.md`. 2.4.0 remains frozen, byte-identical and pinnable; nothing here moves it |
+| Gate record | `docs/RP2.4.1-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
 Verify a checkout — run it, do not read it:
 
 ```bash
-python3 tools/pack_pin.py . --version 2.4.0 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
+python3 tools/pack_pin.py . --version 2.4.1 --sha <full 40-char revision> \
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
 ```
 
 `--state` is the state this checkout actually declares. **A project may only
-adopt `QUALIFIED_AND_FROZEN`**, and this release declares it, so the command
-above both verifies the checkout and establishes that it is adoptable. Passing
-`IN_PROGRESS` against it fails — correctly. That is the point of carrying the
-state in the pin: while this was a candidate the same command verified it
-perfectly and refused it as unadoptable, and the only thing that changed is a
+adopt `QUALIFIED_AND_FROZEN`**, and this candidate declares `IN_PROGRESS`, so
+the command above verifies the checkout completely and still establishes that
+it is **not** adoptable. That is the point of carrying the state in the pin: the
+same command answers *is this the tree you named* and *may you pin it* without
+confusing them, and the only thing that will change at the freeze is a
 recorded human decision.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing

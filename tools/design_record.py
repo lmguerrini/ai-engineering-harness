@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = [
-    "TRIVIAL", "ROUTINE", "MATERIAL", "CHANGE_CLASSES", "CHANGE_CLASS_RANK",
+    "TRIVIAL", "ROUTINE", "MATERIAL", "CHANGE_CLASSES",
     "SELECTED", "REJECTED",
     "ACCEPTANCE", "NEGATIVE", "MUTATION", "REHEARSAL", "ORACLE_KINDS",
     "Candidate", "Oracle", "DesignRecord", "read", "required_for",
