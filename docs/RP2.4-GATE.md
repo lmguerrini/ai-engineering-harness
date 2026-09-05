@@ -788,59 +788,209 @@ that the working directory therefore fails `pack_pin` while the candidate commit
 still verifies. Third instance of one class in one session: a subject must not
 change under a reading, and *uncommitted* is not an exemption.
 
-## ONE BLOCKING DEFECT REMAINS, AND IT IS A HISTORY REWRITE
+## The blocking defect, and the founder repair that closed it
 
-**The candidate fails its own commit-range gate on exactly one commit.**
-
-    python3 tools/commit_gate.py --range HEAD \
-        --baseline ab7dea97a12c699e8123bcb5d5be976cd05c075e --repo . --default-terms .
+**The candidate failed its own commit-range gate on exactly one commit.**
 
     VIOLATION 62386d4b26f3 PRIVATE_TERM: private term 'c*********r' is prohibited
 
-Eight of the nine commits in the range pass. The ninth is the tip, and it is
-there because the coordinator ran `git commit` in a shell chain whose earlier
-link — the commit gate itself — had already **refused the message**. The gate
-printed `VIOLATION`, exited non-zero, and the `&&` was attached to the wrong
-command, so the refusal was reported and ignored in one line.
+It was there because `git commit` ran in a shell chain whose earlier link — the
+commit gate itself — had already **refused the message**. The gate printed
+`VIOLATION`, exited non-zero, and the `&&` was attached to `tail -1`, so the
+refusal was reported and ignored in one line. Worth naming plainly: the contract
+was not bypassed by ignorance. It was run, it refused, and the commit happened
+anyway.
 
-That is worth naming plainly: the commit contract was not bypassed by accident of
-ignorance. It was run, it refused, and the commit happened anyway.
+**The founder authorised the minimal repair.** Scope, as given: amend only that
+message, preserve the tree exactly, no squash, no rebase of unrelated commits,
+no reorder, nothing else rewritten, no push, no tag, no publication, no remote,
+no consumer migration.
 
-**The only remedy is a history rewrite**, because a commit message cannot be
-corrected forward. Amending the tip of an unpushed evolution branch is the
-smallest possible rewrite — one commit, no remote, nothing depending on it — and
-it is still a rewrite, which is HITL rows 2 and 4. **The coordinator did not take
-it.** The precedent is this session's own: when a governance entry landed in
-`DECISIONS.md` ahead of its authorisation, the content was removed forward and
-the commit that carried it was left in history, because rewriting it is the same
-rows. The same rule applies to the coordinator's own mistake.
+**Done with `git commit-tree`, not with `rebase`,** so each tree object was
+reused rather than reconstructed from a re-applied diff. One phrase of the
+message differs; everything else is byte-identical. The child commit's
+identifier changed because a commit names its parent; its message and its tree
+did not. The full before/after table is in
+`docs/RP2.4-FOUNDER-AUTHORISATIONS.md`, and the proof is three commands:
 
-**What it does and does not block.** It does not affect the tree, the digest, the
-suite or any behaviour; the commit's CONTENT is sound and qualified. It blocks
-the claim that this candidate's history is contract-conforming, and it therefore
-blocks any first remote — which is already blocked, and for which
-`known_limitations` already records a much larger unadjudicated set. It is listed
-separately from that set because those occurrences were inherited and this one
-was created tonight, after a gate said no.
+    git diff <pre-amend-tip> HEAD --stat        # empty — no content differs
+    git rev-list --count ab7dea97..HEAD         # 10, unchanged, same order
+    python3 tools/commit_gate.py --range HEAD --baseline ab7dea97 --repo . --default-terms .
+    # VALID every commit message in ab7dea97..HEAD conforms
 
-**The founder decision, precisely:** authorise `git commit --amend` on
-`62386d4b26f32130af6edda8bd33a9e19e4f2ffe` with a contract-conforming message,
-which restores the range gate to clean; or accept the violation as recorded and
-carry it into the publication adjudication that is already owed.
+The pre-amend tip is retained as `refs/pre-amend/rp2.4` in this working
+repository only, so the amend is itself auditable. It is not part of the release.
+
+**AND THE CLASS WAS CLOSED, not merely the instance.** A gate whose refusal
+depends on the caller reading an exit status will be ignored again.
+`templates/commit-msg.hook` moves the enforcement into Git, which refuses the
+commit on a non-zero exit whatever the caller's shell does with pipes or `&&`.
+The pack does not install it — writing into a project's `.git` is the project's
+decision — and `--no-verify` still bypasses it deliberately, because a hook that
+cannot be bypassed is a hook people stop installing. What it removes is the
+ACCIDENTAL bypass, which is the one that happened. Four oracles, including the
+original chain replayed verbatim:
+
+    python3 <gate> "$MSG" --default-terms <pack> | tail -1 && git commit -F "$MSG"
+
+which now produces no commit, and two negative cases — an unconfigured hook and
+a missing gate both REFUSE rather than pass, because a check that cannot run is
+not a check that passed.
+
+## The pilot-run closure pass
+
+### What was fixed, and what found it
+
+**A checkout on a machine that normalises line endings failed its own pin.**
+`core.autocrlf=true` is the Git for Windows default; cloning this branch under
+it rewrote LF to CRLF in every tracked file and `pack_pin.py` reported
+`PACK PIN NOT VERIFIED` against a checkout of the correct revision. Closed at
+the cause with `.gitattributes` declaring `* -text`. Verified end to end: three
+clones under `autocrlf=true`, `false` and `input` produce **one identical
+digest**. The oracle asks Git whether any tracked path still carries the `text`
+attribute — a test that read the file for `* -text` would pass against a pattern
+Git ignores.
+
+**A project's repository resolved against the process, not the project.** Found
+by rendering the multiproject console over two adopting projects from a third
+directory and reading **the pack's own commit count under both of their names**.
+`repo_path: "."` is the contract template's own example, and
+`ProjectContract.repository()` returned the literal `"."`, so `commit_gate
+--range`, `outgoing_scan`, `workspace_report` and `publication_gate` all ran
+against whatever repository the invoking shell was in. Repaired at the contract
+so every caller is correct at once, plus the console's own resolver. Five
+mutants dead — one of which survived a first oracle because `parent / absolute`
+already yields the absolute path, and `.resolve()` would silently rewrite a
+declaration made through a symlink.
+
+**No unit test could have found either.** Every rehearsal was single-project and
+ran from the project's own directory; every checkout was this machine's.
+
+### The new-model lifecycle, live, through the subscription surface
+
+No API key, no metered API, and no model named as a literal anywhere in the
+script — the target is chosen from what discovery offers minus what the evidence
+log already contains, so the same run proves the same property for whatever the
+surface offers next.
+
+    STEP 1  DISCOVER      9 identifiers, 7 listed, from the installed client
+    STEP 2  SELECT        chosen by ABSENCE OF EVIDENCE, not by name
+    STEP 3  CLASSIFY      unprobed, with the family's own history beside it,
+                          labelled advisory
+    STEP 4  AVAILABILITY  UNKNOWN — discovery membership is not an answer
+    STEP 5  ROUTE         ROUTINE refused, CRITICAL refused, PROBE permitted
+    STEP 6  DISPATCH      two live dispatches, exit 0, both returned READY
+    STEP 7  OBSERVE       identity read from the rollout turn_context:
+                          model, effort, sandbox and network, all from the
+                          surface and none from the worker
+    STEP 8  ACCUMULATE    unprobed -> provisional (1) -> confirmed (2)
+    STEP 9  BOUND         unprobed at a different effort, a different task
+                          class, a different isolation and a different client
+    STEP 10 ELIGIBILITY   follows both axes, and says why
+
+Both observations are appended to `policy/observations.jsonl`. The derived table
+is printed by `python3 tools/qualification.py`; no count is restated here.
+
+**Availability was re-established on the current client by dispatch**, which is
+the only thing that establishes it. Every identifier discovery offers was
+dispatched on `0.153.3`: all started, and the model the surface reported matched
+the model requested in every case. That closes the recorded gap left by the
+`0.149.0 -> 0.153.3` update.
+
+### The application, run as an application
+
+Twelve views, five lenses, three disclosure levels, over two live consumer roots.
+**Zero browser console errors** in any state. Preference persistence verified in
+a real browser: a lens, a view, a density and two disclosure levels survive a
+full navigation and are read back from `localStorage`; a **corrupt** stored value
+falls back to the default with no error and a fully working page. No horizontal
+overflow and no clipped element at 3840x1600 or at 375x812, where the navigation
+collapses to a bottom bar. This is the sweep that found the repository-resolution
+defect.
+
+### The composition audit
+
+Eighteen combinations were attacked. Three were not previously covered and are
+now:
+
+*   **commit gate x shell chaining** — the hook above, with the original chain
+    replayed as the oracle.
+*   **history scan x linked worktrees** — a blob reachable only from a linked
+    worktree's branch is scanned, pinned by a test whose CONTROL is asserted
+    first, because a scan that finds nothing and a scan that reaches nothing
+    produce the same number.
+*   **clean room x dynamic discovery** — a missing or corrupt discovery document
+    makes the capability NOT open, with a finding that names the file. It fails
+    closed rather than reporting an empty catalogue.
+
+### The vacuity sweep
+
+Three named shapes had no mechanical guard and now do: `xfail(run=False)`,
+`xfail` without `strict`, and an unconditional `skip` — each of which reports a
+non-failure without running the test while the suite count still looks right.
+The sweep ships with its own positive and negative cases, so it is known to be
+able to fail.
+
+**The loop-only shape was measured rather than guarded.** Thirty-six tests place
+every assertion inside a loop over a computed iterable. All thirty-six were
+traced under execution: every assertion in thirty-five executed, and the
+thirty-sixth executed two of four, which is branch coverage rather than vacuity.
+A shape guard would have forced cosmetic edits on thirty-six honest tests, so
+the population is recorded as measured and the regression risk as an Evolution
+Candidate.
+
+**The measurement produced a false green of exactly the class it was
+measuring.** The first trace run reported all thirty-six as vacuous — from a
+pytest invocation that had matched no files and executed nothing, with `no tests
+ran in 0.00s` sitting above the result. This pack's own rule caught it, and the
+real answer is the opposite of the first one. It is recorded in
+`known_limitations` because a tool that measures this failure class must itself
+prove it ran, and that one did not.
+
+### Performance
+
+    python3 -m pytest tools/tests/ -q --durations=25
+
+    The whole suite runs in about four minutes. The 25 slowest tests sum to
+    roughly 53s of that; the two slowest are 14.3s (every oracle the closure
+    matrix names is shown to select a test) and 9.5s (no tool CLI prints a
+    traceback for an input it refuses). The test count is in the manifest and
+    is not restated here.
+
+**Nothing was optimised, and no speedup is claimed.** Both of the slowest spawn
+one subprocess per row, and making them concurrent would change what runs for
+about twenty seconds on a four-minute suite. `selector_evidence.comparison_problems`
+exists to refuse exactly the comparison that would be used to justify it. Four
+minutes is affordable; a verification nobody can afford is one people disable,
+and this one is not there.
+
+### Every recorded limitation, classified
+
+`docs/RP2.4-INVENTORY.md`. Two class-A items and eight class-B items, all ten
+closed. The remainder are C or D, each with what still holds, its failure
+direction, whether an adopting project can meet it, and what would reopen it.
+Five Evolution Candidates are now recorded in the manifest, which had none.
+
+### The pack's own history
+
+`docs/RP2.4-PUBLICATION-ADJUDICATION.md`. Adjudicated rather than owed: at the
+tier that governs a project every occurrence resolves to a home-relative form, a
+fixture path, a template placeholder or a synthetic identifier, and none names a
+person, machine, account, session or credential. At the strict tier the
+population is this pack's own governance vocabulary appearing in its own
+documentation, which is the case `skills/core/public-safety.md` describes.
 
 ## The freeze procedure
 
-Two human decisions, not one, and neither is the coordinator's:
+**Row 7 is granted.** The founder authorised the governance narrowing before its
+entry was written, which is that row's application point; D26 and D27 are in
+`DECISIONS.md`, and the authorisation with the ten conditions it carries is in
+`docs/RP2.4-FOUNDER-AUTHORISATIONS.md`, bound to
+`tools/tests/test_founder_authorisation.py`.
 
-1. **HITL row 7 — the governance narrowing (`docs/RP2.4-D26-PROPOSED.md`).**
-   `policy/routing-policy.md` says evidence is never pooled across distinct
-   configuration strings. This release pools across two named non-identity
-   fields — the client build and the capacity pool — while widening the key from
-   one dimension to nine. Net tightening is still a change to a control. The
-   founder authorises the narrowing, or the two fields move into the key and the
-   candidate is re-qualified.
-2. **HITL row 2 — the state transition.** With row 7 authorised, and with this
-   gate record's checks green:
+**One human decision remains, and it is not the coordinator's.**
+
+**HITL row 2 — the state transition.** With this gate record's checks green:
 
        # 1. the baseline is untouched
        cd <2.3.0 root> && git status --porcelain          # empty
@@ -852,12 +1002,17 @@ Two human decisions, not one, and neither is the coordinator's:
        # 2. the candidate qualifies
        cd <2.4.0 root> && python3 -m pytest tools/tests/ -q
 
-       # 3. set PACK_MANIFEST.json "state" to QUALIFIED_AND_FROZEN, and
+       # 3. the complete range conforms
+       python3 tools/commit_gate.py --range HEAD \
+           --baseline ab7dea97a12c699e8123bcb5d5be976cd05c075e \
+           --repo . --default-terms .
+
+       # 4. set PACK_MANIFEST.json "state" to QUALIFIED_AND_FROZEN, and
        #    "qualified_at" to the date, then recompute the digest:
        python3 tools/pack_pin.py . --write          # recomputes tree_digest_sha256
        python3 -m pytest tools/tests/ -q            # the digest guards re-run
 
-       # 4. commit, and record the revision. The manifest cannot name the commit
+       # 5. commit, and record the revision. The manifest cannot name the commit
        #    that contains it; the consuming project's pin does.
 
 No push, no tag, no remote, no consumer migration. Those are row 2 as well and
