@@ -122,6 +122,26 @@ about the orchestration. A worker that knows it is being compared behaves
 differently, and a capsule carrying orchestration state is a capsule that leaks
 it.
 
+## A model you have not measured
+
+The strongest thing anybody has said about a newly appeared model is that it
+appeared. Discovery says it exists, a run says it starts, and only its own
+outcomes say what it can do — three separate claims, and the router keeps them
+separate (`policy/routing-policy.md`, D26).
+
+So a frontier model may be used the day it arrives, deliberately, as a **declared
+probe**: bounded, on a task whose oracle is strong enough that a bad answer is
+caught, with the observed configuration and the outcome recorded. What it must
+not be is *assumed* — neither trusted for its generation nor distrusted for its
+newness. Its family's history is context a coordinator may read and is not its
+track record, and one good probe qualifies it for the task class it ran and for
+nothing else.
+
+The reverse error costs as much: an established configuration is not demoted
+because something newer exists. Prefer the one whose evidence at **this task
+class** is stronger, and where the evidence is equal prefer the cheaper one —
+which is the rule at the top of this file, unchanged.
+
 ## Never
 
 Substitute a cheaper worker for a decision that required the more capable one

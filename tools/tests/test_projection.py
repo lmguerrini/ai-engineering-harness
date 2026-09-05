@@ -903,12 +903,16 @@ def test_the_status_bar_lifts_values_it_does_not_invent(tmp_path):
     # was a fact about a moment, and the founder freeze moved it.
     import pathlib
 
-    declared = json.loads(
+    manifest = json.loads(
         (pathlib.Path(projection.__file__).parent.parent / "PACK_MANIFEST.json").read_text(
-            encoding="utf-8"))["state"]
-    assert "2.3.0" in bar and declared in bar
+            encoding="utf-8"))
+    declared, version = manifest["state"], manifest["version"]
+    # THE VERSION TOO. The state was unbound from its literal one release ago
+    # and the version beside it was left as `2.3.0`, so the same defect stayed
+    # in the same assertion, one field over, until the next release moved it.
+    assert version in bar and declared in bar
     text = view.render()
-    for shown in ("2.3.0", declared):
+    for shown in (version, declared):
         assert shown in text, f"the bar shows {shown!r} and no panel does"
 
 

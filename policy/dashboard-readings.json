@@ -1,7 +1,7 @@
 {
   "policy_schema": "dashboard-readings-v1",
   "description": "The readings a human watching a long autonomous run must be able to get from the projection. This file is the CONTRACT; tools/projection.py is the implementation; tools/tests/test_dashboard_contract.py renders representative states and asserts every row appears. It exists because the completeness figure was previously established by running a script by hand and writing the number down, which is the manually-transcribed-count defect this pack refuses everywhere else.",
-  "how_to_read": "`marker` is a literal that must appear in the rendered projection for at least one of the representative states. It must DISCRIMINATE: an independent reader removed every real `subject:` line and the test still passed, because the marker was the word `subject` and the static panel title `audit subject vs candidate` contains it. A marker that another part of the page prints regardless is a marker that cannot fail, so each is now the literal form the reading itself takes — and `test_a_marker_that_matches_something_else_is_caught` removes each reading's own lines from a rendered view and asserts its marker disappears with them.",
+  "how_to_read": "`marker` is a literal that must appear in the rendered projection for at least one of the representative states. It must DISCRIMINATE: an independent reader removed every real `subject:` line and the test still passed, because the marker was the word `subject` and the static panel title `audit subject vs candidate` contains it. A marker that another part of the page prints regardless is a marker that cannot fail, so each is now the literal form the reading itself takes \u2014 and `test_a_marker_that_matches_something_else_is_caught` removes each reading's own lines from a rendered view and asserts its marker disappears with them.",
   "readings": [
     {
       "reading": "pack version",
@@ -10,8 +10,8 @@
     },
     {
       "reading": "pack state",
-      "marker": "state: QUALIFIED_AND_FROZEN",
-      "why": "and whether it is adoptable"
+      "marker": "state: ",
+      "why": "the pack's own state, whatever it is, and whether it is adoptable. The marker was the VALUE one release happened to hold, so the reading failed the moment a candidate declared a different one \u2014 a test about a moment. What the state IS is bound in test_the_state_the_projection_shows_is_the_state_the_manifest_declares"
     },
     {
       "reading": "pack digest",
@@ -51,7 +51,7 @@
     {
       "reading": "active jobs",
       "marker": "job ",
-      "why": "one row per outstanding job. Two sentences elsewhere begin `no job` and deny a DIFFERENT reading — that SILENT_IDLE has nothing running, and that nothing finished unconsumed — so they are declared here by name",
+      "why": "one row per outstanding job. Two sentences elsewhere begin `no job` and deny a DIFFERENT reading \u2014 that SILENT_IDLE has nothing running, and that nothing finished unconsumed \u2014 so they are declared here by name",
       "not_a_denial": [
         "no job is running",
         "no job finished without its result being consumed"
@@ -145,7 +145,7 @@
     {
       "reading": "capacity observation",
       "marker": "remaining,",
-      "why": "what a pool actually reported — the bare word `capacity` was also the panel title and the sentence saying there is no observation"
+      "why": "what a pool actually reported \u2014 the bare word `capacity` was also the panel title and the sentence saying there is no observation"
     },
     {
       "reading": "reset horizon",
@@ -185,7 +185,7 @@
     {
       "reading": "stale-audit warning",
       "marker": "NOT the candidate this record declares",
-      "why": "an audit of another tree, named as such — the panel's TITLE was the marker, so the reading was satisfied by the panel merely existing"
+      "why": "an audit of another tree, named as such \u2014 the panel's TITLE was the marker, so the reading was satisfied by the panel merely existing"
     },
     {
       "reading": "deterministic gate status",

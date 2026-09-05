@@ -425,3 +425,79 @@ def test_every_disposition_the_coordinator_needs_is_reachable_and_distinct():
 def test_an_unavailable_configuration_never_reads_as_qualified():
     for grade in ("confirmed", "provisional", "unprobed", "contradicted"):
         assert disposition_of(UNAVAILABLE, grade) == UNAVAILABLE
+
+
+# --- an observation records who produced it, without naming a session --------
+
+
+def test_a_derivation_is_read_off_an_observation_that_records_one():
+    """Phase-3 requirement: a probe records independence-relevant attributes."""
+    row = {"derivation": {"producer": "a-worker", "provider": "a-provider",
+                          "session_class": "fresh-blind-dispatch", "role": "design falsifier"},
+           "surface": "a-surface"}
+    derivation = routing.derivation_from_observation(row)
+    assert derivation.producer == "a-worker"
+    assert derivation.provider == "a-provider"
+    # NOT the session field: a class is not an identifier, and putting one where
+    # equality is tested reported two independent readings as one session.
+    assert derivation.session == UNKNOWN
+    assert derivation.fresh is True
+
+
+def test_an_observation_that_records_no_derivation_fails_independence_closed():
+    """An observation that did not say who produced it cannot establish that
+    somebody else did."""
+    derivation = routing.derivation_from_observation({})
+    assert derivation.producer == UNKNOWN
+    problems = independence_problems(derivation, SUBJECT)
+    assert any("not a different one" in problem for problem in problems)
+
+
+def test_a_derivation_field_nothing_reads_is_refused():
+    with pytest.raises(RoutingError) as caught:
+        routing.derivation_from_observation({"derivation": {"vibes": "good"}})
+    assert "nothing reads" in str(caught.value)
+
+
+def test_no_observation_records_a_session_identifier():
+    """A session id is a private identifier and this pack's own publication scan
+    refuses UUID-shaped tokens in tracked content — correctly. Independence needs
+    a session CLASS, which answers the same question without naming a session.
+    """
+    import json
+    import pathlib
+    import re
+
+    log = pathlib.Path(__file__).resolve().parents[2] / "policy" / "observations.jsonl"
+    uuid = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+                      re.IGNORECASE)
+    for line in log.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        declared = row.get("derivation") or {}
+        assert "session" not in declared, "a raw session field appeared; the field is session_class"
+        assert not uuid.search(json.dumps(declared)), "a session identifier reached the log"
+
+
+def test_the_two_readings_this_release_dispatched_are_not_independent_of_each_other():
+    """The release's own bound, asserted rather than described.
+
+    Both design readings came from one provider. They are independent of the
+    coordinator and of each other's session; a leg declared cross-provider
+    refuses the pair, and this is that refusal.
+    """
+    import json
+    import pathlib
+
+    log = pathlib.Path(__file__).resolve().parents[2] / "policy" / "observations.jsonl"
+    readings = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()
+                if line.strip() and json.loads(line).get("task_class")
+                == "design_falsification_review"]
+    assert len(readings) >= 2
+    first, second = (routing.derivation_from_observation(row) for row in readings[:2])
+    assert independence_problems(first, second) == (), (
+        "different producers in fresh sessions are independent for an ordinary leg"
+    )
+    problems = independence_problems(first, second, require_distinct_provider=True)
+    assert any("one provider's reading" in problem for problem in problems)

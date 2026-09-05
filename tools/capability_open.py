@@ -107,7 +107,7 @@ ADOPTABLE_STATE = "QUALIFIED_AND_FROZEN"
 #: What a project may declare it requires. Unknown keys are refused rather than
 #: ignored: a requirement nobody reads is worse than no requirement, because
 #: the project believes it is enforced.
-REQUIREMENT_KEYS = frozenset({"project_context", "design"})
+REQUIREMENT_KEYS = frozenset({"project_context", "design", "routing"})
 
 
 @dataclass(frozen=True)
@@ -212,7 +212,7 @@ def requirements_from(raw: object) -> dict:
     project names in Core. Core cannot know which products have durable semantic
     authority, and a Core that decided would be adjudicating product meaning.
     """
-    requirements = {"project_context": False, "design": False}
+    requirements = {"project_context": False, "design": False, "routing": False}
     if raw is None:
         return requirements
     if not isinstance(raw, dict):
@@ -602,6 +602,106 @@ def _design_component(contract: ProjectContract, capability: str | None,
                            notes=tuple(notes))
 
 
+def _routing_component(contract: ProjectContract, required: bool) -> ComponentResult:
+    """Whether this project's routing evidence can answer about a configuration.
+
+    It reads records and dispatches nothing. What it establishes is narrow and
+    stated: the declared observation log parses, every row's identity is
+    readable, and the two derivations are reported side by side so a reader sees
+    how much of the evidence is a per-configuration track record and how much is
+    family history. It never says a model may be used — that is the
+    coordinator's, and `routing.py` only ranks and refuses.
+
+    A project that declares no `routing:` block gets `NOT_REQUIRED`, which is the
+    same non-blocking answer it got before this component existed.
+    """
+    declared = contract.raw.get("routing")
+    if declared is None:
+        return ComponentResult(
+            name="routing",
+            state=NOT_PRESENT if required else NOT_REQUIRED,
+            required=required,
+            blocking=required,
+            findings=(
+                (
+                    "this project declares `requires.routing: true` and declares no `routing:` "
+                    "block, so there is no observation log to answer about a configuration from. "
+                    "A family's history is not a configuration's track record",
+                )
+                if required
+                else ()
+            ),
+        )
+    if not isinstance(declared, dict):
+        return ComponentResult(
+            name="routing", state=UNVERIFIABLE, required=True,
+            findings=("`routing:` must be a mapping naming at least `observations:`",))
+
+    where = declared.get("observations")
+    if not where:
+        return ComponentResult(
+            name="routing", state=UNVERIFIABLE, required=True,
+            findings=("`routing:` names no `observations:` log",))
+
+    base = Path(contract.path).parent if getattr(contract, "path", None) else Path(".")
+    log = Path(where)
+    if not log.is_absolute():
+        log = base / log
+    # A DECLARED thing that cannot be read blocks whether or not it was required
+    # — D22, the rule adapters, Project Context and the design record already
+    # follow. Something in this project routes off it.
+    if not log.is_file():
+        return ComponentResult(
+            name="routing", state=UNVERIFIABLE, required=True,
+            findings=(f"the declared observation log {log} does not exist",))
+
+    import qualification
+
+    try:
+        graded = qualification.qualifications_from_observations(log)
+        priors = qualification.priors_from_observations(log)
+        rows = qualification._read_rows(log)
+    except Exception as exc:
+        return ComponentResult(
+            name="routing", state=UNVERIFIABLE, required=True,
+            findings=(f"the declared observation log could not be derived from: {exc}",))
+
+    complete = sum(1 for row in rows if qualification.identity_from_observation(row).complete)
+    notes = [
+        f"{len(rows)} observation(s); {complete} carry a complete configuration identity",
+        f"{len(graded)} per-configuration qualification(s); {len(priors)} family prior(s), which "
+        f"are advisory and rank nothing",
+    ]
+    if complete == 0 and rows:
+        notes.append(
+            "NO observation carries a complete configuration identity, so every answer this "
+            "project can give about a configuration is `unprobed` with a family prior beside it. "
+            "That is the honest state of this evidence, not a defect in it — the remedy is "
+            "recording an observed identity at the next dispatch, in the adapter"
+        )
+
+    discovery = declared.get("discovery")
+    if discovery:
+        import model_discovery
+
+        document = Path(discovery)
+        if not document.is_absolute():
+            document = base / document
+        try:
+            reading = model_discovery.read(document)
+        except Exception as exc:
+            return ComponentResult(
+                name="routing", state=UNVERIFIABLE, required=True,
+                findings=(f"the declared discovery document could not be read: {exc}",),
+                notes=tuple(notes))
+        notes.append(
+            f"{len(reading.models)} identifier(s) DISCOVERED from {document}, produced by client "
+            f"{reading.producer} — discovery is never availability")
+        notes.extend(reading.skew(str(declared.get("dispatching_client", ""))))
+
+    return ComponentResult(name="routing", state=VERIFIED, required=required, notes=tuple(notes))
+
+
 def _update_component(
     contract: ProjectContract, release_index: str | Path | None
 ) -> ComponentResult:
@@ -780,6 +880,7 @@ def open_capability(
         _capability_component(contract, capability),
         _design_component(contract, capability, change_class, requirements["design"],
                           design, mutation_begins_at),
+        _routing_component(contract, requirements["routing"]),
         _update_component(contract, release_index),
     ]
 

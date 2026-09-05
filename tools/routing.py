@@ -63,6 +63,8 @@ __all__ = [
     "PURPOSES",
     "RoutingError",
     "Derivation",
+    "DERIVATION_FIELDS",
+    "derivation_from_observation",
     "AvailabilityObservation",
     "availability_for",
     "Candidate",
@@ -124,9 +126,17 @@ class Derivation:
 
     #: The worker or agent that produced the work. Not a display name.
     producer: str = UNKNOWN
-    #: The session it ran in. A reader in the producer's own session is not fresh
-    #: however different its configuration.
+    #: The session it ran in, as an IDENTIFIER. Compared for equality, so it must
+    #: be one — a session *class* is a different kind of fact and lives below.
     session: str = UNKNOWN
+    #: Whether this reader ran in a NEW context, where no identifier is recorded.
+    #: Two facts, not one, and conflating them is a defect this release made and
+    #: a test caught: every fresh dispatch shares the class `fresh`, so comparing
+    #: classes for equality reported two independent readings as one session. A
+    #: session identifier cannot go in the log either — it is a private
+    #: identifier and this pack's own publication scan refuses one — so the log
+    #: records the class and this records what the class claims.
+    fresh: "bool | None" = None
     #: For a leg declared cross-provider. Two models from one provider are not a
     #: cross-provider reading, whatever else differs.
     provider: str = UNKNOWN
@@ -155,14 +165,21 @@ def independence_problems(
             f"the proposed reader is the producer of the work ({reader.producer}). A producer "
             f"never closes its own finding, whatever task class it is dispatched under"
         )
-    if reader.session == UNKNOWN or subject.session == UNKNOWN:
-        found.append(
-            "session freshness cannot be established: one of the sessions is not recorded"
-        )
-    elif reader.session == subject.session:
+    known = reader.session != UNKNOWN and subject.session != UNKNOWN
+    if known and reader.session == subject.session:
         found.append(
             f"the reader would run in the session that produced the work ({reader.session}); a "
             f"blind reading is a fresh context, not a fresh instruction"
+        )
+    elif not known and reader.fresh is not True:
+        # Fails closed on absence and is satisfied by EITHER of the two things
+        # that establish it: a session identifier that differs, or an explicit
+        # claim that this reader ran in a new context. Requiring both would
+        # refuse every observation the log can legally carry, because a session
+        # identifier is a private identifier and does not go in it.
+        found.append(
+            "session freshness cannot be established: no session identifier distinguishes the "
+            "reader from the work, and the reader does not declare a fresh context"
         )
     if require_distinct_provider:
         if reader.provider == UNKNOWN or subject.provider == UNKNOWN:
@@ -176,6 +193,45 @@ def independence_problems(
                 f"models from one provider are one provider's reading"
             )
     return tuple(found)
+
+
+#: How an observation records who produced it. A SESSION CLASS rather than a
+#: session identifier: the pack's own publication scan refuses UUID-shaped
+#: tokens in tracked content, and it is right to — a raw session id is a private
+#: identifier and recording one to prove independence would be trading one
+#: governance rule for another. What independence actually needs from the log is
+#: whether two readings came from the same producer, the same provider, and
+#: whether each was a fresh context; a class answers all three without naming a
+#: session.
+DERIVATION_FIELDS = ("producer", "provider", "session_class", "role")
+
+
+def derivation_from_observation(row: dict) -> Derivation:
+    """The producer behind one observation, where the observation recorded one.
+
+    Absent fields stay `UNKNOWN`, and `independence_problems` fails closed on
+    them: an observation that did not say who produced it cannot establish that
+    somebody else did.
+    """
+    declared = row.get("derivation")
+    if not isinstance(declared, dict):
+        return Derivation()
+    unknown = sorted(set(declared) - set(DERIVATION_FIELDS))
+    if unknown:
+        raise RoutingError(
+            f"an observation records derivation field(s) {', '.join(unknown)}, which nothing "
+            f"reads. Known: {', '.join(DERIVATION_FIELDS)}")
+    session_class = str(declared.get("session_class") or "").strip().lower()
+    return Derivation(
+        producer=str(declared.get("producer") or UNKNOWN),
+        # NOT the session class. A class is shared by every dispatch of its kind,
+        # so putting one where an identifier is compared reports two independent
+        # readings as the same session — which is exactly what happened.
+        session=UNKNOWN,
+        fresh=True if session_class.startswith("fresh") else (None if not session_class else False),
+        provider=str(declared.get("provider") or UNKNOWN),
+        surface=str(row.get("surface") or UNKNOWN),
+    )
 
 
 @dataclass(frozen=True)

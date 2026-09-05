@@ -66,10 +66,64 @@ inherited** from a previous call in the same session.
 *   `max` effort requires explicit human instruction; it is never the routing
     default.
 
+## Three questions, never one (D26)
+
+| | Answered by | Positive evidence |
+|---|---|---|
+| DISCOVERED | `tools/model_discovery.py` | a surface offered the identifier |
+| AVAILABLE | an observed dispatch outcome | a run started, under these preconditions |
+| QUALIFIED | `tools/qualification.py` | this configuration did this task class |
+
+**None substitutes for another.** A model listed locally has been refused by its
+provider; the same account offers different sets under different client versions;
+and one configuration in this log started under one precondition and not the
+other. Discovery is an input to availability and never an answer, and a static
+table is always subordinate to what a run establishes.
+
+**Qualification is keyed on nine dimensions** — surface, family, client, observed
+model, effort, isolation, network, authentication class, task class. Change one
+and it is a different configuration, `unprobed` until dispatched. The client
+build and the capacity pool are recorded and are NOT in the key; a governed
+`Invalidation` is what answers when a client change really did alter what a
+configuration can do.
+
+**The observed model is read from the execution surface, never from the worker.**
+A worker in this evidence base reported its own model as a different generation
+than the one that ran. An identity whose provenance says it was not observed is
+`unprobed`, and a requested slug copied into the observed field is refused as
+loudly as an absent one.
+
+**Family history is PRIOR: advisory, display-only.** It is printed beside an
+`unprobed` answer and ranks nothing. `policy/routing-table.md` is that view and
+says so.
+
+## The ladder, and the one way onto it
+
+    DISCOVERED -> UNPROBED -> PROVISIONAL -> CONFIRMED
+                     \-> CONTRADICTED, ENVIRONMENTAL-UNKNOWN (off-ladder)
+
+A configuration nothing has dispatched is `unprobed` and may take work **only as
+a declared probe**: bounded, its task class and observed configuration recorded,
+its outcome evidence for what it tested and nothing else. One successful probe
+is `provisional`, not qualified, and not qualified anywhere else. **A probe never
+fills a mandatory independent audit leg or a critical-domain promotion** (rows
+12, 16). Newest is never a reason: nothing in the router reads a generation, a
+priority or a context window to order candidates.
+
 ## Independence rules
 
 Auditor ≠ implementer of the audited work. A producer never closes its own
-finding. Classification is frozen before routing. Evidence is never pooled
-across distinct configuration strings (`routing-table.md`). Workers sharing a
-working tree are serialised, never run concurrently against it
+finding. Classification is frozen before routing. Workers sharing a working tree
+are serialised, never run concurrently against it
 (`skills/core/worker-contract.md`).
+
+**Independence is a property of the producer, not of the configuration**
+(`tools/routing.py`): the worker, the session, and the provider where a leg is
+declared cross-provider. Comparing configurations is wrong in both directions —
+the same session auditing its own work has a different configuration the moment
+the task class changes, and two genuinely fresh blind sessions have the same one.
+
+**Evidence is never pooled across distinct evidence-relevant configuration
+identities.** The two fields excluded from that identity are named above and in
+D26; that narrowing is a governance change and carries the founder's
+authorisation, not this file's.

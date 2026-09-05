@@ -891,6 +891,110 @@ def _output_panel(record, base: Path) -> Panel:
     return panel
 
 
+def _routing_panel(contract_path: Path) -> Panel:
+    """What the routing evidence supports, and — mostly — what it does not.
+
+    Every view here answers by DERIVING from the same records in the same
+    process, so there is no stored routing state to go stale. That is the whole
+    reason this panel is allowed to exist: a dashboard that held a route choice
+    would be a second authority, and the one this pack already refused.
+
+    The two derivations are shown as two things, never summed. A family prior is
+    printed because a coordinator reading an `unprobed` answer with nothing
+    beside it will go and find the family history anyway; it is labelled because
+    a prior that reads as a track record is the defect this release exists for.
+    """
+    panel = Panel("model routing and what its evidence supports", group="evidence")
+    declared = None
+    base = contract_path.parent
+    try:
+        from project_contract import ProjectContract
+
+        declared = (ProjectContract.load(contract_path).raw or {}).get("routing")
+    except Exception as exc:
+        panel.unknown.append(f"the contract could not be read for routing: {exc}"[:200])
+        return panel
+
+    if not isinstance(declared, dict) or not declared.get("observations"):
+        panel.unknown.append(
+            "this project declares no `routing:` observations, so what any configuration has "
+            "done is UNKNOWN — not `nothing`, and not `fine`")
+        panel.summary, panel.summary_tone = UNKNOWN, Tone.UNKNOWN
+        return panel
+
+    log = Path(declared["observations"])
+    if not log.is_absolute():
+        log = base / log
+
+    import qualification
+
+    try:
+        graded = qualification.qualifications_from_observations(log)
+        priors = qualification.priors_from_observations(log)
+        rows = qualification._read_rows(log)
+    except Exception as exc:
+        panel.unknown.append(f"the observation log could not be derived from: {exc}"[:200])
+        panel.summary, panel.summary_tone = UNKNOWN, Tone.UNKNOWN
+        return panel
+
+    complete = sum(1 for row in rows if qualification.identity_from_observation(row).complete)
+    panel.say(f"{len(rows)}", label="observations", tone=Tone.PLAIN)
+    panel.say(f"{complete} of {len(rows)}",
+              Tone.GOOD if complete else Tone.WARN, label="complete identities")
+    panel.figure("observations", str(len(rows)), band="telemetry", kind="routing")
+    panel.figure("configuration-specific", str(len(graded)),
+                 Tone.GOOD if graded else Tone.WARN, band="telemetry", kind="routing",
+                 note="qualifications keyed on the configuration, not the family")
+
+    if not graded:
+        panel.say(
+            "no configuration has a track record of its own; every answer is `unprobed` with a "
+            "family prior beside it",
+            Tone.WARN, label="qualification")
+    for key, grade in sorted(graded.items()):
+        surface, family, client, model = key[0], key[1], key[2], key[3]
+        tone = {"confirmed": Tone.GOOD, "contradicted": Tone.BAD,
+                "provisional": Tone.WARN}.get(grade.grade, Tone.UNKNOWN)
+        panel.say(f"{grade.grade} on {grade.observations} observation(s)", tone,
+                  label=f"{model} @ {key[-1]}")
+        panel.say(f"{surface}/{family}/{client} — availability is a separate axis and this "
+                  f"reading dispatches nothing, so it is {UNKNOWN} here",
+                  Tone.MUTED, depth=1)
+
+    panel.say(f"{len(priors)} family row(s) — ADVISORY, and they rank nothing",
+              Tone.MUTED, label="prior")
+    for (family, task_class), grade in sorted(priors.items()):
+        panel.say(f"{grade.grade} on {grade.observations} observation(s) — prior only",
+                  Tone.MUTED, label=f"{family} @ {task_class}"[:64], depth=1)
+
+    discovery = declared.get("discovery")
+    if not discovery:
+        panel.unknown.append(
+            "no discovery document is declared, so which models exist right now is UNKNOWN. "
+            "Runtime discovery is authoritative for availability and a static table never is")
+    else:
+        document = Path(discovery)
+        if not document.is_absolute():
+            document = base / document
+        try:
+            import model_discovery
+
+            reading = model_discovery.read(document)
+            panel.say(f"{len(reading.models)} identifier(s), produced by client "
+                      f"{reading.producer}", label="discovered")
+            for model in reading.models:
+                panel.say("DISCOVERED only — not available, not qualified", Tone.MUTED,
+                          label=model.identifier, depth=1)
+            for note in reading.skew(str(declared.get("dispatching_client", ""))):
+                panel.say(note, Tone.WARN, label="skew", depth=1)
+        except Exception as exc:
+            panel.unknown.append(f"the discovery document could not be read: {exc}"[:200])
+
+    panel.summary = f"{len(graded)} configuration(s), {len(priors)} prior(s)"
+    panel.summary_tone = Tone.GOOD if graded else Tone.WARN
+    return panel
+
+
 def _capacity_panel(path: Path) -> Panel:
     """Whatever the project last observed about its windows.
 
@@ -1014,6 +1118,8 @@ def project(
                    title="budgets and standing evidence", group="evidence"),
             _panel(_capacity_panel, base / capacity_observation,
                    title="capacity", group="resources"),
+            _panel(_routing_panel, base / contract,
+                   title="model routing and what its evidence supports", group="evidence"),
             _panel(_freshness_panel, record, record_path,
                    title="freshness of this reading", group="identity"),
         ],

@@ -1,5 +1,117 @@
 # Changelog
 
+## 2.4.0 — qualification belongs to a configuration, not to a family
+
+A **MINOR** release (`DECISIONS.md` D11 and D26), derived rather than assumed:
+no authority, contract or migration change is incompatible — `requires.routing`
+is new and defaults to false, no public name is removed, no pinned project moves
+— and the release ships tools that did not exist, which PATCH does not cover.
+**State `IN_PROGRESS` — a candidate. No project may pin it.** Gate:
+`docs/RP2.4-GATE.md`.
+
+### The defect, reproduced before anything was written
+
+Executed against the shipped observation log and the shipped module, a model with
+**zero observations** returned `qualified_for("blind_closure_audit_cross_vendor")
+-> True`, on seven observations none of which recorded any observed model at all.
+`policy/routing-policy.md` had forbidden pooling across configuration strings for
+two releases while `backend_contract.grades_from_observations` keyed on
+`(family, task_class)` and pooled across them. The prose was right, the code did
+the opposite, and nothing compared the two.
+
+### Designed first, and falsified twice before implementation
+
+The design record was frozen against the 2.3.0 release commit and sent to two
+independent cross-vendor readings **before any implementation existed**. Both
+returned NOT SOUND — four blockers and nine majors between them, findings
+partly disjoint — and every factual claim was reproduced by execution before it
+was accepted, including one the coordinator had stated wrongly in the design
+itself. What they changed: the key, the availability axis, the equivalence rule,
+the independence predicate and all thirteen oracles. That is the whole point of
+`skills/core/design-falsification.md`: the cheapest thing to change was still a
+paragraph.
+
+### Configuration identity
+
+- **Nine keyed dimensions** — surface, family, client, observed model, effort,
+  isolation, network, authentication class, task class. Change one and it is a
+  different configuration, `unprobed` until dispatched. The client build and the
+  capacity pool are carried, reported and deliberately not keyed; a governed
+  `Invalidation` answers when a client change really did alter capability, and it
+  is capped so removing adverse evidence can never manufacture a `confirmed`.
+- **An incomplete identity answers nothing.** `UNKNOWN` in a keyed dimension, or
+  a provenance saying the identity was not observed, and the configuration is
+  `unprobed`. A requested slug copied into the observed field is refused as
+  loudly as an absent one.
+- **The migration is that rule and nothing else.** No observation predating this
+  release records an observed model, an authentication class or a surface, so all
+  of them are prior evidence and none is a track record. Nothing was rewritten
+  and nothing was invented.
+- **Family history is display-only.** Printed beside an `unprobed` answer, and it
+  ranks nothing, satisfies no eligibility test and breaks no tie.
+- **A declared alias moves no grade**, and may not cross a surface, family or
+  client. It surfaces the other identity's evidence as prior, labelled.
+
+### Availability is its own axis
+
+- Keyed on the configuration **plus the dispatch preconditions**. This log holds
+  one configuration where standard input decided whether the dispatch started at
+  all, and a scheme in which the success answers for it routes to a known hang.
+- Fed only by observed dispatch outcomes. **Discovery is never availability**: a
+  model listed in the local document was refused outright by its provider, and
+  the same account offered different model sets under two client versions minutes
+  apart. Absence from a document refuses nothing either.
+- A refusal outranks a success recorded the same day, and an observation from a
+  different client is reported rather than answered with.
+
+### Dynamic discovery, guaranteed rather than observed
+
+- A previously unknown identifier reaches a route report **with no Core edit**, in
+  any alphabet, with no normalisation and no validation of shape. The reader
+  takes FIELD names, which an adapter can describe; it never takes model names.
+- A test asserts the toolbelt contains no model identifier at all, matched as a
+  shape so the guard cannot age the way the vocabulary it replaced aged.
+- A reading carries its producer, its age and its skew against the dispatching
+  client. Static tables — this file, the routing table, an adapter's — are
+  explicitly subordinate to it.
+
+### The ladder, and the way onto it
+
+`DISCOVERED -> UNPROBED -> PROVISIONAL -> CONFIRMED`, in the pack's existing
+vocabulary with no duplicate semantics. An unprobed configuration takes work only
+as a **declared probe** whose outcome is evidence for what it tested and nothing
+else; one success is `provisional` and qualified nowhere else. A probe never
+fills a mandatory independent audit leg or a critical-domain promotion — rows 12
+and 16 keep their human.
+
+### Independence, corrected
+
+Independence is a property of the **producer** — worker, session, and provider
+where a leg is declared cross-provider — never of the configuration. Comparing
+configurations is wrong in both directions: the same session auditing its own
+work has a different configuration once the task class changes, and two genuinely
+fresh blind sessions have the same one.
+
+### Publication safety that does not age
+
+The literal `gpt-5` is replaced by a generation-agnostic pattern in the same
+tier. It matched `gpt-5.6-terra` and not `gpt-6-astra`, so the vocabulary had
+already stopped covering the models in use — a literal per slug means a release
+per slug. Falsified against a corpus of current slugs, synthetic future slugs and
+legitimate public prose, and asserted to cover everything the literal covered.
+What it does not cover, deliberately: a bare codename with no vendor prefix.
+
+### Observability
+
+A routing panel in the projection, deriving from the same functions in the same
+process on every render, holding nothing. Per-configuration qualification and
+family prior are shown as two things and never summed; `UNKNOWN` renders as
+`UNKNOWN`.
+
+### Erratum against 2.3.0
+
+None. 2.3.0 is untouched and verifies byte-identical throughout this evolution.
+
 ## 2.3.0 — durable execution, liveness, capacity truth and complete-history safety
 
 A **MINOR** release (`DECISIONS.md` D11 and D24): new backward-compatible

@@ -164,6 +164,31 @@ def test_every_required_reading_is_reachable_in_the_page(row, rendered):
         f"the page no longer shows {row['reading']!r} — {row['why']}")
 
 
+def test_the_state_the_projection_shows_is_the_state_the_manifest_declares(rendered):
+    """Stronger than the literal it replaces, and it cannot go stale.
+
+    The contract row used to name `QUALIFIED_AND_FROZEN` — the value one release
+    happened to hold — so the reading failed the moment a candidate declared
+    `IN_PROGRESS`, which is a correct thing for a candidate to declare. The
+    reading that matters is that the projection shows the state THIS pack
+    declares, and that it does not show one it does not.
+    """
+    import json as _json
+    import pathlib
+
+    text, page = rendered
+    manifest = _json.loads(
+        (pathlib.Path(__file__).resolve().parents[2] / "PACK_MANIFEST.json").read_text(
+            encoding="utf-8"))
+    declared = manifest["state"]
+    assert f"state: {declared}" in text
+    assert declared in page
+    for other in ("QUALIFIED_AND_FROZEN", "IN_PROGRESS", "SUPERSEDED"):
+        if other != declared:
+            assert f"state: {other}" not in text, (
+                f"the projection shows a state this pack does not declare ({other})")
+
+
 def test_the_contract_and_the_count_cannot_drift_apart():
     """The number is derived here and stated nowhere else. A report that says
     *48 of 49* is a number somebody wrote down, and it was already stale when it

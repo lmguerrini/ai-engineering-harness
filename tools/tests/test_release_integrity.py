@@ -462,7 +462,7 @@ def test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it():
 #: The frozen release this candidate must not regress against. Not read from a
 #: document — the digest and state of that revision are what `pack_pin` checks,
 #: and this is the same revision by name.
-QUALIFIED_BASELINE = "d70d72fbcadb98cb8a2979f9c63ed84e595662e8"
+QUALIFIED_BASELINE = "ab7dea97a12c699e8123bcb5d5be976cd05c075e"
 
 
 def test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline():

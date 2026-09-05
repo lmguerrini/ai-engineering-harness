@@ -1,4 +1,4 @@
-# Runtime Pack 2.3.0
+# Runtime Pack 2.4.0
 
 A coordinator-governance layer for AI-delegated engineering: durable structured
 context, Skills, and a small stateless toolbelt — no deterministic software
@@ -10,22 +10,24 @@ every audit round while its stateless checkers survived every one
 
 | | |
 |---|---|
-| Version | **2.3.0** — `VERSION` is the single machine-readable authority |
-| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) — frozen by human authority; adoptable at a project's next capability boundary |
-| Gate record | `docs/RP2.3-GATE.md` |
+| Version | **2.4.0** — `VERSION` is the single machine-readable authority |
+| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, not a release. **No project may pin it.** Moving it to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) and carries a row-7 authorisation as well (`DECISIONS.md` D26) |
+| Gate record | `docs/RP2.4-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
 Verify a checkout — run it, do not read it:
 
 ```bash
-python3 tools/pack_pin.py . --version 2.3.0 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
+python3 tools/pack_pin.py . --version 2.4.0 --sha <full 40-char revision> \
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
 ```
 
 `--state` is the state this checkout actually declares. **A project may only
-adopt `QUALIFIED_AND_FROZEN`**, which is what this release now declares, so the
-command above verifies it and it is adoptable at a project's next capability
-boundary. Passing any other state against this checkout fails — correctly.
+adopt `QUALIFIED_AND_FROZEN`**, and this checkout declares `IN_PROGRESS`, so the
+command above verifies the checkout and the checkout is **not adoptable**.
+Passing `QUALIFIED_AND_FROZEN` against it fails — correctly, and that is the
+whole point of carrying the state in the pin: a candidate that verifies perfectly
+is still a candidate.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a
@@ -91,7 +93,7 @@ Derived from the tracked tree, not maintained by hand
     ├── VERSION                     the single machine-readable version authority
     ├── PACK_MANIFEST.json          release identity: state, digest, test count, gate
     ├── CHANGELOG.md                per-version record, including errata
-    ├── DECISIONS.md                pack-level decisions D1–D25, append-only
+    ├── DECISIONS.md                pack-level decisions D1–D26, append-only
     ├── skills/core/                13 public-safe skills, roles only, no vendor names
     ├── policy/                     private operational policy
     │   ├── observations.jsonl      append-only routing evidence — the record
@@ -116,7 +118,10 @@ Derived from the tracked tree, not maintained by hand
     │   ├── adapter_pin.py          verifies the executable adapters a project declares
     │   ├── project_context.py      verifies a project's declared semantic authority
     │   ├── capability_open.py      one readiness path over all of the above, before work starts
-    │   ├── backend_contract.py     backend identity and per-task-class qualification
+    │   ├── backend_contract.py     backend identity and per-family qualification, now prior
+    │   ├── qualification.py        per-configuration qualification, keyed on the evidence
+    │   ├── model_discovery.py      what a surface offers now; no model vocabulary anywhere
+    │   ├── routing.py              availability, eligibility and the design-audit route
     │   ├── resource_observation.py documented resource truth as routing evidence
     │   ├── evidence_index.py       certification bound to one exact candidate
     │   ├── close_attestation.py    which gates ran, generated from the contract's own declarations
