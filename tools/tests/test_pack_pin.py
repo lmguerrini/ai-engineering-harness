@@ -719,3 +719,71 @@ def test_a_cache_directory_the_release_ignores_is_still_ignored(pack):
     (cache / ".gitignore").write_text("*\n")
     (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n")
     assert pack_pin.untracked_files(pack) == []
+
+
+# --- the enumeration's rules are the release's, and the MATCHING is Git's -----
+
+@pytest.mark.parametrize("rule,present,expected_reported", [
+    ("/payload.py", ("payload.py", "nested/payload.py"), ("nested/payload.py",)),
+    ("payload.py", ("payload.py", "nested/payload.py"), ()),
+    ("*.py", ("keep.py",), ()),
+    ("sub/", ("sub/a.txt",), ()),
+    ("*.py\n!keep.py", ("keep.py", "other.py"), ("keep.py",)),
+    ("*.py\n!/keep.py", ("keep.py", "sub/keep.py"), ("keep.py",)),
+    (" payload.py", ("payload.py",), ("payload.py",)),
+    ("payload.py\t", ("payload.py",), ("payload.py",)),
+])
+def test_the_enumeration_agrees_with_real_git_about_the_release_rules(
+        tmp_path, rule, present, expected_reported):
+    """A differential against `git ls-files --others --exclude-standard`.
+
+    The enumeration once matched the release's rules in Python and was wrong in
+    BOTH directions — an anchored root rule silently matched at every depth and
+    hid material, a nested rule lost its bare-name recursion, and whitespace Git
+    treats as significant was normalised away. An independent reader proved it
+    against Git. Git is the only correct reader of a `.gitignore`, so these
+    cases are asked of Git and of this module and the answers must agree.
+    """
+    root = tmp_path / "release"
+    root.mkdir()
+    _git(root, "init", "--quiet", "--initial-branch", "main")
+    for key, value in (("user.name", "T"), ("user.email", "t@e.invalid"),
+                       ("commit.gpgsign", "false")):
+        _git(root, "config", key, value)
+    (root / ".gitignore").write_text(rule + "\n")
+    (root / "VERSION").write_text("1.0.0\n")
+    _git(root, "add", ".gitignore", "VERSION")
+    _git(root, "commit", "--quiet", "-m", "rules")
+    for relative in present:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x\n")
+
+    git_says = sorted(entry for entry in subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard"],
+        capture_output=True, text=True, check=True).stdout.split() if entry)
+    assert git_says == sorted(expected_reported), (
+        f"the fixture does not mean what it says: git reports {git_says}")
+    assert pack_pin.untracked_files(root) == git_says
+
+
+def test_a_nested_tracked_ignore_declaration_is_refused_not_approximated(pack):
+    """`--exclude-from` is root-relative, so a nested declaration's per-directory
+    meaning cannot be expressed. Refused, with the reason, rather than guessed."""
+    nested = pack / "sub"
+    nested.mkdir()
+    (nested / ".gitignore").write_text("*.log\n")
+    _git(pack, "add", "sub/.gitignore")
+    _git(pack, "commit", "--quiet", "-m", "a nested declaration")
+    with pytest.raises(ValueError, match="nested ignore declarations"):
+        pack_pin.untracked_files(pack)
+    problems = pack_pin.verify_pin(pack)
+    assert any("nested ignore declarations" in problem for problem in problems), problems
+
+
+def test_the_manifest_comparison_is_over_bytes(pack):
+    """Claimed byte-for-byte, and it compared decoded text until a reader said so."""
+    manifest = pack / pack_pin.MANIFEST_NAME
+    manifest.write_bytes(manifest.read_bytes().replace(b"\n", b"\r\n"))
+    assert any("differs from the one committed at HEAD" in problem
+               for problem in pack_pin.verify_pin(pack))

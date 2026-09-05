@@ -586,3 +586,26 @@ def test_a_structured_unknown_effort_cannot_reach_a_grade(tmp_path):
         for n in (1, 2)))
     graded = q.qualifications_from_observations(log)
     assert not graded, "a configuration whose effort is unknown reached a per-configuration grade"
+
+
+def test_pool_id_is_normalised_through_the_same_boundary():
+    """`surface` and `pool_id` are the two keys `identity_from_configuration`
+    reads for itself. `surface` was found carrying its own copy of the rule by
+    an independent reader; `pool_id` sits on the same line and is pinned here so
+    the next reader does not have to find it too."""
+    base = ("surface=codex-cli family=gpt-6 agent=0.153.3 model_observed=a-model "
+            "effort_observed=high isolation=workspace-write network=denied "
+            "auth=subscription identity_method=turn_context")
+    for spelling in ("unknown", "UNKNOWN", "un_known", "Unknown", ""):
+        identity = q.identity_from_configuration(f"{base} pool_id={spelling}")
+        assert identity.pool_id == q.UNKNOWN, (
+            f"pool_id={spelling!r} was carried as an established pool")
+    assert q.identity_from_configuration(f"{base} pool_id=real-pool").pool_id == "real-pool"
+
+    # A SPACED SPELLING IS NOT A NORMALISATION CASE HERE. The packed string is
+    # space-separated, so `pool_id=UN KNOWN` truncates at the space and leaves a
+    # bare token — which the parser already refuses as an ambiguity, marking the
+    # whole identity incomplete. That is the documented tokenisation bound, and
+    # the safe answer; a value with a space travels in the structured mapping.
+    spaced = q.identity_from_configuration(f"{base} pool_id=UN KNOWN")
+    assert spaced.ambiguous_tokens and not spaced.complete

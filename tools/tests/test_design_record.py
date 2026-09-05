@@ -7,6 +7,7 @@ pass at the bottom of this file demonstrates that rather than asserting it.
 """
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -637,3 +638,50 @@ def test_every_spelling_of_the_mutation_revision_agrees(repo):
     record = design_record.read(Path(repo) / "DESIGN-C1.md")
     for spelling in (mutation, mutation[:7], mutation[:12], "HEAD~1", "HEAD~1^{commit}"):
         assert record.problems(repository=repo, mutation_begins_at=spelling), spelling
+
+
+# --- the branches the second reading found uncovered -------------------------
+
+def test_a_requested_binding_with_no_repository_is_refused(repo):
+    """The RP2.4.1 provenance check was unreachable from an ordinary command
+    line: `problems()` returned before checking when no repository was given,
+    and the CLI defaulted one to None. A caller asking to be told whether the
+    design preceded the work must be told, or told that it cannot be."""
+    base = _head(repo)
+    _write(repo, base=base)
+    _commit(repo, "freeze")
+    (repo / "impl.py").write_text("x\n")
+    began = _commit(repo, "implementation")
+    record = design_record.read(Path(repo) / "DESIGN-C1.md")
+    problems = record.problems(mutation_begins_at=began, repository=None)
+    assert problems, "a requested binding with no repository reported nothing"
+    assert any("no repository was given" in problem for problem in problems), problems
+    assert record.problems(repository=None) == [], "a caller asking nothing is unaffected"
+
+
+def test_the_cli_defaults_the_repository_to_the_records_own_directory(repo):
+    """So the ordinary command line reaches the binding it asked for."""
+    base = _head(repo)
+    (repo / "impl.py").write_text("x\n")
+    began = _commit(repo, "implementation lands first")
+    _write(repo, base=base)
+    _commit(repo, "design written afterwards")
+    result = subprocess.run(
+        [sys.executable, str(Path(design_record.__file__)), "DESIGN-C1.md",
+         "--mutation-begins-at", began],
+        cwd=str(repo), capture_output=True, text=True, timeout=120)
+    assert "DESIGN FROZEN" not in result.stdout, result.stdout
+    assert "did not exist at" in result.stdout, result.stdout
+
+
+def test_the_design_provenance_comparison_is_over_bytes(repo):
+    """Claimed byte-for-byte, and compared decoded text until a reader said so."""
+    base = _head(repo)
+    path = _write(repo, base=base)
+    _commit(repo, "freeze")
+    (repo / "impl.py").write_text("x\n")
+    began = _commit(repo, "implementation")
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    record = design_record.read(path)
+    problems = record.problems(mutation_begins_at=began, repository=repo)
+    assert any("differs from the version committed" in problem for problem in problems), problems

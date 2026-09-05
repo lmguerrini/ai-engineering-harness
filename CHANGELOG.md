@@ -78,6 +78,22 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the reading of THAT repair found one more, which is the point
+
+A second bounded reading of the repair delta returned NOT_READY on one blocker,
+and it was the repair itself. Matching the release's ignore rules in Python was
+wrong in both directions against real Git — an anchored root rule stripped of
+its `/` hid material at every depth, a nested rule lost bare-name recursion, and
+significant whitespace was normalised away. The predecessor had been right about
+all of it. Git is the only correct reader of a `.gitignore`; the enumeration now
+supplies the release's rules to Git rather than interpreting them, and a
+differential over eight rule shapes holds it there. A nested tracked declaration,
+which this construction cannot express, is refused rather than guessed.
+
+That is two readings in a row finding the defect inside the repair rather than
+in the thing repaired, which is the pattern this release's own limitations
+already record about itself.
+
 ### The independent reading found three blockers, all of them in the repairs
 
 A single independent reading of this delta returned NOT_READY, and it was right

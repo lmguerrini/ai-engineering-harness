@@ -156,65 +156,66 @@ def tracked_files(root: str | Path) -> list[str]:
 
 
 def untracked_files(root: str | Path) -> list[str]:
-    """Files present in the checkout that Git neither tracks nor ignores.
+    """Files present in the checkout that Git neither tracks nor the release ignores.
 
     A pinned release is a claim about a *directory*, not only about an index.
     An untracked, non-ignored file is inside the tree a consumer will read,
     contributes nothing to the digest, and is exactly how an unreviewed module
     reaches a checkout that reports as verified.
 
-    **Ignored by rules the release TRACKS, and by nothing else.** RP2.4.1 R6:
-    `--exclude-standard` also honours `core.excludesFile` and
-    `.git/info/exclude`, neither of which the release ships, can see, or is a
-    claim about — so an operator whose global ignore file happens to carry
-    `*.jsonl` gave any `.jsonl` in a release root a place to sit unreported.
+    **The rules are the release's, and the MATCHING is Git's.** Two repairs were
+    needed to get that sentence true, and the second is the one worth reading.
 
-    The first repair used `--exclude-per-directory=.gitignore`, and an
-    independent reading of that repair broke it in one move: the option reads
-    the `.gitignore` files present in the WORKING TREE, tracked or not, so an
-    untracked `unreviewed/.gitignore` containing `*` hid itself *and* an
-    unreviewed module while the pin still verified. The comment claiming it read
-    only tracked rules was simply false.
+    `--exclude-standard` honours `core.excludesFile` and `.git/info/exclude`,
+    which the release neither ships nor can see, so an operator's machine-level
+    ignore file could hide material. Replacing it with
+    `--exclude-per-directory=.gitignore` was worse in a way that took an
+    independent reading to see: that option reads the ignore files PRESENT in
+    the working tree, tracked or not, so an untracked `unreviewed/.gitignore`
+    containing `*` hid itself and an unreviewed module.
 
-    So the rules are read from the `.gitignore` files this release TRACKS, and
-    applied here with `pathmatch`, which is the pack's one gitignore semantics
-    and is differentially tested against real `git check-ignore`. An ignore file
-    nobody reviewed cannot exempt anything, including itself.
+    The next attempt read the tracked rules and matched them in Python. It was
+    wrong in BOTH directions and a second reading proved it against real
+    `git check-ignore`: a leading `/` was stripped, so an anchored root rule
+    silently matched at every depth and hid material; a nested rule lost its
+    bare-name recursion, so genuinely ignored files became findings; and
+    leading, trailing and escaped whitespace — which Git treats as significant —
+    was normalised away. Reimplementing gitignore was the mistake. `pathmatch`
+    exists for patterns a PROJECT declares in its contract; this is Git's own
+    file, and Git is the only correct reader of it.
 
-    Reading the rules rather than asking Git to apply them is deliberate. Git
-    applies whatever `.gitignore` is present in the working tree, tracked or
-    not, so `--exclude-per-directory` was not the answer it looked like; and
-    refusing wholesale whenever an untracked ignore file exists was worse, because
-    `pytest` writes `.pytest_cache/.gitignore` into any root the suite has run
-    in, which would have made every such release report its whole cache.
+    So Git matches, and the release supplies the rules: per-directory discovery
+    is pointed at a filename the tree does not contain, which switches off every
+    working-tree ignore file including unreviewed ones, and the release's own
+    tracked `.gitignore` is supplied explicitly. A nested tracked `.gitignore`
+    cannot be expressed this way — `--exclude-from` is root-relative — so it is
+    REFUSED rather than approximated, which is the answer that loses nothing.
+    No release has ever tracked one.
     """
-    everything = _nul_separated(_git(root, "ls-files", "--others", "-z"))
-    if not everything:
-        return []
-    import pathmatch
-
     root = Path(root)
-    patterns: list[str] = []
-    for declaration in tracked_files(root):
-        if declaration != ".gitignore" and not declaration.endswith("/.gitignore"):
-            continue
-        prefix = declaration[: -len(".gitignore")]
-        try:
-            body = (root / declaration).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for line in body.splitlines():
-            rule = line.strip()
-            if not rule or rule.startswith("#"):
-                continue
-            negated = rule.startswith("!")
-            if negated:
-                rule = rule[1:]
-            # A rule in a nested declaration is relative to that declaration's
-            # own directory, which is what makes it the release's rule about
-            # that subtree rather than about the root.
-            patterns.append(("!" if negated else "") + prefix + rule.lstrip("/"))
-    return [path for path in everything if not pathmatch.matches_any(path, patterns)]
+    declared = [path for path in tracked_files(root)
+                if path == ".gitignore" or path.endswith("/.gitignore")]
+    nested = [path for path in declared if path != ".gitignore"]
+    if nested:
+        raise ValueError(
+            f"this release tracks nested ignore declarations ({', '.join(nested)}), and the "
+            f"enumeration supplies rules to Git root-relatively, so their per-directory meaning "
+            f"cannot be expressed here. Refused rather than approximated")
+    # A name the tree does not carry, so Git discovers NO per-directory ignore
+    # file — which is the whole point: an ignore file nobody reviewed has no say.
+    sentinel = ".gitignore-not-tracked-by-this-release"
+    if (root / sentinel).exists():
+        raise ValueError(
+            f"the checkout contains {sentinel!r}, which this enumeration uses to switch off "
+            f"working-tree ignore discovery. Its presence would give it that authority back")
+    # `-z` IS IN THE LIST, not appended at the call site. The guard that requires
+    # every path enumeration to ask for NUL separation reads the source, and a
+    # dynamically assembled argument list hides the flag from it — a checker that
+    # cannot see the thing it checks is the shape this file exists to refuse.
+    arguments = ["ls-files", "--others", "-z", f"--exclude-per-directory={sentinel}"]
+    if declared:
+        arguments.append(f"--exclude-from={root / '.gitignore'}")
+    return _nul_separated(_git(root, *arguments))
 
 
 def tree_digest(root: str | Path) -> tuple[str, int]:
@@ -472,7 +473,7 @@ def verify_pin(
 
     try:
         strays = untracked_files(root)
-    except (OSError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         problems.append(f"untracked files could not be enumerated: {exc}")
     else:
         if strays:
