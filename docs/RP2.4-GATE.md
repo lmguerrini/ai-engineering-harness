@@ -995,6 +995,119 @@ synthetic identifier. At the strict tier the population is this pack's own
 governance vocabulary appearing in its own documentation, which is the case
 `skills/core/public-safety.md` describes.
 
+## The release-memory and evidence contracts
+
+Two long-term capabilities a consuming project needs, checked by execution
+rather than accepted because a file exists.
+
+### The release delta
+
+**`CHANGELOG.md` is the canonical per-release delta and has been since 2.0.0** —
+one section per version, stating that version against the one before it. No
+second release-history system was created; what was added is a check on the one
+that exists.
+
+**The gap was real.** The 2.4.0 entry was written partway through the release and
+then stopped being updated. By the end it named one of four new tools, none of
+eight new test modules, two of fourteen new tracked files and one of two new
+decisions — so *what changed from 2.3.0 to 2.4.0* could only be answered by
+reading the commit range, which is the work a changelog exists to make
+unnecessary. The entry now accounts for all of it.
+
+    python3 tools/release_delta.py . --baseline <the previous release's revision>
+    release delta ab7dea97 -> 2.4.0: 28 named, 0 omitted
+
+`PACK_MANIFEST.json` records `baseline_revision`, so the range is a fact rather
+than an argument, and `test_release_integrity.py` runs the check against the
+manifest's own version and asserts the baseline resolves, is an ancestor, and is
+not HEAD. **2.5.0 states its delta from 2.4.0, 2.6.0 from 2.5.0.**
+
+**What it cannot do**, said in the module and in the test: judge whether an entry
+describes a change well, or notice a change that added no file. A repair inside
+an existing module is invisible to it. `tools/tests/test_release_delta.py` proves
+it can say no — an entry missing one addition, a version with no entry, an empty
+entry, and an addition named only in a NEIGHBOURING version's entry are each
+refused, and a deletion is deliberately not demanded.
+
+### Evidence that repeats a known failure
+
+**`policy/recurrence-classes.json` is the deduplication mechanism** and has been
+since 2.3.0: 47 failure classes, each with the selector for its oracle. Evidence
+belonging to an existing class strengthens that class rather than creating a
+second record of one failure. What it could not do was HOLD the evidence — the
+schema had nowhere to say who found it, in which project, at which revision, or
+how it was reproduced.
+
+`tools/evolution_evidence.py` adds that and nothing else:
+
+*   **A recurrence strengthens the class it belongs to.** Another project,
+    another release, another provider, another implementation path — none of
+    these makes a second record, and each is executed as its own case.
+*   **A near-duplicate proposal is returned, not guessed at.** A submission
+    naming a new class that closely resembles a recorded one comes back
+    `NEEDS_DISTINCTION` until the submitter says which different invariant it
+    violates. Merging two failure modes loses one; splitting one loses the fact
+    that four instances were four instances of one thing.
+*   **Occurrences are appended and never rewritten.** A class hit five times
+    carries five records, each with its own project, release, revision,
+    reproduction and producer, and a test reads one back through a fresh
+    interpreter to prove the provenance outlives the session that recorded it.
+*   **An engineering-loop failure is evidence like any other.** *Oracle satisfied
+    for a reason other than its claim*, *vacuous mutation test*, *gate failure
+    hidden by a pipeline*, *audit evidence about revision A accepted for revision
+    B*, *false RUNNING from process existence* — all already classes, all
+    exercised through this pipeline, and every one of them happened during this
+    release's own development.
+
+The threshold above which two class names are near-duplicates is measured against
+the pack's own vocabulary rather than picked: the closest pair it ships — a stale
+WAITER and a stale WORKER — sits exactly at it, and a test asserts that, so a
+submitter proposing either when the other exists is asked a question whose answer
+is easy to give.
+
+**The bound, stated rather than dressed up.** Near-duplicate detection is over
+words. A submission describing the same invariant in entirely different
+vocabulary reads as new, and one sharing vocabulary with an unrelated class is
+returned for a distinction it should not have to make. Both fail towards asking a
+person, which is the direction this pack takes whenever the alternative is Core
+deciding what two sentences mean.
+
+### What this pass also found
+
+A reading scoped to the pack's BEHAVIOUR rather than to a delta returned **seven
+reproduced defects** in the modules a consuming project calls, in code no repair
+had touched since the first round. Three of the seven were the class this
+release's headline repair was for — two mechanisms answering one question
+differently:
+
+*   `capability_open` called the adapter verifier by a path the repair to
+    `verify_contract` never reached, so readiness reported VERIFIED where the
+    verifier refused;
+*   `derive` did not consult a recorded producer where `reconcile` did, so one
+    record was WAITING and RECOVERY_REQUIRED at once;
+*   the projection's headline resolved artifacts against the process while its
+    own panel resolved them against the record.
+
+The other four: an exemption covering a path it was not written for and content
+arriving at a new path never being scanned there; a JSON null becoming an
+established qualification dimension; an unscoped human blocker covering nothing
+in the page that reads it; and availability timestamps ordered as text, so a
+success in one offset outranked a later refusal in another. All seven are closed,
+pinned in `tools/tests/test_behaviour_findings.py`, and eight mutants reverting
+them die.
+
+**And a claim of mine was wrong.** Three bounded readings of three repair deltas
+had found fewer and fewer defects and none in behaviour, and this record read
+that as the release converging. It was the DELTAS converging. A delta-scoped
+reading cannot see what the delta did not touch, and that is recorded as a
+limitation so the next release reads the whole subject at least once after its
+last delta.
+
+**One further inaccuracy, recorded rather than rewritten.** The commit carrying
+these repairs also carried both contracts, and its message describes only the
+repairs. The commit contract governs shape and vocabulary, not completeness, so
+it passed; the record is here instead.
+
 ## The freeze procedure
 
 **Row 7 is granted.** The founder authorised the governance narrowing before its
