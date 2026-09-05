@@ -162,3 +162,37 @@ def test_the_cli_answers_and_exits_non_zero_on_an_incomplete_delta(tmp_path):
     assert result.returncode == 1, result.stdout
     assert "DELTA INCOMPLETE" in result.stdout
     assert "new_thing.py" in result.stdout
+
+
+def test_a_test_module_named_in_the_entry_does_not_cover_the_module_it_tests(tmp_path):
+    """THROUGH `coverage`, not through the helper. A first oracle for this checked
+    `_names` directly, so a mutant reverting the CALL SITE to substring
+    membership left the helper correct and unused, and survived.
+
+    The real case: `tools/evolution_evidence.py` counted as named because
+    `evolution_evidence.py` occurs inside `test_evolution_evidence.py`, which the
+    entry did name.
+    """
+    root, baseline = _repository(
+        tmp_path, baseline_files=["VERSION"],
+        added_files=["tools/evolution_evidence.py", "tools/tests/test_evolution_evidence.py"])
+    changelog = ("# Changelog\n\n## 9.9.9 — this release\n\n"
+                 "Added `tools/tests/test_evolution_evidence.py`.\n")
+    report = release_delta.coverage(root, version="9.9.9", baseline=baseline,
+                                    changelog=changelog)
+    assert not report.complete, (
+        "naming the test module covered the module it tests; substring membership is not naming")
+    assert [delta.path for delta in report.omitted] == ["tools/evolution_evidence.py"], (
+        [delta.path for delta in report.omitted])
+
+
+def test_a_longer_decision_identifier_does_not_cover_a_shorter_one(tmp_path):
+    root, baseline = _repository(tmp_path, baseline_files=["VERSION"],
+                                 added_files=["tools/a.py"], decisions_after=["D9", "D90"])
+    changelog = ("# Changelog\n\n## 9.9.9 — this release\n\n"
+                 "Added `tools/a.py` and recorded D90.\n")
+    report = release_delta.coverage(root, version="9.9.9", baseline=baseline,
+                                    changelog=changelog)
+    assert not report.complete, "D90 covered an omitted D9"
+    assert [delta.token for delta in report.omitted] == ["D9"], (
+        [delta.token for delta in report.omitted])

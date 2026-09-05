@@ -1911,6 +1911,23 @@ def test_the_baseline_this_release_measures_its_delta_from_is_a_real_ancestor(ma
                                       capture_output=True, text=True).stdout.strip(), (
         "the baseline is HEAD, so the delta is empty by construction")
 
+    # AND IT MUST BE OUTSIDE THIS RELEASE. Ancestry and a count floor both use
+    # the baseline, so neither can tell a previous release from a commit in the
+    # middle of this one — an independent reader set it to a revision whose
+    # VERSION was already 2.4.0, which hid 24 additions, and BOTH guards passed.
+    # The release boundary is a fact in the repository: at the previous release,
+    # `VERSION` said something else.
+    at_baseline = subprocess.run(["git", "show", f"{revision}:VERSION"], cwd=ROOT,
+                                 capture_output=True, text=True)
+    assert at_baseline.returncode == 0, (
+        f"the recorded baseline {revision[:12]} has no VERSION file, so whether it is a "
+        f"previous release cannot be established")
+    assert at_baseline.stdout.strip() != manifest["version"], (
+        f"the recorded baseline {revision[:12]} already declares VERSION "
+        f"{at_baseline.stdout.strip()}, which is this release's own. A delta measured from "
+        f"inside the release hides everything before that point, and every other check here "
+        f"is measured from the same place, so none of them can see it")
+
 
 def test_this_versions_changelog_entry_names_what_this_release_added(manifest):
     """The canonical per-release delta, checked against the release itself.

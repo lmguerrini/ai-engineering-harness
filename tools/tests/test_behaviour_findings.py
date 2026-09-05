@@ -405,3 +405,211 @@ def test_a_same_instant_refusal_still_wins_the_tie():
                                   observed_at="2026-09-05T11:00:00+02:00"),
     )
     assert r.availability_for(identity, frozenset(), observations, build="1.0")[0] == r.UNAVAILABLE
+
+
+# =============================================================================
+# What a bounded reading of the FIRST repairs found: every one of these was a
+# defect in a repair made hours earlier, and three were the identical mistake
+# one module over.
+# =============================================================================
+
+
+def test_content_that_appears_and_is_deleted_inside_the_range_is_still_scanned(tmp_path):
+    """Comparing the two endpoints misses what lived only in between.
+
+    Private content committed at a non-exempt path and deleted in a later
+    outgoing commit scanned CLEAN, while the intermediate commit — which would be
+    sent — still carries it.
+    """
+    root, git = _repository(tmp_path)
+    (root / "a-exempt.txt").write_text("zzprivatezz\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "seed")
+    baseline = git("rev-parse", "HEAD").stdout.strip()
+    (root / "public.txt").write_text("zzprivatezz\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "it appears")
+    (root / "public.txt").unlink()
+    git("add", "-A")
+    git("commit", "-q", "-m", "and it is deleted")
+
+    report = outgoing_scan.scan_outgoing(
+        root, ref="HEAD", baseline=baseline, scanner=_scanner(),
+        content_exempt_paths=("a-exempt.txt",))
+    assert any(leak.subject == "public.txt" for leak in report.leaks), (
+        f"content that existed only inside the range was not scanned; "
+        f"leaks: {[leak.subject for leak in report.leaks]}")
+
+
+def test_an_ordinary_submodule_change_does_not_abort_the_scan(tmp_path):
+    """A gitlink is mode 160000 and its sha names a commit in ANOTHER repository,
+    so asking this one for its size refuses. The pre-repair scan completed this
+    case; the first version of the repair did not."""
+    (tmp_path / "dep-holder").mkdir()
+    (tmp_path / "sup-holder").mkdir()
+    dependency, dep_git = _repository(tmp_path / "dep-holder")
+    (dependency / "lib.txt").write_text("ordinary\n", encoding="utf-8")
+    dep_git("add", "-A")
+    dep_git("commit", "-q", "-m", "the dependency")
+
+    superproject, sup_git = _repository(tmp_path / "sup-holder")
+    (superproject / "seed.txt").write_text("nothing\n", encoding="utf-8")
+    sup_git("add", "-A")
+    sup_git("commit", "-q", "-m", "seed")
+    baseline = sup_git("rev-parse", "HEAD").stdout.strip()
+    sup_git("-c", "protocol.file.allow=always", "submodule", "add", "-q",
+            str(dependency), "vendor")
+    sup_git("commit", "-q", "-m", "add a submodule")
+
+    report = outgoing_scan.scan_outgoing(superproject, ref="HEAD", baseline=baseline,
+                                         scanner=_scanner())
+    assert report is not None, "the scan did not complete over a submodule addition"
+
+
+def test_an_ended_producer_is_seen_through_an_output_root_wait_too(tmp_path):
+    """The first repair covered the two path kinds and left this one, so the same
+    disagreement between `derive` and `reconcile` stayed reachable.
+
+    **THE ROOT MUST BE CLAIMED.** A first version of this oracle used a bare
+    directory, which `task_output.classify` reports UNKNOWN for — no owner
+    marker — so the observation short-circuited before the producer was ever
+    consulted and the test passed against the unrepaired code. Vacuous for the
+    property it names, which is the shape this suite has its own sweep for.
+    """
+    import task_output
+
+    root = tmp_path / "out"
+    contract = task_output.OutputContract(task_id="t", output_root=root,
+                                          max_bytes_per_write=1024)
+    task_output.claim_root(contract)
+    # A CLAIMED ROOT WITH NOTHING DURABLE IN IT: the producer started, took the
+    # root, and stopped. A loose file the contract does not describe classifies
+    # UNKNOWN — which is a different, correct refusal — so the fixture leaves
+    # the root as the claim made it.
+    state_without_a_producer = task_output.classify(contract).state
+    assert state_without_a_producer != task_output.RecoveryState.UNKNOWN, (
+        f"the fixture is inert: the root classifies {state_without_a_producer}, so the "
+        f"observation never reaches the producer check this test is about")
+    assert state_without_a_producer != task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT
+
+    pid = _ended_producer()
+    wait = Wait(job_id="j", kind=WaitKind.OUTPUT_ROOT, expects="the output",
+                path=str(root), task_id="t", max_bytes_per_write=1024, pid=pid,
+                not_beyond_seconds=99999, declared_at=continuation.now(),
+                waiter=" ".join(progress.waiter_command("j", pid, sentinel=str(root))))
+    record = ContinuationRecord(capability="C", updated_at=continuation.now(), waits=(wait,))
+    report = continuation.derive(record, relative_to=tmp_path)
+    assert report.state != continuation.State.WAITING_ON_IDENTIFIED_JOB, (
+        f"an output root whose producer has ended still reads as a running job: "
+        f"{[o.how for o in report.observations]}")
+    assert any("has ended" in observation.how for observation in report.observations), (
+        f"the observation does not say the producer ended, so this is reaching the right "
+        f"state for the wrong reason: {[o.how for o in report.observations]}")
+
+
+@pytest.mark.parametrize("pid,keeps_waiting", [
+    ("live-int", True), ("live-string", True),
+    ("ended-int", False), ("ended-string", False),
+    (None, True), ("not-a-pid", True), (True, True),
+])
+def test_a_numeric_string_producer_is_read_the_way_a_process_wait_reads_one(pid, keeps_waiting):
+    """`WaitKind.PROCESS` has always accepted a numeric string. Treating one as
+    unaskable turned a LIVE producer into recovery for the artifact kinds and
+    left it waiting for the process kind — the same record giving two answers,
+    one type over."""
+    alive = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(20)"])
+    try:
+        ended = _ended_producer()
+        actual = {"live-int": alive.pid, "live-string": str(alive.pid),
+                  "ended-int": ended, "ended-string": str(ended)}.get(pid, pid)
+        wait = Wait.__new__(Wait)
+        object.__setattr__(wait, "pid", actual)
+        object.__setattr__(wait, "job_id", "j")
+        gone = continuation._producer_gone(wait, "the artifact has not appeared")
+        assert (gone is None) is keeps_waiting, (
+            f"pid {actual!r}: {'kept waiting' if gone is None else gone.how}")
+    finally:
+        alive.kill()
+        alive.wait(timeout=30)
+
+
+def test_naming_a_test_module_does_not_cover_the_module_it_tests():
+    """Substring membership is not naming, and this pack has the shape in its own
+    recurrence classes. `evolution_evidence.py` counted as named because it
+    occurs inside `test_evolution_evidence.py`."""
+    import release_delta
+
+    assert not release_delta._names("see test_evolution_evidence.py",
+                                    "evolution_evidence.py")
+    assert release_delta._names("see `tools/evolution_evidence.py` here",
+                                "evolution_evidence.py")
+    assert not release_delta._names("recorded D90", "D9")
+    assert release_delta._names("recorded D9 and D10", "D9")
+
+
+def test_a_prerelease_entry_does_not_stand_in_for_the_release_entry():
+    """`\\b` accepts a hyphen, so `## 9.9.9-rc.1` satisfied a request for 9.9.9."""
+    import release_delta
+
+    with pytest.raises(ValueError, match="no `## 9.9.9` entry"):
+        release_delta.entry_for("# C\n\n## 9.9.9-rc.1 — pre\n\nbody\n", "9.9.9")
+    assert release_delta.entry_for("# C\n\n## 9.9.9 — real\n\nbody\n", "9.9.9").strip() == "body"
+
+
+@pytest.mark.parametrize("absent", [None, False, [], {}, (), "", "   ", "none", "NULL"])
+def test_an_absent_distinction_is_absent_however_it_is_spelled(absent):
+    """`str(None).strip()` is `"None"` — four characters of nothing that pass
+    every emptiness test. The identical defect this release had fixed in
+    `qualification` hours earlier, made again in a new module."""
+    import evolution_evidence as ee
+
+    classes = ee.load(ROOT / "policy" / "recurrence-classes.json")
+    evidence = ee.Evidence(
+        recurrence_class="superseded or orphaned or stale waiter",
+        occurrence=ee.Occurrence(project="p", release="r", revision="v",
+                                 reproduction="x"),
+        distinct_because=absent)
+    assert ee.classify(evidence, classes).outcome == ee.NEEDS_DISTINCTION, (
+        f"distinct_because={absent!r} was accepted as a stated distinction")
+
+
+@pytest.mark.parametrize("field", ["project", "release", "revision", "reproduction"])
+def test_absent_provenance_is_refused_however_it_is_spelled(field):
+    import evolution_evidence as ee
+
+    classes = ee.load(ROOT / "policy" / "recurrence-classes.json")
+    evidence = ee.Evidence(
+        recurrence_class="false RUNNING from process existence",
+        occurrence=ee.Occurrence(**{**dict(project="p", release="r", revision="v",
+                                           reproduction="x"), field: None}))
+    with pytest.raises(ValueError, match=field):
+        ee.classify(evidence, classes)
+
+
+def test_replaying_one_piece_of_evidence_does_not_invent_a_second_occurrence():
+    """A class's strength is how many separate times it was hit. A retry, a
+    re-import or a re-run must not add to it."""
+    import evolution_evidence as ee
+
+    classes = ee.load(ROOT / "policy" / "recurrence-classes.json")
+    evidence = ee.Evidence(
+        recurrence_class="false RUNNING from process existence",
+        occurrence=ee.Occurrence(project="p", release="r", revision="v", reproduction="x"))
+    once = ee.reinforce(classes, evidence)
+    with pytest.raises(ValueError, match="already recorded"):
+        ee.reinforce(once, evidence)
+    assert len(ee.occurrences_of(once, "false RUNNING from process existence")) == 1
+
+
+def test_a_distinction_against_the_class_you_submit_under_is_refused():
+    """Returning RECURRENCE and discarding the explanation silently merged a
+    submission that had said it was different."""
+    import evolution_evidence as ee
+
+    classes = ee.load(ROOT / "policy" / "recurrence-classes.json")
+    evidence = ee.Evidence(
+        recurrence_class="false RUNNING from process existence",
+        occurrence=ee.Occurrence(project="p", release="r", revision="v", reproduction="x"),
+        distinct_because="it is about an artifact's owner, not about liveness")
+    with pytest.raises(ValueError, match="cannot both be true"):
+        ee.classify(evidence, classes)

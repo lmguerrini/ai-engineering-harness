@@ -1136,9 +1136,20 @@ def blobs_at_paths_in_outgoing_range(
     if baseline is None:
         output = _run(repository, "ls-tree", "-r", "-z", ref, timeout=timeout, text=False)
     else:
+        # EVERY COMMIT IN THE RANGE, not the two endpoints. Comparing the
+        # endpoints misses content that appeared and was removed WITHIN the
+        # range — an independent reader committed private content at a
+        # non-exempt path and deleted it in a later outgoing commit, and the
+        # endpoint comparison reported clean while the intermediate commit still
+        # carries it. Every commit that would be sent is scanned, because every
+        # one of them would be.
         output = _run(
-            repository, "diff-tree", "-r", "--no-commit-id", "--diff-filter=ACMRT",
-            "-z", baseline, ref, timeout=timeout, text=False,
+            repository, "diff-tree", "-r", "-m", "--no-commit-id", "--diff-filter=ACMRT",
+            "-z", "--stdin", timeout=timeout, text=False,
+            # BYTES, because this call reads bytes: `text=False` puts the pipe
+            # in binary mode in both directions.
+            input_value=("\n".join(_run(repository, "rev-list", ref, "--not", baseline,
+                                         timeout=timeout).split()) + "\n").encode("ascii"),
         )
     assert isinstance(output, bytes)
     records = [chunk for chunk in output.split(b"\0") if chunk]
@@ -1148,6 +1159,7 @@ def blobs_at_paths_in_outgoing_range(
         for record in records:
             head, _, path = record.partition(b"\t")
             fields = head.split()
+            # `blob` EXCLUDES A GITLINK by type already in this shape.
             if len(fields) == 3 and fields[1] == b"blob" and path:
                 found.append((path.decode("utf-8", "surrogateescape"),
                               fields[2].decode("ascii")))
@@ -1160,8 +1172,17 @@ def blobs_at_paths_in_outgoing_range(
         if record.startswith(b":"):
             fields = record[1:].split()
             if len(fields) >= 5 and index + 1 < len(records):
+                destination_mode = fields[1].decode("ascii")
                 destination = fields[3].decode("ascii")
                 path = records[index + 1].decode("utf-8", "surrogateescape")
+                # A GITLINK IS NOT A BLOB. `diff-tree` reports a submodule
+                # pointer with mode 160000 and the sha of a commit that lives in
+                # ANOTHER repository, so asking this one for its size refused —
+                # an ordinary submodule bump aborted the scan, which the
+                # pre-repair scan completed. Found by an independent reading.
+                if destination_mode == "160000":
+                    index += 2
+                    continue
                 if set(destination) != {"0"}:
                     found.append((path, destination))
                 index += 2

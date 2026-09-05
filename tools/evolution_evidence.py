@@ -85,6 +85,30 @@ def _overlap(left: str, right: str) -> float:
 NEAR_DUPLICATE = 0.75
 
 
+def _present(value: object) -> str:
+    """The text of a value that is actually there, or `""`.
+
+    **`str(value).strip()` IS NOT THIS.** It turns `None` into the string
+    `"None"`, which is four characters of nothing and passes every emptiness
+    test — so a submission with `distinct_because=None` was accepted as
+    distinguished "because None", and one whose project, release, revision and
+    reproduction were all `None` recorded an occurrence nobody can go back to.
+    Both found by an independent reading, and both are the same defect this
+    release had already fixed in `qualification.identity_from_observation` a few
+    hours earlier: a null is the absence of a value and stringifying it is how
+    absence becomes presence.
+    """
+    if value is None or isinstance(value, bool):
+        return ""
+    # AN EMPTY CONTAINER IS ALSO ABSENCE. `str([])` is `"[]"`, two characters
+    # that survive a strip — the same shape as `str(None)` one type over, and
+    # the reading that found the first found this too.
+    if isinstance(value, (list, tuple, set, dict)) and not value:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in ("none", "null", "[]", "{}", "()") else text
+
+
 @dataclass(frozen=True)
 class Occurrence:
     """One time a class was hit, with enough to go back to it."""
@@ -140,11 +164,11 @@ def load(path: str | Path) -> list:
 def problems(evidence: Evidence) -> tuple:
     """Everything that stops this submission from being usable at all."""
     found = []
-    if not str(evidence.recurrence_class).strip():
+    if not _present(evidence.recurrence_class):
         found.append("a submission must name the class it belongs to or proposes")
     occurrence = evidence.occurrence
     for name in ("project", "release", "revision", "reproduction"):
-        if not str(getattr(occurrence, name, "")).strip():
+        if not _present(getattr(occurrence, name, "")):
             found.append(
                 f"an occurrence must record {name}; evidence whose provenance is a recollection "
                 f"cannot be gone back to, and going back to it is what this record is for")
@@ -159,6 +183,19 @@ def classify(evidence: Evidence, classes) -> Verdict:
 
     names = [entry["class"] for entry in classes]
     if evidence.recurrence_class in names:
+        # A DISTINCTION AGAINST THE CLASS YOU ARE SUBMITTING UNDER IS A
+        # CONTRADICTION. This returned RECURRENCE and threw the explanation
+        # away, so a submitter who had said *this violates a different
+        # invariant* had that statement silently merged into the class they
+        # were distinguishing themselves from. Found by an independent reading.
+        # Refusing sends them back to name the new class, which is the whole
+        # point of having said it.
+        if _present(evidence.distinct_because):
+            raise ValueError(
+                f"this submission names the recorded class {evidence.recurrence_class!r} AND "
+                f"states how it differs ({_present(evidence.distinct_because)}). Those cannot "
+                f"both be true: submit it under that class with no distinction, or propose a "
+                f"class of its own")
         return Verdict(
             RECURRENCE, matched=evidence.recurrence_class, similarity=1.0,
             why=(f"{evidence.recurrence_class!r} is already recorded. This strengthens it with "
@@ -170,7 +207,7 @@ def classify(evidence: Evidence, classes) -> Verdict:
         if overlap > score:
             nearest, score = name, overlap
 
-    if score >= NEAR_DUPLICATE and not str(evidence.distinct_because).strip():
+    if score >= NEAR_DUPLICATE and not _present(evidence.distinct_because):
         return Verdict(
             NEEDS_DISTINCTION, matched=nearest, similarity=score,
             why=(f"{evidence.recurrence_class!r} closely resembles the recorded class "
@@ -181,8 +218,8 @@ def classify(evidence: Evidence, classes) -> Verdict:
     return Verdict(
         NEW, matched=nearest, similarity=score,
         why=(f"{evidence.recurrence_class!r} is a materially new class"
-             + (f", distinguished from {nearest!r} because {evidence.distinct_because}"
-                if str(evidence.distinct_because).strip() else "")
+             + (f", distinguished from {nearest!r} because {_present(evidence.distinct_because)}"
+                if _present(evidence.distinct_because) else "")
              + ". It needs an entry and an oracle of its own"))
 
 
@@ -200,10 +237,22 @@ def reinforce(classes, evidence: Evidence, *, files=(), keyword=None) -> list:
 
     updated = [dict(entry) for entry in classes]
     target = evidence.recurrence_class
+    record = _as_dict(evidence.occurrence)
     for entry in updated:
         if entry["class"] == target:
             existing = list(entry.get("occurrences") or ())
-            existing.append(_as_dict(evidence.occurrence))
+            # A REPLAY IS NOT A SECOND OCCURRENCE. Calling this twice with one
+            # piece of evidence stored two identical records, so a class read as
+            # having recurred without anything having recurred — the strength of
+            # a record is how many separate times it was hit, and a retry, a
+            # re-import or a re-run must not add to it. Found by an independent
+            # reading.
+            if record in existing:
+                raise ValueError(
+                    f"this occurrence is already recorded against {target!r}; recording it "
+                    f"again would say the failure recurred when nothing recurred. If it did "
+                    f"happen again, the second time has its own revision and reproduction")
+            existing.append(record)
             entry["occurrences"] = existing
             return updated
 
@@ -211,7 +260,7 @@ def reinforce(classes, evidence: Evidence, *, files=(), keyword=None) -> list:
         "class": target,
         "files": list(files),
         "keyword": keyword,
-        "occurrences": [_as_dict(evidence.occurrence)],
+        "occurrences": [record],
     })
     return updated
 

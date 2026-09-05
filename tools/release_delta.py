@@ -113,7 +113,12 @@ def entry_for(changelog: str, version: str) -> str:
     # left the heading's own title inside the body, so an entry that was a
     # heading and nothing else read as non-empty — which is the obvious way to
     # satisfy a check that looks for a heading. Its own test found that.
-    match = re.search(rf"^## {re.escape(version)}\b.*$", changelog, re.M)
+    # `\b` ACCEPTS A HYPHEN, so `## 9.9.9-rc.1` satisfied a request for `9.9.9`
+    # and one version's entry stood in for another's. The version must be
+    # followed by the end of the token, which in these headings is a space, an
+    # em dash or the end of the line — never another version character. Found by
+    # an independent reading.
+    match = re.search(rf"^## {re.escape(version)}(?![0-9A-Za-z.\-_+])[^\n]*$", changelog, re.M)
     if not match:
         raise ValueError(f"the changelog has no `## {version}` entry")
     rest = changelog[match.end():]
@@ -122,6 +127,30 @@ def entry_for(changelog: str, version: str) -> str:
     if not body.strip():
         raise ValueError(f"the `## {version}` entry is empty")
     return body
+
+
+def _names(entry: str, token: str) -> bool:
+    """Whether the entry names this token, as a token rather than as a substring.
+
+    **SUBSTRING MEMBERSHIP IS NOT NAMING**, and this pack has the failure in its
+    own recurrence classes as *substring-based semantic comparison*. Written that
+    way, `tools/evolution_evidence.py` counted as named because
+    `evolution_evidence.py` occurs inside `test_evolution_evidence.py`, and an
+    omitted decision `D9` counted as named because `D90` was there. Both found by
+    an independent reading of the check's first version.
+
+    The boundary is the set of characters that can appear in a filename or a
+    decision identifier, so `evolution_evidence.py` does not match inside
+    `test_evolution_evidence.py` and `D9` does not match inside `D90`.
+    """
+    # THE BOUNDARY DEPENDS ON THE TOKEN, because a period continues a filename
+    # and ends a sentence. With one boundary set for both, `recorded D9.` did
+    # not name `D9` — the trailing full stop read as part of the identifier —
+    # and the check reported an omission nobody had made.
+    continues = r"0-9A-Za-z._-" if "." in token else r"0-9A-Za-z_-"
+    boundary = rf"[^{continues}]"
+    pattern = rf"(?:^|{boundary})" + re.escape(token) + rf"(?:$|{boundary})"
+    return re.search(pattern, entry) is not None
 
 
 @dataclass(frozen=True)
@@ -153,7 +182,7 @@ def coverage(repository: str | Path, *, version: str, baseline: str,
     entry = entry_for(text, version)
     named, omitted = [], []
     for delta in additions(repository, baseline=baseline, revision=revision):
-        (named if delta.token in entry else omitted).append(delta)
+        (named if _names(entry, delta.token) else omitted).append(delta)
     return Coverage(version=version, baseline=baseline,
                     named=tuple(named), omitted=tuple(omitted))
 

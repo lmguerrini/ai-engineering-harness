@@ -531,6 +531,51 @@ def _mtime(target: Path) -> "datetime | None":
         return None
 
 
+def _producer_gone(wait: "Wait", because: str) -> "WaitObservation | None":
+    """What the recorded producer says, when the artifact says nothing yet.
+
+    `None` means the producer is running, or the wait names none, or the number
+    it names cannot be read as one — in every case the artifact remains the
+    answer. Anything else is an observation to return instead.
+
+    **Written as a helper rather than inline because the inline version did not
+    generalise.** It covered `EXIT_FILE` and `PATH_EXISTS` and left `OUTPUT_ROOT`
+    with the original defect — an ended producer whose partial output had not
+    completed still read as a running job — which an independent reader found
+    immediately after the first repair. The same shape as `max_bytes_per_write`
+    below: a repair written for one field, at one call site.
+
+    A pid that is a NUMERIC STRING is read the way `WaitKind.PROCESS` has always
+    read one. Treating it as unaskable turned a live producer into recovery for
+    two wait kinds and left it waiting for the third, which is the same record
+    giving two answers again, one type over.
+    """
+    number = wait.pid
+    if isinstance(number, bool) or number is None:
+        return None
+    if isinstance(number, str):
+        if not number.strip().lstrip("+").isdigit():
+            return None
+        number = int(number.strip())
+    elif not isinstance(number, int):
+        return None
+
+    from progress import process_has_ended
+
+    ended, how = process_has_ended(number)
+    if ended is None:
+        return WaitObservation(
+            wait.job_id, None,
+            f"{because} and the producer this wait names cannot be asked about ({how}), so "
+            f"whether it is still running is not established")
+    if ended:
+        return WaitObservation(
+            wait.job_id, None,
+            f"{because} and the producer this wait names has ended ({how}); what happened is "
+            f"not established from the record alone")
+    return None
+
+
 def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
     if wait.kind == WaitKind.HUMAN:
         return WaitObservation(wait.job_id, None, "a person resolves this; no machine can observe it")
@@ -581,20 +626,9 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
             # one liveness question and drifting — surviving inside the module
             # whose repair was to have one answer. Found by an independent
             # reading of this release's behaviour.
-            if wait.pid:
-                from progress import process_has_ended
-
-                ended, how = process_has_ended(wait.pid)
-                if ended is None:
-                    return WaitObservation(
-                        wait.job_id, None,
-                        f"{target} has not appeared and the producer this wait names cannot be "
-                        f"asked about ({how}), so whether it is still running is not established")
-                if ended:
-                    return WaitObservation(
-                        wait.job_id, None,
-                        f"{target} has not appeared and the producer this wait names has ended "
-                        f"({how}); what happened is not established from the record alone")
+            gone = _producer_gone(wait, f"{target} has not appeared")
+            if gone is not None:
+                return gone
             return WaitObservation(wait.job_id, False, f"{target} has not appeared")
 
         # `Wait.declare` refuses a path that already exists, and that is the
@@ -678,6 +712,14 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
     if report.state == task_output.RecoveryState.UNKNOWN:
         return WaitObservation(wait.job_id, None, f"the output root is UNKNOWN: {report.why}")
     finished = report.state == task_output.RecoveryState.COMPLETED_WITH_DURABLE_OUTPUT
+    if not finished:
+        # THE PRODUCER, HERE TOO. The first repair covered the two path kinds
+        # and left this one, so an ended producer whose partial output had not
+        # completed still read as a running job — the same disagreement between
+        # `derive` and `reconcile`, reachable through a different wait kind.
+        gone = _producer_gone(wait, f"the output root reports {report.state}")
+        if gone is not None:
+            return gone
     return WaitObservation(wait.job_id, finished, f"the output root reports {report.state}")
 
 
