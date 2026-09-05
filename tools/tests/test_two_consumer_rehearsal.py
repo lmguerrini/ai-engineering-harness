@@ -250,14 +250,26 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
         # A bounded reading injected an exception and found both alive after the
         # test returned — a rehearsal about not leaking background work, leaking
         # background work.
+        #
+        # AND THE CLEANUP ITSELF MUST NOT BE THE THING THAT LEAKS. A second
+        # bounded reading made the release write raise, which left the first loop
+        # before the second one ran: two started, two survived. Releasing is a
+        # courtesy — it lets a worker exit on its own — and ending is the
+        # obligation, so a failure to release must not stop the ending.
         for _process, _out, release in workers.values():
-            release.write_text("go", encoding="utf-8")
+            try:
+                release.write_text("go", encoding="utf-8")
+            except OSError:  # pragma: no cover - the injected case
+                pass
         for process, _out, _release in workers.values():
             try:
                 process.wait(timeout=30)
-            except subprocess.TimeoutExpired:  # pragma: no cover - belt and braces
+            except Exception:  # pragma: no cover - timeout, or anything else
                 process.kill()
-                process.wait(timeout=30)
+                try:
+                    process.wait(timeout=30)
+                except Exception:
+                    pass
 
 
 def _run_the_concurrent_background_rehearsal(two_projects, workers):

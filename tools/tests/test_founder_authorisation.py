@@ -215,6 +215,58 @@ def _loud_prior(grade_name="confirmed", **counts):
         because="the family has history and this configuration has none")
 
 
+class _PriorThatRefusesToBeRead:
+    """A prior whose evidence cannot be read at all.
+
+    **THE ONLY NON-ENUMERABLE FORM OF THIS ORACLE.** Two bounded readings in a
+    row defeated the parametrised version by keying a rank on a field the
+    fixtures happened to leave at zero — first `contradicted`, then
+    `synthetic_observations` — and each repair widened the parametrisation and
+    was defeated by the next field. Enumerating the fields of an evidence record
+    is a race the test cannot win.
+
+    So this asserts the real property instead: `_rank` does not read the prior's
+    EVIDENCE, whatever field a future change might reach for. Anything that
+    touches `.grade` raises, and a rank that raises is a rank that consulted it.
+    Display-only members stay readable, because display-only is what the prior
+    is for.
+    """
+
+    family = "a-family"
+    task_class = "design_falsification_review"
+    because = "the family has history and this configuration has none"
+    advisory = True
+
+    @property
+    def grade(self):
+        raise AssertionError(
+            "_rank read the family prior's evidence. `Prior` is display-only: D26 says it "
+            "ranks nothing, satisfies no eligibility test and breaks no tie")
+
+    def sentence(self):
+        return "PRIOR (advisory, not this configuration's track record)"
+
+
+def test_3_rank_does_not_read_the_priors_evidence_at_all():
+    """Not "these fields do not change the rank" — "the evidence is not read"."""
+    candidate = _unprobed_candidate("a-model", prior=_PriorThatRefusesToBeRead())
+    without = _unprobed_candidate("a-model")
+    assert r._rank(candidate) == r._rank(without), (
+        "ranking an unprobed candidate that carries a prior differs from ranking one that "
+        "does not, even though the prior's evidence was never readable")
+
+
+def test_3_the_refusing_prior_would_actually_catch_a_reader():
+    """The fixture, checked against a subject that DOES read it — otherwise this
+    file would pass with a prior nothing could have raised from."""
+    class _ReadsIt:
+        def __init__(self, prior):
+            self.prior = prior
+
+    with pytest.raises(AssertionError, match="display-only"):
+        _ = _PriorThatRefusesToBeRead().grade
+
+
 @pytest.mark.parametrize("grade_name", [name for name, _ in PRIOR_SHAPES])
 def test_3_no_field_of_a_family_prior_changes_a_candidates_rank(grade_name):
     """EVERY FIELD, not only the grade word. A mutant that subtracted the prior's

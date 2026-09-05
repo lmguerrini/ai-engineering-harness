@@ -807,10 +807,12 @@ class ProjectContract:
         declared = Path(self.repo_path)
         if declared.is_absolute():
             return self.repo_path
-        # JOINED, AND NOTHING ELSE. An absolute declaration is returned verbatim
-        # precisely so nothing rewrites a path the project chose; the relative
-        # branch does the one thing it must — make it absolute against the
-        # contract — and then also leaves it alone.
+        # JOINED, AND OTHERWISE ONLY WHAT `Path` DOES. An absolute declaration is
+        # returned verbatim precisely so nothing rewrites a path the project
+        # chose; the relative branch does the one thing it must — make it
+        # absolute against the contract. `Path` still tidies a trailing separator
+        # and a doubled one (`link/` and `./link//` both become `link`), which a
+        # bounded reading noted, and which changes no destination.
         #
         # TWO WRONG ANSWERS PRECEDED THIS ONE. `.resolve()` follows symlinks, so
         # it rewrote a declaration made through a link while the absolute branch
