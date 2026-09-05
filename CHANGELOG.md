@@ -78,6 +78,24 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### The independent reading found one, and it was a real one
+
+A prefix rename switched off a live public-safety oracle. The guard that stops a
+release record stating a publication conclusion while dropping its only known
+exception resolved that record from the gate-record **prefix**; this release
+moved the prefix and ships the previous release's adjudication, which its
+manifest still names. So the guard skipped — and it still skipped with the
+protected occurrence deleted from `known_limitations`, which is a check that
+reads as active and protects nothing.
+
+It is repaired by reading the manifest's declaration instead of a filename, by
+failing rather than skipping when a declaration resolves to nothing, and by
+scanning every record the manifest declares rather than one prefix glob. The
+first thing it did once repaired was catch a real omission in this release's own
+gate record, which is now fixed. Four subject mutants — the manifest dropping
+the occurrence, the gate record dropping it, a declaration pointing at a missing
+file, and a release genuinely shipping none — behave correctly.
+
 ### One guard was rebound, and it is not a quiet edit
 
 `test_this_versions_changelog_entry_names_what_this_release_added` carried a

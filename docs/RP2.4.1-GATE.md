@@ -124,6 +124,17 @@ python3 tools/pack_pin.py . --version 2.4.1 \
 python3 -m pytest tools/tests/ -q       # the population the manifest records
 ```
 
+### What the freeze does not settle about publication
+
+The publication adjudication this release still points at is
+`docs/RP2.4-PUBLICATION-ADJUDICATION.md`, unchanged and still the owner of that
+conclusion. **One occurrence in the complete reachable history names a real
+machine account**, it is remediable only by a history rewrite (HITL rows 2 and
+4), and that rewrite is not taken here. Nothing is published, so nothing is
+exposed — but a record that states a publication conclusion while dropping its
+only known exception is the defect this pack has already shipped once, so it is
+stated here rather than left to the document next door.
+
 Then, and only then, set `state` to `QUALIFIED_AND_FROZEN` in
 `PACK_MANIFEST.json`, update the README state row, recompute the identity over
 the tree that decision produced (`python3 tools/pack_pin.py . --write`), and

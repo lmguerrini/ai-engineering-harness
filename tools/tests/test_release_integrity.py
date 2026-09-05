@@ -1810,7 +1810,7 @@ def _normalised(text: str) -> str:
     return " ".join(text.lower().split())
 
 
-def test_every_release_record_that_summarises_the_adjudication_carries_its_occurrence():
+def test_every_release_record_that_summarises_the_adjudication_carries_its_occurrence(manifest):
     """A conclusion has one owner, and a summary that drops its exception is wrong.
 
     `docs/RP2.4-PUBLICATION-ADJUDICATION.md` originally claimed that no
@@ -1836,9 +1836,38 @@ def test_every_release_record_that_summarises_the_adjudication_carries_its_occur
     import json
 
     prefix = _release_doc_prefix()
-    adjudication = ROOT / "docs" / f"{prefix}-PUBLICATION-ADJUDICATION.md"
-    if not adjudication.is_file():
-        pytest.skip("this release ships no publication adjudication")
+    # RESOLVED FROM THE DECLARATION, NOT FROM THE PREFIX. `_release_doc_prefix`
+    # already argues this for the gate record — "the manifest already declares
+    # it, and a checker that read the declaration could not have disagreed with
+    # it" — and this guard did not follow its own file's reasoning.
+    #
+    # The cost was reproduced, not imagined. A PATCH release moved the prefix to
+    # `RP2.4.1` and did not re-ship an adjudication under the new name, because
+    # the adjudication it ships is still the previous release's and the manifest
+    # still names it. This guard then skipped — and with the protected
+    # occurrence DELETED from `known_limitations` it still skipped, so the check
+    # that exists to stop a public-safety conclusion losing its only exception
+    # was inert while the release read as carrying it. Its own comment three
+    # lines below already warned that a document edit must not switch it off;
+    # a *filename* edit did.
+    declared = str(manifest.get("publication_adjudication") or "").strip()
+    candidates = []
+    if declared:
+        candidates.append(ROOT / declared)
+    candidates.append(ROOT / "docs" / f"{prefix}-PUBLICATION-ADJUDICATION.md")
+    # A DECLARATION THAT RESOLVES TO NOTHING IS A FAILURE, NOT A SKIP. A check
+    # that cannot read its subject has not cleared it, and a manifest naming a
+    # record it does not ship is exactly the state this guard must not sleep
+    # through.
+    if declared:
+        assert (ROOT / declared).is_file(), (
+            f"PACK_MANIFEST.json names {declared!r} as this release's publication "
+            f"adjudication and the file is not there, so the conclusion it owns cannot be "
+            f"read and no summary of it can be checked against anything")
+    present = [path for path in candidates if path.is_file()]
+    if not present:
+        pytest.skip("this release ships no publication adjudication and its manifest names none")
+    adjudication = present[0]
 
     owner = _normalised(adjudication.read_text(encoding="utf-8"))
     # NOT A SKIP. Removing the fact from the owner disabled an earlier version of
@@ -1849,8 +1878,19 @@ def test_every_release_record_that_summarises_the_adjudication_carries_its_occur
         f"history was genuinely remediated — which is a rewrite, HITL rows 2 and 4 — remove "
         f"this guard in the same change that remediates it, and say so in the gate record")
 
+    # EVERY RECORD THE MANIFEST DECLARES, plus this release's own document
+    # family. The surfaces used to be the prefix glob alone, so a release whose
+    # prefix had moved checked only its own new documents and silently stopped
+    # checking the ones it still points at.
     surfaces = [ROOT / "PACK_MANIFEST.json"]
+    for field in ("gate_record", "inventory", "publication_adjudication",
+                  "delta_audit", "failure_mode_closure", "founder_authorisations"):
+        named = str(manifest.get(field) or "").strip()
+        if named and (ROOT / named).is_file():
+            surfaces.append(ROOT / named)
     surfaces += sorted((ROOT / "docs").glob(f"{prefix}-*.md"))
+    seen_paths = set()
+    surfaces = [p for p in surfaces if not (p in seen_paths or seen_paths.add(p))]
     named = {}
     silent = []
     for path in surfaces:
