@@ -387,6 +387,7 @@ def scan_outgoing(
     for path in gitread.paths_in_outgoing_range(repository, ref, baseline):
         report.leaks.extend(scanner.scan_name(path, location="path", subject=path))
 
+    scanned_at_path: set = set()
     for sha, path in gitread.objects_in_outgoing_range(repository, ref, baseline):
         kind = gitread.object_type(repository, sha)
         if kind == "commit":
@@ -425,6 +426,7 @@ def scan_outgoing(
                 report.skipped.append(SkippedObject(sha, path, "content is not decodable as text"))
                 continue
             report.blobs_examined += 1
+            scanned_at_path.add((path, sha))
             report.leaks.extend(
                 _scoped(scanner.scan(text, location="blob", subject=path or sha[:12]), exempted)
             )
@@ -432,6 +434,44 @@ def scan_outgoing(
             # Paths inside a tree arrive as the second column of the object
             # listing, so they are scanned with their blobs.
             continue
+
+    # A SECOND PASS OVER THE TREES, because the object listing above answers a
+    # different question than the one an exemption asks.
+    #
+    # Two measured failures, both found by an independent reading of this
+    # release's behaviour. `rev-list --objects` prints ONE path per blob, so a
+    # blob reachable at an exempt path and at a non-exempt one had its exemption
+    # decided from whichever Git happened to name — identical private content at
+    # `a-exempt.txt` and `z-unexempt.txt` scanned clean. And it does not list a
+    # blob already reachable from the baseline at all, so copying an exempt
+    # blob to a non-exempt path examined zero blobs and reported clean.
+    #
+    # The path is carried by the TREE, which is why `paths_in_outgoing_range`
+    # already reads trees for names. This reads them for content too, and scans
+    # each (path, blob) once — so an exemption covers the path it was written
+    # for and no other.
+    for path, sha in gitread.blobs_at_paths_in_outgoing_range(repository, ref, baseline):
+        if (path, sha) in scanned_at_path:
+            continue
+        scanned_at_path.add((path, sha))
+        size = gitread.object_size(repository, sha)
+        if size > MAX_SCANNED_BLOB_BYTES:
+            report.skipped.append(SkippedObject(sha, path, f"{size} bytes exceeds the scan limit"))
+            continue
+        engaged = _engaged_exemptions(path, exempt_patterns)
+        exempted = bool(engaged) and _is_exempt(path, exempt_patterns)
+        if engaged:
+            exemptions_used.update(engaged)
+        if exempted and path not in report.exempted:
+            report.exempted.append(path)
+        blobs_by_path.setdefault(path, set()).add(sha)
+        text = _decoded(gitread.object_bytes(repository, sha))
+        if text is None:
+            report.skipped.append(SkippedObject(sha, path, "content is not decodable as text"))
+            continue
+        report.blobs_examined += 1
+        report.leaks.extend(
+            _scoped(scanner.scan(text, location="blob", subject=path or sha[:12]), exempted))
 
     report.unused_exemptions = [p for p in exempt_patterns if p not in exemptions_used]
     report.blob_multiplicity = {path: len(shas) for path, shas in blobs_by_path.items()}

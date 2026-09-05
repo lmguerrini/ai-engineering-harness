@@ -1116,6 +1116,60 @@ def objects_in_outgoing_range(
     return found
 
 
+def blobs_at_paths_in_outgoing_range(
+    repository: str | Path,
+    ref: str,
+    baseline: str | None,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[tuple[str, str]]:
+    """Every ``(path, blob sha)`` the range introduces or changes, from the trees.
+
+    The companion to :func:`paths_in_outgoing_range`, which returns the paths
+    without saying what is at them. Both read the TREES rather than
+    ``rev-list --objects``, and for the same measured reason: that listing prints
+    one path per object and does not list a blob already reachable from the
+    baseline. So a scanner driven by it decided a blob's exemption from whichever
+    of its paths Git happened to name, and never re-read content that arrived at
+    a new path without changing.
+    """
+    if baseline is None:
+        output = _run(repository, "ls-tree", "-r", "-z", ref, timeout=timeout, text=False)
+    else:
+        output = _run(
+            repository, "diff-tree", "-r", "--no-commit-id", "--diff-filter=ACMRT",
+            "-z", baseline, ref, timeout=timeout, text=False,
+        )
+    assert isinstance(output, bytes)
+    records = [chunk for chunk in output.split(b"\0") if chunk]
+    found: list[tuple[str, str]] = []
+    if baseline is None:
+        # `ls-tree -z`: "<mode> <type> <sha>\t<path>" per record.
+        for record in records:
+            head, _, path = record.partition(b"\t")
+            fields = head.split()
+            if len(fields) == 3 and fields[1] == b"blob" and path:
+                found.append((path.decode("utf-8", "surrogateescape"),
+                              fields[2].decode("ascii")))
+        return found
+    # `diff-tree -z`: ":<srcmode> <dstmode> <srcsha> <dstsha> <status>" then the
+    # path as its own record.
+    index = 0
+    while index < len(records):
+        record = records[index]
+        if record.startswith(b":"):
+            fields = record[1:].split()
+            if len(fields) >= 5 and index + 1 < len(records):
+                destination = fields[3].decode("ascii")
+                path = records[index + 1].decode("utf-8", "surrogateescape")
+                if set(destination) != {"0"}:
+                    found.append((path, destination))
+                index += 2
+                continue
+        index += 1
+    return found
+
+
 def paths_in_outgoing_range(
     repository: str | Path,
     ref: str,

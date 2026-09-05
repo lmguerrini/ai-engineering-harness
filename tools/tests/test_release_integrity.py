@@ -1878,3 +1878,77 @@ def test_every_release_record_that_summarises_the_adjudication_carries_its_occur
         "these release records summarise the publication adjudication and do not carry the "
         "occurrence it records, so they state a conclusion by dropping its only known "
         f"exception: {', '.join(silent)}")
+
+
+# --- the release delta is the changelog, and it must account for the release ------
+
+
+def _baseline_revision(manifest) -> str:
+    """The revision this release states its delta from, read rather than typed."""
+    import re
+
+    declared = manifest.get("baseline_revision") or ""
+    found = re.match(r"\b([0-9a-f]{40})\b", declared.strip())
+    assert found, (
+        "PACK_MANIFEST.json records no `baseline_revision` beginning with a full 40-character "
+        "revision. The release delta is measured from it, and a delta with no baseline is a "
+        "description rather than a delta")
+    return found.group(1)
+
+
+def test_the_baseline_this_release_measures_its_delta_from_is_a_real_ancestor(manifest):
+    revision = _baseline_revision(manifest)
+    resolved = subprocess.run(["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
+                              cwd=ROOT, capture_output=True, text=True)
+    assert resolved.returncode == 0, (
+        f"the recorded baseline {revision[:12]} does not resolve in this repository")
+    ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", revision, "HEAD"],
+                              cwd=ROOT, capture_output=True, text=True)
+    assert ancestor.returncode == 0, (
+        f"the recorded baseline {revision[:12]} is not an ancestor of HEAD, so the range it "
+        f"names is not this release's")
+    assert revision != subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                                      capture_output=True, text=True).stdout.strip(), (
+        "the baseline is HEAD, so the delta is empty by construction")
+
+
+def test_this_versions_changelog_entry_names_what_this_release_added(manifest):
+    """The canonical per-release delta, checked against the release itself.
+
+    `CHANGELOG.md` has been this pack's release-delta record since 2.0.0 — one
+    section per version, describing that version against the one before it. This
+    does not add a second one. It asks whether the section accounts for what the
+    range actually changed.
+
+    **It exists because the 2.4.0 entry stopped being updated partway through.**
+    By the end it named one of four new tools, none of eight new test modules,
+    two of fourteen new tracked files and one of two new decisions, so *what
+    changed from 2.3.0 to 2.4.0* could only be answered by reading the commit
+    range — which is the work a changelog exists to make unnecessary.
+
+    **What it cannot do**, and `tools/release_delta.py` says so in its own
+    docstring: judge whether the entry describes a change well, or notice a
+    change that added no file. A repair inside an existing module is invisible to
+    it. It covers the half a diff can name, which is the half that went missing.
+    """
+    import release_delta
+
+    baseline = _baseline_revision(manifest)
+    report = release_delta.coverage(ROOT, version=manifest["version"], baseline=baseline)
+
+    # AN INDEPENDENT FLOOR, computed here rather than taken from the tool. Two
+    # mutants survived a first version of this guard: one made the tool report
+    # every addition as named, the other made it find no additions at all. Both
+    # passed, because the guard asked the tool whether the tool was satisfied.
+    added = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=A", f"{baseline}..HEAD"],
+        cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    assert len(report.named) + len(report.omitted) >= len(added), (
+        f"the delta tool accounted for {len(report.named) + len(report.omitted)} additions "
+        f"while this range added {len(added)} files; it is not looking at the whole range")
+    assert len(added) > 5, (
+        f"this range added {len(added)} file(s), which is too few for this guard to establish "
+        f"anything; if a release genuinely adds nothing, say so in the entry and remove this")
+    assert report.complete, (
+        "this version's changelog entry does not account for what the release added:\n"
+        + report.render())

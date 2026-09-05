@@ -569,6 +569,32 @@ def _observe(wait: Wait, *, relative_to: Path) -> WaitObservation:
 
     if wait.kind in (WaitKind.EXIT_FILE, WaitKind.PATH_EXISTS):
         if not target.exists():
+            # A RECORDED PRODUCER THAT HAS ENDED OUTRANKS AN ARTIFACT THAT NEVER
+            # APPEARED — and this returned `False`, which means *not finished,
+            # keep waiting*, without asking. `reconcile` already consulted the
+            # pid here and reported the producer gone; `derive` did not, so one
+            # record produced two answers: WAITING_ON_IDENTIFIED_JOB from the
+            # state machine and *the producer ended, recover* from the
+            # reconciliation. The wait then stood until its deadline.
+            #
+            # That is the pack's own headline defect — two mechanisms answering
+            # one liveness question and drifting — surviving inside the module
+            # whose repair was to have one answer. Found by an independent
+            # reading of this release's behaviour.
+            if wait.pid:
+                from progress import process_has_ended
+
+                ended, how = process_has_ended(wait.pid)
+                if ended is None:
+                    return WaitObservation(
+                        wait.job_id, None,
+                        f"{target} has not appeared and the producer this wait names cannot be "
+                        f"asked about ({how}), so whether it is still running is not established")
+                if ended:
+                    return WaitObservation(
+                        wait.job_id, None,
+                        f"{target} has not appeared and the producer this wait names has ended "
+                        f"({how}); what happened is not established from the record alone")
             return WaitObservation(wait.job_id, False, f"{target} has not appeared")
 
         # `Wait.declare` refuses a path that already exists, and that is the

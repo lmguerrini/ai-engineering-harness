@@ -502,13 +502,13 @@ def _liveness_panel(record_path: Path) -> tuple[Panel, object | None]:
         panel.say(f"{len(report.actionable)} item(s)", label="authorised and outstanding")
         panel.figure("outstanding", f"{len(report.actionable)} item(s)", band="situation",
                      kind="outstanding")
-        blocked_names = {n for b in record.blockers for n in b.blocks}
+        blocked_names = _covered_by_a_blocker(record, report)
         for item in report.actionable:
             panel.say(item, Tone.MUTED if item in blocked_names else Tone.PLAIN, depth=1)
     # THE NEXT AUTHORISED ACTION, said last so it is the line nearest the eye.
     # It is the record's own first outstanding item, not a choice made here.
     unblocked = [i for i in report.actionable
-                 if i not in {n for b in record.blockers for n in b.blocks}]
+                 if i not in _covered_by_a_blocker(record, report)]
     if unblocked:
         panel.say(unblocked[0], Tone.ACTION, label="NEXT AUTHORISED ACTION")
     elif report.state in (continuation.State.WAITING_ON_IDENTIFIED_JOB,):
@@ -891,6 +891,26 @@ def _output_panel(record, base: Path) -> Panel:
     return panel
 
 
+def _covered_by_a_blocker(record, report) -> set:
+    """Every outstanding item a blocker covers, INCLUDING an unscoped one.
+
+    `continuation` has said since the field existed that a blocker naming
+    nothing names everything — `Blocker.blocks` empty is the unscoped case, and
+    `derive` returns `BLOCKED_ON_HUMAN` for it. This page read `b.blocks` alone,
+    so an unscoped blocker contributed no names and the page offered the work
+    anyway: with a row-2 human blocker outstanding, the continuation record said
+    BLOCKED_ON_HUMAN and this panel said NEXT AUTHORISED ACTION: publish the
+    release. Found by an independent reading of this release's behaviour.
+
+    A projection that offers an action its own record forbids is the failure
+    mode the projection's whole design is built against — it is a reader, and a
+    reader that disagrees with the record has become an authority.
+    """
+    if any(not blocker.blocks for blocker in record.blockers):
+        return set(report.actionable)
+    return {name for blocker in record.blockers for name in blocker.blocks}
+
+
 def _routing_panel(contract_path: Path) -> Panel:
     """What the routing evidence supports, and — mostly — what it does not.
 
@@ -1182,7 +1202,8 @@ def project(
         except Exception:
             record = None
     return Projection(
-        headline=_guarded(_headline, record, default=f"{UNKNOWN} — the headline could not be derived"),
+        headline=_guarded(_headline, record, record_path,
+                          default=f"{UNKNOWN} — the headline could not be derived"),
         panels=[
             _pack_panel(Path(__file__).resolve().parent.parent),
             contract_panel,
@@ -1937,7 +1958,7 @@ def _report_or_none(record, record_path: Path):
         return None
 
 
-def _headline(record) -> str:
+def _headline(record, record_path=None) -> str:
     """One line: is useful progress occurring, and if not, what is in the way.
 
     **Delegated, never decided here.** The words come from the state
@@ -1951,7 +1972,17 @@ def _headline(record) -> str:
     try:
         import continuation
 
-        report = continuation.derive(record, relative_to=Path(record.record_path or ".").parent)
+        # WHERE THE RECORD WAS LOADED FROM, not what it says about itself.
+        # `record_path` is optional and defaults to empty, so this fell back to
+        # the PROCESS's directory: a record with a relative sentinel, projected
+        # from anywhere else, had its artifacts looked for in the wrong place —
+        # and this page's headline said WAITING while its own coordinator panel,
+        # which resolves correctly, said COMPLETED_NOT_CONSUMED. One page,
+        # two answers. Found by an independent reading of this release's
+        # behaviour.
+        report = continuation.derive(
+            record, relative_to=Path(record_path).parent if record_path
+            else Path(record.record_path or ".").parent)
     except Exception as exc:
         return f"UNKNOWN — the record could not be derived: {exc}"
     S = continuation.State

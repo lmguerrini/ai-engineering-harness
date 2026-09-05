@@ -391,7 +391,15 @@ def _adapter_component(contract: ProjectContract, home: str | Path | None) -> Co
             blocking=False,
             notes=("the project declares it dispatches through no adapter",),
         )
-    report = adapter_pin.verify(declarations, home=home)
+    # THE CONTRACT'S OWN DIRECTORY. This called `verify` directly, so the
+    # repair that taught `verify_contract` to resolve a relative locator against
+    # the project never reached the readiness path — and a capability opened
+    # READY with adapters VERIFIED while `verify_contract` on the same contract
+    # refused, because the qualified bytes happened to sit in the directory the
+    # tool was invoked from. Found by an independent reading of that repair.
+    report = adapter_pin.verify(
+        declarations, home=home,
+        relative_to=Path(contract.path).parent if getattr(contract, "path", None) else None)
     findings = tuple(finding.sentence() if hasattr(finding, "sentence") else str(finding)
                      for finding in report.findings)
     required = any(getattr(declaration, "required", True) for declaration in declarations)

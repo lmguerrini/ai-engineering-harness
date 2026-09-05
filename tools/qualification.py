@@ -333,7 +333,18 @@ def identity_from_observation(row: dict) -> ConfigurationIdentity:
             raise QualificationError(
                 f"an observation records identity field(s) {', '.join(unknown)}, which nothing "
                 f"reads. Known: {', '.join(IDENTITY_FIELDS)}")
-        supplied = {name: str(value) for name, value in declared.items() if str(value).strip()}
+        # `str(value)` MADE A JSON NULL INTO THE STRING "None", which is not the
+        # `UNKNOWN` sentinel and therefore read as an established dimension: an
+        # observation with `authentication_class: null` produced a COMPLETE
+        # identity whose authentication class was `'None'`, and two of them
+        # graded `confirmed` for a configuration whose authentication was never
+        # established. Found by an independent reading of this release's
+        # behaviour. A null is the absence of a value and is dropped here, which
+        # leaves the dimension `UNKNOWN` and the identity incomplete — the answer
+        # that loses nothing.
+        supplied = {name: str(value) for name, value in declared.items()
+                    if value is not None and not isinstance(value, bool)
+                    and str(value).strip()}
         if supplied:
             # **AN AMBIGUOUS STRING IS REFUSED, WHATEVER THE MAPPING SAYS.**
             #

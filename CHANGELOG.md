@@ -153,6 +153,114 @@ which is precisely the comparison `selector_evidence.comparison_problems` refuse
 of anybody else. An independent reader noticed the claim carried none of the
 counts its own rule demands; producing them showed the comparison cannot be made.
 
+### What the closing pass changed, and what found it
+
+Four independent readings of the finished candidate — two providers, fresh
+sessions — returned NOT SOUND or NOT READY between them. Their findings moved
+steadily: the first two found defects in the release, the third found them in the
+repairs the first two prompted, and the last two found them only in the oracles
+written for those repairs, with the pack's behaviour correct in every case.
+
+Two defects only running the assembled thing could find, both of which would
+have met an adopting project first:
+
+- **A checkout on a machine that normalises line endings failed its own pin.**
+  `core.autocrlf=true` is the Git for Windows default; cloning this branch under
+  it rewrote LF to CRLF in every tracked file and `tools/pack_pin.py` reported
+  PACK PIN NOT VERIFIED **against a checkout of the correct revision**. Closed at
+  the cause by `.gitattributes` declaring `* -text`; three clones under three
+  line-ending settings now produce one digest. The oracle asks Git whether any
+  tracked path still carries an attribute that rewrites bytes — `text`, `eol`,
+  `filter`, `ident` or `working-tree-encoding` — because checking `text` alone
+  passed while a smudge filter changed a file from 14 bytes to 17.
+- **A project's declared paths were resolved against the process, not the
+  project.** `ProjectContract.repository()` returned a relative `repo_path`
+  verbatim, so `commit_gate --range`, `outgoing_scan`, `workspace_report` and
+  `publication_gate` all ran against whatever repository the invoking shell was
+  standing in; the multiproject history view showed one repository's commit count
+  under two projects' names. The same class was then found live in two more
+  places: `project_context.py` verified a context digest against **another
+  project's context** and reported CURRENTLY_VERIFIED, and `adapter_pin.py`
+  reported an adapter clean over another directory's bytes — and, once the file
+  half was repaired, over another directory's **executable**. All four are
+  resolved against the contract, whose own path is now absolute at load.
+
+Governance and integrity:
+
+- **D26 and D27 are in `DECISIONS.md`.** The row-7 narrowing was authorised by
+  the founder before the entry was written, which is that row's application
+  point. `docs/RP2.4-FOUNDER-AUTHORISATIONS.md` records the authorisation and the
+  ten conditions it carries, and `tools/tests/test_founder_authorisation.py`
+  makes each one executable: a later change that broadens D26 past what was
+  authorised breaks the suite rather than passing quietly.
+- **One commit's message was repaired under founder authorisation**, with both
+  tree objects reused rather than re-derived — ten commits before and after, same
+  order, whole-range diff empty. It was there because a shell chain's `&&`
+  attached to `tail -1` while the gate printed VIOLATION and exited non-zero.
+- **The bypass was removed, not re-checked.** `templates/commit-msg.hook` moves
+  the contract into Git, which refuses the commit on a non-zero exit whatever the
+  caller's shell does with pipes; it uses the project's own declared vocabulary
+  where a contract exists, and refuses rather than passing when it cannot find
+  the gate. Replay paths (`cherry-pick`, `rebase`) are not covered and the file
+  says so; `commit_gate.py --range` catches those.
+- **A release root that something else can move is now named.**
+  `pack_pin.root_kind` reports a linked worktree, and `capability_open` prints it
+  beside a verified pin as a note rather than a block — a linked worktree on its
+  pinned revision is a correct checkout of the right tree.
+
+Rehearsals and evidence:
+
+- `tools/tests/test_two_consumer_rehearsal.py` runs two adopting projects at
+  once against one pinned release, differing in every declared way: one declares
+  an executable adapter and a Git repository, one declares neither. They run
+  concurrent background producers held alive while their waits are declared and
+  reconciled, each against its own recorded process; one consumes its result
+  without settling the other's; both reconstruct cold in a fresh interpreter.
+- `tools/tests/test_adoption_rehearsal.py` holds the sixteen adversarial routing
+  situations and the full adoption lifecycle;
+  `tools/tests/test_background_governance.py`, `tools/tests/test_qualification.py`,
+  `tools/tests/test_routing.py`, `tools/tests/test_model_discovery.py` and
+  `tools/tests/test_selector_evidence.py` hold the mechanisms this release added.
+- `tools/model_discovery.py` reads a discovery document through FIELD names and
+  never through model names, `tools/qualification.py` derives the
+  per-configuration grades and `tools/routing.py` the availability axis and the
+  design-audit route.
+- **The whole new-model lifecycle was proved live** through the installed
+  subscription surface, with the target chosen by absence of evidence rather than
+  by name: discovered, classified `unprobed` with its family history beside it,
+  refused for routine and critical work, dispatched as a declared probe, its
+  identity read from the execution surface, and graded `provisional` then
+  `confirmed` — qualified at the configuration it ran on and `unprobed` at a
+  different effort, task class, isolation or client.
+
+Records a reader needs, all new: `docs/RP2.4-GATE.md`,
+`docs/RP2.4-RELEASE-PACKET.md`, `docs/RP2.4-ARCHITECTURE.md`,
+`docs/RP2.4-CAPABILITY-MAP.md`, `docs/RP2.4-INVENTORY.md` (every recorded
+limitation classified as fixed, worth fixing, a real bound or future work),
+`docs/RP2.4-PUBLICATION-ADJUDICATION.md` (the pack's own history, adjudicated —
+and one occurrence names a real machine account, stated rather than denied),
+`docs/RP2.4-FOUNDER-AUTHORISATIONS.md`,
+`docs/RP2.4-BACKGROUND-RECONCILIATION.md`, `docs/RP2.4-HITL-PREFLIGHT.md`,
+`docs/RP2.4-D26-PROPOSED.md`, and the two frozen design records
+`docs/RP2.4-DESIGN-C40-qualification-identity.md` and
+`docs/RP2.4-DESIGN-C47-governed-background-work.md`.
+
+### The delta contract, from here on
+
+This entry is the release delta, and `tools/release_delta.py` checks that it
+accounts for what the release changed: every file the range added, and every
+decision it recorded, must be named in the version's own entry. It exists
+because this entry stopped being updated partway through and ended up naming one
+of four new tools, none of eight new test modules and two of fourteen new files —
+so the question *what changed from 2.3.0 to 2.4.0* could only be answered by
+reading the commit range, which is what a changelog is for.
+
+    python3 tools/release_delta.py . --baseline <the previous release's revision>
+
+`2.5.0` states its delta from `2.4.0`, `2.6.0` from `2.5.0`, and the check runs
+in the suite against the manifest's own version, so a release cannot be prepared
+with an entry that silently omits what it added.
+
 ### Erratum against 2.3.0
 
 None. 2.3.0 is untouched and verifies byte-identical throughout this evolution.

@@ -286,6 +286,31 @@ class AvailabilityObservation:
         )
 
 
+def _moment(text: object) -> "tuple":
+    """One availability observation's instant, comparable across offsets.
+
+    Returns `(0,)` for anything that cannot be read as a time, so an unreadable
+    timestamp sorts before every readable one and can never win a comparison it
+    should not be in. Refusing the observation outright was considered and
+    rejected: the log is primary evidence and is not rewritten to suit a reader.
+    """
+    from datetime import datetime, timezone
+
+    raw = str(text).strip()
+    if not raw:
+        return (0,)
+    normalised = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    for shape in (normalised, normalised + "T00:00:00+00:00"):
+        try:
+            moment = datetime.fromisoformat(shape)
+        except ValueError:
+            continue
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return (1, moment.timestamp())
+    return (0,)
+
+
 def availability_for(
     identity: ConfigurationIdentity,
     preconditions,
@@ -341,7 +366,14 @@ def availability_for(
     # later observation wins and, on the same date, the refusal does: the
     # comparison used to be `!=`, which put the success last and let an older
     # success answer for a dispatch seen to be refused the same day.
-    matching.sort(key=lambda o: (o.observed_at, o.state == UNAVAILABLE))
+    # ORDERED IN REAL TIME, not as text. Sorting the timestamps lexically put a
+    # `+02:00` success after a `Z` refusal that happened an hour LATER, so an
+    # older success answered for a dispatch that had since been refused — the
+    # exact inversion the tie-break below exists to prevent, reached through the
+    # comparison rather than through the tie. Found by an independent reading of
+    # this release's behaviour. An unparseable timestamp sorts FIRST, so it can
+    # never outrank one that can be read.
+    matching.sort(key=lambda o: (_moment(o.observed_at), o.state == UNAVAILABLE))
     latest = matching[-1]
     notes.append(
         f"availability {latest.state} from a dispatch observed {latest.observed_at}"
