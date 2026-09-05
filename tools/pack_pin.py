@@ -119,6 +119,22 @@ def _git(root: str | Path, *arguments: str) -> str:
             1, ["git", *arguments], output="", stderr=str(exc)) from exc
 
 
+def _git_bytes(root: str | Path, *arguments: str) -> bytes:
+    """The same hardened boundary, answering in bytes.
+
+    The manifest comparison claims byte-for-byte and compared decoded text, so a
+    line-ending rewrite passed a check that exists to establish the file has not
+    moved since its commit.
+    """
+    import gitread
+
+    try:
+        return gitread._run(root, *arguments, timeout=60, text=False)
+    except Exception as exc:
+        raise subprocess.CalledProcessError(
+            1, ["git", *arguments], output="", stderr=str(exc)) from exc
+
+
 def _nul_separated(output: str) -> list[str]:
     """Paths as Git emitted them under ``-z``.
 
@@ -147,17 +163,58 @@ def untracked_files(root: str | Path) -> list[str]:
     contributes nothing to the digest, and is exactly how an unreviewed module
     reaches a checkout that reports as verified.
 
-    **Ignored by the RELEASE's rules, not by the operator's.** RP2.4.1 R6:
+    **Ignored by rules the release TRACKS, and by nothing else.** RP2.4.1 R6:
     `--exclude-standard` also honours `core.excludesFile` and
     `.git/info/exclude`, neither of which the release ships, can see, or is a
     claim about — so an operator whose global ignore file happens to carry
-    `*.jsonl` gave any `.jsonl` in a release root a place to sit unreported, and
-    anyone who could write `.git/info/exclude` could choose the exemption
-    themselves. `--exclude-per-directory` reads only the `.gitignore` files the
-    release actually tracks, which is the rule the release is entitled to state.
+    `*.jsonl` gave any `.jsonl` in a release root a place to sit unreported.
+
+    The first repair used `--exclude-per-directory=.gitignore`, and an
+    independent reading of that repair broke it in one move: the option reads
+    the `.gitignore` files present in the WORKING TREE, tracked or not, so an
+    untracked `unreviewed/.gitignore` containing `*` hid itself *and* an
+    unreviewed module while the pin still verified. The comment claiming it read
+    only tracked rules was simply false.
+
+    So the rules are read from the `.gitignore` files this release TRACKS, and
+    applied here with `pathmatch`, which is the pack's one gitignore semantics
+    and is differentially tested against real `git check-ignore`. An ignore file
+    nobody reviewed cannot exempt anything, including itself.
+
+    Reading the rules rather than asking Git to apply them is deliberate. Git
+    applies whatever `.gitignore` is present in the working tree, tracked or
+    not, so `--exclude-per-directory` was not the answer it looked like; and
+    refusing wholesale whenever an untracked ignore file exists was worse, because
+    `pytest` writes `.pytest_cache/.gitignore` into any root the suite has run
+    in, which would have made every such release report its whole cache.
     """
-    return _nul_separated(
-        _git(root, "ls-files", "--others", "--exclude-per-directory=.gitignore", "-z"))
+    everything = _nul_separated(_git(root, "ls-files", "--others", "-z"))
+    if not everything:
+        return []
+    import pathmatch
+
+    root = Path(root)
+    patterns: list[str] = []
+    for declaration in tracked_files(root):
+        if declaration != ".gitignore" and not declaration.endswith("/.gitignore"):
+            continue
+        prefix = declaration[: -len(".gitignore")]
+        try:
+            body = (root / declaration).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in body.splitlines():
+            rule = line.strip()
+            if not rule or rule.startswith("#"):
+                continue
+            negated = rule.startswith("!")
+            if negated:
+                rule = rule[1:]
+            # A rule in a nested declaration is relative to that declaration's
+            # own directory, which is what makes it the release's rule about
+            # that subtree rather than about the root.
+            patterns.append(("!" if negated else "") + prefix + rule.lstrip("/"))
+    return [path for path in everything if not pathmatch.matches_any(path, patterns)]
 
 
 def tree_digest(root: str | Path) -> tuple[str, int]:
@@ -401,13 +458,13 @@ def verify_pin(
     # that this module exists to refuse. What it removes is the gap between
     # what a reader verified and what a reader read.
     try:
-        committed = _git(root, "show", f"HEAD:{MANIFEST_NAME}")
+        committed = _git_bytes(root, "show", f"HEAD:{MANIFEST_NAME}")
     except (OSError, subprocess.CalledProcessError) as exc:
         problems.append(
             f"{UNESTABLISHED}: the committed manifest could not be read, so whether this "
             f"directory's manifest is the one at the pinned revision cannot be decided ({exc})")
     else:
-        if committed != manifest_path.read_text(encoding="utf-8"):
+        if committed != manifest_path.read_bytes():
             problems.append(
                 f"{MANIFEST_NAME} differs from the one committed at HEAD. It is excluded from "
                 f"its own digest, so every claim it makes — the test population, the known "

@@ -1883,11 +1883,24 @@ def test_every_release_record_that_summarises_the_adjudication_carries_its_occur
     # prefix had moved checked only its own new documents and silently stopped
     # checking the ones it still points at.
     surfaces = [ROOT / "PACK_MANIFEST.json"]
+    # A DECLARED RECORD THAT IS NOT THERE IS REPORTED, NOT DROPPED. The first
+    # version appended only what `is_file()` accepted, so a manifest naming a
+    # record it does not ship quietly shrank this guard's coverage — the same
+    # shape as the prefix rename that disabled it, one field along. An
+    # independent reader found it in the repair.
+    absent = []
     for field in ("gate_record", "inventory", "publication_adjudication",
                   "delta_audit", "failure_mode_closure", "founder_authorisations"):
         named = str(manifest.get(field) or "").strip()
-        if named and (ROOT / named).is_file():
+        if not named:
+            continue
+        if (ROOT / named).is_file():
             surfaces.append(ROOT / named)
+        else:
+            absent.append(f"{field}={named}")
+    assert not absent, (
+        f"PACK_MANIFEST.json names release records it does not ship: {', '.join(absent)}. "
+        f"A declared record nobody can read is coverage this guard silently loses")
     surfaces += sorted((ROOT / "docs").glob(f"{prefix}-*.md"))
     seen_paths = set()
     surfaces = [p for p in surfaces if not (p in seen_paths or seen_paths.add(p))]

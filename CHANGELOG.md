@@ -78,7 +78,40 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
-### The independent reading found one, and it was a real one
+### The independent reading found three blockers, all of them in the repairs
+
+A single independent reading of this delta returned NOT_READY, and it was right
+on every one of them. Every one was reproduced by the coordinator before anything
+was changed.
+
+- **The normalisation repair left a third path.** `identity_from_configuration`
+  reads `surface` and `pool_id` for itself rather than taking them from the
+  parser, and carried its own inline copy of the rule. So `surface=un_known`
+  completed an identity and two rows graded `confirmed` — this release's own
+  defect, one dimension along, inside its own repair for it.
+- **The untracked-material repair read the wrong rules.**
+  `--exclude-per-directory=.gitignore` reads the ignore files *present in the
+  working tree*, tracked or not, so an untracked `unreviewed/.gitignore`
+  containing `*` hid itself and an unreviewed module while the pin still
+  verified. The rules now come from the `.gitignore` files the release TRACKS,
+  applied with `pathmatch` — the pack's one gitignore semantics, already
+  differentially tested against real `git check-ignore`. Refusing wholesale
+  whenever an untracked ignore file exists was tried and rejected: `pytest`
+  writes `.pytest_cache/.gitignore` into any root the suite has run in, and that
+  rule reported the entire cache of the frozen 2.4.0 root.
+- **The provenance repair was unreachable from a command line.** `problems()`
+  returned before checking when no repository was given, and the CLI defaulted
+  one to `None`, so `--mutation-begins-at` alone still printed `DESIGN FROZEN`
+  for a design first committed after the work. A requested binding that cannot
+  be established is now a finding, and the CLI defaults the repository to the
+  record's own directory.
+
+It also found that both `byte-for-byte` comparisons compared decoded text, that
+three of this release's new tests did not discriminate what their names claimed,
+and that the repaired publication guard still dropped absent declared records
+silently. All are repaired above.
+
+### The reading before that found one, and it was a real one
 
 A prefix rename switched off a live public-safety oracle. The guard that stops a
 release record stating a publication conclusion while dropping its only known

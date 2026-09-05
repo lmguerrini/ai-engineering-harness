@@ -649,11 +649,14 @@ def test_an_unedited_manifest_is_not_reported(pack):
 
 
 def test_a_global_exclude_cannot_hide_untracked_material(pack, tmp_path, monkeypatch):
-    """R6. Untracked material is measured against the release's own rules.
+    """R6. An operator's machine-level ignore file cannot hide release material.
 
-    `--exclude-standard` honours the operator's global excludes file and
-    `.git/info/exclude`, neither of which the release ships or can see, so a
-    file the release never reviewed sat in a verified root unreported.
+    **What this establishes, precisely:** the global excludes file does not
+    reach the enumeration. It is held by the hardened Git boundary, which points
+    the global configuration at nothing, rather than by the enumeration itself —
+    so restoring `--exclude-standard` leaves this test passing, which an
+    independent reader demonstrated. Recorded rather than left implied: the
+    enumeration's own rule is discriminated by its two siblings below.
     """
     excludes = tmp_path / "globalignore"
     excludes.write_text("*.evil\n")
@@ -678,3 +681,41 @@ def test_the_releases_own_ignore_rules_are_still_honoured(pack):
     """R6's positive control: the pack's own `.gitignore` still governs."""
     (pack / "build.log").write_text("noise\n")
     assert pack_pin.verify_pin(pack) == []
+
+
+def test_an_untracked_ignore_file_cannot_exempt_itself_or_anything_else(pack):
+    """The enumeration's own rule, and the sharpest test of it.
+
+    `--exclude-per-directory=.gitignore` reads the `.gitignore` files present in
+    the WORKING TREE, tracked or not. So an untracked `unreviewed/.gitignore`
+    containing `*` hid itself and an unreviewed module while the pin verified —
+    the first repair's comment claimed it read only tracked rules and was
+    simply wrong. The rules now come from the files the release TRACKS.
+    """
+    unreviewed = pack / "unreviewed"
+    unreviewed.mkdir()
+    (unreviewed / ".gitignore").write_text("*\n")
+    (unreviewed / "payload.py").write_text("print('unreviewed')\n")
+    strays = pack_pin.untracked_files(pack)
+    assert "unreviewed/payload.py" in strays, strays
+    assert "unreviewed/.gitignore" in strays, strays
+    problems = pack_pin.verify_pin(pack)
+    assert any("untracked" in problem for problem in problems), problems
+
+
+def test_a_cache_directory_the_release_ignores_is_still_ignored(pack):
+    """The other direction, and the reason the rule is not *refuse on sight*.
+
+    `pytest` writes `.pytest_cache/.gitignore` into any root the suite has run
+    in. An implementation that refused wholesale whenever an untracked ignore
+    file existed reported the entire cache of every release that had ever been
+    tested — measured against the frozen 2.4.0 root before it was rejected.
+    """
+    (pack / ".gitignore").write_text("*.log\n.pytest_cache/\n")
+    _git(pack, "add", ".gitignore")
+    _git(pack, "commit", "--quiet", "-m", "ignore the cache")
+    cache = pack / ".pytest_cache"
+    cache.mkdir()
+    (cache / ".gitignore").write_text("*\n")
+    (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55\n")
+    assert pack_pin.untracked_files(pack) == []

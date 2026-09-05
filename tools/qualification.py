@@ -292,7 +292,15 @@ def identity_from_configuration(text: str) -> ConfigurationIdentity:
         key, value = key.strip(), value.strip()
         seen[key] = seen.get(key, 0) + 1
         if key in ("surface", "pool_id"):
-            extra[key] = UNKNOWN if value.lower() in ("", "unknown") else value
+            # THE SAME BOUNDARY AS EVERY OTHER DIMENSION. `surface` and
+            # `pool_id` are the two keys this function reads for itself rather
+            # than taking from `parse_configuration`, and they carried their own
+            # inline copy of the rule — so the RP2.4.1 repair that gave the
+            # packed string and the structured mapping one normaliser left a
+            # THIRD path, and `surface=un_known` completed an identity and
+            # graded `confirmed` through it. Found by an independent reading of
+            # the repair itself, which is the defect the repair was for.
+            extra[key] = normalised_identity_value(value)
     ambiguous.extend(
         f"{key}= appears {count} times" for key, count in sorted(seen.items()) if count > 1)
     return ConfigurationIdentity(

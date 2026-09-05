@@ -611,11 +611,20 @@ def test_provenance_that_cannot_be_read_is_refused(repo, tmp_path):
     _commit(repo, "freeze")
     (repo / "impl.py").write_text("x\n")
     mutation = _commit(repo, "implementation")
-    elsewhere = tmp_path / "not-a-repo"
+    # THE REAL REPOSITORY IS PASSED, so the base revision and the mutation
+    # point both resolve and the reading reaches the provenance check. It used
+    # to pass a directory that was not a repository at all, so it failed at
+    # base-revision resolution and never exercised what its name claims —
+    # removing `_provenance_problems` entirely left it passing, which an
+    # independent reader demonstrated.
+    elsewhere = tmp_path / "outside-the-repository"
     elsewhere.mkdir()
-    (elsewhere / "DESIGN-C1.md").write_text(path.read_text(), encoding="utf-8")
-    record = design_record.read(elsewhere / "DESIGN-C1.md")
-    assert record.problems(repository=elsewhere, mutation_begins_at=mutation)
+    outside = elsewhere / "DESIGN-C1.md"
+    outside.write_text(path.read_text(), encoding="utf-8")
+    record = design_record.read(outside)
+    problems = record.problems(repository=repo, mutation_begins_at=mutation)
+    assert problems, "a record outside the repository reported a provenance it cannot have"
+    assert any("provenance" in problem for problem in problems), problems
 
 
 def test_every_spelling_of_the_mutation_revision_agrees(repo):

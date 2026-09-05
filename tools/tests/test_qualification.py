@@ -541,6 +541,24 @@ def test_unknown_reads_the_same_through_both_identity_paths(spelling, dimension)
         f"{dimension}={spelling!r} completed an identity through the structured path")
     assert any(dimension in reason for reason in structured.incompleteness())
 
+    # THE PACKED PATH TOO, which this test's name claims and did not do. An
+    # independent reader restored the old packed normalisation and all of these
+    # cases still passed, because only the mapping was exercised — and the
+    # defect that survived in `surface` was on the packed side. Named keys
+    # differ between the two spellings, which is why the mapping is built here
+    # rather than reusing the one above.
+    packed_key = {"effort": "effort_observed", "client": "agent",
+                  "authentication_class": "auth"}.get(dimension, dimension)
+    tokens = {"surface": "codex-cli", "family": "gpt-6", "agent": "0.153.3",
+              "model_observed": "a-model", "effort_observed": "high",
+              "isolation": "workspace-write", "network": "denied",
+              "auth": "subscription", "identity_method": "turn_context"}
+    tokens[packed_key] = spelling if spelling.strip() else "unknown"
+    packed = q.identity_from_configuration(
+        " ".join(f"{key}={value}" for key, value in tokens.items()))
+    assert not packed.complete, (
+        f"{dimension}={spelling!r} completed an identity through the packed string")
+
 
 def test_the_structured_path_still_carries_a_real_value():
     """The repair must not swallow values that ARE established."""

@@ -237,6 +237,20 @@ class DesignRecord:
                 f"forty-character revision it was frozen against, or it names nothing")
             return found
         if repository is None:
+            # A REQUESTED BINDING THAT CANNOT BE ESTABLISHED IS NOT A SILENT
+            # PASS. `mutation_begins_at` is a caller asking to be told whether
+            # this design preceded the work; with no repository nothing can
+            # answer that, and returning here reported DESIGN FROZEN for a
+            # record first committed afterwards. The CLI defaulted the
+            # repository to None, so the whole RP2.4.1 provenance check was
+            # unreachable through an ordinary command line. Found by an
+            # independent reading of that repair.
+            if mutation_begins_at:
+                found.append(
+                    f"the design is asked to be bound to {mutation_begins_at!r}, where mutation "
+                    f"began, and no repository was given to establish that in. Ancestry and "
+                    f"provenance are both read from history: without it this record has not "
+                    f"been shown to precede anything")
             return found
         import gitread
 
@@ -322,8 +336,14 @@ class DesignRecord:
                 f"history cannot be read has not been shown to precede anything")
             return found
         try:
+            # BYTES, because the claim is byte-for-byte. Both this comparison and
+            # the manifest one read Git in text mode and compared it with
+            # `read_text()`, so a line-ending change survived a check whose whole
+            # point was that the content had not moved. Found by an independent
+            # reading of the repair.
             committed = gitread._run(repository, "show",
-                                     f"{mutation_begins_at}:{relative}", timeout=30)
+                                     f"{mutation_begins_at}:{relative}", timeout=30,
+                                     text=False)
         except Exception:
             found.append(
                 f"{relative} did not exist at {mutation_begins_at[:12]}, where mutation began, "
@@ -332,7 +352,7 @@ class DesignRecord:
                 f"as the record having been written first")
             return found
         try:
-            on_disk = here.read_text(encoding="utf-8")
+            on_disk = here.read_bytes()
         except OSError as exc:
             found.append(f"the design record could not be read back for comparison: {exc}")
             return found
@@ -410,13 +430,18 @@ def _cli(argv=None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("record")
-    parser.add_argument("--repository", default=None)
+    parser.add_argument("--repository", default=None,
+                        help="the repository whose history binds this design; "
+                             "defaults to the record's own directory")
     parser.add_argument("--mutation-begins-at", default="")
     args = parser.parse_args(argv)
 
     record = read(args.record)
+    # Defaulted to the record's own directory rather than to None, so the
+    # ordinary command line reaches the binding it asked for.
+    repository = args.repository or Path(args.record).resolve().parent
     problems = record.problems(mutation_begins_at=args.mutation_begins_at,
-                               repository=args.repository)
+                               repository=repository)
     print(f"design record: {record.path}")
     print(f"  class:    {record.change_class or 'not declared'}")
     print(f"  frozen at {record.base_revision or 'nothing'}")
