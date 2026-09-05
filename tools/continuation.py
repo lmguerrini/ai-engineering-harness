@@ -298,6 +298,15 @@ class Wait:
                 raise PreconditionError(
                     "this waiter cannot be trusted to end, so it is not recorded against a wait",
                     job_id=self.job_id, why="; ".join(problems))
+        wrong = sorted(name for name, value in self.configuration.items()
+                       if not isinstance(value, str))
+        if wrong:
+            # An identity field is a string everywhere else it appears, and a
+            # nested object or a list round-trips through `save`/`load` and
+            # reaches a consumer expecting text.
+            raise PreconditionError(
+                "a wait's configuration holds text; these do not",
+                job_id=self.job_id, fields=", ".join(wrong))
         unknown = sorted(set(self.configuration) - set(_IDENTITY_FIELDS))
         if unknown:
             # Refused rather than carried. A field nothing reads is a field a
@@ -705,7 +714,10 @@ class Disposition:
     ALL = (LIVE_AND_PROGRESSING, LIVE_BUT_STALLED, COMPLETED_UNCONSUMED, COMPLETED_CONSUMED,
            ORPHANED_WAITER, SUPERSEDED, ZOMBIE, UNKNOWN)
 
-    #: Dispositions that hold nothing open. A candidate is not blocked by these.
+    #: Dispositions that hold nothing open. A candidate is not blocked by these,
+    #: and `Reconciliation.blocks` is DERIVED from this tuple rather than set by
+    #: hand beside it — which is what it was, in eight places, while this sat
+    #: documented as the rule and read by nothing.
     SETTLED = (COMPLETED_CONSUMED, ORPHANED_WAITER, SUPERSEDED)
 
 
@@ -720,8 +732,14 @@ class Reconciliation:
     #: signals nothing, ends nothing and retires nothing. Ending a worker is a
     #: human decision (`policy/hitl-matrix.md` row 4) and this does not touch it.
     action: str = "none"
-    #: Whether this job holds the candidate open.
-    blocks: bool = False
+    #: Whether this job holds the candidate open. **DERIVED**, not supplied: it
+    #: was hand-set at each of eight construction sites while
+    #: `Disposition.SETTLED` sat beside them documented as the rule and consulted
+    #: by nothing, so the two could disagree and an independent reader noted the
+    #: constant was dead. One rule, in one place.
+    @property
+    def blocks(self) -> bool:
+        return self.disposition not in Disposition.SETTLED
 
     def sentence(self) -> str:
         return f"{self.job_id}: {self.disposition} — {self.why}"
@@ -750,36 +768,74 @@ def reconcile(
     moment = now or _now()
     out: list[Reconciliation] = []
     for wait in record.waits:
+        # RETIREMENT SETTLES BEFORE EVERYTHING, the human branch included. It
+        # was decided inside the `finished` branch, so a retired wait whose
+        # artifact had since been removed fell through to a live disposition and
+        # started blocking again — while `derive` excludes retired waits
+        # entirely, so the two contradicted each other. A retired wait holds no
+        # obligation; that is what retiring it meant.
+        if wait.retired:
+            out.append(Reconciliation(
+                wait.job_id, Disposition.COMPLETED_CONSUMED,
+                "the wait was retired after recovery, so it holds no obligation whatever the "
+                "producer, its artifact or a person does now"))
+            continue
         if wait.kind == WaitKind.HUMAN:
             out.append(Reconciliation(
                 wait.job_id, Disposition.UNKNOWN,
                 "a person is not a producer and their completion is not observable; this is a "
-                "human decision, and the blockers are where it is recorded", blocks=True))
+                "human decision, and the blockers are where it is recorded"))
             continue
-        if (candidate_revision and wait.subject_revision
-                and wait.subject_revision != candidate_revision):
+        if candidate_revision and wait.subject_revision:
+            if wait.subject_revision != candidate_revision:
+                out.append(Reconciliation(
+                    wait.job_id, Disposition.SUPERSEDED,
+                    f"declared against {wait.subject_revision[:12]} and the candidate is "
+                    f"{candidate_revision[:12]}; it cannot answer about this one and must not be "
+                    f"re-run against it", action="retire the wait"))
+                continue
+        elif candidate_revision:
+            # ABSENCE IS NOT AGREEMENT. A caller asking about a candidate, and a
+            # wait that names no subject, cannot be told the wait is about this
+            # one. The failure-mode table said so and the code did not: it fell
+            # through to a positive live answer.
             out.append(Reconciliation(
-                wait.job_id, Disposition.SUPERSEDED,
-                f"declared against {wait.subject_revision[:12]} and the candidate is "
-                f"{candidate_revision[:12]}; it cannot answer about this one and must not be "
-                f"re-run against it", action="retire the wait"))
+                wait.job_id, Disposition.UNKNOWN,
+                f"this wait names no subject revision and the caller asked about "
+                f"{candidate_revision[:12]}, so whether it is about this candidate is not "
+                f"established — which is not the same as it being about this one",
+                action="record the subject the wait was declared against"))
             continue
 
         observation = _observe(wait, relative_to=base)
+        # A RECORDED PRODUCER THAT HAS ENDED OUTRANKS AN ARTIFACT THAT NEVER
+        # APPEARED. `_observe` chooses by wait KIND, so a path wait carrying a
+        # process number never consulted it — and a producer demonstrably
+        # exited, with no result, reported as running. Found by an independent
+        # reader against a real exited child.
+        if (wait.kind != WaitKind.PROCESS and wait.pid and not observation.finished):
+            from progress import process_has_ended
+
+            ended, how = process_has_ended(wait.pid)
+            if ended:
+                out.append(Reconciliation(
+                    wait.job_id, Disposition.UNKNOWN,
+                    f"the producer this wait names has ended ({how}) and the result it was "
+                    f"waiting for has not appeared, so what happened is not established from "
+                    f"the record alone", action="classify from the artifacts and recover"))
+                continue
         if observation.unobservable:
             out.append(Reconciliation(
                 wait.job_id, Disposition.UNKNOWN,
                 f"nothing observable says whether this finished: {observation.how}",
-                action="recover", blocks=True))
+                action="recover"))
             continue
 
         if observation.finished:
-            zombie = "has not been reaped" in (observation.how or "")
-            if wait.retired:
-                out.append(Reconciliation(
-                    wait.job_id, Disposition.COMPLETED_CONSUMED,
-                    "finished, and the wait was retired after recovery"))
-            elif wait.consumed:
+            from progress import ENDED_UNREAPED
+
+            zombie = ENDED_UNREAPED in (observation.how or "")
+            if wait.consumed:
                 out.append(Reconciliation(
                     wait.job_id, Disposition.ORPHANED_WAITER,
                     "the producer finished and its result was taken up, and the wait is still "
@@ -790,12 +846,11 @@ def reconcile(
                     wait.job_id, Disposition.ZOMBIE,
                     f"{observation.how}. It is ENDED: a liveness question asked the old way "
                     f"says otherwise, which is how a finished producer stayed running",
-                    action="take up the result, then retire the wait", blocks=True))
+                    action="take up the result, then retire the wait"))
             else:
                 out.append(Reconciliation(
                     wait.job_id, Disposition.COMPLETED_UNCONSUMED,
-                    "finished, and nothing has taken the result up", action="take up the result",
-                    blocks=True))
+                    "finished, and nothing has taken the result up", action="take up the result"))
             continue
 
         if wait.expired_at(moment):
@@ -803,11 +858,11 @@ def reconcile(
                 wait.job_id, Disposition.LIVE_BUT_STALLED,
                 "running, and past the patience its declaration states. A live process satisfies "
                 "a liveness question forever, so the deadline is what ends the wait",
-                action="classify from the artifacts and recover", blocks=True))
+                action="classify from the artifacts and recover"))
             continue
         out.append(Reconciliation(
             wait.job_id, Disposition.LIVE_AND_PROGRESSING,
-            f"running, within its declared patience: {observation.how}", blocks=True))
+            f"running, within its declared patience: {observation.how}"))
     return tuple(out)
 
 

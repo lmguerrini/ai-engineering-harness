@@ -1650,7 +1650,6 @@ def test_every_oracle_the_matrix_names_selects_at_least_one_test():
     assert len(selectors) == len(expected), (
         f"{len(expected) - len(selectors)} row(s) name an oracle the parser did not read: "
         f"{sorted(set(expected) - {s[0] for s in selectors})}")
-    command = [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"]
 
     # THE SAME COMMANDS, THE SAME ASSERTION, RUN CONCURRENTLY AND ONCE EACH.
     # This was the slowest check in the suite by a factor of two, spending its

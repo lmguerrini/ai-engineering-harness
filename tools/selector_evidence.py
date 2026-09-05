@@ -31,7 +31,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 __all__ = [
@@ -50,12 +50,22 @@ NOT_EVIDENCE = "NOT_EVIDENCE"
 #: It does.
 EVIDENCE = "EVIDENCE"
 
-#: Outcomes that mean a test BODY ran. `skipped` and `deselected` are counted
-#: and are deliberately not here: a skipped test is a test that did not run, and
-#: a deselected one was never chosen. Both are the shapes that produce a green
-#: command with nothing behind it.
-_EXECUTED = ("passed", "failed", "error", "errors", "xpassed", "xfailed")
-_COUNTED = _EXECUTED + ("skipped", "deselected")
+#: Outcomes that mean a test BODY ran. Four shapes are deliberately outside it,
+#: and two were found by an independent reader inside a real pytest run:
+#:
+#: `skipped` — the test did not run. `deselected` — it was never chosen.
+#: `error` — the failure was in SETUP, so the body was never reached; a fixture
+#: that raises produces `1 error` and no test ever executed.
+#: `xfailed` — under `xfail(run=False)` pytest does not run the body at all, and
+#: the command exits 0.
+#:
+#: Each of the last two read as evidence until they were executed against.
+_EXECUTED = ("passed", "failed", "xpassed")
+#: Ran nothing, and each says so differently. Named rather than lumped with
+#: `deselected`, because *the setup broke* and *the selector named nothing* send
+#: a reader to different places.
+_DID_NOT_EXECUTE = ("skipped", "deselected", "error", "errors", "xfailed")
+_COUNTED = _EXECUTED + _DID_NOT_EXECUTE
 
 _SUMMARY = re.compile(r"(\d+)\s+(" + "|".join(_COUNTED) + r")\b")
 
@@ -78,6 +88,14 @@ class SelectorRun:
     executed: int = 0
     skipped: int = 0
     deselected: int = 0
+    #: Selected, and the body never reached: a setup error, or an `xfail` pytest
+    #: was told not to run. Counted separately because both exit as though
+    #: something happened.
+    not_reached: int = 0
+    #: The node identities that were collected, where they were read. Counts
+    #: alone cannot establish that two runs measured the same thing: two
+    #: DIFFERENT single tests both report `1 passed`.
+    identities: tuple = ()
     exit_status: int = 0
     #: Present when the summary could not be read at all, which is not zero.
     unreadable: str = ""
@@ -100,9 +118,14 @@ def read_collection(text: str, *, selector: str = "", exit_status: int = 0) -> S
     collection, *executing* is *being collected*, and a selector that collects
     nothing names nothing whatever the command's exit status was.
     """
-    if _COLLECTED_NONE.search(text or ""):
+    # THE TERMINAL SUMMARY, not the whole output. Searching everything meant a
+    # COLLECTED NODE ID containing the words `no tests collected` — this
+    # module's own parametrised test names do — reported the run as empty. Found
+    # by pointing the tool at its own test file.
+    tail = "\n".join((text or "").strip().splitlines()[-3:])
+    if _COLLECTED_NONE.search(tail):
         return SelectorRun(selector=selector, exit_status=exit_status)
-    found = _COLLECTED.search(text or "")
+    found = _COLLECTED.search(tail)
     if not found:
         return SelectorRun(selector=selector, exit_status=exit_status,
                            unreadable="pytest printed no collection summary this could read, so "
@@ -110,8 +133,10 @@ def read_collection(text: str, *, selector: str = "", exit_status: int = 0) -> S
                                       "same as nothing")
     collected = int(found.group(1))
     deselected = int(found.group(2) or 0)
+    identities = tuple(line.strip() for line in (text or "").splitlines()
+                       if "::" in line and not line.startswith(" "))
     return SelectorRun(selector=selector, collected=collected + deselected, executed=collected,
-                       deselected=deselected, exit_status=exit_status)
+                       deselected=deselected, exit_status=exit_status, identities=identities)
 
 
 def read_summary(text: str, *, selector: str = "", exit_status: int = 0) -> SelectorRun:
@@ -134,18 +159,20 @@ def read_summary(text: str, *, selector: str = "", exit_status: int = 0) -> Sele
                                unreadable="pytest printed no summary this could read, so what "
                                           "ran is unknown — which is not the same as nothing")
     executed = sum(counts[name] for name in _EXECUTED)
+    not_reached = counts["error"] + counts["errors"] + counts["xfailed"]
     return SelectorRun(
         selector=selector,
-        collected=executed + counts["skipped"] + counts["deselected"],
+        collected=executed + sum(counts[name] for name in _DID_NOT_EXECUTE),
         executed=executed,
         skipped=counts["skipped"],
         deselected=counts["deselected"],
+        not_reached=not_reached,
         exit_status=exit_status,
     )
 
 
-def run_selector(argv, *, cwd=None, timeout: int = 600,
-                 collect_only: bool = False) -> SelectorRun:
+def run_selector(argv, *, cwd=None, timeout: int = 600, collect_only: bool = False,
+                 record_identities: bool = True) -> SelectorRun:
     """Run one pytest selector and record what it actually did.
 
     `collect_only` answers the cheaper question — *does this selector name any
@@ -157,8 +184,17 @@ def run_selector(argv, *, cwd=None, timeout: int = 600,
     result = subprocess.run(command, capture_output=True, text=True,
                             cwd=str(cwd) if cwd else None, timeout=timeout)
     read = read_collection if collect_only else read_summary
-    return read(result.stdout + result.stderr, selector=" ".join(str(a) for a in argv),
-                exit_status=result.returncode)
+    run = read(result.stdout + result.stderr, selector=" ".join(str(a) for a in argv),
+               exit_status=result.returncode)
+    if record_identities and not collect_only and not run.identities:
+        # A SECOND, CHEAP PASS. A `-q` run prints no node ids, so a comparison
+        # between two of them has only counts to go on — and two different
+        # single tests both report one. The collection is the only place the
+        # identities exist.
+        named = run_selector(argv, cwd=cwd, timeout=timeout, collect_only=True,
+                             record_identities=False)
+        run = replace(run, identities=named.identities)
+    return run
 
 
 def problems(run: SelectorRun, *, expect_at_least: int = 1) -> tuple[str, ...]:
@@ -172,6 +208,21 @@ def problems(run: SelectorRun, *, expect_at_least: int = 1) -> tuple[str, ...]:
     if run.unreadable:
         found.append(run.unreadable)
         return tuple(found)
+    # THE FLOOR IS NOT THE CALLER'S TO REMOVE. `expect_at_least=0` made every
+    # zero-execution run evidence — the guarantee switched off by the argument
+    # that was supposed to strengthen it. The caller may raise the bar and may
+    # not lower it below one.
+    if not isinstance(expect_at_least, int) or isinstance(expect_at_least, bool) \
+            or expect_at_least < 1:
+        found.append(
+            f"an expectation of {expect_at_least!r} would accept a run that executed nothing; "
+            f"the floor is one and a caller may only raise it")
+        expect_at_least = 1
+    if run.not_reached:
+        found.append(
+            f"{run.not_reached} selected test(s) were never reached — a setup error, or an "
+            f"`xfail` pytest was told not to run. Both exit as though something happened and "
+            f"neither ran a test body")
     if run.executed < expect_at_least:
         found.append(
             f"{run.executed} test(s) executed where at least {expect_at_least} was expected"
@@ -204,6 +255,21 @@ def comparison_problems(before: SelectorRun, after: SelectorRun) -> tuple[str, .
         found.append(
             f"the runs executed different numbers of tests ({before.executed} then "
             f"{after.executed}); a faster run over fewer tests is not a faster run")
+    # COUNTS ARE NOT IDENTITIES. Two DIFFERENT single tests both report
+    # `1 passed`, so equal counts accepted a comparison between different
+    # populations — found by running two real, different, one-test selectors.
+    if not before.identities or not after.identities:
+        found.append(
+            "one of the runs did not record which tests it collected, so equality of counts is "
+            "all there is to compare — and two different single tests both report one. Use "
+            "`run_selector` without `record_identities=False`")
+    elif before.identities != after.identities:
+        only_before = sorted(set(before.identities) - set(after.identities))
+        only_after = sorted(set(after.identities) - set(before.identities))
+        found.append(
+            f"the runs collected DIFFERENT tests, not merely the same number: "
+            f"{len(only_before)} only before ({', '.join(only_before[:2])}...), "
+            f"{len(only_after)} only after ({', '.join(only_after[:2])}...)")
     return tuple(found)
 
 

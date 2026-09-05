@@ -586,19 +586,40 @@ measurement being wrong. The same rule as fixtures, one level up — **a mutant
 whose subject never sees it is not evidence** — and the third is the reason the
 selector tool exists.
 
-### Verification cost, measured rather than asserted
+### Verification cost, and a claim this release's own rule refuses
 
-The suite's time was two subprocess fan-outs: the oracle-selector guard at 52.4s
-and the CLI refusal guard at 25.7s, together a third of the run. Both are now
-run concurrently over the same commands with the same assertions — nothing about
-what is checked changed, only when the processes run — and both were
-mutation-tested afterwards with well-formed mutants to prove no detection was
-lost. **291s to 229.5s over an identical test population.**
+Two subprocess fan-outs were a third of the suite: the oracle-selector guard and
+the CLI refusal guard, both spending their time in interpreter startup rather
+than in anything they verify. Both now run concurrently over the same commands
+with the same assertions — nothing about what is checked changed, only when the
+processes run — and both were mutation-tested afterwards with well-formed
+mutants to prove no detection was lost.
 
-Reimplementing pytest's `-k` expression in-process would have collapsed the
-first to a single collection and was rejected: the guard exists to be
-trustworthy about whether a selector resolves, and a second implementation of
-the selector language makes the guard's own correctness the new risk.
+**The whole-suite figure this section used to state is WITHDRAWN.** It claimed a
+speed-up *over an identical test population*, and it was refused by this
+release's own `selector_evidence.comparison_problems`, which requires two runs to
+have the same population before they may be compared. Both sides were then
+measured properly, and **they are not comparable**: the delta adds tests, so the
+populations differ, and a comparison over different populations is exactly what
+this release now refuses of anybody else.
+
+Measure it rather than read it — and note that neither figure may be written
+here, for the same reason the suite count is not:
+
+    git worktree add --detach <somewhere> 215a537 && \
+        cd <somewhere> && python3 -m pytest tools/tests/ -q     # the before
+    python3 -m pytest tools/tests/ -q                           # the candidate
+
+An independent reader pointed out that the original claim carried none of the
+counts its own rule demands. Producing them showed the comparison cannot be made,
+rather than that it comes out well.
+
+What CAN be said, over one test measured the same way either side: the
+oracle-selector guard fell from about 52s to about 14s and the CLI refusal guard
+from about 26s to about 7s. Both figures were taken under different machine load
+— one of them alongside two audits — so they are honest measurements of a real
+change and not controlled ones, and this says so rather than rounding them into
+a headline.
 
 ### Background reconciliation
 
@@ -607,6 +628,112 @@ the process table, producer exit status and durable output rather than from the
 display: three orphaned self-matching waiters, retired without terminating
 anything; every producer completed and every result consumed; no zombies. The
 record is `docs/RP2.4-BACKGROUND-RECONCILIATION.md`.
+
+## The two delta readings, from two providers, and the fourteen things they found
+
+The overnight delta was read twice at `abbe0d8`, bounded to the guarantees it
+changed. **HEAD did not move under either**, which is the rule the first
+release-authority round taught and this round kept.
+
+| | reading A | reading B |
+|---|---|---|
+| observed model | `gpt-6-astra`, effort xhigh | a fresh same-family session |
+| provider | openai, through codex-cli | anthropic |
+| independent of | the coordinator (cross-vendor) | the coordinator's context, and of reading A's PROVIDER |
+| could run the suite | **no** — its sandbox gives pytest no temporary directory | **yes** — 2309 passed, plus 24 of its own mutants |
+| verdict | DELTA_NOT_SOUND — 9 major, 2 minor, 1 observation | DELTA_NOT_SOUND — 1 blocker, 4 major, 7 minor, 7 observations |
+
+**That pairing is the point.** The provider-diversity gap the previous round
+recorded as a limitation is closed: two readings, two providers, and their
+findings were largely disjoint — one converging blocker and, either side of it,
+defects the other did not see. Reading B could execute, and everything it found
+that reading A could not turns on execution.
+
+### The blocker both found, and what it says about the coordinator
+
+**The validator refused command-line matching by DENYLIST while the design
+record said it refused the class.** `docs/RP2.4-DESIGN-C47-governed-background-work.md`
+states *"Refused as a class rather than pattern by pattern: a rule that has to
+decide whether a particular pattern is safe is a rule that can be argued with"*
+— and the implementation was five literals plus a fallback that any of three
+substrings disabled. Between them the readings walked six waiters past it:
+
+    while [ -e / ] && ps ax | grep -q "pytest tools/tests"; do sleep 20; done
+    while ps | grep -q worker; do sleep 20; done  # [ -e /tmp/s ]
+    while pidof python3 >/dev/null; do sleep 20; done  # [ -e /tmp/x ]
+    sleep infinity  # [ -s out.txt ]
+
+The last is the clearest: it observes nothing, can never end, and was accepted
+because a **shell comment** contained a token the fallback looked for. Three
+loaded cleanly through the durable boundary and were recorded as governed.
+
+Reading B also named why the whitelist was so weak: `"ps -o stat="` is the
+literal `waiter_command` emits, so *governed* meant *contains a substring the
+shipped builder emits* — `progress.py` checked against itself, with an oracle
+that asserted the round trip.
+
+**Repaired by RECONSTRUCTION.** The pid, sentinel and poll are read back out of
+a candidate, `waiter_command` is asked to build the waiter those values imply,
+and the two are compared byte for byte. Anything this module did not produce is
+refused, whatever it looks like, and nothing has to reason about whether a
+pattern is safe. All six cases are refused; the builder's own output is accepted
+for every input tried; and the oracle now asserts the PROPERTY — the command
+names its process number and its artifact and contains no command-line matcher —
+rather than only the round trip.
+
+### What execution found that reading could not
+
+**The manifest's test count was not reproducible.** One new test selected with
+`-k "a"`, which matches pytest's own generated `tmp_path` directory name. It
+passed here only because macOS puts temporary files outside the repository;
+reading B proved it by setting `TMPDIR` inside the tree and getting
+`1 failed, 2308 passed`. The subject was correct throughout — it faithfully
+reported that two tests were named. **The defect was in the test**, and it is the
+same class as the `-k` typo that produced this release's selector tool.
+
+**Guarantee 10 had no oracle at all.** Reading B replaced the panel's
+`reconcile` call with a tuple claiming every job was `LIVE_AND_PROGRESSING`
+because *"a monitor exists"* — the exact inversion the design says is closed —
+and the whole suite passed. It instrumented the panel to show it is entered 145
+times across a run: entered, and never looked at. There is a test now.
+
+**`reconcile` and `derive` contradicted each other on one screen.** `derive`
+filters retired waits out entirely; `reconcile` consulted `retired` only inside
+its finished branch, so a retired wait with a RUNNING producer, and any retired
+human wait, went on blocking. The coordinator-state panel read *nothing
+outstanding* beside a background panel reading *1 of 1 holding open*.
+
+**`Disposition.SETTLED` was dead.** Documented as the rule governing `blocks`,
+consulted by nothing, while `blocks` was hand-set at eight construction sites.
+It is derived from the tuple now — one rule, in one place.
+
+### The rest, each reproduced before repair
+
+A `ps` that could not be read was reported as an **absent process**, so a
+running producer read as finished — found from inside a sandbox where `ps` was
+denied, which is exactly where it bites. A wait naming no subject fell through to
+a positive live answer when asked about a candidate, which the failure-mode table
+had already forbidden and the code did not do. A producer that had demonstrably
+exited was reported as running, because `_observe` chooses by wait kind and never
+consulted the recorded process number. The dashboard omitted the candidate
+revision it already had. `xfail(run=False)` and setup errors counted as executed
+— both exit as though something happened and neither runs a body.
+`expect_at_least=0` switched the zero-execution guarantee off, and the shipped
+CLI exposed that to any caller. Equal counts were accepted as identical
+populations, when two DIFFERENT single tests both report `1 passed`. The
+empty-collection check searched the whole output, so a collected node id
+containing the words *no tests collected* — which this module's own test names do
+— reported the run as empty. A configuration accepted a nested object where every
+other identity field is text. And the zombie disposition was keyed on another
+module's prose, so rewording a sentence would have silently downgraded it.
+
+### The mutation pass
+
+Seventeen mutants over the repaired subjects, each reverted in place and the
+suite re-run. **All seventeen die.** Three survived their first pass — the
+repairs had been made and their oracles had not — which is the rule this pack
+states as *a repair with no oracle is a claim*, met by the coordinator in its own
+work, again.
 
 ## The freeze procedure
 

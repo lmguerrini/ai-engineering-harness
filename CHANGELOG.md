@@ -141,11 +141,17 @@ intended selector and the collected, executed, skipped and deselected counts,
 and answers `NOT_EVIDENCE` below what the caller expected. **Two runs are
 comparable only over the same test population.**
 
-### Verification cost
+### Verification cost, and a withdrawn claim
 
-Two subprocess fan-outs were a third of the suite. Both now run concurrently
-over the same commands with the same assertions, mutation-tested afterwards to
-prove no detection was lost: **291s to 229.5s over an identical population.**
+Two subprocess fan-outs were a third of the suite. Both now run concurrently over
+the same commands with the same assertions, mutation-tested afterwards to prove
+no detection was lost.
+
+The whole-suite speed-up this entry used to claim is **withdrawn**. Measured
+properly, the two sides ran different numbers of tests — the delta adds some —
+which is precisely the comparison `selector_evidence.comparison_problems` refuses
+of anybody else. An independent reader noticed the claim carried none of the
+counts its own rule demands; producing them showed the comparison cannot be made.
 
 ### Erratum against 2.3.0
 

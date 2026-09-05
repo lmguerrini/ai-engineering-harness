@@ -60,8 +60,10 @@ from errors import IntegrityError, PreconditionError
 
 __all__ = [
     "UNGOVERNED_BACKGROUND_WORK",
+    "ENDED_UNREAPED",
     "process_has_ended",
     "waiter_problems",
+    "waiter_watches",
     "is_governed_waiter",
     "SignalKind",
     "Sample",
@@ -387,16 +389,34 @@ class Waiter:
 #: an undeclared one by a name.
 UNGOVERNED_BACKGROUND_WORK = "UNGOVERNED_BACKGROUND_WORK"
 
-#: Shapes that match a COMMAND LINE. Every one of them can match the waiter's
-#: own command, because the waiter's command line contains the pattern it is
-#: searching for. Refused as a class rather than pattern by pattern: a rule that
-#: has to decide whether a particular pattern is safe is a rule that can be
-#: argued with, and the argument is what produced three monitors that could
-#: never terminate.
-_COMMAND_LINE_MATCHERS = ("pgrep", "pkill", "ps -ef", "ps aux", "ps -A")
+#: The exact words `process_has_ended` uses for a producer that exited and was
+#: not reaped. Named so a caller can key on it instead of on prose: reading it
+#: was already how `continuation` recognised a zombie, and a reworded sentence
+#: there would have silently downgraded the disposition.
+ENDED_UNREAPED = "has not been reaped"
+
+#: The one shape a governed waiter may have: **the one this module builds.**
+#:
+#: The first version listed forbidden shapes — `pgrep`, `pkill`, `ps aux` — and
+#: an independent reader walked two waiters straight past it: `ps -ax -o
+#: command= | grep` was a spelling the list did not hold, and
+#: `while [ -e / ]; do sleep 1; done` satisfied the positive check while being
+#: unable to terminate at all. A denylist has to enumerate every way to be
+#: wrong; this design record already said *refused as a class rather than
+#: pattern by pattern*, and the implementation did not match it.
+#:
+#: So governance is decided by RECONSTRUCTION: the pid, sentinel and poll are
+#: read back out of the candidate, `waiter_command` is asked to build the waiter
+#: those values imply, and the two are compared byte for byte. Anything this
+#: module did not produce is refused, whatever it looks like — and nothing has
+#: to reason about whether a particular pattern is safe.
+_GOVERNED = re.compile(
+    r"^while s=\$\(ps -o stat= -p (?P<pid>\d+) 2>/dev/null\); "
+    r"\[ -n \"\$s\" \] && \[ \"\$\{s#Z\}\" = \"\$s\" \] && \[ ! -s (?P<sentinel>.+) \]; "
+    r"do sleep (?P<poll>\d+); done$")
 
 
-def process_has_ended(pid: int) -> "tuple[bool, str]":
+def process_has_ended(pid: int) -> "tuple[bool | None, str]":
     """Whether the process with this number has finished, and how that was established.
 
     **A ZOMBIE IS ENDED.** `os.kill(pid, 0)` succeeds for a process that has
@@ -416,16 +436,30 @@ def process_has_ended(pid: int) -> "tuple[bool, str]":
     import subprocess as _subprocess
 
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False, f"{pid!r} is not a process number, so nothing was asked"
+        return None, f"{pid!r} is not a process number, so nothing was asked"
     try:
-        state = _subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
-                                capture_output=True, text=True, timeout=30).stdout.strip()
+        asked = _subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                                capture_output=True, text=True, timeout=30)
     except (OSError, _subprocess.SubprocessError) as exc:
-        return False, f"process {pid} could not be asked about: {exc}"
+        return None, f"process {pid} could not be asked about: {exc}"
+    state = asked.stdout.strip()
+    # A FAILED QUERY IS NOT AN ABSENT PROCESS. `ps` exits 1 for a number that is
+    # gone and can exit non-zero for reasons that have nothing to do with the
+    # process — denied, unavailable, a sandbox without a process table. Reading
+    # the second as the first reports a running producer as finished, which is
+    # the error direction that loses work. An independent reader found it from
+    # inside a sandbox where `ps` was denied, which is exactly where it bites.
+    if asked.returncode not in (0, 1):
+        return None, (f"the process table could not be read for {pid}: ps exited "
+                      f"{asked.returncode}" + (f" ({asked.stderr.strip()[:80]})"
+                                               if asked.stderr.strip() else ""))
     if not state:
+        if asked.returncode == 0:
+            return None, (f"ps reported nothing for {pid} and did not fail, so whether it exists "
+                          f"is not established")
         return True, f"no process {pid} exists"
     if state.startswith("Z"):
-        return True, f"process {pid} has exited and has not been reaped (state {state})"
+        return True, f"process {pid} has exited and {ENDED_UNREAPED} (state {state})"
     return False, f"process {pid} is running (state {state}; a reused number would look the same)"
 
 
@@ -444,23 +478,53 @@ def waiter_problems(command: object) -> "tuple[str, ...]":
     Returns the reasons rather than a boolean, because *this waiter is not
     governed* with no cause is the kind of unanswerable answer this pack refuses.
     """
-    text = " ".join(command) if isinstance(command, (list, tuple)) else str(command or "")
-    if not text.strip():
+    parts = list(command) if isinstance(command, (list, tuple)) else str(command or "").split(" ", 2)
+    if not (command if isinstance(command, str) else " ".join(map(str, parts))).strip():
         return ("no waiter command was given, so what would end this wait is not stated",)
-    found = []
-    for matcher in _COMMAND_LINE_MATCHERS:
-        if matcher in text:
-            found.append(
-                f"it matches a COMMAND LINE ({matcher}), which can match the waiter's own — the "
-                f"pattern being searched for is inside the command doing the searching, so the "
-                f"loop need never end. Watch a process NUMBER instead: `waiter_command` builds one"
-            )
-    if not found and "ps -o stat=" not in text and "[ -s " not in text and "[ -e " not in text:
-        found.append(
-            "it observes neither a process state nor a completion artifact, so nothing in it is "
-            "an authoritative statement that the producer finished"
-        )
-    return tuple(found)
+
+    refusal = (
+        "this is not a waiter `waiter_command` built, and only one it built is governed. A "
+        "waiter is accepted by RECONSTRUCTION — its process number, sentinel and poll interval "
+        "are read back and the command those values imply is rebuilt and compared — because a "
+        "list of forbidden shapes has to enumerate every way to be wrong, and two got past one: "
+        "a `ps | grep` spelling the list did not hold, and a loop that observed nothing and so "
+        "could not terminate at all"
+    )
+    if len(parts) != 3 or parts[0] != "sh" or parts[1] != "-c":
+        return (refusal,)
+    found = _GOVERNED.match(str(parts[2]))
+    if not found:
+        return (refusal,)
+    # And the values it names must be usable ones, so a rebuilt command cannot
+    # be governed while naming a process number nothing could ever have had.
+    try:
+        rebuilt = waiter_command("reconstructed", int(found.group("pid")),
+                                 sentinel=shlex.split(found.group("sentinel"))[0],
+                                 poll_seconds=int(found.group("poll")))
+    except Exception as exc:
+        return (f"{refusal} (the values it names are not usable: {exc})",)
+    if list(rebuilt) != [str(part) for part in parts]:
+        return (f"{refusal} (it does not rebuild to itself)",)
+    return ()
+
+
+def waiter_watches(command: object) -> "tuple[int | None, str]":
+    """The process number and sentinel a governed waiter watches.
+
+    `(None, "")` for one this module did not build. Exposed so a caller can
+    check that a waiter watches the producer its wait actually names — a
+    governed waiter over somebody else's process is well-formed and wrong.
+    """
+    parts = list(command) if isinstance(command, (list, tuple)) else str(command or "").split(" ", 2)
+    if len(parts) != 3:
+        return None, ""
+    found = _GOVERNED.match(str(parts[2]))
+    if not found:
+        return None, ""
+    try:
+        return int(found.group("pid")), shlex.split(found.group("sentinel"))[0]
+    except Exception:
+        return None, ""
 
 
 def is_governed_waiter(command: object) -> bool:

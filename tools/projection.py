@@ -1025,7 +1025,17 @@ def _background_panel(record, base: Path) -> Panel:
 
     import continuation
 
-    results = continuation.reconcile(record, relative_to=base)
+    # THE RECORD'S OWN CANDIDATE, passed through. Without it every superseded
+    # job read as holding the capability open — the panel asked a question it
+    # already had the answer to, and an independent reader found the omission
+    # while the adjacent panel got it right.
+    candidate = ""
+    evidence = getattr(record, "evidence", None)
+    if isinstance(evidence, dict):
+        candidate = str(evidence.get("candidate") or "")
+    results = continuation.reconcile(record, relative_to=base, candidate_revision=candidate)
+    if candidate:
+        panel.say(candidate[:12], Tone.MUTED, label="candidate")
     if not results:
         panel.say("no background job is declared", Tone.MUTED, label="declared")
         panel.summary, panel.summary_tone = "none declared", Tone.PLAIN
