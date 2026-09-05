@@ -33,6 +33,25 @@ def _git(repo, *args):
     subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True, check=True)
 
 
+def _commit_manifest_if_changed(root):
+    """Leave the manifest committed, the way a frozen release's manifest is.
+
+    The recomputed digest used to be left in the working tree, which models a
+    release half cut rather than one a project could pin. RP2.4.1 R5 compares
+    the manifest with the commit it claims to come from, and this fixture was
+    the only thing giving that comparison something to say. Conditional because
+    for one of these fixtures the recomputation is a no-op, and `git commit`
+    with nothing staged is an error rather than a success.
+    """
+    dirty = subprocess.run(["git", "-C", str(root), "status", "--porcelain",
+                            "--", pack_pin.MANIFEST_NAME],
+                           capture_output=True, text=True, check=True).stdout.strip()
+    if dirty:
+        _git(root, "add", pack_pin.MANIFEST_NAME)
+        _git(root, "commit", "--quiet", "-m",
+             "recompute the identity over the released tree")
+
+
 @pytest.fixture(scope="module")
 def release(tmp_path_factory):
     """A real pack root: a git repository with a manifest that verifies.
@@ -72,6 +91,13 @@ def release(tmp_path_factory):
     manifest[pack_pin.DIGEST_COUNT_KEY] = count
     manifest["tree_digest_sha256"] = digest
     (root / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    # COMMITTED, because a frozen release's manifest is. The recomputed digest
+    # used to be left in the working tree, which models a release half cut
+    # rather than one a project could pin: RP2.4.1 R5 compares the manifest with
+    # the commit it claims to come from, and this fixture was the only reason
+    # that comparison had anything to say. Re-committing the manifest does not
+    # move the digest, which excludes it.
+    _commit_manifest_if_changed(root)
 
     sha = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=str(root), capture_output=True, text=True, check=True
@@ -110,6 +136,7 @@ def _build_release(root, version, state="QUALIFIED_AND_FROZEN"):
     manifest[pack_pin.DIGEST_COUNT_KEY] = count
     manifest["tree_digest_sha256"] = digest
     (root / pack_pin.MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+    _commit_manifest_if_changed(root)
     sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root),
                          capture_output=True, text=True, check=True).stdout.strip()
     return {"root": str(root), "version": version, "sha": sha, "digest": digest, "state": state}
@@ -253,28 +280,28 @@ def test_a_fully_identified_pin_against_a_qualified_release_is_ready(
 
 
 def test_a_pin_to_an_unqualified_release_verifies_and_is_still_not_ready(
-    tmp_path, release, context_tree
+    tmp_path, context_tree
 ):
     """Two questions that were one. `verify_pin` answers *is this root what you
     pinned* — completely, and for an `IN_PROGRESS` release the answer is yes.
-    Nothing answered *is what you pinned adoptable*."""
-    unqualified = dict(release)
-    unqualified["state"] = "IN_PROGRESS"
-    manifest_path = f"{release['root']}/{pack_pin.MANIFEST_NAME}"
-    manifest = json.loads(open(manifest_path).read())
-    manifest["state"] = "IN_PROGRESS"
-    open(manifest_path, "w").write(json.dumps(manifest, indent=2) + "\n")
-    try:
-        path = _contract(tmp_path, "pin_to_an_unqualified_release", unqualified, context_tree,
-                         state="IN_PROGRESS")
-        report = capability_open.open_capability(path)
+    Nothing answered *is what you pinned adoptable*.
 
-        assert report.component("pack_pin").state == capability_open.VERIFIED, report.render()
-        assert report.component("pack_release_state").state == capability_open.UNVERIFIABLE
-        assert report.state == capability_open.NOT_READY
-    finally:
-        manifest["state"] = "QUALIFIED_AND_FROZEN"
-        open(manifest_path, "w").write(json.dumps(manifest, indent=2) + "\n")
+    BUILT AS ITS OWN RELEASE rather than by editing the shared one in place.
+    The state used to be flipped in the module-scoped fixture's working tree and
+    flipped back in a `finally`, which models nothing: a release's state is a
+    committed fact, and RP2.4.1 R5 now compares the manifest with the commit it
+    claims to come from. `_build_release` already takes the state, which is what
+    that parameter is for.
+    """
+    unqualified = _build_release(tmp_path / "unqualified" / "pack", "3.0.0",
+                                 state="IN_PROGRESS")
+    path = _contract(tmp_path, "pin_to_an_unqualified_release", unqualified, context_tree,
+                     state="IN_PROGRESS")
+    report = capability_open.open_capability(path)
+
+    assert report.component("pack_pin").state == capability_open.VERIFIED, report.render()
+    assert report.component("pack_release_state").state == capability_open.UNVERIFIABLE
+    assert report.state == capability_open.NOT_READY
 
 
 def test_a_context_declared_in_an_older_shape_is_unverifiable_and_stops_the_open(
