@@ -32,6 +32,20 @@ from continuation import Blocker, ContinuationRecord, State, Wait, WaitKind
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _declared_version() -> str:
+    """The version this pack DECLARES, read rather than remembered.
+
+    THE SAME DEFECT AS THE ONE BELOW, ONE FIELD OVER, and it survived the repair
+    that closed the other: the state was unbound from its literal and the version
+    beside it stayed at that release's number, so the rehearsal failed on the
+    next release for exactly the reason the docstring below says it was fixed. A
+    pin verifies what the pack declares; neither field is a constant.
+    """
+    import json as _json
+
+    return _json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))["version"]
+
+
 def _declared_state() -> str:
     """The state this pack DECLARES, read rather than remembered.
 
@@ -95,14 +109,14 @@ def test_a_project_verifies_the_pack_it_pins_rather_than_trusting_it(tmp_path):
                           capture_output=True, text=True).stdout.strip()
     digest = json.loads((ROOT / "PACK_MANIFEST.json").read_text())["tree_digest_sha256"]
 
-    problems = pack_pin.verify_pin(ROOT, expect_version="2.3.0", expect_sha=head,
+    problems = pack_pin.verify_pin(ROOT, expect_version=_declared_version(), expect_sha=head,
                                    expect_digest=digest, expect_state=_declared_state())
     # An untracked file is a real finding about a working checkout and not about
     # the pin mechanism, and this rehearsal runs in one. It is reported rather
     # than ignored, and everything else must still verify.
     untracked = [p for p in problems if "untracked" in p]
     assert problems == untracked, f"the pin failed for a reason other than a dirty checkout: {problems}"
-    wrong = pack_pin.verify_pin(ROOT, expect_version="2.3.0", expect_sha="0" * 40,
+    wrong = pack_pin.verify_pin(ROOT, expect_version=_declared_version(), expect_sha="0" * 40,
                                 expect_digest=digest, expect_state=_declared_state())
     assert wrong, "a pin naming another revision verified"
 

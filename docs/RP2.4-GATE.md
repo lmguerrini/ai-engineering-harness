@@ -255,7 +255,61 @@ because it exists is the move boundary 3 exists to refuse.
 
 ## Phase 13 — the qualification run
 
-Recorded as each suite completes; see the sections that follow.
+**The deterministic suite.** `python3 -m pytest tools/tests/ -q`. The count is
+`PACK_MANIFEST.json` `tests.passed`, written by the collection the check re-runs,
+and is not restated here.
+
+**The design gate, against the real first-implementation commit.** The record is
+frozen at `ab7dea97`, the 2.3.0 release commit; mutation began at `a01480f`.
+Run with `--mutation-begins-at a01480f` the record reports `DESIGN FROZEN`; run
+with `--mutation-begins-at ab7dea97` — the base itself — it reports
+
+    the base revision is the revision at which mutation began, so the design was
+    frozen against a tree that already contains the work it governs
+
+so the binding is demonstrated to bite rather than merely to pass.
+
+**The dashboard, in a real browser.** Served over loopback and read through a
+browser rather than through the renderer's own test: the routing panel shows
+`3 configuration(s), 18 prior(s)`, the per-configuration grades, the discovered
+identifiers each marked `DISCOVERED only`, the pack state `IN_PROGRESS` and the
+line `NO — only QUALIFIED_AND_FROZEN may be pinned by a project`. No console
+errors. Every unanswerable field rendered `UNKNOWN`.
+
+**The real consumers, read-only.** Four `PROJECT.yaml` contracts on this machine,
+hashed before and after the session: **none changed**. The pinned working
+checkout one of them names by root path is still on its pinned revision, its tree
+clean, and it re-verifies against its own manifest with the release's own
+`pack_pin.py`.
+
+**The frozen baseline.** Re-verified at every checkpoint, including after the
+client update — the only change this session made outside this repository.
+
+**The complete reachable history, scanned with the capability this pack ships.**
+
+    python3 tools/publication_history.py . --project <contract inheriting pack defaults>
+
+    complete reachable history [strict]: 4270 occurrence(s) to adjudicate
+                                         (4 refs, 1777 objects)
+    rules applied: 35 term(s), 15 identity-only, 7 pattern(s), 1 identity-only
+
+By finding class: 3596 declared private terms, 317 local filesystem paths, 299
+declared private patterns, 41 credential-shaped tokens, 17 UUID-shaped
+identifiers. **THEY ARE UNADJUDICATED**, and by this release's own rule a bare
+count is not a remediation list.
+
+Three things a reader should not misread here. The figure is **not** comparable
+to 2.3.0's 2090: this history has 1777 objects against 1179, and the generation
+pattern this release adds matches more than the literal it replaced — which is
+the point of it. The credential-shaped tokens are in the scanner's **own negative
+test fixtures**, which is the case `skills/core/public-safety.md` describes when
+it says a project whose product is a harness cannot scan its own source for
+harness vocabulary. And a scan run with **no** vocabulary returns 375, which is
+the same history read through the built-in rules alone — the asymmetry the mode
+announcement exists for.
+
+Adjudication is owed before any first remote and is recorded as owed, not as
+done. A private remote does not resolve it.
 
 ## The freeze procedure
 
