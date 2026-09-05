@@ -245,9 +245,51 @@ and one occurrence names a real machine account, stated rather than denied),
 `docs/RP2.4-DESIGN-C40-qualification-identity.md` and
 `docs/RP2.4-DESIGN-C47-governed-background-work.md`.
 
+### The behaviour a reading found when it stopped reading deltas
+
+Three bounded readings of three repair deltas found fewer and fewer defects and
+none in behaviour, and this release read that as convergence. It was the deltas
+converging. A reading pointed at the modules a consuming project actually calls
+returned **seven reproduced defects** in code no repair had touched since the
+first round — three of them the class this release's headline repair was for,
+two mechanisms answering one question differently:
+
+- readiness reported an adapter VERIFIED where the adapter verifier itself
+  refused, because `capability_open` called it by a path the repair to
+  `verify_contract` never reached;
+- `derive` did not consult a recorded producer where `reconcile` did, so one
+  record was WAITING and RECOVERY_REQUIRED at once;
+- the projection's headline resolved artifacts against the process while its own
+  panel resolved them against the record, so one page gave two answers.
+
+And four more: a content exemption covering a path it was not written for, with
+content arriving at a new path never scanned there — repaired by reading the
+trees for blobs as well as for names, through the new
+`gitread.blobs_at_paths_in_outgoing_range`; a JSON null becoming an established
+qualification dimension as the string `None`; an unscoped human blocker covering
+nothing in the page that reads it, while `continuation` returned
+BLOCKED_ON_HUMAN; and availability timestamps ordered as text, so a success in
+one offset outranked a later refusal in another.
+
+All seven are pinned in `tools/tests/test_behaviour_findings.py`, and eight
+mutants reverting them die.
+
+### Evidence that repeats a known failure
+
+`policy/recurrence-classes.json` has been the deduplication mechanism since
+2.3.0. `tools/evolution_evidence.py` adds the half it lacked: a recurrence
+strengthens the class it belongs to with its own provenance instead of becoming
+a second record of one failure; a proposal closely resembling a recorded class
+comes back for a distinction rather than being merged or accepted; occurrences
+are appended and never rewritten; and an engineering-loop failure — a vacuous
+oracle, a lost exit code, an audit reading the wrong revision — is evidence like
+any other. `tools/tests/test_evolution_evidence.py` executes every case,
+including reading provenance back through a fresh interpreter.
+
 ### The delta contract, from here on
 
-This entry is the release delta, and `tools/release_delta.py` checks that it
+This entry is the release delta, and `tools/release_delta.py`, with
+`tools/tests/test_release_delta.py` proving it can say no, checks that it
 accounts for what the release changed: every file the range added, and every
 decision it recorded, must be named in the version's own entry. It exists
 because this entry stopped being updated partway through and ended up naming one
