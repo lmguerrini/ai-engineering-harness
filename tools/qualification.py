@@ -61,6 +61,7 @@ __all__ = [
     "NON_IDENTITY_FIELDS",
     "UNOBSERVED_PROVENANCE",
     "ConfigurationIdentity",
+    "IDENTITY_FIELDS",
     "QualificationError",
     "Prior",
     "Equivalence",
@@ -101,6 +102,13 @@ CONFIGURATION_DIMENSIONS = (
 #: and holding it outside the key would let one class answer for another.
 KEYED_DIMENSIONS = CONFIGURATION_DIMENSIONS + ("task_class",)
 
+#: What an observation's structured `identity:` mapping may state. It exists
+#: because the packed configuration string is space-separated `key=value` and
+#: therefore cannot carry an identifier containing a space — a real shape: this
+#: release's own discovery reader accepts `MODEL WITH SPACES` verbatim, and the
+#: string would truncate it.
+IDENTITY_FIELDS = CONFIGURATION_DIMENSIONS + ("identity_method", "build", "model_requested")
+
 #: Recorded on the observation, reported beside the grade, and deliberately NOT
 #: in the key. `build` because no A/B pair in this evidence base shows a client
 #: version changing an outcome, and keying on it would reset every qualification
@@ -124,9 +132,25 @@ NON_IDENTITY_FIELDS = ("build", "pool_id")
 #: rather than an oversight — an adapter that lies about how it learned an
 #: identity is outside what any check here can reach.
 UNOBSERVED_PROVENANCE = frozenset({
-    "", "unknown", "requested_only", "requested", "assumed", "inferred",
-    "declared", "none", "not_observed", "n/a",
+    "", "unknown", "requested", "requestedonly", "assumed", "inferred",
+    "declared", "none", "notobserved", "unobserved", "na", "guessed",
+    "presumed", "default", "fromthebrief", "asrequested",
 })
+
+
+def _provenance_key(text: object) -> str:
+    """Compare provenance by its WORD, not by its punctuation.
+
+    An exact-string denylist held `not_observed` and not `unobserved`, and an
+    independent reader walked a complete identity carrying `unobserved` straight
+    to `confirmed`. Two spellings of one claim are one claim: separators and case
+    are removed before the comparison, so a marker cannot evade the rule by being
+    hyphenated, spaced or capitalised differently.
+
+    It still cannot catch a method name somebody invented, which is the trust
+    boundary stated in the release's own limitations.
+    """
+    return "".join(character for character in str(text).lower() if character.isalnum())
 
 
 @dataclass(frozen=True)
@@ -160,6 +184,10 @@ class ConfigurationIdentity:
     #: What the dispatch asked for. Held so a report can show the request beside
     #: the observation — the two differing is a finding, not a detail.
     model_requested: str = UNKNOWN
+    #: Tokens in the source configuration string that carried no `key=`. Their
+    #: presence means the string could not be read unambiguously, so nothing
+    #: parsed out of it may be trusted as an identity.
+    ambiguous_tokens: tuple = ()
 
     def dimensions(self) -> dict:
         """The eight configuration dimensions, in key order."""
@@ -175,11 +203,17 @@ class ConfigurationIdentity:
         for name, value in self.dimensions().items():
             if not str(value).strip() or str(value) == UNKNOWN:
                 reasons.append(f"{name} is not established")
-        method = str(self.identity_method).strip().lower()
-        if method in UNOBSERVED_PROVENANCE or method == UNKNOWN.lower():
+        method = _provenance_key(self.identity_method)
+        if method in UNOBSERVED_PROVENANCE:
             reasons.append(
                 f"identity_method is {self.identity_method!r}, which states that the identity "
                 f"was not observed; a requested model is not an observed model"
+            )
+        if self.ambiguous_tokens:
+            reasons.append(
+                "the configuration string carries token(s) with no `key=` "
+                f"({', '.join(repr(token) for token in self.ambiguous_tokens)}), so it could not "
+                "be read unambiguously and no value parsed from it identifies a configuration"
             )
         return tuple(reasons)
 
@@ -221,6 +255,20 @@ def identity_from_configuration(text: str) -> ConfigurationIdentity:
     key they do not carry stays `UNKNOWN`.
     """
     parsed = parse_configuration(text)
+    # A BARE TOKEN MEANS THE STRING IS AMBIGUOUS, and the ambiguity is not
+    # harmless: the format is space-separated `key=value`, so an identifier
+    # containing a space is truncated at the space and its evidence lands under
+    # the PREFIX. An independent reader recorded two validated observations of
+    # `MODEL WITH SPACES` and read `confirmed` back for `MODEL`, a configuration
+    # nothing had dispatched — the exact transfer this release exists to prevent,
+    # arriving through the parser rather than through the key.
+    #
+    # The string cannot be made lossless without changing what every existing
+    # observation means, so an ambiguous one is REFUSED rather than parsed: the
+    # identity is marked incomplete, which is the answer that loses nothing. A
+    # row that needs an identifier with a space carries the structured
+    # `identity:` mapping instead, which has no tokenisation to lose it to.
+    ambiguous = [token for token in str(text).split() if "=" not in token]
     extra: dict[str, str] = {}
     for token in str(text).split():
         key, _, value = token.partition("=")
@@ -246,6 +294,7 @@ def identity_from_configuration(text: str) -> ConfigurationIdentity:
         build=parsed.client_version,
         pool_id=extra.get("pool_id", UNKNOWN),
         model_requested=parsed.model_requested,
+        ambiguous_tokens=tuple(ambiguous),
     )
 
 
@@ -256,6 +305,21 @@ def identity_from_observation(row: dict) -> ConfigurationIdentity:
     shipped log, so it is read from both places and the row wins.
     """
     identity = identity_from_configuration(row.get("configuration", ""))
+    # A STRUCTURED IDENTITY WINS, and exists because the packed string cannot
+    # carry an identifier containing a space. Every field is optional and each
+    # one supplied replaces what the string said, so a row can name exactly the
+    # part the string cannot hold.
+    declared = row.get("identity")
+    if isinstance(declared, dict):
+        unknown = sorted(set(declared) - set(IDENTITY_FIELDS))
+        if unknown:
+            raise QualificationError(
+                f"an observation records identity field(s) {', '.join(unknown)}, which nothing "
+                f"reads. Known: {', '.join(IDENTITY_FIELDS)}")
+        supplied = {name: str(value) for name, value in declared.items() if str(value).strip()}
+        if supplied:
+            # The string was only ambiguous about what the mapping now states.
+            identity = replace(identity, ambiguous_tokens=(), **supplied)
     pool = row.get("pool_id")
     if pool:
         identity = replace(identity, pool_id=str(pool))
@@ -300,8 +364,14 @@ def _version_tuple(text: object) -> tuple:
             if not character.isdigit():
                 break
             digits += character
-        if not digits:
-            return tuple(parts)
+        if not digits or digits != piece:
+            # AN INCOMPLETE PARSE IS NOT AN ORDERING. This returned the numeric
+            # prefix it had accumulated, so `1.nightly` ordered as `(1,)` and an
+            # invalidation dropped a contradiction recorded at a build nothing
+            # could place. The docstring already said an unorderable version is
+            # never treated as older; an independent reader found the code
+            # saying otherwise one component in.
+            return ()
         parts.append(int(digits))
     return tuple(parts)
 

@@ -1,6 +1,7 @@
 # RP2.4 — three questions that were one, and the axis that was missing
 
-`DECISIONS.md` D26 carries the decision. `docs/RP2.2-ARCHITECTURE.md` states the
+Proposed D26 (`docs/RP2.4-D26-PROPOSED.md`) carries the decision, and carries it
+OUTSIDE the decision layer until the founder authorises it. `docs/RP2.2-ARCHITECTURE.md` states the
 authority layering and `docs/RP2.3-ARCHITECTURE.md` states where machine-written
 state sits within it; both are unchanged. This file states only what this release
 adds to that picture.

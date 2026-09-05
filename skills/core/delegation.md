@@ -127,7 +127,7 @@ it.
 The strongest thing anybody has said about a newly appeared model is that it
 appeared. Discovery says it exists, a run says it starts, and only its own
 outcomes say what it can do — three separate claims, and the router keeps them
-separate (`policy/routing-policy.md`, D26).
+separate (`policy/routing-policy.md`, and proposed D26).
 
 So a frontier model may be used the day it arrives, deliberately, as a **declared
 probe**: bounded, on a task whose oracle is strong enough that a bad answer is

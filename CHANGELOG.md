@@ -2,7 +2,8 @@
 
 ## 2.4.0 — qualification belongs to a configuration, not to a family
 
-A **MINOR** release (`DECISIONS.md` D11 and D26), derived rather than assumed:
+A **MINOR** release (`DECISIONS.md` D11, and proposed D26 in
+`docs/RP2.4-D26-PROPOSED.md`), derived rather than assumed:
 no authority, contract or migration change is incompatible — `requires.routing`
 is new and defaults to false, no public name is removed, no pinned project moves
 — and the release ships tools that did not exist, which PATCH does not cover.

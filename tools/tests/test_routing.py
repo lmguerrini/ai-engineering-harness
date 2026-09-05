@@ -42,8 +42,15 @@ OTHER = replace(IDENTITY, model_observed="another-model")
 
 
 def _candidate(identity=IDENTITY, *, grade="confirmed", validated=2, availability=AVAILABLE,
-               task_class="T", producer="p", session="s", provider="v", prior=None,
+               task_class="T", producer="p", session=None, provider="v", prior=None,
                contradicted=0):
+    # THE SESSION DEFAULTS PER PRODUCER, not to one shared string. Every
+    # candidate carried the same session IDENTIFIER, which says they all ran in
+    # the same session — so once the router began comparing seated readers
+    # against each other rather than only against the subject, two genuinely
+    # independent candidates were correctly refused and the FIXTURE was what was
+    # wrong. A fixture that says two readings share a session is testing that
+    # case whether or not it meant to.
     return Candidate(
         identity=identity,
         task_class=task_class,
@@ -51,7 +58,8 @@ def _candidate(identity=IDENTITY, *, grade="confirmed", validated=2, availabilit
                              validated=validated, contradicted=contradicted),
         availability=availability,
         prior=prior,
-        derivation=Derivation(producer=producer, session=session, provider=provider,
+        derivation=Derivation(producer=producer, session=session or f"session-of-{producer}",
+                              provider=provider,
                               surface=identity.surface),
     )
 
@@ -124,8 +132,14 @@ def test_a_dispatch_that_never_started_is_not_answered_by_one_that_did():
 
 
 def test_a_refusal_outranks_a_success_recorded_on_the_same_day():
-    good = AvailabilityObservation(identity=IDENTITY, state=AVAILABLE, observed_at="2026-09-05")
-    bad = AvailabilityObservation(identity=IDENTITY, state=UNAVAILABLE, observed_at="2026-09-05")
+    # BOTH observations name the client they ran on, because an observation that
+    # does not is no longer an answer about any client. Written out here rather
+    # than defaulted: the fixture's job is to isolate the tie-break, and a
+    # fixture that also leaves the build unknown tests two things at once.
+    good = AvailabilityObservation(identity=IDENTITY, state=AVAILABLE, observed_at="2026-09-05",
+                                   build=IDENTITY.build)
+    bad = AvailabilityObservation(identity=IDENTITY, state=UNAVAILABLE, observed_at="2026-09-05",
+                                  build=IDENTITY.build)
     assert availability_for(IDENTITY, set(), [good, bad])[0] == UNAVAILABLE
     assert availability_for(IDENTITY, set(), [bad, good])[0] == UNAVAILABLE
 
@@ -240,9 +254,29 @@ def test_advisory_never_ranks_a_candidate_or_breaks_a_tie():
     assert routing._rank(with_prior) == routing._rank(without), (
         "the prior entered the ranking key"
     )
-    report = design_audit_route([with_prior, without], task_class="T", subject=SUBJECT,
-                                roles=(Role("SEAT"),))
-    assert report.seats[0]["candidate"] is not None
+
+    # AND THE SELECTION ITSELF, in both orders. Asserting only that somebody was
+    # selected passes against a sort that reads the prior — an independent reader
+    # added `pair[0].prior.grade.validated` as a tiebreak, changed which model
+    # the route picked, and all of the new tests still passed.
+    def selected(pool):
+        report = design_audit_route(pool, task_class="T", subject=SUBJECT,
+                                    roles=(Role("SEAT"),))
+        chosen = report.seats[0]["candidate"]
+        return chosen.identity.model_observed if chosen else None
+
+    for pool in ([with_prior, without], [without, with_prior]):
+        stripped = [replace(candidate, prior=None) for candidate in pool]
+        assert selected(pool) == selected(stripped), (
+            "adding a family prior changed which candidate was selected"
+        )
+        louder = [replace(candidate, prior=Prior(
+            family="a-family", task_class="T",
+            grade=TaskClassGrade("T", "confirmed", 99, 99), because="louder"))
+            if candidate is pool[0] else candidate for candidate in pool]
+        assert selected(pool) == selected(louder), (
+            "making a family prior louder changed which candidate was selected"
+        )
 
 
 def test_advisory_never_satisfies_eligibility():
@@ -308,13 +342,42 @@ def test_a_seat_nothing_can_fill_is_unfilled_and_says_the_work_waits():
     assert "Unavailability is never authorization" in reasons
 
 
-def test_the_same_configuration_cannot_hold_two_seats():
+def test_one_producer_cannot_hold_two_seats_and_still_be_two_readings():
+    """Deduplication is by PRODUCER AND SESSION, not by model name.
+
+    Names were the wrong key in both directions and an independent reader
+    produced both: two readings by one producer in one session were seated
+    because their models differed, and two genuinely independent sessions were
+    refused because their model was the same.
+    """
     only = _candidate(producer="w1", provider="vendor-b")
     report = design_audit_route([only], task_class="T", subject=SUBJECT)
     seated = [seat for seat in report.seats if seat["candidate"] is not None]
     assert len(seated) == 1
     reasons = " ".join(r for seat in report.seats for r in seat["reasons"])
-    assert "already seated" in reasons
+    assert "this producer already holds a seat" in reasons
+
+
+def test_two_independent_sessions_on_one_model_are_two_readings():
+    """The other direction, which the name-based rule refused."""
+    first = _candidate(identity=IDENTITY, producer="w1", session="s1", provider="vendor-b")
+    second = _candidate(identity=IDENTITY, producer="w2", session="s2", provider="vendor-c")
+    report = design_audit_route([first, second], task_class="T", subject=SUBJECT,
+                                roles=(Role("ONE"), Role("TWO")))
+    assert all(seat["candidate"] is not None for seat in report.seats), (
+        "two independent producers were refused for sharing a model name"
+    )
+
+
+def test_two_readings_by_one_producer_are_refused_however_their_models_differ():
+    same = Derivation(producer="w1", session="s1", provider="vendor-b")
+    first = _candidate(identity=IDENTITY, producer="w1", session="s1", provider="vendor-b")
+    second = replace(_candidate(identity=OTHER, producer="w1", session="s1",
+                                provider="vendor-b"), derivation=same)
+    report = design_audit_route([first, second], task_class="T", subject=SUBJECT,
+                                roles=(Role("ONE"), Role("TWO")))
+    filled = [seat for seat in report.seats if seat["candidate"] is not None]
+    assert len(filled) == 1, "one producer in one session filled two seats"
 
 
 def test_an_unprobed_candidate_can_take_a_seat_only_as_a_declared_probe():
@@ -501,3 +564,70 @@ def test_the_two_readings_this_release_dispatched_are_not_independent_of_each_ot
     )
     problems = independence_problems(first, second, require_distinct_provider=True)
     assert any("one provider's reading" in problem for problem in problems)
+
+
+# --- a mandatory independent leg is not a place to find out ------------------
+
+
+def test_a_probe_never_fills_the_mandatory_cross_provider_leg():
+    """The seat an independent reader put a probe into.
+
+    `INDEPENDENT_FALSIFIER` carries `require_distinct_provider`, which makes it
+    the mandatory cross-vendor leg `policy/hitl-matrix.md` row 12 governs. It
+    used to carry `purpose=ROUTINE`, and the probe fallback keyed on the purpose
+    alone, so an unprobed configuration was seated in it and the route reported
+    itself complete.
+    """
+    subject = Derivation(producer="implementer", session="s1", provider="vendor-a")
+    confirmed = _candidate(identity=IDENTITY, grade="confirmed", validated=3,
+                           producer="w1", provider="vendor-b")
+    unprobed = _candidate(identity=OTHER, grade="unprobed", validated=0,
+                          producer="w2", provider="vendor-c")
+
+    report = design_audit_route([confirmed, unprobed], task_class="T", subject=subject,
+                                allow_probe=True)
+    seats = {seat["role"].name: seat["candidate"] for seat in report.seats}
+    assert seats["INDEPENDENT_FALSIFIER"] is None, (
+        "a declared probe filled the mandatory cross-provider leg"
+    )
+    assert not report.complete, "the route reported complete with its mandatory leg unfilled"
+
+
+def test_the_probeability_of_a_seat_is_derived_from_what_the_seat_requires():
+    """Derived, not typed: a flag somebody has to remember to set is a flag
+    somebody eventually does not set."""
+    assert Role("ORDINARY").accepts_a_probe is True
+    assert Role("CROSS", require_distinct_provider=True).accepts_a_probe is False
+    assert Role("MANDATORY", purpose=CRITICAL).accepts_a_probe is False
+    assert Role("EXPLICIT", require_distinct_provider=True, probeable=True).accepts_a_probe is True
+    assert all(
+        role.accepts_a_probe is False
+        for role in routing.DESIGN_AUDIT_ROLES if role.require_distinct_provider
+    )
+
+
+# --- a blank is not a value --------------------------------------------------
+
+
+@pytest.mark.parametrize("blank", ["", " ", "   ", "\t", "\n"])
+def test_a_blank_producer_is_not_a_different_producer(blank):
+    """`" "` is not the UNKNOWN sentinel, so it compared unequal to every real
+    producer and satisfied every independence check. An independent reader walked
+    one into the mandatory cross-provider leg."""
+    subject = Derivation(producer="implementer", session="s1", provider="vendor-a")
+    parsed = routing.derivation_from_observation(
+        {"derivation": {"producer": blank, "provider": blank,
+                        "session_class": "fresh-blind-dispatch"}})
+    assert parsed.producer == UNKNOWN and parsed.provider == UNKNOWN
+    problems = independence_problems(parsed, subject, require_distinct_provider=True)
+    assert problems, "a blank producer established independence"
+    assert any("not a different one" in problem for problem in problems)
+
+
+def test_the_predicate_normalises_even_when_the_reader_did_not():
+    """Defence at the predicate as well as at the reader: a check that trusts its
+    inputs to have been cleaned is one that will be handed an input that was
+    not."""
+    subject = Derivation(producer="implementer", session="s1", provider="vendor-a")
+    raw = Derivation(producer="  ", session="  ", provider="  ")
+    assert independence_problems(raw, subject, require_distinct_provider=True)

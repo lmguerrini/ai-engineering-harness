@@ -403,7 +403,7 @@ GENERATION_HITS = (
     "gpt-8-nova-preview",
     "gpt-11",
     "gpt_6",
-    "GPT 6",
+    "gpt6",
     "ChatGPT-5",
 )
 
@@ -421,6 +421,13 @@ GENERATION_MISSES = (
     "the gpt directory holds the notes",
     "budget-5 line item",
     "chatgpt account settings",
+    # A QUANTITY FOLLOWING A PRODUCT NAME. The first version of this pattern
+    # allowed a space as a separator and fired on all three of these; an
+    # independent reader found the first one, which is ordinary English and the
+    # precise false-positive class the tiering rationale exists about.
+    "I started using ChatGPT 2 years ago.",
+    "we ran GPT 4 experiments last quarter",
+    "GPT 6 came up in conversation",
 )
 
 

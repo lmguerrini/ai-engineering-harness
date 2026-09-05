@@ -6,7 +6,8 @@ wrong. Appended to as each capability closes; never rewritten.
 **Version `2.4.0`, state `IN_PROGRESS`.** A candidate, not a release. No project
 may pin it. Moving it to `QUALIFIED_AND_FROZEN` is a human decision
 (`policy/hitl-matrix.md` row 2), and this candidate carries a **second** human
-decision besides — a row-7 governance narrowing recorded in `DECISIONS.md` D26.
+decision besides — a row-7 governance narrowing, held OUT of the decision layer
+in `docs/RP2.4-D26-PROPOSED.md` until it is authorised.
 The freeze procedure is at the end of this file. This release ships no verb that
 promotes itself.
 
@@ -44,9 +45,9 @@ The suite count is not written here — adding a test changes it, and a figure t
 document's own edit invalidates is one it must not carry. It lives in
 `PACK_MANIFEST.json` `tests.passed`.
 
-    in-release (skills/core/*.md + policy/*.md) 1849
+    in-release (skills/core/*.md + policy/*.md) 1850
     installed adapters                          1035
-    total against a ~2000 target                2884
+    total against a ~2000 target                2885
 
 Delta against the frozen baseline: **not stated here.** Editing this file changes it.
 Measure it:
@@ -311,11 +312,198 @@ announcement exists for.
 Adjudication is owed before any first remote and is recorded as owed, not as
 done. A private remote does not resolve it.
 
+## The release-authority reading, and the four things it found
+
+A blind cross-vendor release-authority read of the candidate at
+`a0b6d1d9b5f67b2180dbebb7ee4c0fc058df9140`, read-only, network none. It opened
+with the revision and the digest it read, which is why nothing below had to be
+re-executed to learn which tree it meant. **NOT READY — four blockers.**
+
+**Finding 1 was mine, not the release's, and it is the more useful of the two
+kinds.** The report says the candidate's manifest digest does not match the tree.
+It does not: `a0b6d1d` verifies cleanly in a fresh worktree, and so does the
+revision after it. What happened is that **HEAD moved under a running audit** —
+the coordinator committed a second time while the reading was in flight — so the
+auditor compared the earlier manifest against the later tree. The auditor said so
+explicitly and kept its scope. This is the stale-evidence failure the previous
+release spent a round closing from the auditor's side, reproduced here from the
+coordinator's, and the rule that follows is the coordinator's to keep: **do not
+move HEAD while a reading of it is running.**
+
+The other three are real, were reproduced by execution before any repair, and are
+each closed with an oracle that fails against the pre-repair behaviour.
+
+**A provenance saying `unobserved` reached `confirmed`.** The denylist held
+`not_observed` and not `unobserved` — two spellings of one claim, and an
+exact-string list is the wrong shape for a claim about meaning. Reproduced: a
+complete identity carrying `unobserved` graded `confirmed` on two observations.
+Repaired by comparing the provenance **by its word** — case and separators
+removed before the comparison — and widening the set. The oracle is
+parametrised over twenty spellings, and a second one asserts that a method naming
+a surface nobody has heard of is still admissible, because an allowlist of
+surfaces would age exactly the way the model vocabulary this release replaced
+aged.
+
+**A declared probe filled the mandatory cross-provider leg.** `INDEPENDENT_
+FALSIFIER` requires a distinct provider, which makes it the leg
+`policy/hitl-matrix.md` row 12 governs; it carried `purpose=ROUTINE`, and the
+probe fallback keyed on the purpose alone. Reproduced: an unprobed configuration
+was seated in it and the route reported itself **complete**. Repaired by deriving
+probeability from what the seat requires rather than from a flag somebody has to
+remember to set — a seat needing an independent provider does not accept a probe,
+and neither does a critical one.
+
+**And the adoption rehearsal expected the defect.** That is the sharper half of
+the same finding, and the auditor named it: the rehearsal asserted
+`routed.complete`, so it encoded the bug it was there to catch. A rehearsal that
+encodes the bug is worse than no rehearsal. It now asserts the true arc — the
+ordinary seats fill by probe, the mandatory leg does not, the route is
+**incomplete**, and the capability escalates to a human rather than substituting.
+
+**A blank producer established independence.** `" "` is not the `UNKNOWN`
+sentinel, so it compared unequal to every real producer and satisfied every
+check. Reproduced: a derivation with whitespace producer and provider passed a
+leg declared cross-provider with zero problems. Repaired at the reader **and** at
+the predicate, because a check that trusts its inputs to have been cleaned is one
+that will eventually be handed an input that was not.
+
+**The mutation pass.** Each repair was reverted in place and the suite re-run:
+
+    KILLED  compare provenance as an exact string again      11 failed
+    KILLED  let a probe fill any non-CRITICAL seat again       2 failed
+    KILLED  stop normalising a blank producer                  1 failed
+
+**What the reading could not do, in its own words.** It could not run the suite —
+the read-only sandbox gives pytest no usable temporary directory — and it could
+not mutate files to check the guards, so it executed the candidate's sources in
+memory instead. Its coverage of the suite is therefore *collection* and reasoning
+rather than execution, which is a real bound on what this round establishes.
+
+**These repairs are themselves unaudited** until a delta re-audit, which is the
+standing condition of any final repair and is why the closure ceiling is stated
+rather than reached.
+
+## The second release-authority reading, and the thirteen things it found
+
+The same brief, the same revision, a second reader on the same surface at a
+higher effort. **NOT READY — three blockers, seven majors, three minors**, and
+almost none of them the same as the first reading's. That divergence is the
+finding about the method rather than about the release: two readings of one
+candidate, converging on almost nothing, both correct.
+
+It opened with the revision and the digest and reproduced the digest
+independently over 165 files. It then said plainly that **HEAD moved under it**
+and that it had kept scope — the same coordinator error the first reading
+surfaced, observed twice.
+
+**The one that matters most: the defect this release exists for was still
+reachable through the API a consumer calls.**
+
+    record_for("codex-cli", grades_from_observations(log),
+               identity=BackendIdentity(family="codex-cli",
+                                        model_requested="never-dispatched"))
+        .qualified_for("blind_closure_audit_cross_vendor")   ->  True
+
+A correct derivation had been added *beside* the old one, and the old one still
+answered. `BackendRecord.qualified_for` now requires an observed identity as well
+as a grade; `grade_for` is untouched, so nothing that reads history loses
+anything. **A repair with no oracle is a claim**: this one initially survived its
+own mutant, which is how the missing test was found.
+
+**An identifier containing a space transferred its evidence to its prefix.** The
+configuration string is space-separated `key=value`, so two validated
+observations of `MODEL WITH SPACES` were readable as `confirmed` for `MODEL` — a
+configuration nothing had dispatched. The parser now refuses an ambiguous string
+outright, and a structured `identity:` mapping carries what the string cannot.
+
+**A grade measured at one task class satisfied a critical leg at another.** The
+router compared the candidate's declared class to the requested one and never to
+the class its own evidence was measured at.
+
+**Availability crossed client builds, two ways.** The build defaulted from the
+caller's argument alone while the identity carried one, and an observation with
+an unknown build matched every build. Both now refuse.
+
+**Independence was checked against the subject and never against the reader
+already seated**, so two readers from one provider filled a cross-provider route
+that reported itself complete — and seats were deduplicated by MODEL NAME, which
+is wrong in both directions: two readings by one producer in one session were
+seated because their models differed, and two genuinely independent sessions
+were refused because their model was the same. Seats are now producer-and-session
+and every candidate is checked against the readers already seated.
+
+**The new publication pattern fired on ordinary English.** `I started using
+ChatGPT 2 years ago` matched, because the pattern allowed a space as a separator.
+That is precisely the false-positive class `policy/private-terms.default.json`'s
+own tiering rationale was written about. The space is gone; the cost is the prose
+form `GPT 6`, and the sentence is now in the negative corpus.
+
+**An unorderable client version ordered anyway.** `_version_tuple("1.nightly")`
+returned the prefix it had accumulated, so an invalidation dropped a contradiction
+recorded at a build nothing could place — while the function's own docstring said
+an unorderable version is never treated as older.
+
+**And three findings were about the tests rather than the code**, which is the
+class this release most needed to hear:
+
+*   **The adoption rehearsal reported success while every capability open was
+    refused.** All six synthetic consumers returned `NOT_READY` with a `LEGACY`
+    pin, and the tests passed because they inspected one component. The
+    rehearsal now builds a real verifiable frozen release — a git checkout whose
+    manifest digest is computed over its own tracked tree — and asserts
+    `report.ready`.
+*   **The advisory-prior oracle passed against a sort that reads the prior.** It
+    asserted `_rank` equality and then only that *somebody* was selected. It now
+    asserts the selected candidate is unchanged when the prior is removed and
+    when it is made louder, in both candidate orders.
+*   **The two vendor-continuation tests never shared a surface**, so a `derive`
+    that read vendor state was invisible to both. They now derive before and
+    after removal on one surface and compare, instead of asserting that no module
+    mentions a filename.
+*   **The dimension oracles took their coverage from the implementation.**
+    Dropping `client` from `CONFIGURATION_DIMENSIONS` deleted three of its own
+    tests from collection and the rest passed. The nine-dimension contract is
+    now written out in the test file and compared, because a test that derives
+    its expectation from its subject is not evidence.
+
+**The mutation pass over this round**, each guard reverted in place:
+
+    KILLED  let an unobserved identity qualify again
+    KILLED  parse an ambiguous configuration string anyway
+    KILLED  check independence against the subject only
+    KILLED  deduplicate seats by model name again
+    KILLED  stop comparing the grade's task class
+    KILLED  let an unknown build match any client
+    KILLED  order a partially parsed version again
+    KILLED  allow a space in the generation separator again
+    KILLED  sort the route by the family prior
+    KILLED  drop a dimension from the key
+
+**The governance finding, which is the one this release cannot repair by
+editing.** The reader checked D26 against `policy/hitl-matrix.md` and found the
+sequencing wrong: row 7's application point is *before any entry lands in the
+pack's `DECISIONS.md`*, and the entry had landed, declaring the narrowing decided
+and the authorisation due at freeze. Correctly naming row 7 inside the entry does
+not make writing it compliant, and a later freeze cannot make an earlier sequence
+compliant retroactively. **The entry was removed from the decision layer** and is
+held as `docs/RP2.4-D26-PROPOSED.md`; every pointer at it now names the proposal.
+The commit that briefly carried it is in this branch's history and is named here,
+because rewriting that history is itself rows 2 and 4.
+
+**What this reading could not do, in its own words.** It could not execute the
+suite — the read-only sandbox gives pytest no usable temporary directory — so it
+collected the suite and ran the candidate's sources in memory. It did not
+reproduce the live client experiments or the publication-history scan. Its
+verdict rests on reasoning and targeted execution, not on a suite run.
+
+**These repairs are themselves unaudited.** That is the standing condition of any
+final repair, and it is why the closure ceiling is stated rather than reached.
+
 ## The freeze procedure
 
 Two human decisions, not one, and neither is the coordinator's:
 
-1. **HITL row 7 — the governance narrowing (`DECISIONS.md` D26).**
+1. **HITL row 7 — the governance narrowing (`docs/RP2.4-D26-PROPOSED.md`).**
    `policy/routing-policy.md` says evidence is never pooled across distinct
    configuration strings. This release pools across two named non-identity
    fields — the client build and the capacity pool — while widening the key from

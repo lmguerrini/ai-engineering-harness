@@ -143,6 +143,17 @@ class Derivation:
     surface: str = UNKNOWN
 
 
+def _named(derivation: "Derivation") -> "Derivation":
+    """The same derivation with every blank field reported as `UNKNOWN`."""
+    from dataclasses import replace as _replace
+
+    return _replace(derivation, **{
+        field: (getattr(derivation, field) if str(getattr(derivation, field)).strip()
+                else UNKNOWN)
+        for field in ("producer", "session", "provider", "surface")
+    })
+
+
 def independence_problems(
     reader: Derivation,
     subject: Derivation,
@@ -155,6 +166,14 @@ def independence_problems(
     "nobody recorded who did it" is not "somebody else did it".
     """
     found = []
+    # A BLANK IS NOT A VALUE. `" "` is not the `UNKNOWN` sentinel, so a
+    # whitespace producer compared unequal to every other producer and satisfied
+    # every check — an independent reader walked one into the mandatory
+    # cross-provider leg. Normalised here as well as at the reader, because a
+    # predicate that trusts its inputs to have been cleaned is a predicate that
+    # will eventually be handed one that was not.
+    reader = _named(reader)
+    subject = _named(subject)
     if reader.producer == UNKNOWN or subject.producer == UNKNOWN:
         found.append(
             "independence cannot be established: the producer of the reader or of the work is "
@@ -222,7 +241,7 @@ def derivation_from_observation(row: dict) -> Derivation:
             f"an observation records derivation field(s) {', '.join(unknown)}, which nothing "
             f"reads. Known: {', '.join(DERIVATION_FIELDS)}")
     session_class = str(declared.get("session_class") or "").strip().lower()
-    return Derivation(
+    return _named(Derivation(
         producer=str(declared.get("producer") or UNKNOWN),
         # NOT the session class. A class is shared by every dispatch of its kind,
         # so putting one where an identifier is compared reports two independent
@@ -231,7 +250,7 @@ def derivation_from_observation(row: dict) -> Derivation:
         fresh=True if session_class.startswith("fresh") else (None if not session_class else False),
         provider=str(declared.get("provider") or UNKNOWN),
         surface=str(row.get("surface") or UNKNOWN),
-    )
+    ))
 
 
 @dataclass(frozen=True)
@@ -288,11 +307,22 @@ def availability_for(
     wanted = tuple(sorted(frozenset(preconditions)))
     dimensions = tuple(identity.dimensions().values())
     notes: list[str] = []
+    # THE BUILD IS RESOLVED, not merely accepted. It defaulted to the caller's
+    # argument alone, so a caller that omitted it — while the identity itself
+    # carried one — got a positive answer from an observation on a different
+    # client. Two arguments naming the same fact is how they come to disagree.
+    if build == UNKNOWN:
+        build = identity.build
     matching = []
     for observation in observations:
         if observation.key() != dimensions + (wanted,):
             continue
-        if build != UNKNOWN and observation.build != UNKNOWN and observation.build != build:
+        # BOTH must be established and equal. `UNKNOWN` on either side used to
+        # match everything, so an observation that did not say which client it
+        # ran on answered for every client. A client version is precisely the
+        # thing this release watched change which models a provider accepts, so
+        # not knowing it is not knowing the answer.
+        if build != observation.build or build == UNKNOWN:
             notes.append(
                 f"an availability observation for this configuration exists at client "
                 f"{observation.build} and the dispatch would use {build}; it is reported and does "
@@ -385,6 +415,17 @@ def eligibility(candidate: Candidate, *, purpose: str) -> Eligibility:
             f"not a small one: this refuses rather than choosing the lenient reading"
         )
     reasons: list[str] = []
+    if candidate.grade.task_class != candidate.task_class:
+        # THE GRADE CARRIES THE CLASS IT WAS MEASURED AT, and nothing compared
+        # the two: a candidate declared at one class holding a grade measured at
+        # another passed a CRITICAL leg. `unprobed at every other class` is the
+        # rule the whole release rests on, and it is worth nothing if the
+        # evidence and the question can name different classes.
+        reasons.append(
+            f"this candidate is offered for {candidate.task_class!r} and carries evidence "
+            f"measured at {candidate.grade.task_class!r}. A grade at one task class is unprobed "
+            f"at every other, so this grade answers a different question"
+        )
     if candidate.availability == UNAVAILABLE:
         reasons.append(
             "a dispatch at this configuration has been observed to be refused; evidence of what "
@@ -439,6 +480,20 @@ class Role:
     require_distinct_provider: bool = False
     optional: bool = False
     why: str = ""
+    #: Whether an UNPROBED configuration may fill this seat as a declared probe.
+    #: **False for every mandatory independent leg**, and the default is derived
+    #: rather than typed: a seat that requires a distinct provider IS the
+    #: mandatory cross-vendor leg `policy/hitl-matrix.md` row 12 governs, and an
+    #: independent reader seated a probe in exactly that seat because the flag
+    #: keyed on `purpose` alone. `None` means "derive it"; a caller may still say
+    #: so explicitly.
+    probeable: "bool | None" = None
+
+    @property
+    def accepts_a_probe(self) -> bool:
+        if self.probeable is not None:
+            return self.probeable
+        return self.purpose != CRITICAL and not self.require_distinct_provider
 
 
 #: Derived roles, named by function. NO VENDOR, no model, no family appears here
@@ -577,7 +632,12 @@ def design_audit_route(
     says which seats were filled that way.
     """
     report = RouteReport(task_class=task_class, subject=subject)
-    taken: set = set()
+    #: The READERS already seated, not their model names. Deduplicating by name
+    #: was wrong in both directions, and an independent reader produced both: two
+    #: readings by the SAME producer in the SAME session were seated because
+    #: their models differed, and two genuinely independent sessions were refused
+    #: because their model was the same. A reading is a producer in a session.
+    seated: list = []
     for role in roles:
         reasons: list[str] = []
         pool = []
@@ -585,15 +645,21 @@ def design_audit_route(
             if candidate.task_class != task_class:
                 continue
             name = candidate.identity.model_observed
-            if name in taken:
+            already = [
+                other for other in seated
+                if (other.derivation.producer, other.derivation.session)
+                == (candidate.derivation.producer, candidate.derivation.session)
+            ]
+            if already:
                 reasons.append(
-                    f"{name}: already seated in this reading; one configuration cannot hold two "
-                    f"seats and still be two readings"
+                    f"{name}: this producer already holds a seat in this reading; two seats "
+                    f"filled by one producer in one session are one reading, whatever models "
+                    f"they name"
                 )
                 continue
             purpose = role.purpose
             verdict = eligibility(candidate, purpose=purpose)
-            if not verdict.allowed and allow_probe and role.purpose != CRITICAL:
+            if not verdict.allowed and allow_probe and role.accepts_a_probe:
                 probe = eligibility(candidate, purpose=PROBE)
                 if probe.allowed:
                     verdict = Eligibility(True, (
@@ -603,10 +669,22 @@ def design_audit_route(
             if not verdict.allowed:
                 reasons.append(f"{name}: {verdict.sentence()}")
                 continue
-            conflicts = independence_problems(
+            conflicts = list(independence_problems(
                 candidate.derivation, subject,
                 require_distinct_provider=role.require_distinct_provider,
-            )
+            ))
+            # AND INDEPENDENT OF THE READERS ALREADY SEATED. A cross-provider
+            # seat exists to differ from the other READING, and the check
+            # compared it only against the subject — so two readers from one
+            # provider filled a route that then reported itself complete.
+            for other in seated:
+                conflicts.extend(
+                    f"against the reading already seated: {problem}"
+                    for problem in independence_problems(
+                        candidate.derivation, other.derivation,
+                        require_distinct_provider=role.require_distinct_provider,
+                    )
+                )
             if conflicts:
                 reasons.append(f"{name}: not independent — {'; '.join(conflicts)}")
                 continue
@@ -614,7 +692,7 @@ def design_audit_route(
         pool.sort(key=lambda pair: _rank(pair[0]))
         chosen = pool[-1][0] if pool else None
         if chosen is not None:
-            taken.add(chosen.identity.model_observed)
+            seated.append(chosen)
             reasons.extend(pool[-1][1].reasons)
             reasons.append(
                 f"chosen on its own evidence at {task_class!r}: {chosen.grade.grade} on "

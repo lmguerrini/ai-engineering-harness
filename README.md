@@ -11,7 +11,7 @@ every audit round while its stateless checkers survived every one
 | | |
 |---|---|
 | Version | **2.4.0** — `VERSION` is the single machine-readable authority |
-| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, not a release. **No project may pin it.** Moving it to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) and carries a row-7 authorisation as well (`DECISIONS.md` D26) |
+| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, not a release. **No project may pin it.** Moving it to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) and carries a row-7 authorisation as well (`docs/RP2.4-D26-PROPOSED.md`, which is where the entry is held **until** that authorisation) |
 | Gate record | `docs/RP2.4-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
@@ -93,7 +93,7 @@ Derived from the tracked tree, not maintained by hand
     ├── VERSION                     the single machine-readable version authority
     ├── PACK_MANIFEST.json          release identity: state, digest, test count, gate
     ├── CHANGELOG.md                per-version record, including errata
-    ├── DECISIONS.md                pack-level decisions D1–D26, append-only
+    ├── DECISIONS.md                pack-level decisions D1–D25, append-only
     ├── skills/core/                13 public-safe skills, roles only, no vendor names
     ├── policy/                     private operational policy
     │   ├── observations.jsonl      append-only routing evidence — the record

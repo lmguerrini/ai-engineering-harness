@@ -66,7 +66,7 @@ inherited** from a previous call in the same session.
 *   `max` effort requires explicit human instruction; it is never the routing
     default.
 
-## Three questions, never one (D26)
+## Three questions, never one (proposed D26)
 
 | | Answered by | Positive evidence |
 |---|---|---|
@@ -125,5 +125,6 @@ the task class changes, and two genuinely fresh blind sessions have the same one
 
 **Evidence is never pooled across distinct evidence-relevant configuration
 identities.** The two fields excluded from that identity are named above and in
-D26; that narrowing is a governance change and carries the founder's
-authorisation, not this file's.
+proposed D26; that narrowing is a governance change and needs the founder's
+authorisation, which it does not yet have — the entry is held in
+`docs/RP2.4-D26-PROPOSED.md` rather than in the decision layer.

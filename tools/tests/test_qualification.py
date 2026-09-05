@@ -26,6 +26,38 @@ from qualification import (
     QualificationError,
 )
 
+#: THE CONTRACT, WRITTEN OUT HERE AND NOT IMPORTED. The parametrised cases below
+#: used to take their dimensions from `qualification.CONFIGURATION_DIMENSIONS`,
+#: so deleting a dimension from the implementation deleted its own tests: an
+#: independent reader dropped `client` from the tuple, its cases simply stopped
+#: being collected, every remaining test passed, and a configuration differing
+#: only in its client then inherited `confirmed`.
+#:
+#: A test that derives its expectation from the implementation under test is not
+#: evidence. This is the expectation.
+REQUIRED_CONFIGURATION_DIMENSIONS = (
+    "surface",
+    "family",
+    "client",
+    "model_observed",
+    "effort",
+    "isolation",
+    "network",
+    "authentication_class",
+)
+REQUIRED_KEYED_DIMENSIONS = REQUIRED_CONFIGURATION_DIMENSIONS + ("task_class",)
+
+
+def test_the_key_is_the_nine_dimensions_this_release_promised():
+    """Stated independently, in this file, and compared — not imported."""
+    assert tuple(CONFIGURATION_DIMENSIONS) == REQUIRED_CONFIGURATION_DIMENSIONS
+    assert tuple(KEYED_DIMENSIONS) == REQUIRED_KEYED_DIMENSIONS
+    assert len(REQUIRED_KEYED_DIMENSIONS) == 9
+    # And the key really has nine slots, so a dimension cannot be dropped from
+    # the tuple while the key keeps answering as if it were there.
+    assert len(COMPLETE.key("T")) == 9
+
+
 COMPLETE = ConfigurationIdentity(
     surface="a-surface",
     family="a-family",
@@ -107,7 +139,7 @@ def test_grades_and_stays_at_its_own_class(tmp_path):
 # --- O3: no inheritance across ANY keyed dimension ----------------------------
 
 
-@pytest.mark.parametrize("dimension", CONFIGURATION_DIMENSIONS)
+@pytest.mark.parametrize("dimension", REQUIRED_CONFIGURATION_DIMENSIONS)
 def test_does_not_inherit_across_one_changed_dimension(tmp_path, dimension):
     """Change exactly one keyed dimension away from a twice-validated identity
     and the result is `unprobed`.
@@ -147,7 +179,7 @@ def test_a_brand_new_model_in_a_confirmed_family_does_not_inherit(tmp_path):
 # --- O4: incompleteness, per dimension and by provenance ---------------------
 
 
-@pytest.mark.parametrize("dimension", CONFIGURATION_DIMENSIONS)
+@pytest.mark.parametrize("dimension", REQUIRED_CONFIGURATION_DIMENSIONS)
 def test_incomplete_in_one_dimension_answers_nothing(tmp_path, dimension):
     log = _log(tmp_path, [_row(COMPLETE, "T", "validated")] * 2)
     graded = q.qualifications_from_observations(log)
@@ -321,7 +353,7 @@ def test_an_invalidation_with_no_reason_is_refused(tmp_path):
 # --- O8: one mutation per keyed dimension ------------------------------------
 
 
-@pytest.mark.parametrize("dropped", KEYED_DIMENSIONS)
+@pytest.mark.parametrize("dropped", REQUIRED_KEYED_DIMENSIONS)
 def test_mutation_per_dimension_dropping_it_from_the_key_is_caught(tmp_path, dropped):
     """Break the key one dimension at a time and show the collision fixture kills it.
 
@@ -339,7 +371,7 @@ def test_mutation_per_dimension_dropping_it_from_the_key_is_caught(tmp_path, dro
         first, second = COMPLETE, replace(COMPLETE, **{dropped: "something-else"})
 
     def key(identity, task_class):
-        full = dict(zip(KEYED_DIMENSIONS, identity.key(task_class)))
+        full = dict(zip(REQUIRED_KEYED_DIMENSIONS, identity.key(task_class)))
         return tuple(v for k, v in full.items() if k != dropped)
 
     assert first.key(left) != second.key(right), "the fixture does not differ under the real key"
@@ -376,3 +408,43 @@ def test_the_family_prior_is_the_family_keyed_derivation_itself():
     """Not a reimplementation that could drift from the routing table."""
     log = "policy/observations.jsonl"
     assert q.priors_from_observations(log) == backend_contract.grades_from_observations(log)
+
+
+# --- the denylist was a list of spellings, not a rule about meaning ----------
+
+
+@pytest.mark.parametrize("marker", [
+    "unobserved", "not_observed", "NOT-OBSERVED", "not observed",
+    "requested_only", "Requested Only", "REQUESTED-ONLY", "requested",
+    "assumed", "inferred", "declared", "guessed", "presumed", "n/a", "N / A",
+    "  unknown  ", "from the brief", "as requested", "default", "",
+])
+def test_incomplete_for_every_spelling_of_a_provenance_that_says_unobserved(marker):
+    """One claim, many spellings, and the exact-string list held only some.
+
+    An independent reader walked a COMPLETE identity carrying `unobserved` — a
+    word plainly saying the identity was not observed — all the way to
+    `confirmed`, because the denylist held `not_observed` and not that. Compared
+    by word now, so punctuation and case cannot evade the rule.
+    """
+    identity = replace(COMPLETE, identity_method=marker)
+    assert not identity.complete, f"{marker!r} was read as an observation of identity"
+    assert any("not observed" in reason for reason in identity.incompleteness())
+
+
+@pytest.mark.parametrize("marker", [
+    "rollout_turn_context", "execution_surface_turn_record", "provider_response_header",
+    "a-surface-nobody-has-written-yet", "turn_context",
+])
+def test_a_method_that_names_a_surface_is_still_admissible(marker):
+    """The bound in the other direction: an ALLOWLIST of surfaces would age the
+    way the model vocabulary this release replaced aged, so a surface nobody has
+    heard of must still be admissible."""
+    assert replace(COMPLETE, identity_method=marker).complete
+
+
+def test_the_unobserved_marker_that_got_past_the_first_denylist_grades_nothing(tmp_path):
+    """End to end, on the exact input an independent reader used."""
+    unobserved = replace(COMPLETE, identity_method="unobserved")
+    log = _log(tmp_path, [_row(unobserved, "T", "validated")] * 2)
+    assert q.qualifications_from_observations(log) == {}

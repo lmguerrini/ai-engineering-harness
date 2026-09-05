@@ -41,11 +41,16 @@ def test_qualified_for_cannot_be_moved_by_availability():
     """Stated as a difference rather than as an assertion about one value: if
     availability reached the answer at all, these two would differ."""
     graded = {("f", "t"): TaskClassGrade("t", "confirmed", observations=2, validated=2)}
-    available = record_for("f", graded, availability="available")
-    absent = record_for("f", graded, availability="unreachable")
+    # BOTH RECORDS NAME THE MODEL THAT RAN. From 2.4.0 an affirmative answer
+    # needs an observed identity as well as a grade, so a record without one
+    # would answer `False` for a reason that has nothing to do with the
+    # difference this test isolates.
+    observed = BackendIdentity(family="f", model_observed="a-model")
+    available = record_for("f", graded, identity=observed, availability="available")
+    absent = record_for("f", graded, identity=observed, availability="unreachable")
     assert available.qualified_for("t") == absent.qualified_for("t") is True
 
-    ungraded_available = record_for("f", {}, availability="available")
+    ungraded_available = record_for("f", {}, identity=observed, availability="available")
     assert ungraded_available.qualified_for("t") is False
 
 
@@ -80,7 +85,8 @@ def test_a_grade_is_not_inherited_by_a_neighbouring_task_class():
     """The measured case: a family validated for mechanical extraction, given
     analytical review, produced seven findings it then retracted."""
     graded = {("local-mlx", "extract"): TaskClassGrade("extract", "confirmed", 2, validated=2)}
-    record = record_for("local-mlx", graded)
+    record = record_for("local-mlx", graded,
+                        identity=BackendIdentity(family="local-mlx", model_observed="a-model"))
     assert record.qualified_for("extract")
     assert not record.qualified_for("review")
     assert record.grade_for("review").grade == "unprobed"
@@ -288,9 +294,39 @@ def test_only_confirmed_qualifies(grade):
     assert record_for("f", graded).qualified_for("t") is False
 
 
-def test_a_confirmed_grade_qualifies():
+def test_a_confirmed_grade_qualifies_when_the_record_says_which_model_ran():
     graded = {("f", "t"): TaskClassGrade("t", "confirmed", observations=2, validated=2)}
-    assert record_for("f", graded).qualified_for("t") is True
+    observed = BackendIdentity(family="f", model_observed="a-model")
+    assert record_for("f", graded, identity=observed).qualified_for("t") is True
+
+
+def test_a_confirmed_family_grade_does_not_qualify_a_record_that_names_no_model():
+    """The defect an independent reader found still open in the 2.4.0 candidate.
+
+    The release added a correct per-configuration derivation and left the
+    affirmative answer reachable through the API a consumer actually calls: a
+    record built from FAMILY grades, naming no observed model, returned `True`
+    for a model that had never been dispatched.
+
+    `grade_for` is unchanged and still reports the family's history, so nothing
+    that reads history loses anything. What is refused is the one thing this
+    answer means: dispatch this here.
+    """
+    graded = {("codex-cli", "audit"): TaskClassGrade("audit", "confirmed", 7, validated=7)}
+    unobserved = record_for("codex-cli", graded, identity=BackendIdentity(
+        family="codex-cli", model_requested="never-dispatched"))
+
+    assert unobserved.identity.model_observed == UNKNOWN
+    assert unobserved.qualified_for("audit") is False, (
+        "family evidence qualified a configuration that never ran"
+    )
+    assert unobserved.grade_for("audit").grade == "confirmed", (
+        "the family's history must still be REPORTED; hiding it is a different defect"
+    )
+    # And the request is not a substitute for the observation.
+    requested = record_for("codex-cli", graded, identity=BackendIdentity(
+        family="codex-cli", model_requested="a-model"))
+    assert requested.qualified_for("audit") is False
 
 
 # --- an unrecognised outcome is not silently reclassified ----------------------

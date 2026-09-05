@@ -213,13 +213,35 @@ class BackendRecord:
         return self.capability.get(task_class, TaskClassGrade(task_class))
 
     def qualified_for(self, task_class: str) -> bool:
-        """Whether evidence supports dispatching this class here.
+        """Whether evidence supports dispatching this class **here**, at this
+        configuration.
 
-        Reads only the grade. It cannot consult `availability`, and it cannot
-        consult `permission_state`, because those are the two inferences the
-        module exists to prevent — a checker that *could* reach them would
-        eventually be edited to.
+        Reads the grade and the **observed identity**, and nothing else. It
+        cannot consult `availability` or `permission_state`, because those are
+        the two inferences this module was written to prevent.
+
+        **The observed identity is the third.** From 2.4.0 this returns `False`
+        whenever the record does not say which model ran, however strong the
+        grade — because the grades this record carries are keyed on the FAMILY,
+        and a family's history is not a configuration's track record
+        (proposed D26, `docs/RP2.4-D26-PROPOSED.md`).
+
+        That gap was found by an independent reader of the 2.4.0 candidate, and
+        the finding was that the release had added a correct derivation beside
+        this one and left the affirmative answer reachable through the API a
+        consumer actually calls:
+
+            record_for("a-family", grades_from_observations(log),
+                       identity=BackendIdentity(family="a-family",
+                                                model_requested="never-dispatched"))
+                .qualified_for("a-class")     ->  True, on evidence from other models
+
+        `grade_for` is unchanged and still reports the family grade, so nothing
+        that reads history loses anything. What is refused is the one thing this
+        answer means: *dispatch this here*.
         """
+        if self.identity.model_observed == UNKNOWN:
+            return False
         return self.grade_for(task_class).grade == "confirmed"
 
     def unknown_fields(self) -> list[str]:

@@ -72,13 +72,21 @@ def _log(tmp_path, rows, name="observations.jsonl"):
 
 
 def _candidate(identity, grade, *, validated=0, contradicted=0, availability=AVAILABLE,
-               task_class="review", producer=None, provider="vendor-a", session="fresh"):
+               task_class="review", producer=None, provider="vendor-a", session=None):
+    # THE SESSION DEFAULTS PER PRODUCER, not to one shared string. Every
+    # candidate carried the same session IDENTIFIER, which says they all ran in
+    # the same session — so once the router began comparing seated readers
+    # against each other rather than only against the subject, two genuinely
+    # independent candidates were correctly refused and the FIXTURE was what was
+    # wrong. A fixture that says two readings share a session is testing that
+    # case whether or not it meant to.
+    producer = producer or identity.model_observed
     return Candidate(
         identity=identity, task_class=task_class,
         grade=TaskClassGrade(task_class, grade, observations=validated + contradicted,
                              validated=validated, contradicted=contradicted),
         availability=availability,
-        derivation=Derivation(producer=producer or identity.model_observed, session=session,
+        derivation=Derivation(producer=producer, session=session or f"session-of-{producer}",
                               provider=provider, surface=identity.surface),
     )
 
@@ -269,14 +277,27 @@ def test_15_the_capability_closes_with_no_vendor_continuation_state_at_all(tmp_p
         record_path="PROGRESS.md",
     ), record_path)
 
+    # ONE SURFACE, DERIVED BEFORE AND AFTER. This used to delete the vendor state
+    # before deriving anything, so a `derive` that read it would never have been
+    # caught: an independent reader replaced `derive` with one that returns
+    # TERMINAL when the file is present, and every test still passed.
     vendor = tmp_path / "vendor-state"
     vendor.mkdir()
-    (vendor / "thread.json").write_text('{"resume": "abc"}', encoding="utf-8")
+    (vendor / "thread.json").write_text(
+        '{"resume": "abc", "status": "complete", "capability": "C40"}', encoding="utf-8")
+
+    with_vendor = continuation.derive(continuation.load(record_path), relative_to=tmp_path)
 
     import shutil
 
     shutil.rmtree(vendor)
     assert not vendor.exists()
+
+    without_vendor = continuation.derive(continuation.load(record_path), relative_to=tmp_path)
+    assert with_vendor.state == without_vendor.state, (
+        f"removing the vendor state changed the derived position: "
+        f"{with_vendor.state} -> {without_vendor.state}"
+    )
 
     record = continuation.load(record_path)
     report = continuation.derive(record, relative_to=tmp_path)
@@ -302,9 +323,25 @@ def test_16_vendor_continuation_contradicting_the_durable_record_loses(tmp_path)
         record_path="PROGRESS.md",
     ), record_path)
 
-    vendor = tmp_path / "vendor-thread.json"
-    vendor.write_text(json.dumps(
-        {"status": "complete", "capability": "C40", "summary": "all done"}), encoding="utf-8")
+    # THE SAME SURFACE test 15 uses, not a different filename. Test 16 wrote
+    # `vendor-thread.json` while test 15 used `vendor-state/thread.json`, so a
+    # dependency on either was invisible to both.
+    vendor = tmp_path / "vendor-state"
+    vendor.mkdir()
+    (vendor / "thread.json").write_text(json.dumps(
+        {"status": "complete", "capability": "C40", "summary": "all done",
+         "terminal": True}), encoding="utf-8")
+
+    contradicted = continuation.derive(continuation.load(record_path), relative_to=tmp_path)
+    import shutil
+
+    shutil.rmtree(vendor)
+    agreed = continuation.derive(continuation.load(record_path), relative_to=tmp_path)
+    assert contradicted.state == agreed.state, (
+        "a vendor artifact claiming completion changed the derived state"
+    )
+    vendor.mkdir()
+    (vendor / "thread.json").write_text(json.dumps({"status": "complete"}), encoding="utf-8")
 
     report = continuation.derive(continuation.load(record_path), relative_to=tmp_path)
     assert report.state != continuation.State.TERMINAL, (
@@ -315,10 +352,10 @@ def test_16_vendor_continuation_contradicting_the_durable_record_loses(tmp_path)
     assert not continuation.load(record_path).terminal, (
         "the vendor's claim of completion reached the durable state"
     )
-    # And nothing in the toolbelt reads that file to find out.
-    readers = [path.name for path in (PACK / "tools").glob("*.py")
-               if "vendor-thread" in path.read_text(encoding="utf-8")]
-    assert not readers
+    # And the dependency is checked by OBSERVATION rather than by grepping for a
+    # filename: a substring assertion passes against any module that reads the
+    # file under a name spelled differently.
+    assert report.state == contradicted.state == agreed.state
 
 
 # =============================================================================
@@ -326,7 +363,67 @@ def test_16_vendor_continuation_contradicting_the_durable_record_loses(tmp_path)
 # =============================================================================
 
 
+def _frozen_release(tmp_path):
+    """A real, verifiable, QUALIFIED_AND_FROZEN release root, built here.
+
+    The rehearsal used to pin the pack under construction with three of the four
+    identity fields missing, so `capability_open` answered `NOT_READY` with a
+    `LEGACY` pin on every single case — and the tests passed, because they only
+    ever inspected the routing component. An independent reader ran the reports
+    and found all six refused. A rehearsal that never opens the capability is not
+    a rehearsal of adoption.
+
+    So this builds one: a git checkout carrying a manifest whose digest is
+    computed over its own tracked tree, at a revision that exists. Built rather
+    than borrowed, because pointing at a real release on this machine would make
+    the rehearsal depend on this machine.
+    """
+    import subprocess
+
+    import pack_pin
+
+    root = tmp_path / "frozen-release"
+    (root / "tools").mkdir(parents=True)
+    (root / "VERSION").write_text("9.9.9\n", encoding="utf-8")
+    (root / "tools" / "placeholder.py").write_text("# a release has files\n", encoding="utf-8")
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True,
+                       timeout=120)
+
+    git("init", "--quiet", "--initial-branch", "main")
+    git("config", "user.name", "Ordinary Human")
+    git("config", "user.email", "human@example.invalid")
+    git("config", "commit.gpgsign", "false")
+
+    manifest = {
+        "pack": "runtime-pack-2", "version": "9.9.9", "state": "QUALIFIED_AND_FROZEN",
+        "tree_digest_sha256": "", "digest_excludes": "PACK_MANIFEST.json",
+        "digest_algorithm": "sha256-framed-v1",
+    }
+    (root / "PACK_MANIFEST.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    git("add", "-A")
+    git("commit", "--quiet", "-m", "seed")
+    digest, count = pack_pin.tree_digest(root)
+    manifest["tree_digest_sha256"] = digest
+    manifest["digest_file_count"] = count
+    (root / "PACK_MANIFEST.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    git("add", "-A")
+    git("commit", "--quiet", "-m", "record the digest")
+    sha = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], check=True,
+                         capture_output=True, text=True, timeout=60).stdout.strip()
+
+    # The manifest is excluded from its own digest, so recording it changed
+    # nothing the digest covers. Asserted rather than assumed: a fixture whose
+    # pin does not verify is the defect this whole helper exists to repair.
+    assert pack_pin.verify_pin(root, expect_version="9.9.9", expect_sha=sha,
+                               expect_digest=digest,
+                               expect_state="QUALIFIED_AND_FROZEN") == []
+    return root, sha, digest
+
+
 def _synthetic_project(tmp_path, *, name, observations, discovery_slugs):
+    release, sha, digest = _frozen_release(tmp_path)
     root = tmp_path / name
     root.mkdir()
     (root / "PROJECT.yaml").write_text(
@@ -334,14 +431,18 @@ def _synthetic_project(tmp_path, *, name, observations, discovery_slugs):
         f"  name: {name}\n"
         '  repo_path: "."\n'
         "pack:\n"
-        f"  root_path: {PACK}\n"
-        '  version_adopted: "2.4.0"\n'
+        f'  root_path: "{release}"\n'
+        '  version_adopted: "9.9.9"\n'
+        f'  sha_adopted: "{sha}"\n'
+        f'  tree_digest_sha256: "{digest}"\n'
+        '  state_adopted: "QUALIFIED_AND_FROZEN"\n'
         "requires:\n"
         "  routing: true\n"
         "routing:\n"
         "  observations: observations.jsonl\n"
         "  discovery: discovery.json\n"
         '  dispatching_client: "1.0.0"\n'
+        "adapters: []\n"
         "capabilities:\n"
         "  - id: C1\n",
         encoding="utf-8")
@@ -372,6 +473,11 @@ def test_the_full_adoption_rehearsal_closes_from_durable_records_alone(tmp_path)
 
     # 1. capability open reports the routing component and does not block on it.
     report = capability_open.open_capability(root / "PROJECT.yaml", capability="C1")
+    # THE AGGREGATE ANSWER, not one component of it. This asserted the routing
+    # component alone while every report was NOT_READY on a LEGACY pin.
+    assert report.ready, (
+        "the capability did not open:\n" + report.render()
+    )
     component = report.component("routing")
     assert component is not None and component.state == capability_open.VERIFIED
     assert any("NO observation carries a complete configuration identity" in note
@@ -394,12 +500,27 @@ def test_the_full_adoption_rehearsal_closes_from_durable_records_alone(tmp_path)
 
     refused = design_audit_route(candidates, task_class="review", subject=subject)
     assert not refused.complete, "an unprobed model took a seat without a declared probe"
+    assert all(seat["candidate"] is None for seat in refused.seats)
 
+    # WITH probes allowed the ORDINARY seats fill and the MANDATORY CROSS-PROVIDER
+    # ONE DOES NOT. This test asserted `routed.complete` and therefore depended on
+    # a defect: a probe was filling the leg `policy/hitl-matrix.md` row 12 governs.
+    # An independent reader found the defect AND that this rehearsal expected it,
+    # which is the sharper half of the finding — a rehearsal that encodes the bug
+    # is worse than no rehearsal.
     routed = design_audit_route(candidates, task_class="review", subject=subject,
                                 allow_probe=True)
-    assert routed.complete
-    assert all(any("DECLARED PROBE" in reason for reason in seat["reasons"])
-               for seat in routed.seats if seat["candidate"] is not None)
+    seats = {seat["role"].name: seat for seat in routed.seats}
+    assert seats["PRIMARY_DESIGN_READER"]["candidate"] is not None
+    assert any("DECLARED PROBE" in reason
+               for reason in seats["PRIMARY_DESIGN_READER"]["reasons"])
+    assert seats["INDEPENDENT_FALSIFIER"]["candidate"] is None, (
+        "a probe filled the mandatory cross-provider leg"
+    )
+    assert not routed.complete, (
+        "the route reported itself complete with its mandatory independent leg unfilled; the "
+        "capability escalates to a human (row 12) rather than substituting"
+    )
 
     # 4. the probe runs and is recorded — for the configuration it tested only.
     with (root / "observations.jsonl").open("a", encoding="utf-8") as handle:
@@ -408,6 +529,28 @@ def test_the_full_adoption_rehearsal_closes_from_durable_records_alone(tmp_path)
     assert graded[newest.key("review")].grade == "provisional"
     assert q.grade_for(newest, "implement", graded, {})[0].grade == "unprobed", (
         "one successful run made a model universally qualified"
+    )
+
+    # AND ONE PROBE DOES NOT PROMOTE IT ANYWHERE THAT MATTERS. The ladder is
+    # climbed by evidence, and the two rungs it does not reach are stated apart
+    # because they are different rules: an UNPROBED configuration may not fill a
+    # seat that requires an independent provider, and a PROVISIONAL one may not
+    # fill a CRITICAL seat, which is what row 16 governs.
+    probed = _candidate(newest, "provisional", validated=1, producer="w-new",
+                        provider="vendor-b")
+    critical = design_audit_route([probed], task_class="review", subject=subject,
+                                  allow_probe=True,
+                                  roles=(Role("MANDATORY", purpose=CRITICAL),))
+    assert critical.seats[0]["candidate"] is None, (
+        "one probe promoted a configuration into a critical-domain seat"
+    )
+
+    unprobed_still = _candidate(older, "unprobed", producer="w-old", provider="vendor-c")
+    cross = design_audit_route([unprobed_still], task_class="review", subject=subject,
+                               allow_probe=True,
+                               roles=(Role("CROSS", require_distinct_provider=True),))
+    assert cross.seats[0]["candidate"] is None, (
+        "a declared probe filled a seat that exists to give an independent reading"
     )
 
     # 5. interruption, then reconstruction from the durable record alone.
@@ -483,6 +626,7 @@ def test_the_rehearsal_closes_without_the_newest_model(tmp_path, situation):
     import capability_open
 
     opened = capability_open.open_capability(root / "PROJECT.yaml", capability="C1")
+    assert opened.ready, "the capability did not open:\n" + opened.render()
     assert opened.component("routing").state == capability_open.VERIFIED
 
 

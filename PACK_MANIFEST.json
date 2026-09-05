@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": null,
-  "tree_digest_sha256": "c78b9955afb5ce10f440b62d84ae598c110c7fdce6979f096ab4b5ca8328bc9f",
+  "tree_digest_sha256": "6364c71e5e696a5f00375425dd097f0e077def35424e1f2041b617587b6cfd24",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 2196
+    "passed": 2237
   },
   "gate_record": "docs/RP2.4-GATE.md",
   "delta_audit": "docs/RP2.4-CAPABILITY-MAP.md",
@@ -28,10 +28,12 @@
     ]
   },
   "known_limitations": [
-    "STATE IS IN_PROGRESS. This is a candidate, not a release. No project may pin it. Moving it to QUALIFIED_AND_FROZEN is a human decision (policy/hitl-matrix.md row 2), and this candidate needs a SECOND human decision besides: DECISIONS.md D26 narrows a stated governance control and that is row 7. Both are in docs/RP2.4-GATE.md under 'the freeze procedure'; the coordinator took neither.",
-    "held prose 2884 lines against a ~2000 target (44.2% over, recorded not shaved). 1849 lines are in-release and that half is UNDER the target; the 1035 that put the total over are the two installed adapters, outside this envelope, covered by no digest and impossible for this pack to freeze — and counted anyway, because they are loaded every session. 2.3.0 was 2675 (33.8% over) on the same rule. Delete-before-adding was applied: the adapter's static table of model slugs was REMOVED rather than updated, because a table that is wrong about what exists is worse than no table.",
+    "STATE IS IN_PROGRESS. This is a candidate, not a release. No project may pin it. Moving it to QUALIFIED_AND_FROZEN is a human decision (policy/hitl-matrix.md row 2), and this candidate needs a SECOND human decision besides: the narrowing in docs/RP2.4-D26-PROPOSED.md is a row-7 governance change. THE COORDINATOR WROTE THAT ENTRY INTO DECISIONS.md AND AN INDEPENDENT READER CAUGHT THE SEQUENCING: row 7's application point is BEFORE an entry lands, so the entry was removed from the decision layer and is held as a proposal. The commit that briefly carried it is in this branch's history and is named in the gate record; rewriting that history is itself rows 2 and 4. Both decisions are in docs/RP2.4-GATE.md under 'the freeze procedure'; the coordinator took neither.",
+    "held prose 2885 lines against a ~2000 target (44.2% over, recorded not shaved). 1850 lines are in-release and that half is UNDER the target; the 1035 that put the total over are the two installed adapters, outside this envelope, covered by no digest and impossible for this pack to freeze — and counted anyway, because they are loaded every session. 2.3.0 was 2675 (33.8% over) on the same rule. Delete-before-adding was applied: the adapter's static table of model slugs was REMOVED rather than updated, because a table that is wrong about what exists is worse than no table.",
     "THE PER-CONFIGURATION QUALIFICATION TABLE IS NEARLY EMPTY, AND THAT IS THE HONEST STATE OF THIS EVIDENCE. No observation recorded before this release carries an observed model, an authentication class or an execution surface, so all of them are family-level prior and none is a track record. Three observations from this session carry a complete identity. Every other configuration answers `unprobed` with a prior beside it. Nothing was fabricated to fill the table and nothing was deleted; the remedy is recording an observed identity at the next dispatch, which is the adapter's job and not this pack's.",
     "GPT-6 ASTRA IS PROVISIONAL AT TWO TASK CLASSES AND UNPROBED EVERYWHERE ELSE. One usability probe at low effort and one design-falsification reading at high effort, both on client 0.153.3, read-only, network none, subscription auth. It is NOT confirmed anywhere, and in particular it is `unprobed` at blind_closure_audit_cross_vendor where the family-keyed derivation returns `confirmed` on seven observations. One dispatch each against one alternative is a comparison and not a rate: on the single design task both found real reproduced defects, partly disjoint, and neither dominated.",
+    "THE RELEASE-AUTHORITY READING RETURNED NOT READY ON FOUR BLOCKERS AND ONE WAS THE COORDINATOR'S OWN PROCESS. HEAD moved while the reading was in flight, so the auditor compared the earlier manifest against the later tree and correctly reported a digest mismatch that does not exist in either revision. The other three were real, reproduced by execution before repair, and each is closed by an oracle that fails against the pre-repair behaviour with the mutant killed: a provenance spelled `unobserved` reached `confirmed`; a declared probe filled the mandatory cross-provider leg AND THE ADOPTION REHEARSAL EXPECTED IT TO; and a whitespace producer established independence. THE REPAIRS ARE THEMSELVES UNAUDITED until a delta re-audit, which is the standing condition of any final repair.",
+    "THE RELEASE-AUTHORITY READING COULD NOT EXECUTE THE SUITE. Its read-only sandbox gives pytest no usable temporary directory, so it collected the suite, read it, and executed the candidate's sources in memory rather than running the tests or mutating files. Its coverage is reasoning and collection rather than execution, which is a real bound on what that round establishes and is stated rather than implied by the verdict.",
     "BOTH DESIGN READINGS CAME FROM ONE PROVIDER THROUGH ONE CLIENT. They are independent of the coordinator and of each other's session, and they are NOT independent of each other's provider. tools/routing.py refuses exactly that pairing for a leg declared cross-provider; this release's own design audit did not have a second provider available to satisfy it.",
     "OLD ROUTES WERE NOT RE-PROBED AFTER THE CLIENT UPDATE. The client moved 0.149.0 -> 0.153.3 deliberately, because execution proved the older one could not run the model under evaluation. Every availability observation for a previously-used configuration was recorded on 0.149.0, and availability_for reports that rather than carrying it across, so those configurations read UNKNOWN on the new client until something dispatches. That is a real cost of the update, stated rather than papered over.",
     "A SURFACE THAT CANNOT REPORT THE EFFORT IT RAN AT CANNOT PRODUCE A COMPLETE IDENTITY. The keyed effort is the OBSERVED one, because this execution surface accepts an effort it will not run at. Where a surface reports the model and not the effort, the configuration stays incomplete and therefore unprobed. The remedy is in the adapter; this pack will not infer the value, because inferring it is the substitution the release exists to prevent.",
@@ -87,6 +89,6 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 165,
+  "digest_file_count": 166,
   "failure_mode_closure": "docs/RP2.3-FAILURE-MODE-CLOSURE.md"
 }

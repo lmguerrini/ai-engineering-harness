@@ -6,7 +6,7 @@ answer about a configuration. Read it as **prior evidence: advisory, never a
 track record.** What answers about a configuration is
 `tools/qualification.py`, keyed on the nine evidence-relevant dimensions, and a
 model with no observations of its own is `unprobed` there however strong the
-family row here (`DECISIONS.md` D26).
+family row here (proposed D26).
 
 The distinction is not stylistic. Executed against this log before 2.4.0, a model
 that had never been dispatched returned `confirmed` at

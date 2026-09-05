@@ -26,14 +26,15 @@ before anything was written, and the command is in `docs/RP2.4-GATE.md`.
 
 This release adds a second derivation keyed on the evidence, a separate
 availability axis, and a routing surface that ranks on a configuration's own
-outcomes. `DECISIONS.md` D26 carries the decision;
+outcomes. `docs/RP2.4-D26-PROPOSED.md` carries the decision — as a proposal, not an entry;
 `docs/RP2.4-ARCHITECTURE.md` carries the shape;
 `docs/RP2.4-DESIGN-C40-qualification-identity.md` carries the design that two
 independent readings falsified before it was implemented.
 
 ## The two decisions this candidate cannot take for itself
 
-1. **HITL row 7** — D26 narrows a stated governance control.
+1. **HITL row 7** — proposed D26 narrows a stated governance control, and is held
+   out of `DECISIONS.md` until that is authorised.
 2. **HITL row 2** — the state transition to `QUALIFIED_AND_FROZEN`.
 
 Both, with the exact commands, are under *the freeze procedure* at the end of
