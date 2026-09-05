@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = [
-    "TRIVIAL", "ROUTINE", "MATERIAL", "CHANGE_CLASSES",
+    "TRIVIAL", "ROUTINE", "MATERIAL", "CHANGE_CLASSES", "CHANGE_CLASS_RANK",
     "SELECTED", "REJECTED",
     "ACCEPTANCE", "NEGATIVE", "MUTATION", "REHEARSAL", "ORACLE_KINDS",
     "Candidate", "Oracle", "DesignRecord", "read", "required_for",
@@ -51,6 +51,12 @@ ROUTINE = "ROUTINE"
 #: A new promise, a new authority, a new boundary, or a change to one.
 MATERIAL = "MATERIAL"
 CHANGE_CLASSES = (TRIVIAL, ROUTINE, MATERIAL)
+
+#: The classes are a LADDER, not three labels. RP2.4.1 R1: a record may be as
+#: strong as the work requires or stronger, never weaker. Ranked here rather
+#: than compared by name at each caller, because a comparison written twice is
+#: two answers to one question waiting to disagree.
+CHANGE_CLASS_RANK = {TRIVIAL: 0, ROUTINE: 1, MATERIAL: 2}
 
 SELECTED = "SELECTED"
 REJECTED = "REJECTED"
@@ -118,17 +124,46 @@ class DesignRecord:
     def of_kind(self, kind: str) -> list:
         return [o for o in self.oracles if o.kind == kind]
 
-    def problems(self, *, mutation_begins_at: str = "", repository=None) -> list:
+    def problems(self, *, mutation_begins_at: str = "", repository=None,
+                 required_class: str = "") -> list:
         """Everything this record does not state that its class requires.
 
         An empty list is not *the design is good*. It is *the design was made
         before the implementation, against stated alternatives, with stated
         failure modes and frozen oracles* — which is the only part a machine can
         settle.
+
+        `required_class` is the strength the OPENING AUTHORITY demands, and it
+        is the whole of the RP2.4.1 R1 repair. 2.4.0 asked this record only
+        whether it stated what ITS OWN class requires, so a record declaring
+        itself TRIVIAL — which requires nothing — satisfied a capability its
+        caller had honestly declared MATERIAL, and the readiness report said
+        VERIFIED. The comparison lives here, in the module that already owns
+        *does this record state what is required of it*, so that every caller
+        states what it needs instead of re-deriving the answer beside it.
+        Callers that require nothing get 2.4.0's answer unchanged.
         """
         if self.unreadable:
             return [self.unreadable]
         found: list = []
+
+        if required_class:
+            if required_class not in CHANGE_CLASSES:
+                # Never ranked leniently. An unrecognised spelling that fell
+                # through to rank 0 would make the requirement vanish exactly
+                # when a caller was trying to state one.
+                found.append(
+                    f"the required change class is {required_class!r}; it must be one of "
+                    f"{', '.join(CHANGE_CLASSES)}, because an unrecognised requirement is "
+                    f"not a weaker requirement")
+            elif self.change_class in CHANGE_CLASSES and (
+                    CHANGE_CLASS_RANK[self.change_class] < CHANGE_CLASS_RANK[required_class]):
+                found.append(
+                    f"this capability requires a {required_class} design and the record "
+                    f"declares itself {self.change_class}. A record cannot lower the bar the "
+                    f"work was opened against: state the class the work actually is, or open "
+                    f"the capability as the class the record actually states")
+                return found
 
         if self.change_class not in CHANGE_CLASSES:
             found.append(
@@ -136,6 +171,8 @@ class DesignRecord:
                 f"{', '.join(CHANGE_CLASSES)}, because the class is what scales everything else")
             return found
         if self.change_class == TRIVIAL:
+            # Reached only when nothing stronger was required: the rank check
+            # above has already refused a TRIVIAL record under a stronger bar.
             return found
         if not self.frozen:
             found.append("the record does not declare itself frozen, so it is a draft and the "
@@ -248,6 +285,62 @@ class DesignRecord:
                     f"the base revision {self.base_revision[:12]} is not an ancestor of "
                     f"{mutation_begins_at[:12]}, where mutation began: this design was not "
                     f"frozen before the implementation it claims to govern")
+                return found
+            found.extend(self._provenance_problems(mutation_begins_at, repository))
+        return found
+
+    def _provenance_problems(self, mutation_begins_at: str, repository) -> list:
+        """Whether the RECORD ITSELF existed, unchanged, before the work began.
+
+        RP2.4.1 R2. Everything above this establishes ancestry between two
+        revisions the record NAMES. None of it asks when the record's own bytes
+        came into being — so a design written today, naming a base that predates
+        an implementation that already shipped, reported DESIGN FROZEN. An
+        independent reader reproduced exactly that, and the information was in
+        the repository the whole time, unasked for.
+
+        The claim is checked against the one party to it that cannot be
+        backdated by editing a file: the record's content must already be
+        present, byte for byte, in the tree at the revision where mutation
+        began. That single comparison answers all three ways of getting this
+        wrong — a record introduced afterwards, a record edited afterwards, and
+        a record never committed at all — and it needs no input the caller was
+        not already supplying.
+        """
+        import gitread
+
+        found: list = []
+        try:
+            top = Path(gitread._run(repository, "rev-parse", "--show-toplevel",
+                                    timeout=30).strip())
+            here = Path(self.path).resolve()
+            relative = here.relative_to(top.resolve()).as_posix()
+        except Exception as exc:
+            found.append(
+                f"the design record's provenance could not be established: this repository "
+                f"could not be asked where {self.path} sits within it ({exc}). A design whose "
+                f"history cannot be read has not been shown to precede anything")
+            return found
+        try:
+            committed = gitread._run(repository, "show",
+                                     f"{mutation_begins_at}:{relative}", timeout=30)
+        except Exception:
+            found.append(
+                f"{relative} did not exist at {mutation_begins_at[:12]}, where mutation began, "
+                f"so this design record's provenance places it AFTER the implementation it "
+                f"claims to govern. Ancestry of the revisions it names is not the same claim "
+                f"as the record having been written first")
+            return found
+        try:
+            on_disk = here.read_text(encoding="utf-8")
+        except OSError as exc:
+            found.append(f"the design record could not be read back for comparison: {exc}")
+            return found
+        if committed != on_disk:
+            found.append(
+                f"{relative} differs from the version committed at {mutation_begins_at[:12]}, "
+                f"where mutation began: its content changed after the work started, so what is "
+                f"frozen here is not what the implementation was built against")
         return found
 
 

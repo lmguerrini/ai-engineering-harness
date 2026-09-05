@@ -471,8 +471,17 @@ def test_the_revision_where_mutation_began_is_resolved_before_it_is_compared(rep
 
 
 def test_a_design_frozen_before_the_work_still_passes_in_every_spelling(repo):
-    """The other direction, so the repair above cannot be a blanket refusal."""
+    """The other direction, so the repair above cannot be a blanket refusal.
+
+    The design is committed BEFORE the work commit, which is the sequence the
+    gate exists to require. It used to be written afterwards and left
+    uncommitted, and passed anyway — which is the RP2.4.1 R2 defect standing
+    inside the test written to show the gate was not a blanket refusal.
+    """
     base = _head(repo)
+    _write(repo, base=base)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "freeze the design")
     (repo / "work.txt").write_text("the work")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "where the work began")
@@ -480,7 +489,142 @@ def test_a_design_frozen_before_the_work_still_passes_in_every_spelling(repo):
     short = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short=12", "HEAD"],
                            capture_output=True, text=True, check=True).stdout.strip()
     _git(repo, "branch", "began2", began)
-    record = design_record.read(_write(repo, base=base))
+    record = design_record.read(Path(repo) / "DESIGN-C1.md")
     for spelling in (began, short, "began2", "HEAD"):
         assert record.problems(mutation_begins_at=spelling, repository=repo) == [], (
             f"a design frozen before the work was refused when the work was named {spelling!r}")
+
+
+# --- RP2.4.1 R1/R2: required strength, and provenance of the record itself ----
+
+def _commit(where, message="work"):
+    _git(where, "add", "-A")
+    _git(where, "commit", "-qm", message)
+    return _head(where)
+
+
+def test_a_weaker_record_does_not_satisfy_a_stronger_requirement(repo):
+    """O1/O10. The reproduced R1 scenario, at the boundary that owns it.
+
+    A record that declares itself TRIVIAL states nothing, by design. 2.4.0 let
+    that nothing satisfy a requirement its own caller had declared MATERIAL,
+    and reported VERIFIED rather than NOT_REQUIRED — an affirmative claim that
+    the design gate had been met.
+    """
+    record = design_record.read(_write(repo, change_class="TRIVIAL", candidates="", modes="",
+                                       oracles="", authority="", mechanism="", frozen="no"))
+    problems = record.problems(repository=repo, required_class=design_record.MATERIAL)
+    assert problems, "a TRIVIAL record satisfied a MATERIAL requirement"
+    assert any("MATERIAL" in problem and "TRIVIAL" in problem for problem in problems), problems
+
+
+def test_a_routine_record_does_not_satisfy_a_material_requirement(repo):
+    """The rank is a rank, not a two-value flag."""
+    record = design_record.read(_write(repo, change_class="ROUTINE", candidates="", modes=""))
+    assert record.problems(repository=repo, required_class=design_record.MATERIAL)
+
+
+def test_a_material_record_satisfies_a_material_requirement(repo):
+    """O2. The repair must not refuse the case it exists to protect."""
+    record = design_record.read(_write(repo))
+    assert record.problems(repository=repo, required_class=design_record.MATERIAL) == []
+
+
+def test_a_stronger_record_satisfies_a_weaker_requirement(repo):
+    """Over-documenting is not an error."""
+    record = design_record.read(_write(repo))
+    assert record.problems(repository=repo, required_class=design_record.ROUTINE) == []
+
+
+def test_trivial_work_requiring_nothing_stays_lightweight(repo):
+    """O3. The scaling rule survives: ceremony nobody needs is ceremony nobody performs."""
+    record = design_record.read(_write(repo, change_class="TRIVIAL", candidates="", modes="",
+                                       oracles="", authority="", mechanism="", frozen="no"))
+    assert record.problems(repository=repo) == []
+    assert record.problems(repository=repo, required_class=design_record.TRIVIAL) == []
+
+
+def test_an_unknown_required_class_is_refused_rather_than_ranked(repo):
+    """Failure mode 5. A spelling nobody recognises must not rank as TRIVIAL."""
+    record = design_record.read(_write(repo))
+    problems = record.problems(repository=repo, required_class="material")
+    assert problems and any("required" in p.lower() for p in problems), problems
+
+
+def test_a_record_committed_before_mutation_is_accepted(repo):
+    """O6. The ordinary, correct sequence: freeze, then build."""
+    base = _head(repo)
+    _write(repo, base=base)
+    _commit(repo, "freeze the design")
+    (repo / "impl.py").write_text("print('work')\n")
+    mutation = _commit(repo, "implementation")
+    record = design_record.read(Path(repo) / "DESIGN-C1.md")
+    assert record.problems(repository=repo, mutation_begins_at=mutation) == []
+
+
+def test_a_record_committed_after_mutation_is_refused(repo):
+    """O4. The reproduced R2 scenario.
+
+    Ancestry between two claimed revisions was all 2.4.0 established, so a
+    record written today, naming a base that predates the work, reported
+    DESIGN FROZEN. Git holds the answer and was never asked.
+    """
+    base = _head(repo)
+    (repo / "impl.py").write_text("print('work')\n")
+    mutation = _commit(repo, "implementation lands first")
+    _write(repo, base=base)
+    _commit(repo, "design written after the fact")
+    record = design_record.read(Path(repo) / "DESIGN-C1.md")
+    problems = record.problems(repository=repo, mutation_begins_at=mutation)
+    assert problems, "a design written after the implementation reported frozen"
+    assert any("did not exist" in p or "provenance" in p.lower() for p in problems), problems
+
+
+def test_a_record_edited_after_mutation_is_refused(repo):
+    """O5. Backdating by editing the file it names."""
+    base = _head(repo)
+    path = _write(repo, base=base)
+    _commit(repo, "freeze the design")
+    (repo / "impl.py").write_text("print('work')\n")
+    mutation = _commit(repo, "implementation")
+    path.write_text(path.read_text() + "\nAn oracle thought of afterwards.\n")
+    record = design_record.read(path)
+    problems = record.problems(repository=repo, mutation_begins_at=mutation)
+    assert problems, "a record edited after the work reported frozen"
+    assert any("changed" in p or "differs" in p for p in problems), problems
+
+
+def test_an_uncommitted_record_cannot_establish_provenance(repo):
+    """Failure mode 1. Never established by default; refused with a reason."""
+    base = _head(repo)
+    (repo / "impl.py").write_text("print('work')\n")
+    mutation = _commit(repo, "implementation")
+    _write(repo, base=base)
+    record = design_record.read(Path(repo) / "DESIGN-C1.md")
+    assert record.problems(repository=repo, mutation_begins_at=mutation)
+
+
+def test_provenance_that_cannot_be_read_is_refused(repo, tmp_path):
+    """O7. Failure mode 3: outside a checkout, provenance is not established."""
+    base = _head(repo)
+    path = _write(repo, base=base)
+    _commit(repo, "freeze")
+    (repo / "impl.py").write_text("x\n")
+    mutation = _commit(repo, "implementation")
+    elsewhere = tmp_path / "not-a-repo"
+    elsewhere.mkdir()
+    (elsewhere / "DESIGN-C1.md").write_text(path.read_text(), encoding="utf-8")
+    record = design_record.read(elsewhere / "DESIGN-C1.md")
+    assert record.problems(repository=elsewhere, mutation_begins_at=mutation)
+
+
+def test_every_spelling_of_the_mutation_revision_agrees(repo):
+    """O8. One answer, however the caller spells the revision."""
+    base = _head(repo)
+    (repo / "impl.py").write_text("print('work')\n")
+    mutation = _commit(repo, "implementation lands first")
+    _write(repo, base=base)
+    _commit(repo, "design after the fact")
+    record = design_record.read(Path(repo) / "DESIGN-C1.md")
+    for spelling in (mutation, mutation[:7], mutation[:12], "HEAD~1", "HEAD~1^{commit}"):
+        assert record.problems(repository=repo, mutation_begins_at=spelling), spelling

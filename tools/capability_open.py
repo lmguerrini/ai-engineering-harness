@@ -600,8 +600,26 @@ def _design_component(contract: ProjectContract, capability: str | None,
                       f"change states before it mutates anything",))
 
     record = design_record.read(where)
+    # THE PROJECT'S REPOSITORY, AND THE STRENGTH THIS OPEN DECLARED.
+    #
+    # RP2.4.1 R1: `declared` is passed as the REQUIRED class, so a record that
+    # declares itself weaker than the work was opened against is refused by the
+    # module that owns the question, rather than blessed here. 2.4.0 read the
+    # record against its own class only, so a one-line TRIVIAL record opened a
+    # MATERIAL capability READY with zero alternatives, failure modes or oracles.
+    #
+    # RP2.4.1 R2 needs the history the design record actually lives in. This
+    # passed the record's own PARENT DIRECTORY, which in the documented layout —
+    # a private governance root beside the repository, not inside it — is not a
+    # repository at all, so the revision binding answered about the wrong tree
+    # or about none. The contract already declares where the repository is.
+    try:
+        repository = contract.repository()
+    except Exception:
+        repository = Path(where).parent
     problems = record.problems(mutation_begins_at=mutation_begins_at,
-                               repository=Path(where).parent)
+                               repository=repository,
+                               required_class=declared or "")
     chosen = record.selected.name if record.selected else ""
     # THE SUMMARY IS UNCONDITIONAL. It used to hang on the selected design
     # having a name, so the emptier the record the less the report said about

@@ -519,3 +519,147 @@ def test_no_rehearsal_reaches_silent_idle_with_work_outstanding(tmp_path):
     assert lifecycle == [State.WAITING_ON_IDENTIFIED_JOB, State.COMPLETED_NOT_CONSUMED,
                          State.BLOCKED_ON_HUMAN, State.TERMINAL], lifecycle
     assert State.SILENT_IDLE not in lifecycle
+
+
+# --- RP2.4.1 O9: the design bar, through the real capability-open path -------
+
+_MATERIAL_DESIGN = """# DESIGN — CAP-01
+
+**Change class:** {change_class}
+**Base revision:** {base}
+**Frozen:** yes
+
+## The mechanism
+
+The gate reads a record and reports what it states.
+
+## Designs considered
+
+| # | Design | Verdict | Why |
+|---|---|---|---|
+| 1 | Trust the record's own word | REJECTED | a record can state any class it likes |
+| 2 | Compare against what the open declared | SELECTED | the opening authority states the bar |
+
+## Failure modes of the selected design
+
+| # | Failure mode | What keeps it from being silent |
+|---|---|---|
+| 1 | a record weaker than the declared class | the rank comparison refuses it |
+
+## Authority boundaries
+
+Reports only; weakens no HITL row.
+
+## Oracles, frozen before implementation
+
+| ID | Kind | The property it settles | Selector |
+|---|---|---|---|
+| O1 | ACCEPTANCE | a material record satisfies a material bar | test_design_record.py::test_a_material_record_satisfies_a_material_requirement |
+| O2 | NEGATIVE | a weaker record does not | test_design_record.py::test_a_weaker_record_does_not_satisfy_a_stronger_requirement |
+| O3 | MUTATION | removing the rank check fails O2 | test_design_record.py::test_a_weaker_record_does_not_satisfy_a_stronger_requirement |
+"""
+
+
+def _rehearsal_project(tmp_path):
+    """A consumer shaped the way the documented bootstrap shapes one."""
+    def git(*args):
+        subprocess.run(["git", "-C", str(repo), *args], check=True,
+                       capture_output=True, timeout=120)
+    project = tmp_path / "project"
+    repo = project / "repo"
+    repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet", "--initial-branch", "main", str(repo)],
+                   check=True, capture_output=True, timeout=120)
+    for key, value in (("user.name", "T"), ("user.email", "t@e.invalid"),
+                       ("commit.gpgsign", "false")):
+        git("config", key, value)
+    (repo / "seed.txt").write_text("seed\n")
+    git("add", "-A")
+    git("commit", "-qm", "seed")
+    manifest = json.loads((ROOT / "PACK_MANIFEST.json").read_text())
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+                          text=True).stdout.strip()
+    (project / "PROJECT.yaml").write_text(
+        "project:\n"
+        "  name: rehearsal\n"
+        '  repo_path: "./repo"\n'
+        "  integration_ref: integration\n"
+        "  release_ref: main\n"
+        "  autonomous_integration_merges: false\n"
+        "pack:\n"
+        f'  root_path: "{ROOT}"\n'
+        f'  version_adopted: "{_declared_version()}"\n'
+        f'  sha_adopted: "{head}"\n'
+        f'  tree_digest_sha256: "{manifest["tree_digest_sha256"]}"\n'
+        f'  state_adopted: {manifest["state"]}\n'
+        '  adopted_at: "2026-09-05"\n'
+        '  adoption_boundary: "a newer pack version is adopted only at a capability '
+        'boundary, never mid-capability"\n'
+        "adapters: []\n"
+        "requires:\n"
+        "  design: true\n"
+        "capabilities:\n"
+        "  - id: CAP-01\n", encoding="utf-8")
+    return project, repo, git
+
+
+def test_a_material_capability_needs_a_material_design_through_the_real_path(tmp_path):
+    """O9. The whole of RP2.4.1 R1 and R2, composed, at the transition.
+
+    Both reproduced blockers were found through this path and neither was
+    visible in a unit of it: a capability honestly opened MATERIAL reached
+    READY against a record that declared itself TRIVIAL and stated nothing, and
+    a record written after the implementation reported frozen. The negative
+    sibling is the point of the rehearsal — a gate that only ever passes is not
+    a gate.
+    """
+    import capability_open
+
+    project, repo, git = _rehearsal_project(tmp_path)
+    base = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    design = repo / "DESIGN.md"
+
+    # (a) the weaker record does not satisfy the stronger open
+    design.write_text(_MATERIAL_DESIGN.format(change_class="TRIVIAL", base=base)
+                      .split("## The mechanism")[0], encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "a record that states nothing")
+    weak = capability_open.open_capability(project / "PROJECT.yaml", capability="CAP-01",
+                                           change_class="MATERIAL", design=design)
+    assert not weak.ready
+    assert weak.component("design").state == capability_open.UNVERIFIABLE
+    assert any("requires a MATERIAL design" in f for f in weak.component("design").findings)
+
+    # (b) the design frozen before the work, and the work after it
+    design.write_text(_MATERIAL_DESIGN.format(change_class="MATERIAL", base=base),
+                      encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "freeze the design")
+    (repo / "impl.py").write_text("print('work')\n")
+    git("add", "-A")
+    git("commit", "-qm", "implementation")
+    began = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                           capture_output=True, text=True).stdout.strip()
+    good = capability_open.open_capability(project / "PROJECT.yaml", capability="CAP-01",
+                                           change_class="MATERIAL", design=design,
+                                           mutation_begins_at=began)
+    # ASSERTED ON THE DESIGN COMPONENT, NOT ON OVERALL READINESS. This
+    # rehearsal pins the live checkout it runs in, whose digest moves with
+    # every commit of the release being prepared, so asserting `ready` here
+    # would make this a seventh test that fails on any byte change — the class
+    # the manifest already warns readers to exclude when scoring mutants. The
+    # subject is the design gate, so the assertion is about the design gate.
+    design_component = good.component("design")
+    assert design_component.state == capability_open.VERIFIED, design_component.findings
+    assert design_component.satisfied and design_component not in good.blocking
+
+    # (c) the same design, edited after the work began, is refused
+    design.write_text(design.read_text() + "\nAn oracle thought of afterwards.\n",
+                      encoding="utf-8")
+    backdated = capability_open.open_capability(project / "PROJECT.yaml", capability="CAP-01",
+                                                change_class="MATERIAL", design=design,
+                                                mutation_begins_at=began)
+    assert not backdated.ready
+    assert any("changed after the work started" in f
+               for f in backdated.component("design").findings)
