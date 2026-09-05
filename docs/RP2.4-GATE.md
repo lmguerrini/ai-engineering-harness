@@ -788,6 +788,46 @@ that the working directory therefore fails `pack_pin` while the candidate commit
 still verifies. Third instance of one class in one session: a subject must not
 change under a reading, and *uncommitted* is not an exemption.
 
+## ONE BLOCKING DEFECT REMAINS, AND IT IS A HISTORY REWRITE
+
+**The candidate fails its own commit-range gate on exactly one commit.**
+
+    python3 tools/commit_gate.py --range HEAD \
+        --baseline ab7dea97a12c699e8123bcb5d5be976cd05c075e --repo . --default-terms .
+
+    VIOLATION 62386d4b26f3 PRIVATE_TERM: private term 'c*********r' is prohibited
+
+Eight of the nine commits in the range pass. The ninth is the tip, and it is
+there because the coordinator ran `git commit` in a shell chain whose earlier
+link — the commit gate itself — had already **refused the message**. The gate
+printed `VIOLATION`, exited non-zero, and the `&&` was attached to the wrong
+command, so the refusal was reported and ignored in one line.
+
+That is worth naming plainly: the commit contract was not bypassed by accident of
+ignorance. It was run, it refused, and the commit happened anyway.
+
+**The only remedy is a history rewrite**, because a commit message cannot be
+corrected forward. Amending the tip of an unpushed evolution branch is the
+smallest possible rewrite — one commit, no remote, nothing depending on it — and
+it is still a rewrite, which is HITL rows 2 and 4. **The coordinator did not take
+it.** The precedent is this session's own: when a governance entry landed in
+`DECISIONS.md` ahead of its authorisation, the content was removed forward and
+the commit that carried it was left in history, because rewriting it is the same
+rows. The same rule applies to the coordinator's own mistake.
+
+**What it does and does not block.** It does not affect the tree, the digest, the
+suite or any behaviour; the commit's CONTENT is sound and qualified. It blocks
+the claim that this candidate's history is contract-conforming, and it therefore
+blocks any first remote — which is already blocked, and for which
+`known_limitations` already records a much larger unadjudicated set. It is listed
+separately from that set because those occurrences were inherited and this one
+was created tonight, after a gate said no.
+
+**The founder decision, precisely:** authorise `git commit --amend` on
+`62386d4b26f32130af6edda8bd33a9e19e4f2ffe` with a contract-conforming message,
+which restores the range gate to clean; or accept the violation as recorded and
+carry it into the publication adjudication that is already owed.
+
 ## The freeze procedure
 
 Two human decisions, not one, and neither is the coordinator's:
