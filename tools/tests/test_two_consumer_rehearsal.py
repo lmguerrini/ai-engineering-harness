@@ -261,11 +261,18 @@ def test_both_projects_run_background_work_at_once_and_neither_blocks_the_other(
                 release.write_text("go", encoding="utf-8")
             except OSError:  # pragma: no cover - the injected case
                 pass
+        # EACH PRODUCER'S ENDING IS ITS OWN. A bounded reading made the FIRST
+        # kill raise and the loop abandoned the second producer, which then
+        # survived — one failure to end a process must not become a failure to
+        # end the others.
         for process, _out, _release in workers.values():
             try:
                 process.wait(timeout=30)
             except Exception:  # pragma: no cover - timeout, or anything else
-                process.kill()
+                try:
+                    process.kill()
+                except Exception:
+                    pass
                 try:
                     process.wait(timeout=30)
                 except Exception:

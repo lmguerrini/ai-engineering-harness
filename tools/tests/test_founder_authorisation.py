@@ -232,7 +232,12 @@ class _PriorThatRefusesToBeRead:
     is for.
     """
 
-    family = "a-family"
+    #: THE CANDIDATE'S OWN FAMILY, not a placeholder. A bounded reading defeated
+    #: this sentinel with a mutant guarded on `prior.family == identity.family`:
+    #: the families did not match, so the guard was false and the raising
+    #: property was never touched. A sentinel that does not look like the thing
+    #: it stands in for is a sentinel a reader can route around.
+    family = COMPLETE["family"]
     task_class = "design_falsification_review"
     because = "the family has history and this configuration has none"
     advisory = True
@@ -254,6 +259,24 @@ def test_3_rank_does_not_read_the_priors_evidence_at_all():
     assert r._rank(candidate) == r._rank(without), (
         "ranking an unprobed candidate that carries a prior differs from ranking one that "
         "does not, even though the prior's evidence was never readable")
+
+
+def test_3_the_route_does_not_read_the_priors_evidence_either():
+    """`_rank` is not the only place an ordering can consult a prior.
+
+    A bounded reading pointed out that the refusing sentinel was asserted against
+    `_rank` alone, so reading the prior's evidence in the ROUTE's own sort key
+    survived. The seating decision is what actually decides which unprobed
+    configuration gets probed first, so it is the thing that must not read it.
+    """
+    subject = r.Derivation(producer="the-implementer", session="s0", provider="Z")
+    pool = [_unprobed_candidate("model-a", prior=_PriorThatRefusesToBeRead(), provider="P"),
+            _unprobed_candidate("model-b", provider="Q")]
+    report = r.design_audit_route(pool, task_class="design_falsification_review",
+                                  subject=subject, allow_probe=True)
+    seated = [seat["candidate"].identity.model_observed for seat in report.seats
+              if seat["candidate"] is not None]
+    assert seated, "the fixture is inert: the route filled no seat at all"
 
 
 def test_3_the_refusing_prior_would_actually_catch_a_reader():

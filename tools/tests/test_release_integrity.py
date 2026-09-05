@@ -1780,48 +1780,58 @@ def test_no_tracked_path_is_rewritten_between_the_blob_and_the_checkout():
     )
 
 
-#: What a release record must SAY, not what it must avoid saying. A first
-#: version of this guard listed denial phrases and a bounded reading defeated it
-#: three ways in one sitting: a reworded denial ("contains zero real
-#: machine-account identifiers") passed, the original denial passed with a
-#: newline inside it, and a TRUTHFUL sentence quoting the old claim was refused.
-#: Enumerating the ways prose can be wrong is not winnable; requiring it to carry
-#: the fact is.
-_THE_OCCURRENCE = "names a real machine account"
+#: The fact a summary must carry, in the forms a writer would naturally use.
+#: An exact-phrase requirement refused "identifies a real machine account", which
+#: is true and says the same thing, and a bounded reading was right to call that
+#: an exact-wording restriction rather than a check.
+_THE_OCCURRENCE = ("names a real machine account", "identifies a real machine account",
+                   "carries a real machine account", "names a real account")
 
 #: A record is discussing the adjudication's subject if it names the document or
 #: the tier the document is about.
-#: NORMALISED THE SAME WAY THE TEXT IS. A first version kept the hyphen in
-#: "publication-adjudication" while the normaliser strips hyphens, so no record
-#: ever matched and the guard passed having examined nothing — the vacuity this
-#: suite has its own sweep for, in the guard written to stop a documentation
-#: defect recurring.
 _THE_SUBJECT = ("publication adjudication", "tier that governs a project",
                 "tier a governed project runs")
+
+#: The records that summarise this conclusion, NAMED rather than counted. A
+#: floor of three was met by a different three: a bounded reading rewrote the
+#: inventory to drop the subject phrases and added a compliant mention to the
+#: capability map, and the count was satisfied while the contradictory record
+#: went unexamined.
+_MUST_AGREE = ("PACK_MANIFEST.json", "-GATE.md", "-INVENTORY.md")
 
 
 def _normalised(text: str) -> str:
     """Case, whitespace and hyphenation flattened, so a line break inside a claim
-    is the same claim. The original denial survived this guard by being wrapped
-    across two lines."""
-    return " ".join(text.lower().replace("-", " ").replace("\u2014", " ").split())
+    is the same claim. The original denial survived an earlier version of this
+    guard by being wrapped across two lines, and an equivalent spelling survived
+    it by using a non-breaking hyphen."""
+    for dash in ("-", "\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"):
+        text = text.replace(dash, " ")
+    return " ".join(text.lower().split())
 
 
-def test_every_release_record_that_discusses_the_adjudication_carries_its_occurrence():
-    """A conclusion has one owner, and a summary that omits its exception is wrong.
+def test_every_release_record_that_summarises_the_adjudication_carries_its_occurrence():
+    """A conclusion has one owner, and a summary that drops its exception is wrong.
 
     `docs/RP2.4-PUBLICATION-ADJUDICATION.md` originally claimed that no
     occurrence at the tiered tier names a person, a machine or an account. An
     independent reader falsified it against a historical blob; the document was
     corrected; and three release records went on repeating the original claim, so
     the release shipped a public-safety conclusion and its own contradiction at
-    once. A bounded reading found that, then defeated the first guard written for
-    it.
+    once.
 
-    **What this establishes and what it does not.** It establishes that every
-    release record discussing the adjudication's subject also states the
-    occurrence. It cannot establish that such a record says nothing false
-    elsewhere — prose is not decidable — and it is not a substitute for a reader.
+    **WHAT THIS CATCHES: AN OMISSION. WHAT IT DOES NOT CATCH: A LIE.** Three
+    bounded readings defeated three successive versions of this guard, and the
+    last one settles the question rather than losing it: a record can carry the
+    required words inside their own negation and satisfy any substring check.
+    Deciding whether prose is truthful is not something a test does, and an
+    arms race of denial phrases is one this file has already lost twice.
+
+    So the claim is scoped to what a machine can establish: every record that
+    summarises this conclusion mentions its exception. That is exactly the defect
+    that occurred — a correction in one place and three stale summaries — and it
+    is not a substitute for a reader, which is how the original was found and how
+    a deliberate negation would be.
     """
     import json
 
@@ -1829,14 +1839,20 @@ def test_every_release_record_that_discusses_the_adjudication_carries_its_occurr
     adjudication = ROOT / "docs" / f"{prefix}-PUBLICATION-ADJUDICATION.md"
     if not adjudication.is_file():
         pytest.skip("this release ships no publication adjudication")
-    if _THE_OCCURRENCE not in _normalised(adjudication.read_text(encoding="utf-8")):
-        pytest.skip(
-            "the adjudication records no such occurrence; if it was genuinely remediated, "
-            "remove this guard in the same change that remediates it")
+
+    owner = _normalised(adjudication.read_text(encoding="utf-8"))
+    # NOT A SKIP. Removing the fact from the owner disabled an earlier version of
+    # this guard entirely, including its own coverage assertion — so a document
+    # edit could switch the check off without remediating anything.
+    assert any(form in owner for form in _THE_OCCURRENCE), (
+        f"{adjudication.name} no longer records the occurrence this guard exists for. If the "
+        f"history was genuinely remediated — which is a rewrite, HITL rows 2 and 4 — remove "
+        f"this guard in the same change that remediates it, and say so in the gate record")
 
     surfaces = [ROOT / "PACK_MANIFEST.json"]
     surfaces += sorted((ROOT / "docs").glob(f"{prefix}-*.md"))
-    silent, examined = [], []
+    named = {}
+    silent = []
     for path in surfaces:
         if path == adjudication:
             continue
@@ -1844,15 +1860,21 @@ def test_every_release_record_that_discusses_the_adjudication_carries_its_occurr
         if path.name == "PACK_MANIFEST.json":
             raw = " ".join(json.loads(raw).get("known_limitations") or [])
         text = _normalised(raw)
-        if not any(subject in text for subject in _THE_SUBJECT):
+        for marker in _MUST_AGREE:
+            if path.name == marker or path.name.endswith(marker):
+                named[marker] = path.name
+        discusses = any(subject in text for subject in _THE_SUBJECT)
+        required = any(path.name == m or path.name.endswith(m) for m in _MUST_AGREE)
+        if not (discusses or required):
             continue
-        examined.append(path.name)
-        if _THE_OCCURRENCE not in text:
+        if not any(form in text for form in _THE_OCCURRENCE):
             silent.append(path.name)
-    assert len(examined) >= 3, (
-        f"this guard examined {examined}, which is fewer records than discuss the "
-        f"adjudication; a guard that matches nothing passes having checked nothing")
+
+    missing = [marker for marker in _MUST_AGREE if marker not in named]
+    assert not missing, (
+        f"these records are named as summarising the adjudication and do not exist: {missing}. "
+        f"A guard whose subjects are absent passes having checked nothing")
     assert not silent, (
-        "these release records discuss the publication adjudication and do not carry the "
-        "occurrence it records, so they summarise a conclusion by dropping its only "
+        "these release records summarise the publication adjudication and do not carry the "
+        "occurrence it records, so they state a conclusion by dropping its only known "
         f"exception: {', '.join(silent)}")
