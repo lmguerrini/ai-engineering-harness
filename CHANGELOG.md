@@ -78,6 +78,25 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the reading of THAT one found the same hole wearing a new name
+
+A third bounded reading — routed to a different reader, because the one who
+found a defect may not certify its closure — returned NOT_READY on two counts,
+both introduced by the repair before it.
+
+`--exclude-per-directory=<name>` makes Git look for that name in **every**
+directory it walks. The guard checked only the root. So an untracked
+`anywhere/.gitignore-not-tracked-by-this-release` containing `*` hid itself and
+an unreviewed module while the pin verified: the first repair's defect, reached
+through the very filename chosen to close it. No chosen name is safe, because
+the name is in the source. The option is gone entirely — Git now reads no
+working-tree ignore file anywhere, and the release's tracked `.gitignore` is
+supplied by absolute path.
+
+The second: `--exclude-from` was built from the root as spelled and resolved by
+Git against that same root, so a relative root with a path component refused a
+byte-identical tree. The root is resolved first.
+
 ### And the reading of THAT repair found one more, which is the point
 
 A second bounded reading of the repair delta returned NOT_READY on one blocker,

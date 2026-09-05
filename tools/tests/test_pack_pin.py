@@ -781,6 +781,45 @@ def test_a_nested_tracked_ignore_declaration_is_refused_not_approximated(pack):
     assert any("nested ignore declarations" in problem for problem in problems), problems
 
 
+@pytest.mark.parametrize("ignore_name", [
+    ".gitignore",
+    ".gitignore-not-tracked-by-this-release",
+    ".zz-anything-at-all",
+])
+def test_no_untracked_ignore_file_anywhere_can_hide_material(pack, ignore_name):
+    """An ignore file nobody reviewed has no say, WHATEVER it is called.
+
+    Two repairs failed here for the same reason. `--exclude-per-directory` reads
+    working-tree ignore files, so an untracked `.gitignore` hid a payload; and
+    pointing the option at a name the tree "does not contain" was that hole with
+    a different filename, because the option makes Git look for that name in
+    EVERY directory it walks, and a root-only existence check cannot see a
+    nested one. No chosen name is safe: the name is in the source. So there is
+    no per-directory discovery at all, and this asks with the exact name the
+    implementation once trusted.
+    """
+    unreviewed = pack / "unreviewed"
+    unreviewed.mkdir()
+    (unreviewed / ignore_name).write_text("*\n")
+    (unreviewed / "payload.py").write_text("print('unreviewed')\n")
+    strays = pack_pin.untracked_files(pack)
+    assert f"unreviewed/{ignore_name}" in strays, strays
+    assert "unreviewed/payload.py" in strays, strays
+    assert any("untracked" in problem for problem in pack_pin.verify_pin(pack))
+
+
+def test_a_relative_root_with_a_path_component_verifies(pack, monkeypatch):
+    """`--exclude-from` is resolved by Git against the directory it is launched
+    in, which is the root itself, so a root spelled relatively became
+    `root/root/.gitignore` and the enumeration failed — a real release refused
+    for the way its path was written."""
+    (pack / "build.log").write_text("ignored by the release's own rule\n")
+    monkeypatch.chdir(pack.parent)
+    assert pack_pin.untracked_files(pack.name) == []
+    assert pack_pin.untracked_files(f"./{pack.name}") == []
+    assert pack_pin.untracked_files(f"{pack.name}/") == []
+
+
 def test_the_manifest_comparison_is_over_bytes(pack):
     """Claimed byte-for-byte, and it compared decoded text until a reader said so."""
     manifest = pack / pack_pin.MANIFEST_NAME
