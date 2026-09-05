@@ -41,21 +41,37 @@ Both, with the exact commands, are under *the freeze procedure* at the end of
 `docs/RP2.4-GATE.md`. No push, tag, remote or consumer migration is included in
 either; those are separate row-2 decisions.
 
+## What this release also became, on the second night
+
+Two operational failure classes were closed structurally after being produced by
+the coordinator itself:
+
+- **One governed waiting path.** The pack held two answers to *has this process
+  finished*, and the durable state model had the wrong one. It now has one; a
+  waiter is governed only if `progress.waiter_command` rebuilds it byte for byte
+  and it watches the wait it is recorded against; and `continuation.reconcile`
+  derives eight dispositions from the producer, never from a surviving monitor.
+- **A run that executed nothing is not evidence.**
+  `tools/selector_evidence.py`, after a zero-test run was nearly recorded as a
+  forty-five-fold speed-up.
+
 ## What is not established
 
 `PACK_MANIFEST.json` `known_limitations` is the list, and it is the list rather
-than a summary of one. The four a reader should not miss:
+than a summary of one. The five a reader should not miss:
 
 - the per-configuration table is nearly empty, because no observation predating
   this release carries an observed identity — the honest state of this evidence;
-- the newest model is `provisional` at two task classes and `unprobed`
-  everywhere else, on one dispatch each against one alternative;
-- both design readings came from one provider, so they are not independent of
-  each other's provider — which this release's own router would refuse for a leg
-  declared cross-provider;
+- the newest model is `provisional` where it has evidence and `unprobed`
+  everywhere else, including at a different EFFORT of a class it has run, which
+  is the key working rather than a gap;
 - previously-used configurations read `UNKNOWN` on the updated client, because
   their availability evidence was recorded on the old one and is not carried
-  across.
+  across;
+- **the final repairs are unaudited**, which is the standing condition of any
+  final repair and is why the closure ceiling is stated rather than reached;
+- a wait the coordinator never declares stays invisible, because seeing it would
+  mean policing the coordinator's own shell.
 
 ## Where the numbers live
 
