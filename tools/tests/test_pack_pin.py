@@ -840,14 +840,18 @@ def test_a_redirected_working_tree_is_refused_not_answered_about(pack, tmp_path)
     elsewhere = tmp_path / "somewhere-else"
     elsewhere.mkdir()
     _git(pack, "config", "core.worktree", str(elsewhere))
-    # REFUSED BY THE SHARED READER NOW, not by this module. The local copy this
-    # function grew is gone: binding the answer to the directory asked about is
-    # one question, and `gitread` answers it for all twelve callers rather than
-    # for whichever ones remembered.
-    with pytest.raises(Exception, match="different directory"):
-        pack_pin.untracked_files(pack)
+    # THE REDIRECT CANNOT MOVE THE ANSWER, so there is nothing left to refuse.
+    # `core.worktree` was answered by refusing the read because the key was
+    # reachable; it is not read at all now — the working tree is the one the
+    # caller named, supplied to Git rather than discovered by it. The guarantee
+    # is unchanged and is asserted directly: the file that is really there is
+    # still reported, and the decoy directory contributes nothing.
+    (elsewhere / "decoy.py").write_text("print('decoy')\n")
+    untracked = pack_pin.untracked_files(pack)
+    assert "unreviewed_module.py" in untracked, untracked
+    assert not any("decoy" in entry for entry in untracked), untracked
     problems = pack_pin.verify_pin(pack)
-    assert any("different directory" in problem for problem in problems), problems
+    assert any("unreviewed_module.py" in problem for problem in problems), problems
 
 
 def test_an_archive_inside_another_checkout_cannot_be_decided(pack, tmp_path):
@@ -914,10 +918,18 @@ def test_the_bytes_reader_also_keeps_an_integrity_refusal_readable(pack, tmp_pat
     manifest comparison is driven here against a root the reader refuses, where
     the reason is the whole point of the report.
     """
-    elsewhere = tmp_path / "somewhere-else"
-    elsewhere.mkdir()
-    _git(pack, "config", "core.worktree", str(elsewhere))
-    with pytest.raises(ValueError, match="different directory"):
-        pack_pin._git_bytes(pack, "show", f"HEAD:{pack_pin.MANIFEST_NAME}")
-    problems = pack_pin.verify_pin(pack)
-    assert any("different directory" in problem for problem in problems), problems
+    # DRIVEN THROUGH A DIFFERENT INTEGRITY REFUSAL. The one this used to use —
+    # `core.worktree` redirecting the read — no longer exists, because the key is
+    # not read. The translation it pins is unchanged: an integrity refusal must
+    # reach a report carrying its own words, and every other refusal must keep
+    # the shape its callers already handle.
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(pack),
+                          capture_output=True, text=True, check=True).stdout.strip()
+    with pytest.raises(ValueError, match="read-only Git commands only"):
+        pack_pin._git_bytes(pack, "update-ref", "refs/heads/illicit", head)
+    shown = subprocess.run(["git", "show-ref", "refs/heads/illicit"], cwd=str(pack),
+                            capture_output=True, text=True)
+    assert shown.returncode != 0, "the ref exists; the refusal came too late to be a control"
+    # And a NON-integrity refusal still arrives as the process error callers handle.
+    with pytest.raises(subprocess.CalledProcessError):
+        pack_pin._git_bytes(pack, "show", "refs/heads/does-not-exist:nothing")

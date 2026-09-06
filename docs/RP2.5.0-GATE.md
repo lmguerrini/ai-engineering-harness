@@ -103,6 +103,46 @@ publication conclusion while dropping its only known exception is a defect this
 pack has already shipped once, so it is stated here rather than left to the
 document next door.
 
+## Design records, and where their oracles landed
+
+`docs/RP2.5.0-DESIGN-A1-sterile-execution.md` is frozen at
+`71e24f89cf1d0d8084531418ab758ce4f4c945fa` and committed at `154be5f`, before any
+implementation existed. `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` supersedes
+part of it after an independent design reading returned `DESIGN_BLOCKED`, and is
+frozen at `fb2f450e53db1d3b5e5f1b752af3ffb9d4900f97`.
+
+Both are left exactly as they were frozen. One selector in A1 has been superseded
+and is recorded here rather than edited there, because a frozen design record that
+is corrected afterwards is no longer evidence of what was decided beforehand:
+
+| Record | Oracle | Selector as frozen | The test that implements it |
+|---|---|---|---|
+| A1 | O2 | `test_a_nested_repositorys_configuration_never_executes` | `test_no_spelling_of_a_nested_git_executes_the_subjects_program`, parametrised over four spellings of a nested `.git` — A2 widened the property from *a* nested repository to *any spelling of one*, and the name followed |
+
+Every other oracle in A1 and A2 names a test that exists and runs.
+
+## What the implementation changed, and what was measured about it
+
+The boundary is `tools/sterile.py`, and `tools/gitread.py` is its only caller.
+`tools/release_delta.py` was the last module reaching Git around it and now goes
+through it; the only remaining subprocess callers in `tools/` run `pytest` and
+`ps`, so `gitread` is the toolbelt's single path to Git.
+
+Eight defects were found in the implementation while building it, each reproduced
+by a test before being repaired, and each recorded because a boundary nobody broke
+is a claim:
+
+| # | What was wrong | How it failed |
+|---|---|---|
+| 1 | a deadline escaped the construction as `TimeoutExpired` | neither of this pack's refusals, and not recognisable as one |
+| 2 | `git config --get` read the harness's own configuration | a silent wrong answer about the wrong repository |
+| 3 | `git config --file` does not follow `include.path` under an explicit `GIT_DIR` | keys hidden behind an include would have been reported as absent |
+| 4 | the view's post-condition asked only whether a `.git` resolved under the scratch directory | a **copied** `.git` satisfies that; it now requires membership in the set this build made |
+| 5 | the HEAD round trip refused a subject whose own HEAD is dangling | the build reproduces that subject exactly, and `ls-files` never needed HEAD |
+| 6 | `protocol.allow = never` was set only when a caller enabled a transport | every other read fell back to Git's defaults, dropping a posture this module has always had |
+| 7 | three callers asked Git where the repository is | under the boundary Git answers about the build; `activity` counted one repository as six |
+| 8 | `ls-tree` was routed through the boundary without `-z` | a C-quoted path would reach the delta as an escaped literal |
+
 ## Not yet done
 
 The implementation, its oracles, mutation scoring, the consumer rehearsals, the

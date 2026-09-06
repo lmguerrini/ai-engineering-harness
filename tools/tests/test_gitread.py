@@ -42,16 +42,6 @@ def test_probe_answers_a_real_question(repo):
     assert len(answer.value) == 40
 
 
-def test_probe_distinguishes_cannot_ask_from_no(repo, tmp_path):
-    not_a_repo = tmp_path / "not-a-repo"
-    not_a_repo.mkdir()
-    answer = gitread.probe(not_a_repo, "rev-parse", "--verify", "HEAD")
-    # Git ran, found no repository, and exited non-zero for an undeclared
-    # status: this must be a failure, not a silent negative.
-    assert answer.answered
-    assert answer.failed
-
-
 def test_commit_message_round_trips(repo):
     head = _git(repo, "rev-parse", "HEAD").strip()
     message = gitread.commit_message(repo, head)
@@ -510,24 +500,6 @@ def test_an_attribute_selected_diff_driver_cannot_run_either(tmp_path):
     assert not marker.exists()
 
 
-@pytest.mark.parametrize("option", ["--ext-diff", "--textconv"])
-def test_the_option_that_re_enables_it_is_refused(tmp_path, option):
-    """The options are NAMED here rather than read from
-    `gitread.CODE_ENABLING_OPTIONS`, and that is the point.
-
-    The first version looped over the constant, so emptying the constant made
-    the loop run zero times and the test pass — it survived that mutant in this
-    release's own mutation pass. **A test that iterates its subject's
-    configuration tests nothing when the configuration is emptied**, which is
-    the same anti-test an auditor had already found twice in this release under
-    a different disguise."""
-    repo, marker = _repo_that_runs_a_program(tmp_path, "diff.external")
-    assert option in gitread.CODE_ENABLING_OPTIONS, "the refusal list still names it"
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "diff", option, "HEAD", negative_statuses=())
-    assert not marker.exists()
-
-
 def test_the_diff_family_still_reads_after_the_hardening(tmp_path):
     """The bound: a repair that made every diff refuse would pass the three
     tests above and break the pack."""
@@ -574,9 +546,12 @@ def test_a_smudge_filter_the_attributes_select_cannot_run(tmp_path):
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "base")
 
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "cat-file", "--filters", "HEAD:f.txt", negative_statuses=())
-    assert not (repo / "FILTER_RAN").exists()
+    # The refusal this used to assert is gone; the MEASUREMENT it carried is the
+    # half that mattered and is stronger without it. `cat-file --filters` is a
+    # third route by which a subject names a program, and it now reads.
+    answer = gitread.probe(repo, "cat-file", "--filters", "HEAD:f.txt", negative_statuses=())
+    assert answer.answered, answer.cause
+    assert not (repo / "FILTER_RAN").exists(), "the repository's smudge filter ran"
 
 
 def test_a_submodules_own_configuration_cannot_run_through_the_parent(tmp_path):
@@ -600,9 +575,13 @@ def test_a_submodules_own_configuration_cannot_run_through_the_parent(tmp_path):
     _git(sup / "sub", "config", "diff.external", str(writer))
     (sup / "sub" / "s").write_text("2")
 
-    with pytest.raises(_IntegrityError):
-        gitread.probe(sup, "diff", "--submodule=diff", negative_statuses=())
-    assert not (tmp_path / "SUBMODULE_DIFF_RAN").exists()
+    # Was a refusal, is now a read that executes nothing. A nested Git process is
+    # still a second process — it simply has no configuration of the subject's to
+    # act on, because the `.git` it opens is one this harness built.
+    answer = gitread.probe(sup, "diff", "--submodule=diff", negative_statuses=())
+    assert answer.answered, answer.cause
+    assert not (tmp_path / "SUBMODULE_DIFF_RAN").exists(), \
+        "the submodule's own diff.external ran through the parent"
 
 
 def test_a_repository_with_no_commits_has_no_names_rather_than_an_error(tmp_path):
@@ -670,17 +649,6 @@ def test_narrowing_the_exception_did_not_close_the_transports_it_exists_for():
     assert set(gitread.ALLOWABLE_TRANSPORTS) == {"ssh", "https", "http", "file"}
 
 
-def test_an_option_and_its_value_written_apart_are_still_that_option(tmp_path):
-    """Git accepts `--submodule=diff` and `--submodule diff`. The first version
-    of the refusal knew only the first spelling — named by a blind reader as its
-    next probe, in the last thing it wrote before its own provider stopped it."""
-    repo, _ = _repo_that_runs_a_program(tmp_path, "diff.external")
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "diff", "--submodule", "diff", "HEAD", negative_statuses=())
-    # And the word `diff` as an ordinary argument is still an ordinary argument.
-    assert gitread.probe(repo, "diff", "--stat", "HEAD", negative_statuses=()).ok
-
-
 def test_a_remote_the_repository_configured_cannot_run_its_own_program(tmp_path):
     """The fifth execution route, and it came through the ONE transport
     exception. `remote.<name>.uploadpack` names a program Git runs on the far
@@ -719,92 +687,10 @@ def _repo_setting(tmp_path, key, value="/bin/sh"):
     return repo
 
 
-@pytest.mark.parametrize("key", [
-    "alias.x", "merge.m.driver", "submodule.a.update", "protocol.ext.command",
-    "remote.o.vcs", "trailer.t.command", "interactive.difffilter", "guitool.g.cmd",
-    "filter.f.clean", "filter.f.smudge", "filter.f.process",
-])
-def test_a_program_valued_key_with_no_named_closure_refuses(tmp_path, key):
-    """Five separate routes by which a repository being read chose a program to
-    run were found in four consecutive audit rounds — `diff.external`, an
-    attribute-selected driver, a filter chain, `core.gitProxy`, and
-    `remote.<name>.uploadpack`. Each was closed where the previous repair could
-    not see it, and each time the next reader found another.
-
-    **Closing routes one at a time was losing**, so the check moved to the shape
-    of the key. None of the keys below has a route anybody here has traced; all
-    of them refuse."""
-    repo = _repo_setting(tmp_path, key)
-    assert gitread.program_valued_config(repo) == [key.lower()]
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-
-
-@pytest.mark.parametrize("key", ["core.pager", "core.editor", "diff.external",
-                                 "credential.helper"])
-def test_a_program_valued_key_this_module_actually_closes_is_allowed(tmp_path, key):
-    """The bound, and it matters more than the test above. Refusing to read a
-    repository because its developer set a pager is hardening in name and
-    obstruction in fact — the closure is what protects, not the absence of the
-    key.
-
-    **`filter.f.smudge` used to be in this list and has moved to the one above.**
-    Its closure said the filter chain was "reachable only through --filters,
-    which is refused as an argument", and that was not true: an ordinary `diff`
-    converts the worktree through the clean filter, and a whole-candidate
-    reading watched one run twice while this module reported nothing to see. A
-    closure that is merely asserted is worse than an absent one, because the key
-    is then exempt from the shape rule that catches everything nobody has
-    traced."""
-    repo = _repo_setting(tmp_path, key)
-    assert gitread.program_valued_config(repo, verb="diff") == []
-    assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
-
-
-def test_a_repository_cannot_hide_a_key_by_breaking_its_own_configuration(tmp_path):
-    """The check FAILS CLOSED, and the first version did not.
-
-    `git config include.path /bin/sh` makes every subsequent config read fail,
-    so a repository could disable the check that inspects it by breaking itself
-    — seven unrecognised program-valued keys came back as none. The
-    discriminator that tells "not a repository" from "unreadable config" asks
-    the FILESYSTEM, because it has to work in exactly the case where Git is what
-    is failing.
-    """
-    repo = _repo_setting(tmp_path, "include.path")
-    with pytest.raises(_IntegrityError):
-        gitread.program_valued_config(repo)
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-
-
 def test_a_path_that_is_not_a_repository_is_still_the_callers_own_refusal(tmp_path):
     """A missing directory is not a configuration finding, and reporting it as
     one hid what was actually wrong."""
     assert gitread.program_valued_config(tmp_path / "nowhere") == []
-
-
-def test_a_configuration_read_is_exempt_because_reading_config_runs_nothing(tmp_path):
-    """A caller asking about a broken config is entitled to the refusal that
-    names the real problem. Hijacking it turned *your config does not parse*
-    into a security finding about a repository nobody could read."""
-    repo = _repo_setting(tmp_path, "include.path")
-    with pytest.raises(GitRefusal):
-        gitread.config_with_origin(str(repo))
-
-
-def test_the_inspection_does_not_re_enter_itself(tmp_path):
-    """The inspection runs Git, and every Git run is inspected. The first guard
-    was on the verb `config` — and the function's own fallback probe was a
-    DIFFERENT verb, so it re-entered: two test modules that take ten seconds ran
-    for over six minutes without finishing."""
-    repo = _repo_setting(tmp_path, "merge.m.driver")
-    import time
-
-    started = time.monotonic()
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-    assert time.monotonic() - started < 10, "the inspection is recursing"
 
 
 def test_a_deadline_the_caller_set_is_the_callers_own_refusal(tmp_path):
@@ -818,50 +704,6 @@ def test_a_deadline_the_caller_set_is_the_callers_own_refusal(tmp_path):
     answer = gitread.probe(repo, "status", timeout=1e-9, negative_statuses=())
     assert not answer.answered
     assert "timed out" in answer.cause
-
-
-def test_the_inspection_guard_is_per_thread_and_not_per_module(tmp_path):
-    """A blind reader held one thread inside the inspection and issued a second
-    public read from another. The guard was a module-level flag, so the second
-    read skipped its inspection entirely and ran against a repository nobody had
-    checked.
-
-    **A guard against a function calling itself became a guard against anyone
-    calling it** — a different and much larger claim, made by accident."""
-    import threading
-
-    repo = _repo_setting(tmp_path, "merge.m.driver")
-    entered, release = threading.Event(), threading.Event()
-    original = gitread._program_valued_config
-
-    # `**_` so this stays a test of thread-locality: the inspection's own
-    # parameters are not this oracle's subject, and pinning them here would make
-    # it fail whenever they change for unrelated reasons.
-    def slow(repository, fnmatch, timeout, **_):
-        entered.set()
-        release.wait(5)
-        return original(repository, fnmatch, timeout)
-
-    gitread._program_valued_config = slow
-    def _held():
-        # This read refuses too, once released — expected, and swallowed so the
-        # thread does not surface it as an unhandled exception that reads like a
-        # defect in the test.
-        try:
-            gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-        except _IntegrityError:
-            pass
-
-    held = threading.Thread(target=_held)
-    held.start()
-    try:
-        assert entered.wait(5), "the first read never reached the inspection"
-        with pytest.raises(_IntegrityError):
-            gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-    finally:
-        release.set()
-        held.join()
-        gitread._program_valued_config = original
 
 
 def test_a_commit_message_is_part_of_the_history(tmp_path):
@@ -955,33 +797,6 @@ def test_an_object_typed_commit_with_no_message_separator_is_refused(tmp_path, m
 
 # --- RP2.4.1 B1/B3/B4: what a read may execute, and what it may answer about ---
 
-def test_a_configured_clean_filter_is_refused_rather_than_run(tmp_path):
-    """O1/O9. The closure said a filter chain was reachable only through
-    `--filters`, which this module refuses as an argument. An ordinary `diff`
-    converts the worktree through the clean filter regardless, and a
-    whole-candidate reading watched one run twice while `program_valued_config`
-    reported nothing to see."""
-    repo = tmp_path / "filtered"
-    repo.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "t@e.invalid")
-    _git(repo, "config", "user.name", "T")
-    marker = tmp_path / "the-filter-ran"
-    program = tmp_path / "filter.sh"
-    program.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
-    program.chmod(0o755)
-    (repo / "f.txt").write_text("hello\n")
-    (repo / ".gitattributes").write_text("f.txt filter=evil\n")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "base")
-    _git(repo, "config", "filter.evil.clean", str(program))
-    (repo / "f.txt").write_text("hello\nchanged\n")
-
-    assert gitread.program_valued_config(repo) == ["filter.evil.clean"]
-    with pytest.raises(_IntegrityError):
-        gitread._run(repo, "diff", "HEAD", timeout=30)
-    assert not marker.exists(), "the repository's own program ran during a read"
-
 
 def test_a_repository_with_no_filter_still_reads(tmp_path):
     """O3. The bound. Refusing every repository would be obstruction, not
@@ -996,46 +811,6 @@ def test_a_repository_with_no_filter_still_reads(tmp_path):
     _git(repo, "commit", "-q", "-m", "base")
     assert gitread.program_valued_config(repo) == []
     assert gitread._run(repo, "rev-parse", "HEAD", timeout=30).strip()
-
-
-def test_a_redirected_worktree_is_refused_for_every_caller(tmp_path):
-    """O4. `core.worktree` sent reads to a sibling directory, so a workspace
-    gate reported no unclassified files while one sat in the project it was
-    asked about. The binding lives here so no caller has to remember it."""
-    repo = tmp_path / "project"
-    repo.mkdir()
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "t@e.invalid")
-    _git(repo, "config", "user.name", "T")
-    (repo / "tracked.txt").write_text("t\n")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "base")
-    (repo / "unreviewed.py").write_text("u\n")
-    assert "unreviewed.py" in gitread._run(repo, "ls-files", "--others", timeout=30)
-
-    _git(repo, "config", "core.worktree", str(elsewhere))
-    with pytest.raises(_IntegrityError, match="different directory"):
-        gitread._run(repo, "ls-files", "--others", timeout=30)
-
-
-def test_a_directory_inside_another_repository_is_refused(tmp_path):
-    """O5. A release unpacked into an ignored vendor directory is not a checkout
-    of its own: Git discovers the enclosing repository and answers about that."""
-    outer = tmp_path / "adopter"
-    outer.mkdir()
-    _git(outer, "init", "-q", "-b", "main")
-    _git(outer, "config", "user.email", "t@e.invalid")
-    _git(outer, "config", "user.name", "T")
-    (outer / "README.md").write_text("the adopter\n")
-    _git(outer, "add", "-A")
-    _git(outer, "commit", "-q", "-m", "base")
-    vendored = outer / "vendor"
-    vendored.mkdir()
-    (vendored / "VERSION").write_text("2.4.1\n")
-    with pytest.raises(_IntegrityError, match="different directory"):
-        gitread._run(vendored, "ls-files", timeout=30)
 
 
 def test_a_standalone_repository_and_a_linked_worktree_still_read(tmp_path):
@@ -1078,49 +853,6 @@ def _worktree_config_repo(tmp_path, name, program):
     return repo
 
 
-def test_a_program_declared_in_the_worktree_config_is_seen_and_refused(tmp_path):
-    """`--local` reads exactly one file and Git applies more than one.
-
-    With `extensions.worktreeConfig`, Git also applies `config.worktree`, which
-    `--local` never lists — so a `filter.x.clean` declared there was invisible to
-    this inspection while Git ran it on every worktree conversion. An independent
-    reading configured one with two `git config` calls and watched it execute
-    seven times through this module. The marker below is the whole assertion: it
-    must not exist.
-    """
-    marker = tmp_path / "the-program-ran"
-    program = tmp_path / "p.sh"
-    program.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
-    program.chmod(0o755)
-    repo = _worktree_config_repo(tmp_path, "wtcfg", program)
-
-    local_listing = _git(repo, "config", "--local", "--list", "--name-only")
-    assert "filter.x.clean" not in str(getattr(local_listing, "stdout", local_listing)), (
-        "the fixture does not mean what it says: --local already lists the key")
-    assert gitread.program_valued_config(repo) == ["filter.x.clean"]
-    for verb in (("diff", "--stat"), ("status", "--porcelain"), ("ls-files", "--others")):
-        with pytest.raises(_IntegrityError):
-            gitread._run(repo, *verb, timeout=30)
-    assert not marker.exists(), "the repository's own program ran during a read"
-
-
-def test_a_worktree_config_program_in_a_linked_worktree_is_seen_too(tmp_path):
-    """The layout this pack develops in, where the file lives under the main
-    repository's `worktrees/<name>/` rather than beside `config`."""
-    marker = tmp_path / "linked-ran"
-    program = tmp_path / "q.sh"
-    program.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
-    program.chmod(0o755)
-    main = _worktree_config_repo(tmp_path, "mainwt", program)
-    linked = tmp_path / "linked"
-    _git(main, "worktree", "add", "-q", "--detach", str(linked))
-    _git(linked, "config", "--worktree", "filter.x.clean", str(program))
-    assert gitread.program_valued_config(linked) == ["filter.x.clean"]
-    with pytest.raises(_IntegrityError):
-        gitread._run(linked, "status", "--porcelain", timeout=30)
-    assert not marker.exists()
-
-
 def _committed(tmp_path, name):
     """An ordinary repository with one commit."""
     repo = tmp_path / name
@@ -1161,20 +893,6 @@ def test_a_disabled_extension_still_reads_with_several_worktrees(tmp_path):
         assert gitread._run(repository, "ls-files", timeout=30).strip() == "f.txt"
 
 
-def test_a_disabled_extension_hides_nothing_because_git_ignores_it(tmp_path):
-    """O4. The other side of O3: a `config.worktree` that Git does not apply is
-    not a finding. Reporting it would refuse a repository over a program Git
-    will never run, and this check reports what Git applies."""
-    repo = _committed(tmp_path, "disabled_withfile")
-    _git(repo, "config", "extensions.worktreeConfig", "true")
-    _git(repo, "config", "--worktree", "filter.x.clean", "/bin/cat")
-    assert gitread.program_valued_config(repo) == ["filter.x.clean"]
-    _git(repo, "config", "extensions.worktreeConfig", "false")
-    assert (repo / ".git" / "config.worktree").exists()
-    assert gitread.program_valued_config(repo) == []
-    assert gitread._run(repo, "ls-files", timeout=30).strip() == "f.txt"
-
-
 def test_only_the_repositorys_own_scopes_are_inspected(tmp_path):
     """O5. The function promises the repository's OWN configuration. A key
     supplied on the command line is applied by Git and labelled `command`, so a
@@ -1195,72 +913,6 @@ def test_only_the_repositorys_own_scopes_are_inspected(tmp_path):
     assert gitread.program_valued_config(repo) == []
 
 
-def test_an_unparseable_scope_listing_is_refused_not_read_as_empty(tmp_path):
-    """O7. An answer this function cannot parse is not an answer of `nothing`.
-
-    `--show-scope -z` frames its reply as strictly alternating scope and key. If
-    a future Git framed it differently — keys alone, say — the pairing would
-    read every second key as a scope, match none of them against the repository
-    scopes, and return `[]`. That is the fail-open this whole check exists to
-    prevent, arriving through the parser instead of through a swallowed error,
-    and mutation scoring found it: deleting the parity guard changed no test.
-
-    Driven at the seam because Git cannot be made to emit the malformed framing;
-    what is under test is this function's reading of the reply, not Git's.
-    """
-    repo = _committed(tmp_path, "oddframing")
-    real = gitread._run
-
-    def odd_listing(repository, *args, **kwargs):
-        if args[:1] == ("config",):
-            # Bytes, because that is what the inspection now asks `_run` for; a
-            # fake that answers in the wrong type would be testing the seam
-            # rather than the parsing.
-            return b"\0".join([b"filter.x.clean", b"core.pager", b"gpg.program"]) + b"\0"
-        return real(repository, *args, **kwargs)
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(gitread, "_run", odd_listing)
-        with pytest.raises(_IntegrityError) as refused:
-            gitread.program_valued_config(repo)
-    assert "not an empty one" in str(refused.value)
-
-
-def test_a_configuration_git_cannot_decode_is_still_read_and_still_inspected(tmp_path):
-    """O8. A configuration key need not be valid UTF-8, and Git reads one that
-    is not without complaint.
-
-    `_run` decodes text with `surrogateescape` and `nul_paths` decodes the same
-    way, both deliberately: a byte string that cannot be decoded must still
-    reach a checker, because refusing to represent it is how it goes unexamined.
-    Handing `nul_paths` a str meant re-encoding it, and a bare `.encode()`
-    cannot invert a `surrogateescape` decode — so a repository carrying a
-    non-UTF-8 subsection name raised `UnicodeEncodeError` out of every governed
-    read: a denial naming no cause, which is neither of this module's refusals.
-    Found by an independent reading, and it predated the scope repair on the
-    line the repair rewrote.
-
-    Both directions are asserted. The harmless case must READ, and the
-    program-valued case must still be FOUND — a fix that made the undecodable
-    key merely disappear would pass the first half and open the hole the whole
-    check exists to close.
-    """
-    harmless = _committed(tmp_path, "undecodable")
-    (harmless / ".git" / "config").write_bytes(
-        (harmless / ".git" / "config").read_bytes()
-        + b'[remote "caf\xe9"]\n\turl = https://example.invalid/x\n')
-    assert gitread.program_valued_config(harmless) == []
-    assert gitread._run(harmless, "ls-files", timeout=30).strip() == "f.txt"
-
-    declared = _committed(tmp_path, "undecodable_program")
-    (declared / ".git" / "config").write_bytes(
-        (declared / ".git" / "config").read_bytes()
-        + b'[filter "caf\xe9"]\n\tclean = /bin/cat\n')
-    assert gitread.program_valued_config(declared) == ["filter.caf\udce9.clean"]
-    with pytest.raises(_IntegrityError):
-        gitread._run(declared, "ls-files", timeout=30)
-
-
 def _ssh_program_repo(tmp_path, name):
     """A repository whose `core.sshCommand` is a local program that leaves a
     marker, so whether Git ran it is a fact on disk rather than an inference."""
@@ -1276,36 +928,6 @@ def _ssh_program_repo(tmp_path, name):
     _git(repo, "config", "core.sshCommand", str(program))
     _git(repo, "remote", "add", "origin", "ssh://example.invalid/x.git")
     return repo, marker
-
-
-def test_an_ssh_command_is_refused_when_ssh_is_actually_enabled(tmp_path):
-    """O1. `core.sshcommand` is excused from the inspection because the standing
-    configuration neutralises it — but `_transport_settings` POPS that
-    neutralisation when a caller enables `ssh`, handing the repository's value
-    straight back to Git. The closure said so in its own words and was applied
-    anyway, so a repository's program ran through this module's hardened reader
-    with no network, no socket and no ssh binary involved.
-
-    The marker is the assertion. A test that only checked the refusal would pass
-    against a version that refused *after* running the program.
-    """
-    repo, marker = _ssh_program_repo(tmp_path, "sshprog")
-    enabled = ("ssh", "https", "file")
-    assert gitread.program_valued_config(repo, allow_transports=enabled) == ["core.sshcommand"]
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "ls-remote", "origin", negative_statuses=(),
-                      allow_transports=enabled)
-    assert not marker.exists(), "the repository's own ssh program was executed"
-
-
-def test_an_ssh_command_does_not_refuse_an_ordinary_read(tmp_path):
-    """O2. The other half. While `ssh` is not enabled the neutralisation IS
-    applied, the program genuinely cannot run, and refusing the repository would
-    be the over-refusal this release has already repaired twice."""
-    repo, marker = _ssh_program_repo(tmp_path, "sshprog_local")
-    assert gitread.program_valued_config(repo) == []
-    assert gitread._run(repo, "ls-files", timeout=30).strip() == "f.txt"
-    assert not marker.exists()
 
 
 def test_every_conditional_closure_is_known_to_the_inspection(tmp_path):
@@ -1385,42 +1007,6 @@ def test_the_git_protocol_closure_is_true_because_the_repository_cannot_enable_i
     assert not marker.exists(), "the repository enabled git:// and its proxy ran"
 
 
-def test_a_mixed_case_transport_name_is_pinned_in_the_repositorys_own_spelling(tmp_path):
-    """O8. Git folds a config section and variable name to lower case but keeps a
-    SUBSECTION verbatim, so `protocol.Review.allow` and `protocol.review.allow`
-    are different keys to it.
-
-    The first version of this pinning named the key from its own lowercased copy,
-    which wrote a setting the repository had never made and left the one it had
-    made in force. An independent certification reproduced it with an installed
-    remote helper whose transport name carries a capital: the helper ran, and the
-    publication verification accepted the namespace it invented.
-
-    The marker counts invocations, so a repair that merely refuses later still
-    fails this.
-    """
-    repo = _committed(tmp_path, "mixedcase")
-    marker = tmp_path / "HELPER_INVOKED"
-    helpers = tmp_path / "helpers"
-    helpers.mkdir()
-    helper = helpers / "git-remote-Review"
-    helper.write_text(
-        "#!/bin/sh\n"
-        f"printf 'x' >> {marker}\n"
-        "echo\n")
-    helper.chmod(0o755)
-    _git(repo, "config", "protocol.Review.allow", "always")
-    _git(repo, "remote", "add", "origin", "Review::example")
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setenv("PATH", f"{helpers}:{os.environ.get('PATH', '')}")
-        found, protocols = gitread._inspect(repo, 30, ())
-        assert protocols == ("Review",), "the repository's own spelling was not carried"
-        answer = gitread.probe(repo, "ls-remote", "origin", negative_statuses=())
-        assert answer.answered and not answer.ok
-    assert not marker.exists(), "the repository re-enabled a mixed-case transport and its helper ran"
-
-
 def test_a_transport_spelled_differently_from_the_enabled_one_is_still_pinned(tmp_path):
     """O9. `protocol.File.allow` and `protocol.file.allow` name DIFFERENT
     transports to Git: the first enables a `git-remote-File` helper.
@@ -1493,35 +1079,6 @@ def _superproject(tmp_path, name, *, declare=None, populate=True):
     return sup, marker
 
 
-def test_a_program_declared_in_a_submodule_is_seen_and_refused(tmp_path):
-    """O1. A populated submodule is a second repository, and Git applies ITS
-    configuration when it runs the nested `status` and `diff` an ordinary
-    superproject read requires. The inspection listed only the superproject's
-    configuration, so a clean filter declared one directory down was invisible.
-
-    The finding names the path, because a refusal that says only which key was
-    found leaves the operator to search for which repository declared it.
-    """
-    sup, _ = _superproject(tmp_path, "sm_seen", declare="filter.x.clean")
-    assert gitread.program_valued_config(sup) == ["sub: filter.x.clean"]
-    with pytest.raises(_IntegrityError):
-        gitread._run(sup, "status", "--porcelain", timeout=30)
-
-
-def test_a_submodule_program_does_not_run_through_whitespace_damage(tmp_path):
-    """O2. The reproduced route was this pack's own `workspace_report`, through
-    `whitespace_damage` → `diff --check` → Git's nested `status`. Nine
-    executions in one run of the original reproduction.
-
-    The marker is the assertion; refusing after the program has already run
-    would satisfy a test that only checked for the refusal.
-    """
-    sup, marker = _superproject(tmp_path, "sm_run", declare="filter.x.clean")
-    with pytest.raises(_IntegrityError):
-        gitread.whitespace_damage(sup)
-    assert not marker.exists(), "the submodule's own program ran through the guarded reader"
-
-
 def test_a_superproject_with_an_ordinary_submodule_still_reads(tmp_path):
     """O3. The bound. A submodule that declares nothing must cost nothing: the
     rule applied is the one the superproject already lives under, not a new
@@ -1568,23 +1125,6 @@ def test_a_tracked_symlink_to_another_repository_is_not_walked(tmp_path):
     assert gitread._run(repo, "ls-files", timeout=30).strip()
 
 
-def test_nesting_past_the_bound_refuses_rather_than_reporting_what_it_saw(tmp_path):
-    """O6. The walk is bounded because submodules nest and a repository can be
-    arranged to link to itself. Exceeding the bound must REFUSE: returning what
-    the walk managed to look at is a partial inspection reported as a clean one,
-    which is this check's own fail-open class.
-
-    Driven by lowering the bound rather than by building thirty-three nested
-    repositories; what is under test is the branch, not the arithmetic.
-    """
-    sup, _ = _superproject(tmp_path, "sm_deep")
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(gitread, "MAXIMUM_NESTED_DEPTH", 0)
-        with pytest.raises(_IntegrityError) as refused:
-            gitread.program_valued_config(sup)
-    assert "not a clean one" in str(refused.value)
-
-
 def _superproject_with_diff_helper(tmp_path, name, *, where):
     """A superproject and submodule where `where` ("outer" or "sub") declares a
     `diff.external` helper that leaves a marker if Git runs it."""
@@ -1599,85 +1139,6 @@ def _superproject_with_diff_helper(tmp_path, name, *, where):
     return sup, marker
 
 
-def test_a_diff_helper_in_a_submodule_is_not_closed_by_an_outer_flag(tmp_path):
-    """O1. `diff.external` is excused because this module passes `--no-ext-diff`.
-    That flag is on the OUTER command line, and the nested `diff` Git runs for
-    `diff.submodule=diff` does not inherit it — so the closure was applied one
-    directory down where its mechanism does not reach, and the submodule's
-    helper ran while the inspection reported nothing.
-
-    A closure reaches only as far as its mechanism does.
-    """
-    sup, marker = _superproject_with_diff_helper(tmp_path, "flagsub", where="sub")
-    assert gitread.program_valued_config(sup) == ["sub: diff.external"]
-    with pytest.raises(_IntegrityError):
-        gitread.probe(sup, "diff", negative_statuses=())
-    assert not marker.exists(), "the submodule's diff helper ran"
-
-
-def test_a_diff_helper_in_the_outer_repository_stays_closed(tmp_path):
-    """O2. The bound. The flags DO reach the repository they are passed to, so
-    the same key there is genuinely closed and must not start refusing — the
-    over-refusal this release has repaired twice already."""
-    sup, marker = _superproject_with_diff_helper(tmp_path, "flagouter", where="outer")
-    assert gitread.program_valued_config(sup) == []
-    assert gitread.probe(sup, "diff", negative_statuses=()).ok
-    # And the argument that would reach the driver on a verb carrying no
-    # `--no-textconv` is refused outright, so the closure stays true rather than
-    # being narrowed: `status -v` prints a patch and applies textconv drivers.
-    with pytest.raises(_IntegrityError):
-        gitread.probe(sup, "status", "-v", negative_statuses=())
-    assert gitread.probe(sup, "status", "--porcelain", negative_statuses=()).answered
-    assert not marker.exists()
-
-
-def test_a_walk_that_cannot_look_refuses_rather_than_finding_nothing(tmp_path):
-    """The nested walk replaced an index listing, and the property it carried has
-    to survive the change of mechanism.
-
-    The index listing was wrapped in `except GitRefusal: return []`, so a read
-    past the caller's deadline reported no nested repositories — limitation 14
-    written again. The walk is a filesystem traversal now and has no deadline of
-    its own, but it can still fail to look, and a directory it could not read is
-    not a directory it has cleared.
-    """
-    sup, _ = _superproject(tmp_path, "walk_blind")
-    real = os.scandir
-
-    def blind(path):
-        raise PermissionError(13, "Permission denied", str(path))
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(gitread.os, "scandir", blind)
-        with pytest.raises(_IntegrityError) as refused:
-            gitread.program_valued_config(sup)
-    assert "could not look" in str(refused.value)
-    # And the guarantee it protects: nothing proceeds on that answer.
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(gitread.os, "scandir", blind)
-        with pytest.raises(_IntegrityError):
-            gitread._run(sup, "status", "--porcelain", timeout=30)
-
-
-def test_the_configuration_read_still_surfaces_its_own_timeout(tmp_path):
-    """The walk no longer runs Git, so it has no timeout to swallow — but the
-    configuration read beside it does, and that guarantee is unchanged. Asserted
-    here so the removal of the index listing cannot quietly take it along."""
-    repo = _committed(tmp_path, "cfg_timeout")
-    real = gitread._run
-
-    def slow_config(repository, *args, **kwargs):
-        if args[:1] == ("config",):
-            raise GitRefusal("git invocation timed out", timeout=0.001)
-        return real(repository, *args, **kwargs)
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(gitread, "_run", slow_config)
-        with pytest.raises(GitRefusal) as refusal:
-            gitread.program_valued_config(repo)
-    assert "timed out" in str(refusal.value)
-
-
 def test_every_flag_based_closure_is_declared(tmp_path):
     """O6. A closure whose stated reason rests on a command-line flag has to be
     declared as one, or the next entry added will quietly cover a nested
@@ -1687,111 +1148,6 @@ def test_every_flag_based_closure_is_declared(tmp_path):
         assert mentions_flag == (key in gitread.FLAG_BASED_CLOSURES), (
             f"{key!r} is justified by {reason!r}; declare it in FLAG_BASED_CLOSURES "
             f"if that reason is a command-line flag, which does not reach a nested repository")
-
-
-def test_a_textconv_driver_is_refused_on_a_verb_the_flag_never_reaches(tmp_path):
-    """O1. `diff.*.textconv` is excused as "disabled by `--no-textconv`". That
-    flag goes on the diff-producing verbs, and `git status -v` prints a patch,
-    applies textconv drivers, and accepts no `--no-textconv` by any spelling —
-    so the closure's mechanism could not reach it and the driver ran twice.
-
-    Closed by refusing the argument rather than by narrowing the closure: this
-    module controls its own command line, and `status --porcelain` reaches no
-    driver and keeps working.
-    """
-    repo = _committed(tmp_path, "textconv")
-    marker = tmp_path / "textconv-MARKER"
-    driver = tmp_path / "textconv.sh"
-    driver.write_text(f"#!/bin/sh\nprintf 'x' >> {marker}\necho converted\n")
-    driver.chmod(0o755)
-    (repo / "a.dat").write_text("x\n")
-    (repo / ".gitattributes").write_text("*.dat diff=t\n")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "one")
-    _git(repo, "config", "diff.t.textconv", str(driver))
-    (repo / "a.dat").write_text("y\n")
-    _git(repo, "add", "a.dat")
-
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "status", "-v", negative_statuses=())
-    with pytest.raises(_IntegrityError):
-        gitread.probe(repo, "status", "--verbose", negative_statuses=())
-    assert not marker.exists(), "the repository's textconv driver ran"
-    # SCOPED TO THE VERB, and the bound matters as much as the refusal. `-v` on
-    # `check-ignore` names the matching rule and executes nothing; this pack's
-    # own workspace report asks for it, and refusing the spelling everywhere
-    # refused a reader that runs no repository code at all.
-    assert gitread.probe(repo, "check-ignore", "-v", "a.dat",
-                         negative_statuses=(1,)).answered
-
-
-def test_a_textconv_driver_stays_closed_where_the_flag_is_passed(tmp_path):
-    """O2. The bound. The diff verbs do carry `--no-textconv`, and a repository
-    that merely configures a driver must still be readable there — and through
-    the ordinary porcelain status, which produces no patch at all."""
-    repo = _committed(tmp_path, "textconv_ok")
-    driver = tmp_path / "textconv_ok.sh"
-    driver.write_text("#!/bin/sh\necho converted\n")
-    driver.chmod(0o755)
-    _git(repo, "config", "diff.t.textconv", str(driver))
-    assert gitread.program_valued_config(repo) == []
-    assert gitread.probe(repo, "diff", negative_statuses=()).answered
-    assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
-
-
-def test_a_nested_repository_not_in_the_index_is_still_inspected(tmp_path):
-    """O3. Git's inline submodule diff opens `<path>/.git` from the WORKING TREE
-    for a gitlink change in the commit being read, whether or not that path is
-    still a gitlink — and `git rm` of a submodule leaves exactly such a directory
-    behind on every other machine. A walk over index gitlinks listed none of
-    them, so the nested configuration went uninspected and its helper ran.
-    """
-    sup, marker = _superproject_with_diff_helper(tmp_path, "stale", where="sub")
-    # Move the submodule's own HEAD so the superproject records a GITLINK change:
-    # that is what makes Git open the nested repository when the commit is shown.
-    (sup / "sub" / "s.txt").write_text("moved\n")
-    _git(sup / "sub", "add", "-A")
-    _git(sup / "sub", "commit", "-q", "-m", "s2")
-    _git(sup, "add", "sub")
-    _git(sup, "commit", "-q", "-m", "bump")
-    bump = _git(sup, "rev-parse", "HEAD").strip()
-    # Stop tracking it, leaving the populated directory behind — which is what a
-    # `git rm` of a submodule leaves on every other machine. `add -u` touches
-    # only tracked paths, so it does not re-add the directory as an embedded repo.
-    _git(sup, "rm", "-q", "-r", "--cached", "sub")
-    (sup / ".gitmodules").unlink(missing_ok=True)
-    _git(sup, "add", "-u")
-    _git(sup, "commit", "-q", "-m", "remove sub")
-
-    assert "sub" in gitread._nested_repository_paths(sup, 30)
-    assert gitread.program_valued_config(sup) == ["sub: diff.external"]
-    with pytest.raises(_IntegrityError):
-        gitread.probe(sup, "show", bump, negative_statuses=())
-    assert not marker.exists(), "the stale nested repository's helper ran"
-
-
-def test_the_walk_stops_at_each_nested_repository(tmp_path):
-    """O7. Descent stops where a repository begins: a nested repository's own
-    nesting is the recursion's business, not this walk's.
-
-    Without the stop the walk traverses every nested repository's whole working
-    tree from the outer root and reports the same repository twice, once at a
-    path relative to the wrong root. Mutation found it — the duplicate refusals
-    still refused, so no safety test noticed.
-    """
-    sup, _ = _superproject(tmp_path, "stopwalk")
-    inner = sup / "sub" / "deeper"
-    inner.mkdir()
-    _git(inner, "init", "-q", "-b", "main")
-    _git(inner, "config", "user.email", "t@e.invalid")
-    _git(inner, "config", "user.name", "T")
-    (inner / "d.txt").write_text("d\n")
-    _git(inner, "add", "-A")
-    _git(inner, "commit", "-q", "-m", "d1")
-
-    assert gitread._nested_repository_paths(sup, 30) == ["sub"], (
-        "the walk descended past a repository boundary instead of leaving the "
-        "nested repository's own nesting to the recursion")
 
 
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
@@ -1806,31 +1162,6 @@ def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
     _git(repo, "commit", "-q", "-m", "base")
     assert gitread.program_valued_config(repo) == []
     assert gitread._run(repo, "rev-parse", "HEAD", timeout=30).strip()
-
-
-@pytest.mark.parametrize("verb", [
-    ("ls-files",), ("status", "--porcelain"), ("diff", "--stat"),
-    ("log", "--oneline", "-1"), ("cat-file", "-t", "HEAD"), ("for-each-ref",),
-])
-def test_the_root_binding_covers_every_verb_not_only_the_enumeration(tmp_path, verb):
-    """M4. Every binding test drove `ls-files`, so *for every caller, every verb*
-    was enforced by code and pinned by nothing. A redirect must refuse whatever
-    the caller happened to ask for."""
-    repo = tmp_path / "bound"
-    repo.mkdir()
-    elsewhere = tmp_path / "away"
-    elsewhere.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "t@e.invalid")
-    _git(repo, "config", "user.name", "T")
-    (repo / "f.txt").write_text("hello\n")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "base")
-    assert gitread._run(repo, *verb, timeout=30) is not None
-
-    _git(repo, "config", "core.worktree", str(elsewhere))
-    with pytest.raises(_IntegrityError, match="different directory"):
-        gitread._run(repo, *verb, timeout=30)
 
 
 def test_a_root_reached_through_a_symlink_is_the_same_root(tmp_path):
@@ -1878,44 +1209,6 @@ def _slow_worktree_config(tmp_path, name):
     return repo
 
 
-def test_a_worktree_inspection_that_times_out_does_not_clear_the_read(tmp_path):
-    """A deadline the caller set is the caller's refusal, not a clean bill of health.
-
-    The first version of the worktree inspection wrapped its read in
-    `except GitRefusal: pass`, reasoning that it errors when the extension is
-    off. It does — and it also errors when it TIMES OUT. So a per-worktree
-    configuration large enough to outlast a caller-supplied deadline cleared the
-    inspection and the governed read proceeded, with `filter.x.clean` applied by
-    Git the whole time. Reproduced by an independent reading against real Git.
-    """
-    repo = _slow_worktree_config(tmp_path, "slowwt")
-    assert gitread.program_valued_config(repo, timeout=30) == ["filter.x.clean"], (
-        "the fixture does not mean what it says: the key is not configured")
-
-    # Calibrated against the read the inspection actually performs. An earlier
-    # version timed `--local` and `--worktree` separately and set a deadline
-    # between them, which stopped meaning anything the moment the inspection
-    # stopped being two reads: the single scope-labelled read finished inside
-    # that budget and the oracle passed without ever reaching a timeout.
-    cost = _timed(repo)
-    # Capped as well as scaled. The budget came from one warm measurement, so a
-    # transient inflation of that measurement alone would raise the deadline
-    # above the real read and the oracle would stop biting. A smaller budget can
-    # only make the timeout more certain, which is the direction this test wants.
-    budget = min(cost / 4, 0.02)
-    if budget <= 0:
-        pytest.skip("this host reads the configuration too fast to time")
-
-    # NOT `== []`. The failure being guarded is precisely an inspection that
-    # cannot finish and reports nothing found, so an empty list here is the
-    # defect and must not be mistaken for a pass.
-    with pytest.raises(GitRefusal) as refusal:
-        gitread.program_valued_config(repo, timeout=budget)
-    assert "timed out" in str(refusal.value)
-    with pytest.raises((GitRefusal, _IntegrityError)):
-        gitread._run(repo, "ls-files", timeout=budget)
-
-
 def _timed(repository):
     """How long the inspection's own read of this repository takes, warm."""
     import time
@@ -1925,31 +1218,6 @@ def _timed(repository):
     gitread._run(repository, "config", "--list", "--name-only", "--show-scope", "-z",
                  timeout=30)
     return time.monotonic() - start
-
-
-def test_an_unreadable_worktree_configuration_is_refused_not_cleared(tmp_path):
-    """A check that cannot read its subject has not cleared it.
-
-    Answered by the handler that already owns every failure of this read, not by
-    a second one beside it: Git validates `config.worktree` during the LOCAL
-    read as well, so a malformed file fails before the worktree listing is even
-    attempted. Written first as its own `except`, and a mutation showed that
-    half of it was unreachable.
-    """
-    repo = tmp_path / "brokenwt"
-    repo.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "t@e.invalid")
-    _git(repo, "config", "user.name", "T")
-    (repo / "f.txt").write_text("hello\n")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "base")
-    _git(repo, "config", "extensions.worktreeConfig", "true")
-    (repo / ".git" / "config.worktree").write_text("[broken\nnot valid config\n")
-    with pytest.raises(_IntegrityError):
-        gitread.program_valued_config(repo, timeout=30)
-    with pytest.raises(_IntegrityError):
-        gitread._run(repo, "ls-files", timeout=30)
 
 
 def test_a_repository_without_the_extension_is_not_asked_a_second_time(tmp_path):
@@ -1964,3 +1232,755 @@ def test_a_repository_without_the_extension_is_not_asked_a_second_time(tmp_path)
     _git(repo, "commit", "-q", "-m", "base")
     assert gitread.program_valued_config(repo, timeout=30) == []
     assert gitread._run(repo, "rev-parse", "HEAD", timeout=30).strip()
+
+
+# --- the sterile boundary: what the enumeration used to promise, measured -------------
+#
+# Every test below replaces one this file used to carry. The old ones asserted
+# that a repository declaring a program-valued key was REFUSED. These assert the
+# stronger thing: the program does not RUN. `docs/RP2.5.0-RECURRENCE-MAP.md` is
+# why the difference matters — refusal was a proxy, and narrowing the proxy to
+# stop over-refusing is what produced an under-refusal and an over-refusal in the
+# same edit.
+
+
+import json as _json
+import shutil as _shutil
+
+import sterile as _sterile
+
+
+def _marker_script(tmp_path):
+    """A program that records having run. `did_it_run` is then a measurement."""
+    marker = tmp_path / "marker.txt"
+    marker.write_bytes(b"")
+    script = tmp_path / "record-that-i-ran"
+    script.write_text(
+        '#!/bin/sh\nprintf RAN >> "%s"\n'
+        'if [ -n "${1:-}" ]; then cat "$1"; else cat; fi\n' % marker
+    )
+    script.chmod(0o755)
+    return script, marker
+
+
+def _hostile(repo, script, *, attributes="* diff=evil filter=evil\n"):
+    """Every ordinary route by which a repository names a program for Git to run."""
+    for key in ("filter.evil.clean", "filter.evil.smudge", "diff.evil.textconv",
+                "diff.external", "core.fsmonitor", "core.alternateRefsCommand",
+                "core.pager", "core.editor", "credential.helper", "gpg.program",
+                "sequence.editor", "uploadpack.packObjectsHook", "core.gitProxy"):
+        _git(repo, "config", key, str(script))
+    if attributes is not None:
+        (repo / ".gitattributes").write_text(attributes)
+
+
+def _did_it_run(marker):
+    return marker.stat().st_size if marker.exists() else 0
+
+
+def _commit_all(repo, name="f.txt", body="hello\n"):
+    (repo / name).write_text(body)
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c")
+
+
+def _real_git(repo, *args):
+    return subprocess.run(["git", *args], cwd=str(repo), capture_output=True, text=True)
+
+
+# O1 / B15a --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("option", ["-v", "-vv", "-vvv", "--verbose", "--verb", "--verbo"])
+def test_no_spelling_of_a_verb_executes_the_repositorys_driver(tmp_path, option):
+    """**B15a, the blocker that stopped 2.4.1.** Its refusal matched the two exact
+    strings `-v` and `--verbose`. Git also accepts `-vv`, `--verb` and `--verbo`,
+    and each of those ran the repository's text-conversion helper through a
+    guarded `status`. A third spelling nobody had reported was found while
+    reproducing it.
+
+    An option spelling cannot be enumerated, so nothing here enumerates one: the
+    driver is not defined in the configuration Git reads, so no spelling reaches
+    it."""
+    script, marker = _marker_script(tmp_path)
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "diff.evil.textconv", str(script))
+    (repo / ".gitattributes").write_text("* diff=evil\n")
+    _commit_all(repo)
+    (repo / "f.txt").write_text("changed\n")
+    _git(repo, "add", "-A")
+
+    marker.write_bytes(b"")
+    real = _real_git(repo, "status", option)
+    ran_for_real_git = _did_it_run(marker)
+
+    marker.write_bytes(b"")
+    answer = gitread.probe(repo, "status", option, negative_statuses=())
+    assert answer.answered, answer.cause
+    assert _did_it_run(marker) == 0, (
+        f"`git status {option}` executed the repository's helper through the boundary"
+    )
+    # THE POSITIVE CONTROL. Without it this test passes on a spelling Git ignores,
+    # and proves nothing at all.
+    assert ran_for_real_git > 0 and real.returncode == 0, (
+        f"real git did not run the helper for {option}, so this row is not a control"
+    )
+
+
+@pytest.mark.parametrize("option", ["--textconv", "--ext-diff"])
+def test_a_driver_the_caller_explicitly_asks_for_still_cannot_run(tmp_path, option):
+    """2.4.x refused these options. It no longer needs to: the driver they enable
+    is not defined in the configuration Git reads, so asking for it by name gets
+    a diff of the raw bytes. Refusing an argument was a proxy for the thing this
+    measures."""
+    script, marker = _marker_script(tmp_path)
+    repo = tmp_path / "explicit"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "diff.evil.textconv", str(script))
+    _git(repo, "config", "diff.external", str(script))
+    (repo / ".gitattributes").write_text("* diff=evil\n")
+    _commit_all(repo)
+    (repo / "f.txt").write_text("changed\n")
+    _git(repo, "add", "-A")
+    marker.write_bytes(b"")
+    answer = gitread.probe(repo, "diff", option, "--cached", negative_statuses=())
+    assert answer.answered, answer.cause
+    assert _did_it_run(marker) == 0
+
+
+# O2 / O12 — the name decides, the kind never does ------------------------------------
+
+def _superproject_with_nested(tmp_path, script, spelling):
+    """A superproject whose working tree holds a second repository, spelled one of
+    the ways a repository can spell it."""
+    inner = tmp_path / "inner"
+    inner.mkdir()
+    _git(inner, "init", "-q", "-b", "main")
+    (inner / ".gitattributes").write_text("* diff=evil filter=evil\n")
+    _commit_all(inner, "i.txt")
+    sup = tmp_path / "sup"
+    sup.mkdir()
+    _git(sup, "init", "-q", "-b", "main")
+    _commit_all(sup, "top.txt")
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "mod")
+    _git(sup, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "sub")
+    module = sup / ".git" / "modules" / "mod"
+    for key in ("filter.evil.clean", "diff.evil.textconv", "diff.external"):
+        _git(module, "config", key, str(script))
+    entry = sup / "mod" / ".git"
+    if spelling != "gitlink file":
+        if entry.is_dir() and not entry.is_symlink():
+            _shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    if spelling == "symlink to directory":
+        os.symlink(module, entry)
+    elif spelling == "symlink to gitlink file":
+        pointer = sup / "pointer"
+        pointer.write_text(f"gitdir: {module}\n")
+        os.symlink(pointer, entry)
+    elif spelling == "absolute gitlink file":
+        entry.write_text(f"gitdir: {module}\n")
+    (sup / "mod" / "i.txt").write_text("changed in the nested repository\n")
+    return sup
+
+
+@pytest.mark.parametrize("spelling", [
+    "gitlink file", "absolute gitlink file", "symlink to directory",
+    "symlink to gitlink file",
+])
+def test_no_spelling_of_a_nested_git_executes_the_subjects_program(tmp_path, spelling):
+    """**The blocker an independent design reading found, before implementation.**
+
+    A nested `.git` that was a SYMLINK to a directory was classified as an
+    ordinary directory symlink, copied into the constructed working tree as it
+    stood, and pointed Git back at the subject's own configuration — which Git
+    ran, on a plain `status --porcelain`.
+
+    The repair was not to add symlinks to a list of layouts. The NAME `.git`
+    decides and the kind of the entry never does, which is what this
+    parametrisation exists to hold: adding a spelling here must not require
+    adding a branch to the subject."""
+    script, marker = _marker_script(tmp_path)
+    sup = _superproject_with_nested(tmp_path, script, spelling)
+
+    marker.write_bytes(b"")
+    _real_git(sup, "status", "--porcelain")
+    _real_git(sup, "diff", "--submodule=diff")
+    ran_for_real_git = _did_it_run(marker)
+
+    for arguments in (("status", "--porcelain"), ("status", "-v"),
+                      ("diff", "--submodule=diff"), ("status", "--porcelain", "-uall")):
+        marker.write_bytes(b"")
+        answer = gitread.probe(sup, *arguments, negative_statuses=())
+        assert answer.answered, f"{arguments}: {answer.cause}"
+        assert _did_it_run(marker) == 0, (
+            f"a nested .git spelled as a {spelling} executed its own configuration "
+            f"under `git {' '.join(arguments)}`"
+        )
+    assert ran_for_real_git > 0, (
+        f"real git ran no program for the {spelling} fixture, so this row carries no "
+        f"positive control and proves nothing"
+    )
+
+
+@pytest.mark.parametrize("kind", ["dangling symlink", "empty file", "fifo"])
+def test_a_nested_repository_that_cannot_be_rebuilt_refuses_the_read(tmp_path, kind):
+    """Fail-closed, by name. What cannot be rebuilt sterile is not read past: the
+    alternative leaves the subject's own git directory reachable from a tree Git
+    is about to read."""
+    repo = tmp_path / "outer"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _commit_all(repo)
+    nest = repo / "nest"
+    nest.mkdir()
+    entry = nest / ".git"
+    if kind == "dangling symlink":
+        os.symlink(tmp_path / "nothing-is-here", entry)
+    elif kind == "empty file":
+        entry.write_text("")
+    else:
+        os.mkfifo(entry)
+    answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    assert not answer.answered
+    assert "could not be rebuilt" in answer.cause
+    assert "nest" in answer.cause, (
+        "the refusal does not name the repository that caused it, and `probe` reports a "
+        "refusal by its cause alone"
+    )
+    with pytest.raises(GitRefusal) as caught:
+        gitread._run(repo, "status", "--porcelain")
+    assert caught.value.detail.get("nested") == "nest"
+
+
+@pytest.mark.parametrize("how", ["copied in", "symlinked out", "dangling"])
+def test_a_foreign_git_in_the_view_refuses_the_read(tmp_path, how):
+    """The post-condition, on its own, against a view the loop never made.
+
+    The loop that builds the view is an argument; this check is the evidence. It
+    must refuse a `.git` that arrived by a route nobody predicted — including one
+    COPIED into the build, which an earlier version of this check accepted because
+    it only asked whether the entry resolved somewhere under the scratch
+    directory. Membership in the set of directories this build actually made is
+    what it asks now."""
+    subject = tmp_path / "subject"
+    (subject / "nest").mkdir(parents=True)
+    _git(subject, "init", "-q", "-b", "main") if False else None
+    scratch = tmp_path / "scratch"
+    view = scratch / "view"
+    (view / "nest").mkdir(parents=True)
+    foreign = tmp_path / "foreign.git"
+    foreign.mkdir()
+    (foreign / "config").write_text("[diff]\n\texternal = /bin/echo\n")
+
+    entry = view / "nest" / ".git"
+    if how == "copied in":
+        _shutil.copytree(foreign, entry)
+    elif how == "symlinked out":
+        os.symlink(foreign, entry)
+    else:
+        os.symlink(tmp_path / "nothing-is-here", entry)
+
+    with pytest.raises(Exception) as caught:
+        _sterile._every_git_in_the_view_is_ours(view, built=set())
+    rendered = str(caught.value) + getattr(caught.value, "cause", "")
+    assert "not one this build made" in rendered or "does not resolve" in rendered
+
+
+# O3 / B15b — over-refusal is the same defect as under-refusal ------------------------
+
+def test_an_unrelated_ignored_checkout_leaves_the_project_readable(tmp_path):
+    """**B15b, the other blocker that stopped 2.4.1.** An IGNORED, never-a-submodule
+    checkout made the whole project unreadable: real Git exits 0, the guarded read
+    refused, and this pack's own `workspace_report` broke on it. Ignored
+    dependency caches are ordinary project contents."""
+    script, marker = _marker_script(tmp_path)
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / ".gitignore").write_text("cache/\n")
+    (repo / "src").mkdir()
+    (repo / "src" / "m.py").write_text("x = 1\n")
+    _commit_all(repo, "keep.txt")
+    dependency = repo / "cache" / "dependency"
+    dependency.mkdir(parents=True)
+    _git(dependency, "init", "-q", "-b", "main")
+    _git(dependency, "config", "filter.review.clean", str(script))
+    (dependency / "f.txt").write_text("dep\n")
+    (repo / "untracked.py").write_text("y = 2\n")
+
+    for arguments in (("status", "--porcelain"), ("status", "--porcelain", "-uall")):
+        marker.write_bytes(b"")
+        expected, got = _exactly_as_real_git(repo, *arguments)
+        assert expected is not None, f"real git refused {arguments}, so this proves nothing"
+        assert got == expected, f"`git {' '.join(arguments)}` disagreed with real git"
+        assert _did_it_run(marker) == 0
+    marker.write_bytes(b"")
+    ignored = gitread.probe(repo, "check-ignore", "-v", "cache/dependency/f.txt",
+                            negative_statuses=(1,))
+    assert ignored.answered and "cache/" in ignored.value
+    assert _did_it_run(marker) == 0
+
+    import workspace_report
+    classified = workspace_report.classify_workspace(repo, safe_generated=("cache/**",))
+    assert classified is not None
+
+
+# O4 — the invariant, asked of Git rather than asserted -------------------------------
+
+def test_every_configuration_source_git_reports_is_one_the_harness_wrote(tmp_path):
+    """**The invariant itself**, and it is checked by asking Git which files it
+    read rather than by predicting which it would. A source outside the build
+    fails this without anybody having to have thought of it."""
+    script, _marker = _marker_script(tmp_path)
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _hostile(repo, script)
+    (repo / ".git" / "extra").write_text(f'[diff "evil"]\n\ttextconv = {script}\n')
+    _git(repo, "config", "include.path", "extra")
+    _commit_all(repo)
+
+    read = _sterile.build(repo)
+    try:
+        listed = subprocess.run(
+            ["git", "config", "--list", "--show-origin", "--show-scope"],
+            cwd=str(read.cwd), env=read.environment, capture_output=True, text=True,
+        )
+        assert listed.returncode == 0, listed.stderr
+        origins = []
+        for line in listed.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[1].startswith("file:"):
+                origins.append(parts[1][len("file:"):])
+        assert origins, "git reported no configuration source at all, so nothing was checked"
+        for origin in origins:
+            resolved = os.path.realpath(origin)
+            assert resolved.startswith(os.path.realpath(str(read.scratch))), (
+                f"git read configuration from {origin}, which this harness did not write"
+            )
+    finally:
+        read.discard()
+
+
+# O5 — a store this build cannot import refuses rather than answering -----------------
+
+def test_a_ref_store_the_build_cannot_import_is_refused_not_answered(tmp_path):
+    """Without this the worst failure available to a read happened: a `reftable`
+    subject reported every tracked file as newly ADDED, at exit 0. Two unknowns
+    comparing equal is not agreement."""
+    repo = tmp_path / "reftable-subject"
+    repo.mkdir()
+    created = subprocess.run(["git", "init", "-q", "-b", "main", "--ref-format=reftable", "."],
+                             cwd=str(repo), capture_output=True, text=True)
+    if created.returncode != 0:
+        pytest.skip("this git does not support the reftable ref store")
+    _commit_all(repo)
+    real = _real_git(repo, "status", "--porcelain")
+    assert real.returncode == 0, "the fixture is not readable by real git, so it proves nothing"
+    answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    assert not answer.answered, "a ref store this build cannot import was answered about"
+    assert "HEAD" in answer.cause
+
+
+def test_an_unborn_repository_is_answered_not_refused(tmp_path):
+    """The other side of the same discrimination. An unborn branch is a repository
+    with no commit; a ref store this build cannot read is one it must not answer
+    about. Collapsing them is what let the wrong answer through."""
+    repo = tmp_path / "unborn"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "new.txt").write_text("new\n")
+    real = _real_git(repo, "status", "--porcelain")
+    answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    assert answer.answered, answer.cause
+    assert answer.value == real.stdout.strip()
+
+
+# O6 — a read leaves the subject byte-identical ---------------------------------------
+
+def _fingerprint(root):
+    import hashlib
+
+    digest = hashlib.sha256()
+    for base, directories, files in os.walk(root):
+        directories.sort()
+        for name in sorted(files):
+            path = os.path.join(base, name)
+            digest.update(os.path.relpath(path, root).encode("utf-8", "surrogateescape"))
+            try:
+                with open(path, "rb") as handle:
+                    digest.update(handle.read())
+            except OSError:
+                digest.update(b"<unreadable>")
+    return digest.hexdigest()
+
+
+def test_a_governed_read_leaves_the_subject_byte_identical(tmp_path):
+    """The index is COPIED for this reason: a `status` refresh writes an index, and
+    it must be ours. Asserted over the working tree AND the git directory."""
+    script, _marker = _marker_script(tmp_path)
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _hostile(repo, script)
+    _commit_all(repo)
+    (repo / "f.txt").write_text("changed\n")
+    before = _fingerprint(repo)
+    for arguments in (("status", "--porcelain"), ("status", "-v"), ("diff",),
+                      ("log", "-p", "-1"), ("ls-files", "-z")):
+        gitread.probe(repo, *arguments, negative_statuses=())
+    assert _fingerprint(repo) == before, "a governed read changed the repository it read"
+
+
+# O7 — TRACE2 as a falsification oracle, never as the barrier -------------------------
+
+def test_git_starts_no_child_process_during_a_governed_read(tmp_path):
+    """`GIT_TRACE2_EVENT` reports every child process Git starts, so it can
+    falsify the claim that none was started. **It is an oracle and not the
+    barrier**: it observes after the fact, and detection after execution is not
+    prevention. The design records it as rejected in that role."""
+    script, marker = _marker_script(tmp_path)
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _hostile(repo, script)
+    _commit_all(repo)
+    (repo / "f.txt").write_text("changed\n")
+
+    trace = tmp_path / "trace.json"
+    # RESET AFTER THE FIXTURE, NOT BEFORE IT. Building the fixture runs `git add`,
+    # which runs the repository's own clean filter — that is real git doing what
+    # real git does, and counting it here would report a leak that is not one.
+    marker.write_bytes(b"")
+    read = _sterile.build(repo)
+    try:
+        environment = dict(read.environment)
+        environment["GIT_TRACE2_EVENT"] = str(trace)
+        subprocess.run(["git", "status", "-v"], cwd=str(read.cwd), env=environment,
+                       capture_output=True, text=True)
+    finally:
+        read.discard()
+    started = []
+    if trace.exists():
+        for line in trace.read_text(errors="replace").splitlines():
+            try:
+                event = _json.loads(line)
+            except ValueError:
+                continue
+            if event.get("event") == "child_start":
+                started.append(" ".join(event.get("argv", [])))
+    assert trace.exists(), "no trace was written, so this oracle observed nothing"
+    assert not any(str(script) in one for one in started), (
+        f"git started the repository's own program: {started}"
+    )
+    assert _did_it_run(marker) == 0
+
+
+# O8 / O9 — a projection reports, and no refusal depends on one -----------------------
+
+def test_a_projection_reports_without_refusing(tmp_path):
+    """`program_valued_config` used to decide whether a read happened. It reports
+    now, and reporting must not make a repository unreadable — which is exactly
+    the over-refusal that broke `workspace_report`."""
+    repo = _repo_setting(tmp_path, "filter.f.clean")
+    assert gitread.program_valued_config(repo) == ["filter.f.clean"]
+    assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
+
+
+@pytest.mark.parametrize("key", [
+    "alias.x", "merge.m.driver", "submodule.a.update", "protocol.ext.command",
+    "remote.o.vcs", "trailer.t.command", "interactive.difffilter", "guitool.g.cmd",
+    "filter.f.clean", "filter.f.smudge", "filter.f.process",
+    "core.pager", "core.editor", "diff.external", "credential.helper",
+])
+def test_a_program_valued_key_is_reported_and_the_repository_still_reads(tmp_path, key):
+    """The same key set the removed refusal test carried, asserting the stronger
+    property. Every one of these used to divide into "refused" and "closed"; the
+    division is gone because neither outcome can execute anything now."""
+    repo = _repo_setting(tmp_path, key)
+    assert gitread.program_valued_config(repo) == [key.lower()]
+    answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    assert answer.answered, answer.cause
+
+
+def test_no_refusal_depends_on_a_projection(tmp_path, monkeypatch):
+    """**The constraint the founder attached to keeping these names.** A projection
+    is a view of what a repository declares; it must never be a second answer to
+    the security question. Emptying every one of them must change no refusal and
+    no answer."""
+    script, marker = _marker_script(tmp_path)
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _hostile(repo, script)
+    _commit_all(repo)
+    (repo / "f.txt").write_text("changed\n")
+
+    marker.write_bytes(b"")
+    before = gitread.probe(repo, "status", "-v", negative_statuses=())
+    assert _did_it_run(marker) == 0
+
+    monkeypatch.setattr(gitread, "PROGRAM_VALUED_CONFIG", ())
+    monkeypatch.setattr(gitread, "CLOSED_PROGRAM_KEYS", {})
+    monkeypatch.setattr(gitread, "FLAG_BASED_CLOSURES", {})
+    monkeypatch.setattr(gitread, "CONDITIONAL_CLOSURES", {})
+    marker.write_bytes(b"")
+    after = gitread.probe(repo, "status", "-v", negative_statuses=())
+    assert after.answered == before.answered and after.value == before.value, (
+        "emptying the projections changed a governed answer, so one of them is load-bearing"
+    )
+    assert _did_it_run(marker) == 0, (
+        "emptying the projections let the repository's program run, so a projection was the "
+        "barrier and the boundary is not what stops execution"
+    )
+
+
+# O15 — the operator's machine does not shape a governed answer -----------------------
+
+def test_an_operators_home_does_not_shape_a_governed_answer(tmp_path, monkeypatch):
+    """`GIT_CONFIG_GLOBAL` redirects the global CONFIG file and nothing else, so an
+    operator's `~/.config/git/ignore` was still read and a governed `status`
+    silently dropped an untracked file. Found by an independent design reading.
+    `git config --show-scope` never lists that file, so the invariant's own check
+    could not see it: the directory is empty instead."""
+    home = tmp_path / "operator-home"
+    (home / "git").mkdir(parents=True)
+    (home / "git" / "ignore").write_text("secret-untracked.txt\n")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home))
+
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _commit_all(repo)
+    (repo / "secret-untracked.txt").write_text("this must still be reported\n")
+
+    answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    assert answer.answered, answer.cause
+    assert "secret-untracked.txt" in answer.value, (
+        "the operator's global ignore file suppressed a file from a governed answer"
+    )
+
+
+# O10 / O16 — the answer equals real Git's, wherever real Git answers ------------------
+
+def _exactly_as_real_git(repo, *arguments):
+    """Byte for byte, through `_run` rather than `probe`.
+
+    `probe` strips its value, which would hide a trailing-whitespace difference —
+    and this is the oracle that exists to catch a WRONG ANSWER, so it compares
+    what Git actually emitted."""
+    real = _real_git(repo, *arguments)
+    if real.returncode != 0:
+        return None, None
+    return real.stdout, gitread._run(repo, *arguments)
+
+
+@pytest.mark.parametrize("shape", [
+    "autocrlf", "unborn", "detached", "symref chain", "packed refs",
+    "assume unchanged", "info exclude", "sparse checkout",
+])
+def test_the_sterile_answer_equals_real_gits_answer(tmp_path, shape):
+    """Content-encoding and ref-shape cases, each of which produced a WRONG answer
+    at some point in this design's construction rather than a refusal. A wrong
+    answer is the worst thing a read can produce, so each is pinned against real
+    Git rather than against an expectation typed here."""
+    repo = tmp_path / shape.replace(" ", "-")
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+
+    if shape == "autocrlf":
+        _git(repo, "config", "core.autocrlf", "true")
+        (repo / "f.txt").write_text("one\r\ntwo\r\n", newline="")
+        _git(repo, "add", "-A")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c")
+    elif shape == "unborn":
+        (repo / "f.txt").write_text("x\n")
+    else:
+        _commit_all(repo)
+
+    if shape == "detached":
+        head = _git(repo, "rev-parse", "HEAD").strip()
+        _git(repo, "checkout", "-q", "--detach", head)
+    elif shape == "symref chain":
+        _git(repo, "symbolic-ref", "refs/heads/middle", "refs/heads/main")
+        _git(repo, "symbolic-ref", "HEAD", "refs/heads/middle")
+    elif shape == "packed refs":
+        _git(repo, "pack-refs", "--all")
+    elif shape == "assume unchanged":
+        _git(repo, "update-index", "--assume-unchanged", "f.txt")
+        (repo / "f.txt").write_text("changed underneath\n")
+    elif shape == "info exclude":
+        (repo / ".git" / "info").mkdir(exist_ok=True)
+        (repo / ".git" / "info" / "exclude").write_text("hidden.txt\n")
+        (repo / "hidden.txt").write_text("h\n")
+        (repo / "shown.txt").write_text("s\n")
+    elif shape == "sparse checkout":
+        _git(repo, "config", "core.sparseCheckout", "true")
+        (repo / ".git" / "info").mkdir(exist_ok=True)
+        (repo / ".git" / "info" / "sparse-checkout").write_text("/*\n")
+
+    compared = 0
+    for arguments in (("status", "--porcelain"), ("status", "--porcelain", "-uall"),
+                      ("rev-parse", "HEAD"), ("diff",)):
+        expected, got = _exactly_as_real_git(repo, *arguments)
+        if expected is None:
+            continue
+        compared += 1
+        assert got == expected, (
+            f"{shape}: `git {' '.join(arguments)}` answered differently from real git"
+        )
+    assert compared, f"{shape}: real git answered nothing, so this row compared nothing"
+
+
+# preserved: the guarantees the removed tests carried ---------------------------------
+
+def test_a_configuration_read_reports_the_subjects_settings_not_the_harnesss(tmp_path):
+    """A config read under this boundary would otherwise consult the git directory
+    the harness just built and answer confidently about the wrong repository —
+    a silent wrong answer, which is worse than a refusal."""
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "notes.rewriteref", "refs/notes/commits")
+    _commit_all(repo)
+    entries = gitread.config_with_origin(repo)
+    assert any(entry["key"] == "notes.rewriteref" for entry in entries), entries
+    answer = gitread.probe(repo, "config", "--get", "notes.rewriteref", negative_statuses=(1,))
+    assert answer.answered and answer.value.strip() == "refs/notes/commits"
+
+
+def test_a_repository_that_breaks_its_own_configuration_is_refused_not_read_as_empty(tmp_path):
+    """`include.path` pointing at something unparseable makes every config read
+    fail, so a repository could once disable the check that inspected it by
+    breaking itself. Nothing is inspected now — but a configuration that cannot
+    be read must still not be reported as *no settings*, because `notes.*` is a
+    surface a gate watches."""
+    repo = tmp_path / "broken"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _commit_all(repo)
+    with open(repo / ".git" / "config", "a", encoding="utf-8") as handle:
+        handle.write("[include]\n\tpath = /bin/sh\n")
+    with pytest.raises(GitRefusal) as caught:
+        gitread.config_with_origin(repo)
+    assert "cannot be reported as the whole configuration" in caught.value.render(), \
+        caught.value.render()
+    assert "include.path" in caught.value.render()
+
+
+def test_a_configuration_read_of_a_hostile_repository_runs_nothing(tmp_path):
+    """Reading configuration executes nothing — which the whole boundary depends
+    on, because `config_with_origin` parses the subject's own file with Git."""
+    script, marker = _marker_script(tmp_path)
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _hostile(repo, script)
+    _commit_all(repo)
+    marker.write_bytes(b"")
+    entries = gitread.config_with_origin(repo)
+    assert any(entry["key"] == "diff.external" for entry in entries)
+    assert _did_it_run(marker) == 0
+
+
+def test_a_redirected_worktree_cannot_move_a_governed_answer(tmp_path):
+    """`core.worktree` redirected reads to a sibling directory, so a workspace gate
+    reported no unclassified files while one sat in the project it was asked
+    about. The key is not read at all now; this holds that structurally."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "decoy.txt").write_text("decoy\n")
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _commit_all(repo)
+    _git(repo, "config", "core.worktree", str(elsewhere))
+    (repo / "the-file-that-matters.txt").write_text("here\n")
+    answer = gitread.probe(repo, "status", "--porcelain", "-uall", negative_statuses=())
+    assert answer.answered, answer.cause
+    assert "the-file-that-matters.txt" in answer.value
+    assert "decoy.txt" not in answer.value
+
+
+@pytest.mark.parametrize("verb", [
+    ("status", "--porcelain"), ("ls-files", "-z"), ("diff", "--check"),
+    ("rev-parse", "HEAD"), ("log", "--oneline", "-1"), ("check-ignore", "-v", "x"),
+])
+def test_every_verb_answers_about_the_root_it_was_given(tmp_path, verb):
+    """A release archive unpacked inside another checkout let Git discover the
+    PARENT repository and answer about it. `GIT_DIR` is explicit here, so no
+    discovery happens at all — asserted for every verb rather than for the ones
+    an enumeration remembered."""
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    _git(outer, "init", "-q", "-b", "main")
+    (outer / "outer-only.txt").write_text("outer\n")
+    _git(outer, "add", "-A")
+    _git(outer, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "o")
+    inside = outer / "unpacked"
+    inside.mkdir()
+    (inside / "inner-only.txt").write_text("inner\n")
+    answer = gitread.probe(inside, *verb, negative_statuses=(1, 128))
+    # Not a repository of its own: the read must refuse rather than silently
+    # answer about the repository above it.
+    assert not answer.answered or "outer-only.txt" not in answer.value
+
+
+def test_a_walk_that_cannot_look_refuses_rather_than_finding_nothing(tmp_path):
+    """A check that could not read its subject has not cleared it."""
+    repo = tmp_path / "subject"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _commit_all(repo)
+    locked = repo / "locked"
+    locked.mkdir()
+    (locked / "inner.txt").write_text("x\n")
+    locked.chmod(0o000)
+    try:
+        answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+        # Either it refuses, or it answers exactly as real git does — what it must
+        # not do is report a clean tree it could not look at.
+        real = _real_git(repo, "status", "--porcelain")
+        if answer.answered:
+            assert answer.value == real.stdout.strip()
+    finally:
+        locked.chmod(0o755)
+
+
+def test_concurrent_governed_reads_do_not_share_state(tmp_path):
+    """The inspection this replaces carried a thread-local re-entrancy guard, and a
+    module-level flag before that — a blind reader held one thread inside it and a
+    second read skipped its inspection entirely. There is no shared mutable state
+    now; each read builds and discards its own directory, and this is what holds
+    that."""
+    import threading
+
+    script, marker = _marker_script(tmp_path)
+    repos = []
+    for index in range(4):
+        repo = tmp_path / f"r{index}"
+        repo.mkdir()
+        _git(repo, "init", "-q", "-b", "main")
+        _hostile(repo, script)
+        _commit_all(repo)
+        repos.append(repo)
+    results = {}
+
+    def read(index):
+        results[index] = gitread.probe(repos[index], "status", "-v", negative_statuses=())
+
+    marker.write_bytes(b"")
+    threads = [threading.Thread(target=read, args=(index,)) for index in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(results) == 4
+    for index, answer in results.items():
+        assert answer.answered, f"{index}: {answer.cause}"
+    assert _did_it_run(marker) == 0

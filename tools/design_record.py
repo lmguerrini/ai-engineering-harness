@@ -325,8 +325,7 @@ class DesignRecord:
 
         found: list = []
         try:
-            top = Path(gitread._run(repository, "rev-parse", "--show-toplevel",
-                                    timeout=30).strip())
+            top = Path(gitread.repository_location(repository)["toplevel"])
             here = Path(self.path).resolve()
             relative = here.relative_to(top.resolve()).as_posix()
         except Exception as exc:

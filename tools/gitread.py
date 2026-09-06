@@ -19,11 +19,11 @@ from __future__ import annotations
 import math
 import os
 import subprocess
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 
 import instrument
+import sterile
 from errors import GitRefusal, IntegrityError
 from instrument import BlastRadius
 
@@ -43,6 +43,7 @@ __all__ = [
     "staged_entries",
     "refs",
     "config_with_origin",
+    "repository_location",
     "is_ancestor",
     "reachable_objects",
     "object_type",
@@ -417,19 +418,18 @@ def _run(
                 "this option makes an otherwise read-only command write to the filesystem",
                 verb=verb, option=option_text,
             )
-        # Both spellings. Git accepts `--submodule=diff` and `--submodule diff`,
-        # and the first version of this check knew only the first — named by a
-        # blind reader as its next probe before its own provider cut it off.
-        # `previous` carries the option this argument might be the value of.
-        if (any(option_text == form or option_text.startswith(form + "=")
-                for form in CODE_ENABLING_OPTIONS)
-                or f"{previous}={option_text}" in CODE_ENABLING_OPTIONS
-                or option_text in VERB_ENABLING_OPTIONS.get(verb, ())):
-            raise IntegrityError(
-                "this option lets the repository being read choose a program to run, and a "
-                "read-only interface that executes the subject's code is not read-only",
-                verb=verb, option=option_text,
-            )
+        # NO OPTION IS REFUSED FOR ENABLING A DRIVER ANY MORE.
+        #
+        # `--textconv`, `--ext-diff`, `--filters` and `status -v` were refused
+        # because they let the repository choose a program. They cannot: the
+        # driver they enable is not defined in the configuration Git reads.
+        # Refusing them was a proxy, and the proxy was where B15a lived — the
+        # refusal matched `-v` and `--verbose` exactly, while Git also accepts
+        # `-vv`, `--verb` and `--verbo`, each of which ran the helper. An option
+        # spelling cannot be enumerated, so nothing enumerates one now.
+        #
+        # `WRITING_OPTIONS` above is untouched: an option that makes a read WRITE
+        # is a different guarantee, and sterile execution does not provide it.
         previous = option_text
     if verb == "bundle":
         subcommand = arguments[1] if len(arguments) > 1 else ""
@@ -447,60 +447,91 @@ def _run(
             verb=verb, transports=", ".join(allow_transports),
             scoped_to=", ".join(sorted(TRANSPORT_VERBS)),
         )
-    # Asked ONCE, before anything runs, and asked of the repository rather than
-    # of this module's own list of tricks. `config --list` is itself read-only
-    # and is invoked through the same guarded path, with the recursion stopped
-    # by the verb: a `config` read does not re-enter this check.
-    # `config` is exempt as well as re-entrant calls: a configuration READ
-    # cannot execute anything, and a caller asking about a broken config is
-    # entitled to the refusal that names the real problem rather than to this
-    # check's opinion about it. Hijacking that refusal turned "your config does
-    # not parse" into a security finding about a repository nobody could read.
-    # Empty while inspecting and for `config` itself: those calls use no
-    # transport, and reading the listing is how the names are learned.
-    refuse_protocols: tuple[str, ...] = ()
-    if not _inspecting() and verb != "config":
-        # The transports this invocation enables decide which closures still
-        # hold, so the inspection is told the same thing the environment is.
-        executable, refuse_protocols = _inspect(repository, timeout, allow_transports, verb)
-        if executable:
+    # NOTHING IS INSPECTED HERE ANY MORE.
+    #
+    # Until 2.5.0 this asked the repository which of its settings named a program
+    # and refused the ones no closure covered. The read now happens in a git
+    # directory this harness built (`tools/sterile.py`), so the repository's
+    # configuration is not a configuration source for it — which is a smaller
+    # claim than "no dangerous key is set", and one Git itself can be asked to
+    # confirm. The lists that decision needed survive as published names and
+    # decide nothing.
+    #
+    # The checks that remain above are about WRITE CAPABILITY — a verb that
+    # writes, an option that makes a read write. Sterile execution does not stop
+    # `git update-ref`, so those are a different guarantee and stay exactly where
+    # they were.
+    # A CONFIG READ MUST READ THE SUBJECT'S CONFIGURATION, NOT THE HARNESS'S.
+    #
+    # Under this boundary `git config --get k` would consult the git directory
+    # this module just built, and answer confidently about the wrong repository.
+    # That is a silent wrong answer, which is the worst thing a read can produce,
+    # so a source-less config read is pointed at the subject's own file.
+    #
+    # And where the subject also has a `config.worktree`, ONE file cannot answer:
+    # the read is refused by name rather than answered from half the sources.
+    # `config_with_origin` reads both and is what a caller wanting the whole
+    # picture should use.
+    if verb == "config" and not any(
+        str(argument).split("=")[0] in ("--file", "-f", "--global", "--system", "--blob",
+                                        "--local", "--worktree")
+        for argument in arguments[1:]
+    ):
+        sources = _configuration_files_of(repository)
+        if len(sources) > 1:
             raise IntegrityError(
-                "this repository's own configuration names a program for Git to run, by a key "
-                "this module has NO NAMED CLOSURE FOR. Five separate routes to repository-chosen "
-                "execution were found in four consecutive audit rounds, each where the previous "
-                "repair could not see it, so the check is on the SHAPE of the key rather than on "
-                "the routes anybody has thought of — and an unrecognised one refuses rather than "
-                "waiting to be found",
-                repository=str(repository), keys=", ".join(executable),
+                "this repository keeps settings in more than one file, so a single config read "
+                "cannot answer about it. Use config_with_origin, which reads every source, or "
+                "name a --file",
+                repository=str(repository), sources=", ".join(str(one) for one in sources),
             )
-    # THE ANSWER IS BOUND TO THE DIRECTORY ASKED ABOUT.
+        if sources:
+            arguments = (arguments[0], "--file", str(sources[0]), *arguments[1:])
+    # A REMOTE NAME IS A CONFIGURATION LOOKUP, AND THE CONFIGURATION IS NOT READ.
     #
-    # Launching Git *in* a directory is not the same as Git answering *about*
-    # it, and two blockers came from that gap. `core.worktree` redirected reads
-    # to a sibling, so a workspace gate reported no unclassified files while one
-    # sat in the project it was asked about. And a release archive unpacked
-    # inside another checkout let Git discover the PARENT repository and return
-    # zero tracked paths scoped to the archive, so the pin digested an empty
-    # tree and said confidently that a byte-identical release was not the pinned
-    # pack.
+    # `ls-remote origin` resolves `origin` through `remote.origin.url` in the
+    # repository's own configuration — which this boundary deliberately keeps out
+    # of Git's hands, so the name stopped resolving and every publication
+    # post-condition failed with "'origin' does not appear to be a git
+    # repository". The compensation belongs here, at the boundary that caused it,
+    # rather than in each caller.
     #
-    # `pack_pin` grew a local version of this check and it did not help the
-    # other eleven callers — which is the shape this release exists to close. It
-    # lives here now, beside the environment hardening, and the local copy is
-    # gone.
+    # The URL is read from the subject's configuration as DATA and passed
+    # explicitly. That is strictly more truthful than what Git did before:
+    # `url.<base>.insteadOf` rewriting is not applied, so the address contacted
+    # is the one written in the file and visible to the caller, not one the
+    # repository rewrote on the way out.
+    if verb in TRANSPORT_VERBS:
+        resolved: list[str] = []
+        declared = sterile.config_as_data(_config_file_of(repository))
+        for argument in arguments[1:]:
+            url = declared.get(f"remote.{argument}.url")
+            resolved.append(url if url else str(argument))
+        if resolved != [str(one) for one in arguments[1:]]:
+            arguments = (arguments[0], *resolved)
+    # STANDING, NOT ONLY WHEN A TRANSPORT IS ENABLED. Pinning `protocol.allow`
+    # only for invocations that already named a transport left every other read
+    # on Git's defaults, which permit ssh, http and git:// — so the posture this
+    # module has always had, that a read reaches no network unless a caller
+    # deliberately opened one, would have been quietly dropped by the rewrite.
     #
-    # Two questions, because one does not cover the other: the REPOSITORY Git
-    # resolves must be the one at the requested root (a directory inside another
-    # checkout fails this), and where Git reports a WORKTREE at all it must be
-    # the requested root (a redirect fails this). A bare repository reports no
-    # worktree and is unaffected, which is why the second question is asked only
-    # when there is an answer.
-    if not _inspecting() and verb not in ("config", "rev-parse"):
-        _bind_answer_to(repository, timeout=timeout)
-    arguments = (
-        (arguments[0], *_NO_EXTERNAL_PROGRAMS, *arguments[1:])
-        if verb in EXTERNAL_PROGRAM_VERBS else arguments
-    )
+    # Harness policy in the harness's own config file, and no longer contested by
+    # anything: the subject's `protocol.<name>.allow` is not read at all, so the
+    # key that once let a repository re-enable `ext::` and run its own helper is
+    # not in the picture.
+    transport_config: dict[str, str] = {"protocol.allow": "never"}
+    if allow_transports:
+        for transport in allow_transports:
+            if transport not in ALLOWABLE_TRANSPORTS:
+                raise IntegrityError(
+                    "that transport is not one this module will enable for an operation",
+                    transport=transport, allowable=", ".join(ALLOWABLE_TRANSPORTS),
+                )
+            transport_config[f"protocol.{transport}.allow"] = "always"
+    # `--no-ext-diff --no-textconv` are not added. They suppressed drivers the
+    # repository defined, and the repository no longer defines any that Git can
+    # see — verified rather than assumed: an explicit `--textconv` and an explicit
+    # `--ext-diff` both execute nothing through this boundary.
     if verb in TRANSPORT_VERBS:
         # `remote.<name>.uploadpack` names a program Git runs on the far side —
         # and with a `file://` remote the far side is this machine, so a
@@ -514,19 +545,25 @@ def _run(
         # program does not run, without it it does.
         arguments = (arguments[0], "--upload-pack=git-upload-pack", *arguments[1:])
     command = ("git", *arguments)
-    environment = _environment(env_overlay, allow_transports, refuse_protocols)
-    # In text mode, decode with `surrogateescape`. A path is a byte string on
-    # POSIX and need not be valid UTF-8; the default strict decode raises
-    # `UnicodeDecodeError` from inside subprocess, which is neither a named
-    # refusal nor recoverable, so a repository containing one undecodable path
-    # takes down every text-mode read of it. Passed conditionally because
-    # supplying `errors` at all forces text mode, which would break every
-    # binary read.
+    # THE ONE BOUNDARY. Every read in this toolbelt reaches Git through here, and
+    # every one of them runs in a directory this harness constructed.
+    #
+    # NOT SCOPED BY VERB. A first draft chose the cheap path from a list of verbs
+    # that "do not need a working tree", which is the enumeration this release
+    # exists to stop writing — and it bought nothing: where the tree holds no
+    # other repository the subject's own tree is used and no copy is made.
+    # `sterile.build` decides from the tree, and refuses — rather than answering —
+    # when it cannot reproduce the subject.
+    read = sterile.build(
+        repository, overlay=env_overlay,
+        extra_config=transport_config or None, timeout=timeout,
+    )
+    environment = read.environment
     decoding = {"errors": "surrogateescape"} if text else {}
     try:
         result = instrument.launch(
             command, radius=BLAST_RADIUS,
-            cwd=_repository(repository), capture_output=True, check=False,
+            cwd=str(read.cwd), capture_output=True, check=False,
             timeout=timeout, text=text, input=input_value, env=environment, **decoding,
         )
     except subprocess.TimeoutExpired as exc:
@@ -536,6 +573,11 @@ def _run(
         ) from exc
     except OSError as exc:
         raise GitRefusal("git invocation could not be started", command=" ".join(command), error=str(exc)) from exc
+    finally:
+        # The construction is scratch state and is discarded however this ends,
+        # so that a suite of thousands of reads leaves nothing behind. Phase 11
+        # asks for zero residual scratch and this is where that is kept true.
+        read.discard()
     if result.returncode != 0:
         # Some Git commands report their finding on stdout and signal it with a
         # non-zero exit — `diff --check` is the one that matters here. A refusal
@@ -874,369 +916,74 @@ FLAG_BASED_CLOSURES = {
 #: and a project needing those filters governs that as its own decision.
 
 
-#: Re-entrancy guard for the config inspection below. **Thread-local, and a
-#: module-level flag was the first version.**
-#:
-#: A blind reader held one thread inside the inspection and issued a second
-#: public read from another: the flag was set, so the second read skipped its
-#: inspection entirely and ran against a repository nobody had checked. A guard
-#: against a function calling ITSELF became a guard against anyone calling it,
-#: which is a different and much larger claim.
-
-#:
-#: The inspection runs Git, and every Git run is inspected — so the first
-#: version guarded only on the verb `config`, and its own fallback probe
-#: (`rev-parse --git-dir`, reached whenever the config could not be read) was a
-#: DIFFERENT verb and re-entered. Two test modules that take ten seconds ran for
-#: over six minutes without finishing. A guard on the verb was a guard on one
-#: of the paths the function takes.
-_INSPECTION = threading.local()
-
-
-def _bind_answer_to(repository, *, timeout: float) -> None:
-    """Refuse when Git would answer about a directory other than the one asked about.
-
-    **The worktree is the whole question, and asking a second one was wrong.**
-    The frozen design for this repair proposed binding the resolved REPOSITORY
-    as well, on the premise that a linked worktree's git dir sits under its
-    root. It does not — it lives under the main repository — so that binding
-    refused every linked worktree, which is the layout this pack develops in.
-    Falsified by execution before it shipped; the design record carries the
-    correction rather than quietly matching what was built.
-
-    Git's own toplevel answers all four cases the certification found:
-
-    *   a linked worktree reports itself, and passes;
-    *   a standalone checkout reports itself, and passes;
-    *   `core.worktree` pointing elsewhere reports elsewhere, and refuses;
-    *   a directory inside another checkout reports that checkout, and refuses,
-        which is what stops a release archive being digested as an empty tree
-        and declared not to be the pack it byte-identically is.
-
-    A bare repository reports no worktree at all. There is nothing to bind and
-    nothing to answer wrongly about, so it is left alone.
-    """
-    here = Path(repository).resolve()
-    token = getattr(_INSPECTION, "active", False)
-    _INSPECTION.active = True
-    try:
-        try:
-            toplevel = _run(repository, "rev-parse", "--show-toplevel",
-                            timeout=timeout).strip()
-        except Exception:
-            # Not a repository, or bare, or Git cannot say. The caller's own
-            # verb produces the refusal that names the real problem; this check
-            # has nothing to add and must not hijack it.
-            return
-        if toplevel and Path(toplevel).resolve() != here:
-            raise IntegrityError(
-                "Git answers about a different directory than the one asked about, so a reading "
-                "here would describe somewhere else. Either this path sits inside another "
-                "checkout, or its configuration points at another working tree",
-                repository=str(here), answers_about=str(Path(toplevel).resolve()),
-            )
-    finally:
-        _INSPECTION.active = token
-
-
-def _inspecting() -> bool:
-    return getattr(_INSPECTION, "active", False)
+#: How deep a walk into nested repositories went before it refused. Kept as a
+#: published name; nothing decides anything with it any more, because the walk it
+#: bounded is gone.
+MAXIMUM_NESTED_DEPTH = 32
 
 
 def program_valued_config(
     repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS,
     allow_transports: tuple[str, ...] = (), verb: str = "",
 ) -> list[str]:
-    """Local config keys this repository sets whose value Git would execute.
+    """Program-valued keys this repository declares. **A REPORT, NOT A BARRIER.**
 
-    Read from the repository's OWN configuration only — the environment's
-    hardening is this module's and is not what is being inspected.
+    Until 2.5.0 this decided whether a read happened: a key with no named closure
+    refused the repository. Fifteen repairs across two releases were corrections
+    to the lists behind that decision — keys, verbs, flags, transports, option
+    spellings, nested layouts — and the last of them produced an under-refusal and
+    an over-refusal in the same edit. `docs/RP2.5.0-RECURRENCE-MAP.md` has the set.
+
+    The decision is gone. A governed read now runs in a git directory this harness
+    built, where the repository's configuration is not a source at all, so a key
+    declared here cannot be executed and refusing over one would only reproduce
+    the over-refusal that broke `workspace_report`.
+
+    What remains is the observation, for a caller that wants to know what a
+    repository declares. It reads the configuration as DATA — no Git, no
+    repository opened, nothing executed — and **no refusal in this pack depends on
+    it**, which `test_no_refusal_depends_on_a_projection` is what establishes.
     """
     import fnmatch
 
-    if _inspecting():
-        return []
-    # WITHOUT A VERB, THE CONSERVATIVE ANSWER. Some closures hold only on the
-    # verbs whose command line carries their flag, so with no verb named this
-    # cannot say they hold — and reporting a key as closed when it may not be is
-    # the direction that lets a program run. `_run` always names the real verb.
-    return _inspect(repository, timeout, allow_transports, verb)[0]
+    del timeout, allow_transports, verb          # a report is not scoped by them
+    declared = sterile.config_as_data(_config_file_of(repository))
+    found = [
+        key for key in sorted(declared)
+        if any(fnmatch.fnmatchcase(key, shape) for shape in PROGRAM_VALUED_CONFIG)
+    ]
+    return found
 
 
-#: How deep the walk into nested repositories goes before it refuses. Submodules
-#: nest, and a repository can be arranged to link to itself; a bound that refuses
-#: is the difference between a check that stops and a check that hangs.
-MAXIMUM_NESTED_DEPTH = 32
+def repository_location(repository: str | Path) -> dict:
+    """Where the subject repository is, as distinct from where this read runs.
 
-
-def _inspect(repository, timeout, allow_transports, verb="") -> tuple[list[str], tuple[str, ...]]:
-    """Both questions the one configuration listing answers: which keys name a
-    program Git would run, and which transports this repository turns on.
-
-    Asked of **every repository whose configuration Git will apply to this
-    read**, not only the one named. A populated submodule is a second repository
-    and Git applies its configuration when it runs the nested `status` and `diff`
-    an ordinary superproject read requires — so a clean filter declared there ran
-    while this function reported nothing.
+    `sterile.where_is` is the one place that answers it; this is the name the
+    toolbelt's callers use. Three of them asked Git instead, and under the
+    sterile boundary Git answers about the constructed directory — correctly,
+    and about the wrong repository.
     """
-    import fnmatch
-
-    if _inspecting():
-        return [], ()
-    _INSPECTION.active = True
-    try:
-        return _inspect_tree(repository, fnmatch, timeout, allow_transports, verb=verb)
-    finally:
-        _INSPECTION.active = False
+    return sterile.where_is(_repository(repository))
 
 
-def _nested_repository_paths(repository, timeout) -> list[str]:
-    """Directories in the working tree that hold a repository Git can open.
-
-    NOT the index. Git's inline submodule diff opens `<path>/.git` from the
-    WORKING TREE for a gitlink change in the commit being read, whether or not
-    that path is still a gitlink — and `git rm` of a submodule leaves exactly
-    such a directory behind on every other machine. A walk over mode-160000
-    entries listed none of them and the nested configuration went uninspected.
-
-    This set strictly contains the populated index gitlinks, because a populated
-    gitlink is a directory with a `.git` in it; an unpopulated one has no
-    configuration for Git to apply. So it replaces that listing rather than
-    adding to it.
-    """
-    root = Path(repository)
-    # A path that is not a directory at all is the caller's verb's business, and
-    # hijacking it here reported a missing directory as a nested-repository
-    # finding. The same rule the configuration handler beside this one uses.
-    if not root.is_dir():
-        return []
-    found = []
-    try:
-        stack = [(root, 0)]
-        while stack:
-            here, depth = stack.pop()
-            if depth > MAXIMUM_NESTED_DEPTH:
-                raise IntegrityError(
-                    "this working tree nests deeper than the inspection will walk, so whether a "
-                    "nested repository names a program for Git to run cannot be established. A "
-                    "partial inspection is not a clean one",
-                    repository=str(root), depth=depth,
-                )
-            for entry in os.scandir(here):
-                # `is_dir(follow_symlinks=False)`: a directory symlink is not a
-                # nested repository Git enters, and following one is how a walk
-                # loops or wanders outside the subject.
-                if not entry.is_dir(follow_symlinks=False):
-                    continue
-                if entry.name == ".git":
-                    continue
-                nested = Path(entry.path)
-                if (nested / ".git").exists():
-                    # Its own nesting belongs to the recursion, not to this walk.
-                    found.append(str(nested.relative_to(root)))
-                    continue
-                stack.append((nested, depth + 1))
-    except OSError as failure:
-        # REFUSED, not skipped. A walk that could not look has not established
-        # that there is nothing there.
-        raise IntegrityError(
-            "this working tree could not be walked, so whether it contains a nested repository "
-            "naming a program for Git to run cannot be established. A walk that could not look "
-            "is not a walk that found nothing",
-            repository=str(root), failure=str(failure)[:160],
-        ) from failure
-    return sorted(found)
-
-
-def _inspect_tree(repository, fnmatch, timeout, allow_transports,
-                  *, seen=None, depth=0, verb="") -> tuple[list[str], tuple[str, ...]]:
-    """The inspection applied to this repository and to every populated
-    submodule beneath it, under one rule and one set of closures."""
-    here = Path(repository).resolve()
-    seen = {here} if seen is None else seen | {here}
-    if depth > MAXIMUM_NESTED_DEPTH:
-        # REFUSES rather than returning what it managed to look at. A partial
-        # inspection is not a clean one, and this is the branch a repository
-        # arranged to nest without end would otherwise use to exhaust the walk.
-        raise IntegrityError(
-            "this repository nests deeper than the inspection will walk, so whether a nested "
-            "repository names a program for Git to run cannot be established. A partial "
-            "inspection is not a clean one",
-            repository=str(here), depth=depth,
-        )
-    found, protocols = _program_valued_config(
-        repository, fnmatch, timeout, allow_transports=allow_transports,
-        nested=depth > 0, verb=verb)
-    found = list(found)
-    protocols = list(protocols)
-    for relative in _nested_repository_paths(repository, timeout):
-        nested = (here / relative)
-        # Listed in the index but never checked out: nothing of its own is
-        # applied, because there is no configuration there to apply.
-        if not (nested / ".git").exists():
-            continue
-        if nested.resolve() in seen:
-            continue
-        deeper, nested_protocols = _inspect_tree(
-            nested, fnmatch, timeout, allow_transports, seen=seen, depth=depth + 1,
-            verb=verb)
-        # Reported against the path that owns them, so the refusal names which
-        # repository is responsible rather than only which key.
-        found.extend(f"{relative}: {key}" for key in deeper)
-        protocols.extend(nested_protocols)
-    return sorted(set(found)), tuple(sorted(set(protocols)))
-
-
-def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=(),
-                           nested=False, verb="") -> list[str]:
-    """Every configuration source Git will actually apply, not just the obvious one.
-
-    **`--local` READS EXACTLY ONE FILE**, and Git applies more than one. With
-    `extensions.worktreeConfig = true` it also applies `config.worktree` — in the
-    main worktree beside `config`, in a linked worktree under
-    `$GIT_COMMON_DIR/worktrees/<name>/` — and `--local` never lists it. So a
-    `filter.x.clean` declared there was invisible to this inspection while Git ran
-    it on every worktree conversion: an independent reading configured one with
-    two `git config` calls and watched it execute seven times through this very
-    module.
-    
-    So the question is not *which files exist* but **which configuration Git will
-    apply**, and Git will answer it directly: `--show-scope` labels every applied
-    key with where it came from. Keeping the `local` and `worktree` scopes reads
-    the repository's own configuration exactly, whatever files that turns out to
-    involve. Reading a configuration cannot execute anything, which is why the
-    discovery is safe even when what it discovers is not.
-    """
-    try:
-        # ASK GIT WHICH CONFIGURATION IT APPLIES, NOT WHERE IT MIGHT BE WRITTEN.
-        #
-        # Three versions of this read answered a proxy for that question and two
-        # of them shipped a defect. `--local` alone missed `config.worktree`
-        # entirely, so a declared filter was invisible and ran. Asking for the
-        # worktree file separately then required deciding what a FAILURE of that
-        # second read meant, and there was no answer: swallowing it swallowed a
-        # timeout, and not swallowing it refused two configurations Git reads
-        # perfectly well — an enabled extension whose optional file was never
-        # created, and an explicitly disabled extension in a repository with
-        # more than one worktree. Both were reproduced against real Git.
-        #
-        # `--show-scope` ends the guessing. Git reports the configuration it
-        # will actually apply and labels each key with where it came from, so
-        # whether the extension is on, whether the file exists, whether this is
-        # a linked worktree, and the rule that `--worktree` needs the extension
-        # are all Git's business and never this module's. One question, one
-        # answer, one place that can be wrong.
-        # READ AS BYTES, like every other `-z` enumeration in this module.
-        #
-        # `_run` decodes text with `surrogateescape` because a byte string need
-        # not be valid UTF-8, and `nul_paths` decodes the same way for the same
-        # reason. Handing it a str meant re-encoding, and a bare `.encode()`
-        # cannot invert a `surrogateescape` decode: a repository with a
-        # non-UTF-8 subsection name — which Git reads without complaint — left
-        # this function raising `UnicodeEncodeError` out of every governed read,
-        # a denial that names no cause and is neither of this module's refusals.
-        # There is no round trip to get wrong now.
-        listing = _run(repository, "config", "--list", "--name-only", "--show-scope", "-z",
-                       timeout=timeout, text=False)
-        assert isinstance(listing, bytes)
-    except GitRefusal as refusal:
-        # A DEADLINE THE CALLER SET IS THE CALLER'S REFUSAL. This inspection runs
-        # inside the caller's timeout, so an impatient caller expired here first
-        # and got a configuration finding where it had asked for, and was owed,
-        # a timeout. The message is this module's own literal, so matching it is
-        # an internal contract rather than a foreign string.
-        if "timed out" in str(refusal):
-            raise
-        # Two remaining failures wear the same exception, and only one of them
-        # is this check's business.
-        #
-        # *The path is not a repository at all* belongs to the command the
-        # caller actually asked for: it produces a `GitRefusal` naming the real
-        # problem, and hijacking it here reported a missing directory as a
-        # configuration finding.
-        #
-        # Asked of the FILESYSTEM and not of Git, because the discriminator has
-        # to work in exactly the case where Git is what is failing. A repository
-        # whose `include.path` points at a shell breaks every config read, and a
-        # git-based discriminator broke with it and returned "not a repository"
-        # — which is the fail-open this branch exists to prevent, restored by
-        # the fix for it.
-        here = Path(repository)
-        looks_like_one = (here / ".git").exists() or (
-            (here / "HEAD").is_file() and (here / "objects").is_dir())
-        if not looks_like_one:
-            return [], ()
-        # *The repository is fine and its configuration is not* is this check's
-        # business, and it FAILS CLOSED — the first version did not, which is
-        # how it was caught. `git config include.path /bin/sh` makes every
-        # subsequent config read fail, so a repository could disable the check
-        # that inspects it by breaking itself, and seven unrecognised
-        # program-valued keys came back as none. A check that cannot read its
-        # subject has not cleared it.
-        raise IntegrityError(
-            "this repository's own configuration could not be read, so whether it names a "
-            "program for Git to run cannot be established. An unreadable configuration is not "
-            "an empty one",
-            repository=str(repository), refusal=str(refusal)[:160],
-        ) from refusal
-    # `--show-scope -z` answers as strictly alternating scope and key, NUL after
-    # each. Anything else is not an answer this function understands.
-    fields = nul_paths(listing)
-    if len(fields) % 2:
-        raise IntegrityError(
-            "this repository's configuration listing was not the scope-labelled answer this "
-            "check reads, so which configuration Git applies cannot be established. An answer "
-            "that cannot be parsed is not an empty one",
-            repository=str(repository), fields=len(fields),
-        )
-    # Closures whose condition this invocation breaks are not closures here.
-    enabled = {transport.strip().lower() for transport in allow_transports}
-    # A flag-based closure holds where the flag is actually on the command line:
-    # for the verbs it is added for, and never for a nested process whose command
-    # line Git builds itself. `status -v` applies textconv drivers and does not
-    # accept `--no-textconv` by any spelling, so the closure could not reach it.
-    # A flag-based closure holds on this module's own command lines — the
-    # arguments that would reach a driver anyway are refused outright — and NOT
-    # on a nested process, whose command line Git builds for itself.
-    closed = {key: reason for key, reason in CLOSED_PROGRAM_KEYS.items()
-              if CONDITIONAL_CLOSURES.get(key) not in enabled
-              and not (nested and key in FLAG_BASED_CLOSURES)}
-    found = []
-    protocols = []
-    for scope, key in zip(fields[::2], fields[1::2]):
-        # ONLY THE REPOSITORY'S OWN CONFIGURATION, which is what this function
-        # promises and what the caller can be held to. `global` and `system` are
-        # the environment's, already neutralised by this module and not the
-        # subject here; `command` and any scope a later Git adds are not the
-        # repository's either. Keeping a named pair rather than dropping a named
-        # one means a new scope arrives ignored instead of silently trusted.
-        if scope.strip().lower() not in ("local", "worktree"):
-            continue
-        lowered = key.strip().lower()
-        if not lowered:
-            continue
-        # A key that RE-ENABLES a transport is not a program-valued key — its
-        # value is a policy word, not a command — so it is collected here rather
-        # than reported as one. It is still how a repository got its own program
-        # run, because the general refusal this module sets is a different key
-        # from the specific one Git consults.
-        if lowered.startswith("protocol.") and lowered.endswith(".allow"):
-            # SLICED FROM THE ORIGINAL SPELLING. Git folds a section and a
-            # variable name to lower case but keeps a SUBSECTION verbatim, so
-            # `protocol.Review.allow` and `protocol.review.allow` are different
-            # keys to it. Naming the pin from the lowercased form wrote a key the
-            # repository had not set and left the one it had set untouched, which
-            # is the whole mechanism this pinning exists to defeat. The listing
-            # reports the real spelling, so it was there to be used.
-            name = key.strip()[len("protocol."):-len(".allow")]
-            if name:
-                protocols.append(name)
-        if not any(fnmatch.fnmatchcase(lowered, p) for p in PROGRAM_VALUED_CONFIG):
-            continue
-        if any(fnmatch.fnmatchcase(lowered, p) for p in closed):
-            continue
-        found.append(lowered)
-    return sorted(set(found)), tuple(sorted(set(protocols)))
+def _config_file_of(repository: str | Path) -> Path:
+    """The repository's own config file, located without asking Git to open it."""
+    subject = Path(_repository(repository)).resolve()
+    dot = subject / ".git"
+    if dot.is_file():
+        raw = dot.read_text(encoding="utf-8", errors="surrogateescape")
+        _, _, target = raw.partition(":")
+        target = target.strip()
+        gitdir = Path(target) if os.path.isabs(target) else (subject / target).resolve()
+    elif dot.is_dir():
+        gitdir = dot
+    else:
+        gitdir = subject
+    marker = gitdir / "commondir"
+    if marker.is_file():
+        raw = marker.read_text(encoding="utf-8", errors="surrogateescape").strip()
+        gitdir = Path(raw) if os.path.isabs(raw) else (gitdir / raw).resolve()
+    return gitdir / "config"
 
 
 def commit_messages(
@@ -1682,43 +1429,92 @@ def refs(repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) ->
 def config_with_origin(
     repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
 ) -> list[dict[str, str]]:
-    """Every config setting **with the file it came from**.
+    """Every setting **this repository's own configuration file** declares, with its origin.
 
     Values alone cannot answer the question that matters — whether a setting is
-    the user's global preference or something written into this repository's
-    own `.git/config` by a process that was not the user. A forensic pass
-    depended on exactly that distinction, and a reader that returns values only
-    forces the reader to guess.
+    the user's global preference or something written into this repository's own
+    `.git/config` by a process that was not the user. A forensic pass depended on
+    exactly that distinction.
+
+    **It reads the FILE, not the repository.** Under the sterile boundary
+    `git config --list` reports the harness's own configuration, which is the
+    correct answer to a different question and useless for this one. `--file`
+    makes Git parse a named file without opening a repository around it: Git's
+    own parser, so subsection case and quoting are Git's rules rather than a
+    hand-written imitation of them, and no repository semantics are in play.
+    Parsing configuration executes nothing — which is the property the whole
+    boundary rests on, and it is pinned by an oracle rather than assumed.
+
+    The ambient global and system files are no longer reported, because they are
+    no longer read: a governed answer must not depend on the operator's machine.
     """
-    # `config --list` exits 1 when there is nothing to list, which is an
-    # ordinary negative; anything else means nobody looked.
-    answer = probe(
-        repository, "config", "--list", "--show-origin", "--null",
-        timeout=timeout, negative_statuses=(1,),
-    )
-    if not answer.answered:
-        raise GitRefusal("could not read git configuration", git_refusal=answer.cause)
-    # A repository whose `.git/config` cannot be parsed exits 128, and returning
-    # `[]` for it reports "this repository has no settings" — including no
-    # `notes.*` keys, which is the exact surface D7 exists to watch. Nothing was
-    # read, so nothing may be concluded.
-    if answer.failed:
-        raise GitRefusal(
-            "git configuration could not be read, so it must not be reported as empty",
-            git_refusal=answer.cause, returncode=answer.status,
-        )
-    if not answer.ok:
-        return []
-    # Under `--null`, git emits `<origin>\0<key>\n<value>\0` — the origin is
-    # its own NUL-terminated record, and key and value are newline-separated.
-    # A value may itself contain newlines, so only the first one splits.
-    records = [record for record in answer.value.split("\x00") if record]
     entries: list[dict[str, str]] = []
-    for index in range(0, len(records) - 1, 2):
-        origin = records[index]
-        key, _, value = records[index + 1].partition("\n")
-        entries.append({"origin": origin, "key": key, "value": value})
+    for path in _configuration_files_of(repository):
+        # AN INCLUDE THIS READ DID NOT FOLLOW IS A REFUSAL, NOT A SHORTER LIST.
+        #
+        # `GIT_DIR` is explicit under this boundary, so Git does not discover the
+        # repository around the file — and measured rather than assumed, that
+        # means `git config --file` does NOT follow `include.path` here, while the
+        # same command from inside the repository does. A repository could
+        # therefore hide `notes.*` behind an include and be reported as not having
+        # it, which is the surface `DECISIONS.md` D7 exists to watch.
+        #
+        # Following includes here was rejected: `includeIf` conditions are
+        # evaluated against repository state, and predicting which ones match is
+        # the habit this release exists to stop. Refusing names the problem
+        # instead, and a caller that needs the included values reads that file.
+        declared = sterile.config_as_data(path)
+        includes = sorted(
+            key for key in declared
+            if key == "include.path" or (key.startswith("includeif.") and key.endswith(".path"))
+        )
+        if includes:
+            raise GitRefusal(
+                "this repository's configuration includes another file, and a read that did not "
+                "follow the include cannot be reported as the whole configuration",
+                repository=str(repository), file=str(path), includes=", ".join(includes),
+            )
+        answer = probe(
+            repository, "config", "--file", str(path), "--list", "--show-origin", "--null",
+            timeout=timeout, negative_statuses=(1,),
+        )
+        if not answer.answered:
+            raise GitRefusal("could not read git configuration", git_refusal=answer.cause)
+        if answer.failed:
+            # A configuration that cannot be parsed exits non-zero, and returning
+            # `[]` for it reports "this repository has no settings" — including no
+            # `notes.*` keys, which is the exact surface D7 exists to watch.
+            # Nothing was read, so nothing may be concluded.
+            raise GitRefusal(
+                "git configuration could not be read, so it must not be reported as empty",
+                git_refusal=answer.cause, returncode=answer.status, file=str(path),
+            )
+        if not answer.ok:
+            continue
+        records = [record for record in answer.value.split("\x00") if record]
+        for index in range(0, len(records) - 1, 2):
+            origin = records[index]
+            key, _, value = records[index + 1].partition("\n")
+            entries.append({"origin": origin, "key": key, "value": value})
     return entries
+
+
+def _configuration_files_of(repository: str | Path) -> list[Path]:
+    """The repository's own configuration files, in the order Git layers them."""
+    main = _config_file_of(repository)
+    found = [main] if main.is_file() else []
+    subject = Path(_repository(repository)).resolve()
+    dot = subject / ".git"
+    gitdir = dot if dot.is_dir() else main.parent
+    if dot.is_file():
+        raw = dot.read_text(encoding="utf-8", errors="surrogateescape")
+        _, _, target = raw.partition(":")
+        target = target.strip()
+        gitdir = Path(target) if os.path.isabs(target) else (subject / target).resolve()
+    worktree_config = gitdir / "config.worktree"
+    if worktree_config.is_file():
+        found.append(worktree_config)
+    return found
 
 
 def is_ancestor(

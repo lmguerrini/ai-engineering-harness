@@ -771,8 +771,14 @@ def test_remote_verification_refuses_a_repository_supplied_ssh_program(tmp_path)
     subprocess.run(["git", "remote", "add", "origin", "ssh://example.invalid/x.git"],
                    cwd=repo, check=True, capture_output=True)
 
-    with pytest.raises(_gitread.IntegrityError):
-        verify_remote(repo, "origin", expected={"refs/heads/main": "0" * 40})
+    # WAS A REFUSAL, IS NOW AN IMPOSSIBILITY. `core.sshCommand` was excused by a
+    # closure whose condition failed exactly when `verify_remote` enabled ssh, so
+    # the repository's program ran and could answer the verification with a
+    # fabricated ref advertisement. The key is not read at all now, so there is
+    # nothing to excuse and nothing to refuse — the measurement below is the
+    # guarantee, and it is the half that always mattered.
+    problems = verify_remote(repo, "origin", expected={"refs/heads/main": "0" * 40})
+    assert problems, "a remote that cannot be contacted must not verify as published"
     assert not marker.exists(), "the repository's own ssh program was executed"
 
 

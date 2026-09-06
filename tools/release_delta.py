@@ -68,21 +68,39 @@ class Delta:
 
 
 def _tree(repository: str | Path, revision: str) -> set:
-    result = subprocess.run(
-        ["git", "-C", str(repository), "ls-tree", "-r", "--name-only", revision],
-        capture_output=True, text=True, timeout=120)
-    if result.returncode:
-        raise RuntimeError(f"cannot read the tree at {revision}: {result.stderr.strip()}")
-    return set(result.stdout.split())
+    """Through the one boundary, like every other read in this toolbelt.
+
+    This module ran Git directly, with the caller's whole environment inherited
+    and no construction around it. No execution was ever reproduced from it — an
+    independent certification rated it a documentation-accuracy point — but it was
+    a second path to the same question that could answer differently from the
+    first, which is the thing `docs/RP2.5.0-DESIGN-A1-sterile-execution.md` exists
+    to remove. One boundary, one answer.
+    """
+    import gitread
+
+    try:
+        # `-z`, like every other path enumeration in this toolbelt. Without it Git
+        # C-quotes any path it cannot print literally, so a file with a space or a
+        # non-ASCII name reaches the delta as an escaped literal and is compared
+        # against a name nothing has. This module was routed through the boundary
+        # and kept its old argument list; the pack's own rule caught it.
+        return set(gitread.nul_paths(
+            gitread._run(repository, "ls-tree", "-r", "-z", "--name-only", revision,
+                         timeout=120, text=False)))
+    except Exception as exc:
+        raise RuntimeError(f"cannot read the tree at {revision}: {exc}") from exc
 
 
 def _decisions(repository: str | Path, revision: str) -> set:
-    result = subprocess.run(
-        ["git", "-C", str(repository), "show", f"{revision}:DECISIONS.md"],
-        capture_output=True, text=True, timeout=120)
-    if result.returncode:
+    """Through the one boundary. A release with no `DECISIONS.md` is an answer."""
+    import gitread
+
+    try:
+        shown = gitread._run(repository, "show", f"{revision}:DECISIONS.md", timeout=120)
+    except Exception:
         return set()
-    return set(re.findall(r"^## (D\d+)", result.stdout, re.M))
+    return set(re.findall(r"^## (D\d+)", shown, re.M))
 
 
 def additions(repository: str | Path, *, baseline: str, revision: str = "HEAD") -> tuple:

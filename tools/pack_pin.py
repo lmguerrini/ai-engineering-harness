@@ -397,9 +397,11 @@ def root_kind(root: str | Path) -> "tuple[str, str]":
         # by reading the file — `--path-format` is not needed because what is
         # wanted is only whether this is the main worktree.
         try:
-            common = _git(root, "rev-parse", "--git-common-dir").strip()
-            own = _git(root, "rev-parse", "--git-dir").strip()
-        except (OSError, subprocess.SubprocessError):
+            import gitread as _gitread
+
+            located = _gitread.repository_location(root)
+            common, own = located["common"], located["gitdir"]
+        except Exception:
             return "not-a-checkout", f"{root}/.git is a file and Git could not be asked about it"
         if common and own and Path(common).resolve() != Path(own).resolve():
             return "linked-worktree", (

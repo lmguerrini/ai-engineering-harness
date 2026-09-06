@@ -279,17 +279,18 @@ def test_a_repository_cannot_make_a_read_only_read_run_a_program(tmp_path):
     subprocess.run(["git", "-C", str(repo), "config", "diff.external",
                     f"sh -c 'touch {marker}'"], check=True, capture_output=True)
 
-    # THE CLOSURE IS NAMED, AND THIS ASKS WHETHER IT HOLDS. `diff.external` is
-    # program-valued and is not reported as an open risk, because the layer
-    # claims a specific closure for it: every verb that accepts `--ext-diff` is
-    # given `--no-ext-diff`, and `--ext-diff` is refused as an argument. A
-    # claimed closure nobody exercises is a comment.
+    # THERE IS NO CLOSURE TO EXERCISE ANY MORE, AND THAT IS THE POINT. The key is
+    # still named as program-valued — the projection reports it — but the read
+    # does not depend on that report: the driver is not defined in the
+    # configuration Git reads, so `--ext-diff` can be asked for by name and still
+    # runs nothing. The composition is unchanged and its measurement is stronger:
+    # a repository sets the key AND the caller asks the question that would use
+    # it, and nothing runs.
     assert "diff.external" in gitread.PROGRAM_VALUED_CONFIG
-    assert "diff.external" in gitread.CLOSED_PROGRAM_KEYS
-    assert gitread.program_valued_config(repo) == [], (
-        "a key with a named closure is reported as an open risk")
-    with pytest.raises(Exception):
-        gitread._run(repo, "diff", "--ext-diff", "HEAD")
+    assert gitread.program_valued_config(repo) == ["diff.external"], (
+        "the projection no longer reports what the repository declares")
+    gitread._run(repo, "diff", "--ext-diff", "HEAD")
+    assert not marker.exists(), "an explicitly requested external diff ran the driver"
 
     names = gitread.every_name_in_history(repo, "HEAD")
     assert "a.txt" in [path for _sha, path in names]
@@ -300,10 +301,11 @@ def test_a_repository_cannot_make_a_read_only_read_run_a_program(tmp_path):
 
     # AND THE OTHER HALF: a program-valued key with NO named closure is still
     # reported, so the empty list above is a closure and not a blind spot.
-    subprocess.run(["git", "-C", str(repo), "config", "diff.tool",
+    subprocess.run(["git", "-C", str(repo), "config", "difftool.x.cmd",
                     f"sh -c 'touch {marker}'"], check=True, capture_output=True)
-    if any("diff.tool" == pattern for pattern in gitread.PROGRAM_VALUED_CONFIG):
-        assert "diff.tool" in gitread.program_valued_config(repo)
+    assert "difftool.x.cmd" in gitread.program_valued_config(repo), (
+        "a program-valued key the repository declares is missing from the report")
+    assert not marker.exists()
 
 
 # --- several abnormal conditions at once ------------------------------------------------------

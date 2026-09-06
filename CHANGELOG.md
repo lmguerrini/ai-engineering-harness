@@ -99,6 +99,27 @@ line itself stops.
   not a description of this module. The last of them, and the one whose own
   repair produced both an under-refusal and an over-refusal.
 
+### What this release ships
+
+- `tools/sterile.py` — the boundary. It constructs the git directory a governed
+  read runs against: its own configuration from a blank slate, the subject's
+  objects attached rather than copied, refs and `HEAD` copied as plain files, and
+  the index copied so that a refresh never touches the subject. Where the working
+  tree holds another repository it builds a view in which every `.git` is one this
+  harness made, and it refuses — rather than answers — when it cannot reproduce
+  what it was asked about. `gitread._run` is its only caller.
+
+`tools/gitread.py` loses the machinery that decided authority by enumeration: the
+configuration inspection, its thread-local re-entrancy guard, the nested walk, the
+root binding, and the option refusals that matched `-v` and `--verbose` while Git
+also accepted `-vv`, `--verb` and `--verbo`. The names that machinery exported
+remain as projections: they report what a repository declares and decide nothing,
+which `test_no_refusal_depends_on_a_projection` establishes by emptying all four
+and finding that no answer, no refusal and no execution changed.
+
+`tools/release_delta.py` was the last caller that reached Git around the boundary
+and now goes through it, so `gitread` is the toolbelt's only path to Git.
+
 ### Records this release adds
 
 - `docs/RP2.5.0-GATE.md` — this release's gate record, written as the release is

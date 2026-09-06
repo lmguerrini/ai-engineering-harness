@@ -252,7 +252,7 @@
       "files": [
         "test_gitread.py"
       ],
-      "keyword": "breaking_its_own or re_enter"
+      "keyword": "breaks_its_own_configuration or concurrent_governed_reads"
     },
     {
       "class": "read-only operation gaining network authority",

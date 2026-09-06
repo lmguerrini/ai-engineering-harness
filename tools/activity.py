@@ -228,10 +228,11 @@ def repository_activity(repository, *, name: str = "", timeout: float = 60.0,
         # its own `.git/worktrees/<name>` directory and shares the object graph,
         # so identifying by the per-worktree path made one repository look like
         # two and doubled its year. Found by an independent reader.
-        activity.identity = gitread._run(where, "rev-parse", "--git-common-dir",
-                                         timeout=timeout).strip()
-        if not Path(activity.identity).is_absolute():
-            activity.identity = str((where / activity.identity).resolve())
+        # ASKED OF THE SUBJECT, NOT OF THE READ. Under the sterile boundary
+        # `rev-parse --git-common-dir` answers about the directory the harness
+        # built for this one invocation, so identifying a repository by it made
+        # every read a different repository — three counted as six.
+        activity.identity = gitread.repository_location(where)["common"]
     except Exception as exc:
         # WHICH of the two it is. `git invocation failed` was true and told a
         # reader nothing: a directory that is not a repository and a repository
