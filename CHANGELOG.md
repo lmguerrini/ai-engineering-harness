@@ -78,6 +78,32 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the certification of that walk found two defects inside it
+
+**A closure reaches only as far as its mechanism does.** `diff.external` and the
+two attribute-selected diff keys are excused because this module passes
+`--no-ext-diff --no-textconv`. Those flags are on the outer command line, and the
+nested `diff` Git runs for `diff.submodule=diff` does not inherit them — so the
+submodule walk applied that table one directory down where it does not reach, and
+a submodule's `diff.external` ran while the inspection reported nothing. The
+standing configuration does travel to a nested process, as `GIT_CONFIG_*`; a flag
+does not. Those entries are declared now and dropped for a nested repository, and
+a structural test asserts every closure justified by a flag is declared as one.
+
+**And the gitlink listing swallowed its own refusal.** It was wrapped in
+`except GitRefusal: return []`, reasoning that it errors for a path that is not a
+repository. It does — and it also errors when it times out, so an index read past
+the caller's deadline reported no submodules and the read went ahead with a
+submodule's filter applied. Reproduced at 35ms and 40ms against a 90,000-entry
+index.
+
+That is limitation 14 written again, in a new function, one cycle after that
+entry was recorded — the same rationalisation, in the same words, about a
+different read. It is recorded here rather than quietly fixed, because a pack
+that repeats its own documented defect while widening a check is evidence about
+how this kind of widening goes, not only about one function. Both are in
+`docs/RP2.4.1-DESIGN-B13-closure-reach.md`.
+
 ### And the certification found the inspection asking about one repository
 
 A populated submodule is a second repository, and Git applies **its**

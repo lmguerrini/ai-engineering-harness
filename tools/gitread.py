@@ -824,6 +824,18 @@ CLOSED_PROGRAM_KEYS = {
 # no network, no socket, no ssh binary involved.
 CONDITIONAL_CLOSURES = {"core.sshcommand": "ssh"}
 
+# A CLOSURE REACHES ONLY AS FAR AS ITS MECHANISM DOES.
+#
+# The standing configuration travels as `GIT_CONFIG_*` and IS inherited by a
+# process Git launches for itself — a marker written from inside a submodule
+# reported `GIT_CONFIG_COUNT=20`. A command-line flag is not: the nested command
+# line is Git's, not this module's. So these four are closed for the repository
+# the flags were passed to and OPEN for every nested one, which is how a
+# submodule's `diff.external` ran under a table that called it handled.
+FLAG_BASED_CLOSURES = frozenset({
+    "diff.external", "diff.*.command", "diff.*.textconv", "remote.*.uploadpack",
+})
+
 #: **THEY WERE NEVER CLOSED.** `filter.*.clean`, `filter.*.smudge` and
 #: `filter.*.process` sat in the table above claiming to be "reachable only
 #: through --filters, which is refused as an argument". That is not true: an
@@ -965,10 +977,28 @@ def _gitlink_paths(repository, timeout) -> list[str]:
     """
     try:
         raw = _run(repository, "ls-files", "--stage", "-z", timeout=timeout, text=False)
-    except GitRefusal:
-        # Not a repository, or one whose index cannot be read. The caller's own
-        # verb will produce the refusal that names the real problem.
-        return []
+    except GitRefusal as refusal:
+        # NOT SWALLOWED. The first version of this read caught every refusal and
+        # returned "no submodules", which is limitation 14 written again: an
+        # index read that TIMED OUT reported an empty walk and the governed read
+        # went ahead, with a submodule's `filter.x.clean` applied the whole time.
+        # Reproduced at 35ms and 40ms deadlines against a 90,000-entry index.
+        #
+        # Answered in the shape this module already proved for the configuration
+        # read next door, for the same three reasons.
+        if "timed out" in str(refusal):
+            raise
+        here = Path(repository)
+        looks_like_one = (here / ".git").exists() or (
+            (here / "HEAD").is_file() and (here / "objects").is_dir())
+        if not looks_like_one:
+            return []
+        raise IntegrityError(
+            "this repository's index could not be read, so whether it contains a nested "
+            "repository naming a program for Git to run cannot be established. An unreadable "
+            "index is not an empty one",
+            repository=str(here), refusal=str(refusal)[:160],
+        ) from refusal
     found = []
     for record in nul_paths(raw):
         # `<mode> <object> <stage>\t<path>`; 160000 is a gitlink.
@@ -995,7 +1025,7 @@ def _inspect_tree(repository, fnmatch, timeout, allow_transports,
             repository=str(here), depth=depth,
         )
     found, protocols = _program_valued_config(
-        repository, fnmatch, timeout, allow_transports=allow_transports)
+        repository, fnmatch, timeout, allow_transports=allow_transports, nested=depth > 0)
     found = list(found)
     protocols = list(protocols)
     for relative in _gitlink_paths(repository, timeout):
@@ -1015,7 +1045,8 @@ def _inspect_tree(repository, fnmatch, timeout, allow_transports,
     return sorted(set(found)), tuple(sorted(set(protocols)))
 
 
-def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=()) -> list[str]:
+def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=(),
+                           nested=False) -> list[str]:
     """Every configuration source Git will actually apply, not just the obvious one.
 
     **`--local` READS EXACTLY ONE FILE**, and Git applies more than one. With
@@ -1119,7 +1150,8 @@ def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=())
     # Closures whose condition this invocation breaks are not closures here.
     enabled = {transport.strip().lower() for transport in allow_transports}
     closed = {key: reason for key, reason in CLOSED_PROGRAM_KEYS.items()
-              if CONDITIONAL_CLOSURES.get(key) not in enabled}
+              if CONDITIONAL_CLOSURES.get(key) not in enabled
+              and not (nested and key in FLAG_BASED_CLOSURES)}
     found = []
     protocols = []
     for scope, key in zip(fields[::2], fields[1::2]):

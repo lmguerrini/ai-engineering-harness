@@ -1585,6 +1585,102 @@ def test_nesting_past_the_bound_refuses_rather_than_reporting_what_it_saw(tmp_pa
     assert "not a clean one" in str(refused.value)
 
 
+def _superproject_with_diff_helper(tmp_path, name, *, where):
+    """A superproject and submodule where `where` ("outer" or "sub") declares a
+    `diff.external` helper that leaves a marker if Git runs it."""
+    sup, marker = _superproject(tmp_path, name)
+    program = tmp_path / f"{name}-diff.sh"
+    program.write_text(f"#!/bin/sh\nprintf 'x' >> {marker}\nexit 0\n")
+    program.chmod(0o755)
+    target = sup if where == "outer" else sup / "sub"
+    _git(target, "config", "diff.external", str(program))
+    _git(sup, "config", "diff.submodule", "diff")
+    (sup / "sub" / "s.txt").write_text("bbbb\n")
+    return sup, marker
+
+
+def test_a_diff_helper_in_a_submodule_is_not_closed_by_an_outer_flag(tmp_path):
+    """O1. `diff.external` is excused because this module passes `--no-ext-diff`.
+    That flag is on the OUTER command line, and the nested `diff` Git runs for
+    `diff.submodule=diff` does not inherit it — so the closure was applied one
+    directory down where its mechanism does not reach, and the submodule's
+    helper ran while the inspection reported nothing.
+
+    A closure reaches only as far as its mechanism does.
+    """
+    sup, marker = _superproject_with_diff_helper(tmp_path, "flagsub", where="sub")
+    assert gitread.program_valued_config(sup) == ["sub: diff.external"]
+    with pytest.raises(_IntegrityError):
+        gitread.probe(sup, "diff", negative_statuses=())
+    assert not marker.exists(), "the submodule's diff helper ran"
+
+
+def test_a_diff_helper_in_the_outer_repository_stays_closed(tmp_path):
+    """O2. The bound. The flags DO reach the repository they are passed to, so
+    the same key there is genuinely closed and must not start refusing — the
+    over-refusal this release has repaired twice already."""
+    sup, marker = _superproject_with_diff_helper(tmp_path, "flagouter", where="outer")
+    assert gitread.program_valued_config(sup) == []
+    assert gitread.probe(sup, "diff", negative_statuses=()).ok
+    assert not marker.exists()
+
+
+def test_an_index_listing_timeout_is_the_callers_refusal(tmp_path):
+    """O3. The gitlink listing was wrapped in `except GitRefusal: return []`,
+    reasoning that it errors for a path that is not a repository. It does — and
+    it also errors when it TIMES OUT, so an index read past the caller's
+    deadline reported "no submodules" and the governed read proceeded with a
+    submodule's filter applied. That is limitation 14 written again, in a new
+    function, one cycle after it was recorded.
+
+    Driven at the seam: what is under test is that a timeout stays a timeout,
+    not how long an index takes to read on this host.
+    """
+    sup, _ = _superproject(tmp_path, "idx_timeout")
+    real = gitread._run
+
+    def slow_index(repository, *args, **kwargs):
+        if args[:1] == ("ls-files",):
+            raise GitRefusal("git invocation timed out", timeout=0.001)
+        return real(repository, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(gitread, "_run", slow_index)
+        with pytest.raises(GitRefusal) as refusal:
+            gitread.program_valued_config(sup)
+    assert "timed out" in str(refusal.value)
+
+
+def test_an_unreadable_index_is_refused_not_read_as_no_submodules(tmp_path):
+    """O4. The other half of not swallowing: a repository whose index cannot be
+    read has not been shown to be free of nested repositories. A check that
+    cannot read its subject has not cleared it."""
+    sup, _ = _superproject(tmp_path, "idx_unreadable")
+    real = gitread._run
+
+    def broken_index(repository, *args, **kwargs):
+        if args[:1] == ("ls-files",):
+            raise GitRefusal("fatal: index file corrupt")
+        return real(repository, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(gitread, "_run", broken_index)
+        with pytest.raises(_IntegrityError) as refused:
+            gitread.program_valued_config(sup)
+    assert "not an empty one" in str(refused.value)
+
+
+def test_every_flag_based_closure_is_declared(tmp_path):
+    """O6. A closure whose stated reason rests on a command-line flag has to be
+    declared as one, or the next entry added will quietly cover a nested
+    repository the flag never reaches."""
+    for key, reason in gitread.CLOSED_PROGRAM_KEYS.items():
+        mentions_flag = "--" in reason
+        assert mentions_flag == (key in gitread.FLAG_BASED_CLOSURES), (
+            f"{key!r} is justified by {reason!r}; declare it in FLAG_BASED_CLOSURES "
+            f"if that reason is a command-line flag, which does not reach a nested repository")
+
+
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
     """The bound: the second question must not refuse ordinary repositories."""
     repo = tmp_path / "ordinary2"

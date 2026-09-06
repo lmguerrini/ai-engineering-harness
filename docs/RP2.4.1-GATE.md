@@ -39,6 +39,7 @@ documentation, or the module beside it, already said it did:
 | B10 | `gitread`: two transports that differ only in spelling are two transports, not one |
 | B11 | `qualification`: one boundary decides what is unestablished, for the identity as well as the record |
 | B12 | `gitread`: the inspection's subject is every repository whose configuration Git applies |
+| B13 | `gitread`: a closure holds only where its mechanism reaches, and a check that cannot read its subject has not cleared it |
 
 ## What the readings of the repairs found
 
