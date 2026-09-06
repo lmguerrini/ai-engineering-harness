@@ -108,6 +108,15 @@ line itself stops.
 - `docs/RP2.5.0-DESIGN-A1-sterile-execution.md` — the frozen design: the
   invariant, the mechanism, four rejected alternatives with their reasons, the
   measured cost, seven failure modes and eleven oracles.
+- `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` — what an independent design
+  reading falsified in A1 before anything was implemented, and the two polarity
+  inversions that replaced it. A nested `.git` that was a *symlink to a
+  directory* executed the subject's program, because the mechanism for nested
+  repositories was still enumerating layouts while the mechanism for
+  configuration sources had stopped enumerating keys. The name `.git` now
+  decides and the kind of the entry never does; anything that cannot be rebuilt
+  sterile refuses the read; and the finished view is checked by walking it
+  rather than by trusting the loop that built it.
 
 ## 2.4.1 — the six the full-release audit reproduced
 
