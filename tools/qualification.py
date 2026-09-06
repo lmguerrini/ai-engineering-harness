@@ -204,7 +204,14 @@ class ConfigurationIdentity:
         """
         reasons = []
         for name, value in self.dimensions().items():
-            if not str(value).strip() or str(value) == UNKNOWN:
+            # THROUGH THE ONE BOUNDARY, not by comparing against the sentinel.
+            # Comparing `str(value) == UNKNOWN` recognised the sentinel and
+            # nothing else, so a dimension given as the WORD "unknown" — which
+            # `normalised_identity_value` reads as unestablished everywhere the
+            # persisted path touches it — was counted as established here. That
+            # is this pack's own recurrence class, two mechanisms answering one
+            # question differently, inside the boundary built to end it.
+            if normalised_identity_value(value) == UNKNOWN:
                 reasons.append(f"{name} is not established")
         method = _provenance_key(self.identity_method)
         if method in UNOBSERVED_PROVENANCE:

@@ -650,3 +650,24 @@ def test_a_real_structured_value_still_overrides_the_packed_one():
     assert identity.complete
     assert identity.model_observed == "a model with spaces"
     assert identity.effort == "high"
+
+
+def test_the_word_unknown_is_unestablished_in_the_identity_itself(tmp_path):
+    """The persisted path already read the WORD "unknown" as unestablished,
+    through `normalised_identity_value`. The identity's own completeness check
+    compared against the sentinel instead, so the same dimension was incomplete
+    on one path and complete on the other — this pack's recurrence class inside
+    the boundary built to end it. Found as a non-blocking observation by an
+    independent certification and folded in deliberately, because the direction
+    of the error is over-claiming qualification.
+    """
+    def identity(effort):
+        return q.ConfigurationIdentity(
+            surface="s", family="f", client="c", model_observed="m", effort=effort,
+            isolation="i", network="none", authentication_class="subscription",
+            identity_method="turn_record")
+
+    for spelling in ("unknown", "UNKNOWN", " Unknown ", ""):
+        assert not identity(spelling).complete, f"{spelling!r} counted as established"
+        assert any("effort" in reason for reason in identity(spelling).incompleteness())
+    assert identity("xhigh").complete

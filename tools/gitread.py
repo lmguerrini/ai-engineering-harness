@@ -292,8 +292,11 @@ def _config_environment(allow_transports: tuple[str, ...] = (),
     # repository tried to turn on is turned back off by the same key at a scope
     # it cannot outrank.
     enabled = {transport.strip().lower() for transport in allow_transports}
-    for name in sorted({str(one).strip().lower() for one in refuse_protocols}):
-        if name and name not in enabled:
+    for name in sorted({str(one).strip() for one in refuse_protocols}):
+        # Compared case-insensitively against what the caller enabled, because
+        # the caller names ordinary transports, but WRITTEN in the repository's
+        # own spelling, because that is the key Git will consult.
+        if name and name.lower() not in enabled:
             settings[f"protocol.{name}.allow"] = "never"
     environment = {"GIT_CONFIG_COUNT": str(len(settings))}
     for index, (key, value) in enumerate(sorted(settings.items())):
@@ -1062,7 +1065,14 @@ def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=())
         # run, because the general refusal this module sets is a different key
         # from the specific one Git consults.
         if lowered.startswith("protocol.") and lowered.endswith(".allow"):
-            name = lowered[len("protocol."):-len(".allow")]
+            # SLICED FROM THE ORIGINAL SPELLING. Git folds a section and a
+            # variable name to lower case but keeps a SUBSECTION verbatim, so
+            # `protocol.Review.allow` and `protocol.review.allow` are different
+            # keys to it. Naming the pin from the lowercased form wrote a key the
+            # repository had not set and left the one it had set untouched, which
+            # is the whole mechanism this pinning exists to defeat. The listing
+            # reports the real spelling, so it was there to be used.
+            name = key.strip()[len("protocol."):-len(".allow")]
             if name:
                 protocols.append(name)
         if not any(fnmatch.fnmatchcase(lowered, p) for p in PROGRAM_VALUED_CONFIG):

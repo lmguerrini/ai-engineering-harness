@@ -78,6 +78,33 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the certification of THAT repair found the pin renaming its own key
+
+Git folds a configuration section and variable name to lower case and keeps a
+**subsection** verbatim, so `protocol.Review.allow` and `protocol.review.allow`
+are different keys to it. The new pinning read the transport name off its own
+lowercased copy of the key, so against a repository declaring
+`protocol.Review.allow = always` it wrote `protocol.review.allow = never` — a
+setting nobody had made — and left the one that was in force untouched.
+
+An independent certification reproduced it with an installed remote helper whose
+transport name carries a capital: the helper ran, and the publication
+verification accepted the namespace the helper invented, with no findings. The
+lowercase control was refused, which is what made the case the whole mechanism.
+
+The name is sliced from the spelling the listing actually reports now, and
+compared case-insensitively only against the transports a caller enabled —
+because callers name ordinary transports, while the key written has to be the
+one Git will consult.
+
+The same reading found the identity's own completeness check comparing against
+the `UNKNOWN` sentinel rather than passing through `normalised_identity_value`,
+so a dimension given as the word "unknown" was unestablished on the persisted
+path and established in the identity. It was reported as non-blocking and is
+repaired here anyway: it is this pack's own recurrence class, two mechanisms
+answering one question differently, inside the boundary this release built to
+end it — and it erred towards calling a configuration qualified.
+
 ### And the certification of that repair found the subject choosing the policy
 
 The hardened reader refuses transports with `protocol.allow = never` at command

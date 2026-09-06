@@ -4,6 +4,7 @@ No mocking: every function under test shells out to a real `git`, so the
 throwaway repo is the fixture.
 """
 
+import os
 import subprocess
 
 import pytest
@@ -1382,6 +1383,42 @@ def test_the_git_protocol_closure_is_true_because_the_repository_cannot_enable_i
     answer = gitread.probe(repo, "ls-remote", "origin", negative_statuses=())
     assert answer.answered and not answer.ok
     assert not marker.exists(), "the repository enabled git:// and its proxy ran"
+
+
+def test_a_mixed_case_transport_name_is_pinned_in_the_repositorys_own_spelling(tmp_path):
+    """O8. Git folds a config section and variable name to lower case but keeps a
+    SUBSECTION verbatim, so `protocol.Review.allow` and `protocol.review.allow`
+    are different keys to it.
+
+    The first version of this pinning named the key from its own lowercased copy,
+    which wrote a setting the repository had never made and left the one it had
+    made in force. An independent certification reproduced it with an installed
+    remote helper whose transport name carries a capital: the helper ran, and the
+    publication verification accepted the namespace it invented.
+
+    The marker counts invocations, so a repair that merely refuses later still
+    fails this.
+    """
+    repo = _committed(tmp_path, "mixedcase")
+    marker = tmp_path / "HELPER_INVOKED"
+    helpers = tmp_path / "helpers"
+    helpers.mkdir()
+    helper = helpers / "git-remote-Review"
+    helper.write_text(
+        "#!/bin/sh\n"
+        f"printf 'x' >> {marker}\n"
+        "echo\n")
+    helper.chmod(0o755)
+    _git(repo, "config", "protocol.Review.allow", "always")
+    _git(repo, "remote", "add", "origin", "Review::example")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("PATH", f"{helpers}:{os.environ.get('PATH', '')}")
+        found, protocols = gitread._inspect(repo, 30, ())
+        assert protocols == ("Review",), "the repository's own spelling was not carried"
+        answer = gitread.probe(repo, "ls-remote", "origin", negative_statuses=())
+        assert answer.answered and not answer.ok
+    assert not marker.exists(), "the repository re-enabled a mixed-case transport and its helper ran"
 
 
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
