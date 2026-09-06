@@ -25,9 +25,37 @@ Git's semantics, which is an open set with a fail-open failure mode.
 
 This release replaces that mechanism rather than correcting another entry in it,
 which is a new authority mechanism and a new tool — MINOR, not PATCH.
-`tools/surface_diff.py . 9d906ce64bd69cb1a29594a7110829da7df5d996 HEAD` is the
-mechanical derivation and is recorded below when the implementation is complete;
-until then the number in `VERSION` is a claim this record has not yet checked.
+
+**Derived, not asserted.** `tools/surface_diff.py . 9d906ce64bd69cb1a29594a7110829da7df5d996 HEAD`
+over the non-test modules reports **additions only**:
+
+    tools/gitread.py         added_public_name  repository_location  (+ star export)
+    tools/gitread.py         added_public_name  VERB_ENABLING_OPTIONS
+    tools/gitread.py         added_public_name  MAXIMUM_NESTED_DEPTH
+    tools/gitread.py         added_public_name  FLAG_BASED_CLOSURES
+    tools/gitread.py         added_public_name  CONDITIONAL_CLOSURES
+    tools/gitread.py         added_optional_parameter  program_valued_config
+    tools/design_record.py   added_public_name  CHANGE_CLASS_RANK
+    tools/design_record.py   added_optional_parameter  DesignRecord.problems
+    tools/backend_contract.py  added_public_name  normalised_identity_value  (+ star export)
+
+**Nothing is removed and no signature changes**, which is the point of keeping the
+enumeration's names as projections: the mechanism behind them is gone and the
+surface a consumer imports is not.
+
+**And a blind spot in that derivation, stated rather than left to be found.**
+`surface_diff` compares modules present at both revisions, so `tools/sterile.py`
+— a module that did not exist at the baseline — does not appear in its output at
+all. The tool cannot see the single largest thing this release adds. So the MINOR
+derivation rests on two facts and the second is not `surface_diff`'s: the compared
+surface only grew, **and** a new tool ships, which is the criterion `PACK_MANIFEST.json`
+`version_semantics` names for MINOR and the one 2.4.1 checked and failed.
+
+MAJOR was checked and rejected: no contract key or CLI input is added or removed,
+no project's pin moves, and no migration changes. Behaviour that previously
+refused and now reads is the repair rather than an incompatibility — but three
+behaviour changes a consumer can observe are disclosed in `CHANGELOG.md` rather
+than left for one to discover.
 
 ## Design before build
 

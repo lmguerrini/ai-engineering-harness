@@ -69,6 +69,19 @@ anything missed makes a read fail loudly instead of running a program.
   **raw** diff, because no driver runs.
 - A repository whose ref store this build cannot import is refused **by name**
   rather than answered wrongly.
+- `probe` on a directory that is **not a repository** now reports *cannot ask*
+  rather than *Git looked and said no*. Both are non-answers and the new one
+  carries a named cause, but a caller branching on `answer.failed` takes the
+  `not answered` path instead.
+- `config_with_origin` reports the repository's **own** configuration files and
+  no longer the operator's global or system ones, because a governed answer must
+  not depend on the machine it runs on. It **refuses** a configuration that
+  includes another file, rather than reporting the part it read: under an
+  explicit `GIT_DIR` Git does not follow `include.path`, and a shorter list would
+  have been a repository hiding `notes.*` behind an include.
+- A remote **name** is resolved to its URL from the repository's configuration
+  read as data, so `url.<base>.insteadOf` rewriting no longer applies. The
+  address contacted is the one written in the file and visible to the caller.
 
 ### The 2.4.1 records this tree carries
 
