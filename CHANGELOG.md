@@ -78,6 +78,40 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the certification of that repair found the subject choosing the policy
+
+The hardened reader refuses transports with `protocol.allow = never` at command
+scope, and reasoned from Git's precedence that this was enough:
+
+> Git consults the specific key first and falls back to the general one, so every
+> transport the caller did not name stays refused
+
+The first clause is true and the conclusion does not follow. `protocol.allow` and
+`protocol.ext.allow` are **different keys**, so the general refusal never
+contests the specific one — and the repository being read can set the specific
+one itself. A repository declaring `protocol.ext.allow = always` beside an
+`ext::` remote had its own program executed with **no transport enabled by any
+caller**, and `ext` is not even a transport this module will enable. The
+inspection reported nothing, because a key that re-enables a transport is not a
+key whose value is a program.
+
+It also falsified the closure next door, which excused `core.gitProxy` as
+unreachable because `git://` "is not enablable": the repository enables it.
+
+The transport names the repository itself mentions are pinned to `never` at
+command scope now, where the same key outranks the repository's copy. The names
+come from the subject rather than from a list of transports someone remembered,
+because `protocol.<name>.allow` accepts any remote-helper name. A transport the
+caller deliberately enabled is left alone, so the one observation of what a push
+actually did still works.
+
+This hole is present in frozen 2.4.0 as well, so it is a standing one rather
+than a regression here — but it was reachable, undisclosed, and stated as
+closed. Rejected alternatives are in
+`docs/RP2.4.1-DESIGN-B8-transport-reenable.md`: refusing any repository that
+sets the key over-refuses, and pinning a fixed list of known transport names
+guesses at what Git will accept next.
+
 ### And the certification found a closure that holds only sometimes
 
 `CLOSED_PROGRAM_KEYS` excuses a program-valued key from the safety inspection

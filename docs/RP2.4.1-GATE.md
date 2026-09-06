@@ -34,6 +34,7 @@ documentation, or the module beside it, already said it did:
 | B5 | `gitread`: the inspection reports the configuration **Git applies**, not the one it guessed |
 | B6 | `gitread`: `nul_paths`' own promise, that a byte string which cannot be decoded still reaches a checker |
 | B7 | `gitread`: a closure means Git will not run the program, on **every** path that closure covers |
+| B8 | `gitread`: the subject of a read does not choose the transport policy applied to it |
 
 ## What the readings of the repairs found
 
@@ -50,6 +51,7 @@ what a founder is being asked to freeze.
 | that repair | not catching it refused two repositories real Git reads: an enabled extension with no `config.worktree`, and a disabled extension beside several worktrees | asking Git which configuration it applies, by scope |
 | that repair | a configuration Git reads without complaint raised `UnicodeEncodeError` out of every governed read — a denial naming no cause, and neither of this module's refusals | reading the listing as bytes, as every other `-z` enumeration here already does |
 | the whole candidate | `core.sshcommand` was excused by a closure whose own reason names a condition, and the transport settings remove that neutralisation when `ssh` is enabled — so a repository's ssh program ran through this module's reader and could answer a publication verification | declaring the condition where the inspection can act on it |
+| the whole candidate | a repository's own `protocol.<name>.allow` outranked the reader's general refusal, so it re-enabled a transport and had Git run a program it named — including one that speaks the protocol and answers the publication postcondition | pinning the repository's own transport names at command scope |
 
 The last row is why `_program_valued_config` now issues one scope-labelled read
 rather than two. Three versions of that inspection answered a proxy for its own

@@ -774,3 +774,57 @@ def test_remote_verification_refuses_a_repository_supplied_ssh_program(tmp_path)
     with pytest.raises(_gitread.IntegrityError):
         verify_remote(repo, "origin", expected={"refs/heads/main": "0" * 40})
     assert not marker.exists(), "the repository's own ssh program was executed"
+
+
+def _seeded(path):
+    path.mkdir(parents=True, exist_ok=True)
+    for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@e.invalid"),
+                 ("config", "user.name", "T")):
+        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
+    (path / "f.txt").write_text("hi\n")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=path, check=True, capture_output=True)
+    return path
+
+
+def test_remote_verification_refuses_a_repository_re_enabled_transport(tmp_path):
+    """O5. The reported path. A repository that re-enables a transport and names
+    a program over it had that program run by the publication gate's own remote
+    verification — and a program that speaks the protocol can answer the
+    postcondition, so the repository being verified supplies its own result.
+    """
+    repo = _seeded(tmp_path / "reenable_pub")
+    marker = tmp_path / "MARKER"
+    program = tmp_path / "prog.sh"
+    program.write_text(f"#!/bin/sh\ntouch {marker}\nexit 1\n")
+    program.chmod(0o755)
+    subprocess.run(["git", "config", "protocol.ext.allow", "always"],
+                   cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", f"ext::{program} %S"],
+                   cwd=repo, check=True, capture_output=True)
+    verify_remote(repo, "origin", expected={"refs/heads/main": "0" * 40})
+    assert not marker.exists(), "the repository's own program answered its verification"
+
+
+def test_remote_verification_still_reads_an_enabled_transport(tmp_path):
+    """O4. The bound. Pinning must not reach the transport the caller deliberately
+    enabled, or the one observation of what a push actually did goes away — which
+    is the whole reason the transport exception exists."""
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", "."],
+                   cwd=origin, check=True, capture_output=True)
+    repo = _seeded(tmp_path / "pusher")
+    # The repository declares the SAME transport the caller enables. Without
+    # this the fixture proves nothing: the pinning only ever touches names the
+    # repository itself mentions, so a version that pinned the enabled transport
+    # too would leave an untouched fixture passing. Mutation caught exactly that.
+    subprocess.run(["git", "config", "protocol.file.allow", "always"],
+                   cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", f"file://{origin}"],
+                   cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "push", "-q", "origin", "main"],
+                   cwd=repo, check=True, capture_output=True)
+    head = subprocess.run(["git", "rev-parse", "refs/heads/main"], cwd=repo,
+                          capture_output=True, text=True, check=True).stdout.strip()
+    assert verify_remote(repo, "origin", expected={"refs/heads/main": head}) == []

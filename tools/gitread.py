@@ -232,15 +232,29 @@ TRANSPORT_VERBS = frozenset({"ls-remote"})
 ALLOWABLE_TRANSPORTS = ("ssh", "https", "http", "file")
 
 
-def _config_environment(allow_transports: tuple[str, ...] = ()) -> dict[str, str]:
+def _config_environment(allow_transports: tuple[str, ...] = (),
+                        refuse_protocols: tuple[str, ...] = ()) -> dict[str, str]:
     """`_NEUTRALISED_CONFIG` in the form Git reads from the environment.
 
     `allow_transports` re-enables **named** protocols for one invocation, and
     does so by adding `protocol.<name>.allow` entries beside the standing
-    `protocol.allow = never` rather than by relaxing it. Git consults the
-    specific key first and falls back to the general one, so every transport
-    the caller did not name stays refused — which is the property that makes
-    this narrow rather than a hole with a parameter in front of it.
+    `protocol.allow = never` rather than by relaxing it.
+
+    Git consults `protocol.<name>.allow` first and falls back to `protocol.allow`
+    — and for a while this module concluded from that alone that every transport
+    the caller did not name stays refused. It does not follow: the two are
+    DIFFERENT KEYS, so the general refusal at command scope never contests the
+    specific one, and the **repository being read** can set the specific one. A
+    repository declaring `protocol.ext.allow = always` and an `ext::` remote had
+    its own program executed with no transport enabled by any caller, and
+    falsified the `core.gitProxy` closure next door, which says `git://` is not
+    enablable.
+
+    `refuse_protocols` closes that: the transport names the repository itself
+    mentions are pinned to `never` HERE, at command scope, where the same key
+    outranks the repository's copy. The names come from the subject rather than
+    from a list of transports someone remembered, because `protocol.<name>.allow`
+    accepts any remote-helper name.
 
     It exists because a check that must cross a boundary was disabled by the
     hardening that correctly protects every other read: the postcondition after
@@ -273,6 +287,14 @@ def _config_environment(allow_transports: tuple[str, ...] = ()) -> dict[str, str
         settings[f"protocol.{transport}.allow"] = "always"
         if transport == "ssh":
             settings.pop("core.sshCommand", None)
+    # Pinned AFTER the enablements above, and never over one of them: a caller
+    # that deliberately enabled a transport keeps it, and everything else the
+    # repository tried to turn on is turned back off by the same key at a scope
+    # it cannot outrank.
+    enabled = {transport.strip().lower() for transport in allow_transports}
+    for name in sorted({str(one).strip().lower() for one in refuse_protocols}):
+        if name and name not in enabled:
+            settings[f"protocol.{name}.allow"] = "never"
     environment = {"GIT_CONFIG_COUNT": str(len(settings))}
     for index, (key, value) in enumerate(sorted(settings.items())):
         environment[f"GIT_CONFIG_KEY_{index}"] = key
@@ -300,11 +322,13 @@ _GIT_ENVIRONMENT = {
 
 
 def _environment(
-    overlay: dict[str, str] | None, allow_transports: tuple[str, ...] = ()
+    overlay: dict[str, str] | None, allow_transports: tuple[str, ...] = (),
+    refuse_protocols: tuple[str, ...] = (),
 ) -> dict[str, str]:
     inherited = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
     return {
-        **inherited, **_GIT_ENVIRONMENT, **_config_environment(allow_transports), **(overlay or {})
+        **inherited, **_GIT_ENVIRONMENT,
+        **_config_environment(allow_transports, refuse_protocols), **(overlay or {})
     }
 
 
@@ -415,11 +439,13 @@ def _run(
     # entitled to the refusal that names the real problem rather than to this
     # check's opinion about it. Hijacking that refusal turned "your config does
     # not parse" into a security finding about a repository nobody could read.
+    # Empty while inspecting and for `config` itself: those calls use no
+    # transport, and reading the listing is how the names are learned.
+    refuse_protocols: tuple[str, ...] = ()
     if not _inspecting() and verb != "config":
         # The transports this invocation enables decide which closures still
         # hold, so the inspection is told the same thing the environment is.
-        executable = program_valued_config(
-            repository, timeout=timeout, allow_transports=allow_transports)
+        executable, refuse_protocols = _inspect(repository, timeout, allow_transports)
         if executable:
             raise IntegrityError(
                 "this repository's own configuration names a program for Git to run, by a key "
@@ -471,7 +497,7 @@ def _run(
         # program does not run, without it it does.
         arguments = (arguments[0], "--upload-pack=git-upload-pack", *arguments[1:])
     command = ("git", *arguments)
-    environment = _environment(env_overlay, allow_transports)
+    environment = _environment(env_overlay, allow_transports, refuse_protocols)
     # In text mode, decode with `surrogateescape`. A path is a byte string on
     # POSIX and need not be valid UTF-8; the default strict decode raises
     # `UnicodeDecodeError` from inside subprocess, which is neither a named
@@ -773,7 +799,7 @@ CLOSED_PROGRAM_KEYS = {
     "sequence.editor": "neutralised in the standing config",
     "gpg.program": "neutralised in the standing config",
     "uploadpack.packobjectshook": "neutralised in the standing config",
-    "core.gitproxy": "unreachable: the git:// protocol is not enablable",
+    "core.gitproxy": "unreachable: git:// is refused at command scope and a repository cannot re-enable it, because its own protocol.*.allow keys are pinned there too",
     "diff.external": "disabled by --no-ext-diff on every verb that accepts it",
     "remote.*.uploadpack": "overridden by --upload-pack on every transport read",
     "diff.*.command": "an attribute-selected driver, disabled by --no-ext-diff",
@@ -893,6 +919,16 @@ def program_valued_config(
 
     if _inspecting():
         return []
+    return _inspect(repository, timeout, allow_transports)[0]
+
+
+def _inspect(repository, timeout, allow_transports) -> tuple[list[str], tuple[str, ...]]:
+    """Both questions the one configuration listing answers: which keys name a
+    program Git would run, and which transports this repository turns on."""
+    import fnmatch
+
+    if _inspecting():
+        return [], ()
     _INSPECTION.active = True
     try:
         return _program_valued_config(repository, fnmatch, timeout,
@@ -978,7 +1014,7 @@ def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=())
         looks_like_one = (here / ".git").exists() or (
             (here / "HEAD").is_file() and (here / "objects").is_dir())
         if not looks_like_one:
-            return []
+            return [], ()
         # *The repository is fine and its configuration is not* is this check's
         # business, and it FAILS CLOSED — the first version did not, which is
         # how it was caught. `git config include.path /bin/sh` makes every
@@ -1007,6 +1043,7 @@ def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=())
     closed = {key: reason for key, reason in CLOSED_PROGRAM_KEYS.items()
               if CONDITIONAL_CLOSURES.get(key) not in enabled}
     found = []
+    protocols = []
     for scope, key in zip(fields[::2], fields[1::2]):
         # ONLY THE REPOSITORY'S OWN CONFIGURATION, which is what this function
         # promises and what the caller can be held to. `global` and `system` are
@@ -1019,12 +1056,21 @@ def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=())
         lowered = key.strip().lower()
         if not lowered:
             continue
+        # A key that RE-ENABLES a transport is not a program-valued key — its
+        # value is a policy word, not a command — so it is collected here rather
+        # than reported as one. It is still how a repository got its own program
+        # run, because the general refusal this module sets is a different key
+        # from the specific one Git consults.
+        if lowered.startswith("protocol.") and lowered.endswith(".allow"):
+            name = lowered[len("protocol."):-len(".allow")]
+            if name:
+                protocols.append(name)
         if not any(fnmatch.fnmatchcase(lowered, p) for p in PROGRAM_VALUED_CONFIG):
             continue
         if any(fnmatch.fnmatchcase(lowered, p) for p in closed):
             continue
         found.append(lowered)
-    return sorted(set(found))
+    return sorted(set(found)), tuple(sorted(set(protocols)))
 
 
 def commit_messages(

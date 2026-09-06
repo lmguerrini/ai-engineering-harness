@@ -1321,6 +1321,69 @@ def test_every_conditional_closure_is_known_to_the_inspection(tmp_path):
                 f"claimed for it stops holding — declare it in CONDITIONAL_CLOSURES")
 
 
+def _transport_reenable_repo(tmp_path, name, *, worktree_scope=False):
+    """A repository that turns a transport back on and names a program to run
+    over it. The marker is written by the program, so execution is a fact on
+    disk rather than an inference from an exit status."""
+    repo = _committed(tmp_path, name)
+    marker = tmp_path / f"{name}-MARKER"
+    program = tmp_path / f"{name}-prog.sh"
+    program.write_text(f"#!/bin/sh\ntouch {marker}\nexit 1\n")
+    program.chmod(0o755)
+    if worktree_scope:
+        _git(repo, "config", "extensions.worktreeConfig", "true")
+        _git(repo, "config", "--worktree", "protocol.ext.allow", "always")
+    else:
+        _git(repo, "config", "protocol.ext.allow", "always")
+    _git(repo, "remote", "add", "origin", f"ext::{program} %S")
+    return repo, marker
+
+
+def test_a_repository_cannot_re_enable_a_transport_the_reader_refuses(tmp_path):
+    """O1. The reader refuses transports with `protocol.allow = never` at command
+    scope and reasoned that the specific key Git consults first would fall back
+    to it. It does not: they are DIFFERENT KEYS, so the general refusal never
+    contests the specific one — and the repository being read can set the
+    specific one itself.
+
+    Reproduced with no transport enabled by any caller, and with `ext` not even
+    among `ALLOWABLE_TRANSPORTS`: the repository's own program ran.
+    """
+    repo, marker = _transport_reenable_repo(tmp_path, "reenable")
+    answer = gitread.probe(repo, "ls-remote", "origin", negative_statuses=())
+    assert answer.answered and not answer.ok
+    assert not marker.exists(), "the repository re-enabled a transport and its program ran"
+
+
+def test_a_worktree_declared_transport_re_enable_is_pinned_too(tmp_path):
+    """O2. `config.worktree` is applied by Git exactly as `config` is, so a
+    re-enable declared there must be pinned the same way. The names are taken
+    from the scope-labelled listing, which already covers both."""
+    repo, marker = _transport_reenable_repo(tmp_path, "reenable_wt", worktree_scope=True)
+    answer = gitread.probe(repo, "ls-remote", "origin", negative_statuses=())
+    assert answer.answered and not answer.ok
+    assert not marker.exists()
+
+
+def test_the_git_protocol_closure_is_true_because_the_repository_cannot_enable_it(tmp_path):
+    """O3. `core.gitproxy` is excused as "unreachable: the git:// protocol is not
+    enablable". That was false while a repository could enable it: setting
+    `protocol.git.allow` and a `core.gitProxy` ran the proxy. The closure is a
+    statement about what Git will do, so it has to be true rather than intended.
+    """
+    repo = _committed(tmp_path, "gitproxy")
+    marker = tmp_path / "gitproxy-MARKER"
+    program = tmp_path / "gitproxy-prog.sh"
+    program.write_text(f"#!/bin/sh\ntouch {marker}\nexit 1\n")
+    program.chmod(0o755)
+    _git(repo, "config", "protocol.git.allow", "always")
+    _git(repo, "config", "core.gitProxy", str(program))
+    _git(repo, "remote", "add", "origin", "git://example.invalid/x.git")
+    answer = gitread.probe(repo, "ls-remote", "origin", negative_statuses=())
+    assert answer.answered and not answer.ok
+    assert not marker.exists(), "the repository enabled git:// and its proxy ran"
+
+
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
     """The bound: the second question must not refuse ordinary repositories."""
     repo = tmp_path / "ordinary2"
