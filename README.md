@@ -112,6 +112,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── task-brief.template.md
     │   └── …                       scope, progress, findings, handoff, coverage
     ├── tools/                      stateless checkers, stdlib + siblings only
+    │   ├── sterile.py              builds the repository a governed read runs against
     │   ├── gitread.py              read-only Git layer, carries no write verb
     │   ├── publication_gate.py     ref namespace + push form + remote postcondition
     │   ├── pack_pin.py             verifies this release against its own manifest
