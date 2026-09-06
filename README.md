@@ -1,4 +1,4 @@
-# Runtime Pack 2.4.1
+# Runtime Pack 2.5.0
 
 A coordinator-governance layer for AI-delegated engineering: durable structured
 context, Skills, and a small stateless toolbelt — no deterministic software
@@ -10,15 +10,15 @@ every audit round while its stateless checkers survived every one
 
 | | |
 |---|---|
-| Version | **2.4.1** — `VERSION` is the single machine-readable authority |
-| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, and **no project may pin it**. It closes six defects an independent full-release audit reproduced in 2.4.0, and the transition to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) that has not been taken. The procedure is at the end of `docs/RP2.4.1-GATE.md`. 2.4.0 remains frozen, byte-identical and pinnable; nothing here moves it |
-| Gate record | `docs/RP2.4.1-GATE.md` |
+| Version | **2.5.0** — `VERSION` is the single machine-readable authority |
+| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, and **no project may pin it**. It replaces the authority mechanism behind every governed read, after 2.4.1 reached a convergence blocker and was never released. The transition to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) that has not been taken. 2.4.0 remains frozen, byte-identical and pinnable; nothing here moves it |
+| Gate record | `docs/RP2.5.0-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
 Verify a checkout — run it, do not read it:
 
 ```bash
-python3 tools/pack_pin.py . --version 2.4.1 --sha <full 40-char revision> \
+python3 tools/pack_pin.py . --version 2.5.0 --sha <full 40-char revision> \
     --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
 ```
 

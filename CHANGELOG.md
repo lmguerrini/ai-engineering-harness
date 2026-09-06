@@ -1,5 +1,114 @@
 # Changelog
 
+## 2.5.0 — the boundary stops describing Git and starts constructing the repository
+
+A **MINOR** release (`DECISIONS.md` D11): a new tool ships, and the authority
+mechanism behind every governed read is replaced. Derived rather than assumed —
+`tools/surface_diff.py` over `9d906ce..HEAD` is the check, not this paragraph.
+**State `IN_PROGRESS`** — a candidate. **No project may pin it.** The transition
+to `QUALIFIED_AND_FROZEN` is `policy/hitl-matrix.md` row 2 and has not been
+taken. **2.4.0 is untouched**: same revision, same digest, same state, and it
+remains the release a project pins today.
+
+### Why 2.4.1 was never released
+
+2.4.1 set out to close six defects an independent audit reproduced in frozen
+2.4.0. It closed those, and then eleven cycles closed defects the readings of
+those repairs reproduced *inside the repairs themselves*. Seven consecutive
+cycles each found a defect in the immediately preceding repair of the same
+boundary. Its final independent certification reproduced two more — an
+under-refusal (`git status -vv` and `--verb` executed a repository's text
+conversion helper) and an over-refusal (an ignored, never-a-submodule checkout
+made the whole project unreadable, breaking this pack's own `workspace_report`)
+— **in one repair, in one cycle**.
+
+That is not a run of bad luck. `docs/RP2.5.0-RECURRENCE-MAP.md` puts all fifteen
+in one table, and every row is the same move: the boundary answered a question
+about Git's behaviour by consulting its own description of Git's behaviour — a
+list of keys, then of verbs, then of flags, then of transports, then of option
+spellings, then of nested paths. Those lists are open sets, and a denylist that
+misses an entry runs somebody's program. Narrowing one to stop over-refusing
+widens the hole; that is why the last cycle produced both failures at once.
+
+2.4.1 is preserved on `evolution/rp2.4.1` as evolution evidence. Nothing pins
+it, and nothing here pretends it shipped.
+
+### What replaces it
+
+`docs/RP2.5.0-DESIGN-A1-sterile-execution.md` is the frozen design, committed
+before a line of implementation existed. It replaces the question. Instead of
+asking which of a repository's settings are dangerous, the boundary makes every
+configuration source Git consults a file this harness wrote:
+
+> Every configuration source Git consults during a governed read is a file this
+> harness created.
+
+`GIT_DIR` decides which files are local and worktree configuration, and it is
+chosen by the caller, not by the subject. So the harness builds the git
+directory: its own config from a blank slate, the subject's objects attached by
+`objects/info/alternates`, refs and `HEAD` copied as plain files, the index
+copied so a refresh never touches the subject. Where the working tree contains
+another repository — which Git opens from the working tree, in or out of the
+index — the read runs against a mirror in which each nested `.git` is sterile
+too.
+
+Two properties make it converge where the enumeration did not. The source set is
+**closed and observable**: Git reports every origin, so the invariant is checked
+by asking Git rather than by predicting it, and no key, verb, flag, transport or
+spelling appears in the check. And it is **fail-closed**: the directory is built
+by adding what a read needs, never by removing what it must not have, so
+anything missed makes a read fail loudly instead of running a program.
+
+### What a consumer will notice
+
+- A repository that merely *declares* a filter, textconv driver, hook or
+  transport is now **read**, not refused. Refusal was a proxy for "this might
+  execute something", and prevention makes the proxy unnecessary. Refusals get
+  strictly rarer.
+- A diff of content with a text conversion or external diff driver is now the
+  **raw** diff, because no driver runs.
+- A repository whose ref store this build cannot import is refused **by name**
+  rather than answered wrongly.
+
+### The 2.4.1 records this tree carries
+
+2.4.1's work is in this release's ancestry, so its records are in this release's
+tree. They are kept, not deleted: eight of them are the frozen designs whose
+successive failure is the evidence `RP2.5.0-RECURRENCE-MAP.md` reads, and a
+release that removed them would be arguing from evidence a reader cannot see.
+None of them describes a shipped release, and `evolution/rp2.4.1` is where the
+line itself stops.
+
+- `docs/RP2.4.1-GATE.md` — the gate record 2.4.1 reached before its final
+  certification refused it. Retained as the account of what that line did.
+- `docs/RP2.4.1-DESIGN-R1R2-design-strength-and-provenance.md` — design strength
+  and provenance; the one 2.4.1 design not about the Git boundary.
+- `docs/RP2.4.1-DESIGN-B1B4-git-read-authority.md` — what a governed read may
+  execute and answer about. First of the eight.
+- `docs/RP2.4.1-DESIGN-B5-configuration-scope.md` — asking Git which
+  configuration it applies, by scope, after two versions inferred it.
+- `docs/RP2.4.1-DESIGN-B7-conditional-closure.md` — a closure whose reason names
+  a condition, declared where the inspection could act on it.
+- `docs/RP2.4.1-DESIGN-B8-transport-reenable.md` — pinning the transport names
+  the repository itself mentions, after a repository re-enabled one.
+- `docs/RP2.4.1-DESIGN-B12-nested-repository-config.md` — every repository whose
+  configuration Git applies.
+- `docs/RP2.4.1-DESIGN-B13-closure-reach.md` — a closure holds only where its
+  mechanism reaches.
+- `docs/RP2.4.1-DESIGN-B14-reach-by-observation.md` — reach is a fact about Git,
+  not a description of this module. The last of them, and the one whose own
+  repair produced both an under-refusal and an over-refusal.
+
+### Records this release adds
+
+- `docs/RP2.5.0-GATE.md` — this release's gate record, written as the release is
+  built and saying only what has been established.
+- `docs/RP2.5.0-RECURRENCE-MAP.md` — what fifteen repairs of one boundary were
+  evidence of, and the hypothesis that reading them together produced.
+- `docs/RP2.5.0-DESIGN-A1-sterile-execution.md` — the frozen design: the
+  invariant, the mechanism, four rejected alternatives with their reasons, the
+  measured cost, seven failure modes and eleven oracles.
+
 ## 2.4.1 — the six the full-release audit reproduced
 
 A **PATCH** release (`DECISIONS.md` D11), derived rather than assumed: every
