@@ -36,7 +36,8 @@ documentation, or the module beside it, already said it did:
 | B7 | `gitread`: a closure means Git will not run the program, on **every** path that closure covers |
 | B8 | `gitread`: the subject of a read does not choose the transport policy applied to it |
 | B9 | `gitread`: the key a refusal writes is the key Git will consult, subsection case included |
-| B10 | `qualification`: one boundary decides what is unestablished, for the identity as well as the record |
+| B10 | `gitread`: two transports that differ only in spelling are two transports, not one |
+| B11 | `qualification`: one boundary decides what is unestablished, for the identity as well as the record |
 
 ## What the readings of the repairs found
 

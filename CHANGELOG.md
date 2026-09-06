@@ -78,6 +78,19 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And mutation found the same repair matching two transports as one
+
+The pin compared the repository's spelling case-insensitively against the
+transports the caller had enabled. But `protocol.File.allow` and
+`protocol.file.allow` are different transports to Git — the first enables a
+`git-remote-File` helper — so a repository could keep its helper enabled simply
+by spelling the name differently from the transport the caller asked for. With
+`file` enabled and the repository declaring `File`, the helper ran.
+
+No test distinguished the two spellings and every one of them passed; a mutant
+of the comparison is what found it, and the mutant was right where the shipped
+code was wrong. Only the spelling the caller actually enabled is left alone now.
+
 ### And the certification of THAT repair found the pin renaming its own key
 
 Git folds a configuration section and variable name to lower case and keeps a

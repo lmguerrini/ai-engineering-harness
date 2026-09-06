@@ -291,12 +291,16 @@ def _config_environment(allow_transports: tuple[str, ...] = (),
     # that deliberately enabled a transport keeps it, and everything else the
     # repository tried to turn on is turned back off by the same key at a scope
     # it cannot outrank.
-    enabled = {transport.strip().lower() for transport in allow_transports}
+    # EXACTLY, not case-insensitively. `protocol.File.allow` and
+    # `protocol.file.allow` name different transports to Git — the first enables
+    # a `git-remote-File` helper — so treating them as the same word let a
+    # repository keep a helper enabled by spelling it differently from the
+    # transport the caller asked for. Reproduced: with `file` enabled and the
+    # repository declaring `File`, the helper ran. Only the spelling the caller
+    # actually enabled is left alone.
+    enabled = {str(transport).strip() for transport in allow_transports}
     for name in sorted({str(one).strip() for one in refuse_protocols}):
-        # Compared case-insensitively against what the caller enabled, because
-        # the caller names ordinary transports, but WRITTEN in the repository's
-        # own spelling, because that is the key Git will consult.
-        if name and name.lower() not in enabled:
+        if name and name not in enabled:
             settings[f"protocol.{name}.allow"] = "never"
     environment = {"GIT_CONFIG_COUNT": str(len(settings))}
     for index, (key, value) in enumerate(sorted(settings.items())):

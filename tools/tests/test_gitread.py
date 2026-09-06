@@ -1421,6 +1421,39 @@ def test_a_mixed_case_transport_name_is_pinned_in_the_repositorys_own_spelling(t
     assert not marker.exists(), "the repository re-enabled a mixed-case transport and its helper ran"
 
 
+def test_a_transport_spelled_differently_from_the_enabled_one_is_still_pinned(tmp_path):
+    """O9. `protocol.File.allow` and `protocol.file.allow` name DIFFERENT
+    transports to Git: the first enables a `git-remote-File` helper.
+
+    The first version of this comparison folded both to lower case before asking
+    whether the caller had enabled the transport, so a repository could keep its
+    helper enabled simply by spelling the name differently from the transport the
+    caller asked for. Reproduced against real Git: with `file` enabled and the
+    repository declaring `File`, the helper ran. Mutation is what found it — no
+    test distinguished the two spellings, and every one of them passed.
+
+    Only the spelling the caller actually enabled is left alone now.
+    """
+    repo = _committed(tmp_path, "spelling")
+    marker = tmp_path / "FILE_HELPER_RAN"
+    helpers = tmp_path / "helpers"
+    helpers.mkdir()
+    helper = helpers / "git-remote-File"
+    helper.write_text(f"#!/bin/sh\nprintf 'x' >> {marker}\necho\n")
+    helper.chmod(0o755)
+    _git(repo, "config", "protocol.File.allow", "always")
+    _git(repo, "remote", "add", "origin", "File::example")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("PATH", f"{helpers}:{os.environ.get('PATH', '')}")
+        answer = gitread.probe(repo, "ls-remote", "origin", negative_statuses=(),
+                               allow_transports=("file",))
+        assert not answer.ok
+    assert not marker.exists(), (
+        "the repository kept a helper enabled by spelling its transport differently "
+        "from the one the caller enabled")
+
+
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
     """The bound: the second question must not refuse ordinary repositories."""
     repo = tmp_path / "ordinary2"
