@@ -122,7 +122,16 @@ def _git(root: str | Path, *arguments: str) -> str:
         # the report as an exit code. A refusal whose reason is discarded on the
         # way out is the shape this module exists to refuse, so a refusal from
         # the guarded reader is re-raised carrying its own words.
-        if exc.__class__.__module__ == "errors":
+        # NARROWED TO THE INTEGRITY REFUSAL. Testing the module caught
+        # `GitRefusal` too — "git invocation failed" for an unresolvable HEAD,
+        # a path that previously reported `HEAD could not be read, so the
+        # revision is unverified` and now raised through `verify_pin` as an
+        # uncaught `ValueError`, because two catch sites still named only the
+        # process error. An independent reading reproduced it against the
+        # previous candidate. Only the integrity refusal carries a reason a
+        # report would otherwise lose, so only it is translated; every other
+        # refusal keeps the shape its callers already handle.
+        if isinstance(exc, gitread.IntegrityError):
             raise ValueError(str(exc)) from exc
         raise subprocess.CalledProcessError(
             1, ["git", *arguments], output="", stderr=str(exc)) from exc
@@ -140,7 +149,16 @@ def _git_bytes(root: str | Path, *arguments: str) -> bytes:
     try:
         return gitread._run(root, *arguments, timeout=60, text=False)
     except Exception as exc:
-        if exc.__class__.__module__ == "errors":
+        # NARROWED TO THE INTEGRITY REFUSAL. Testing the module caught
+        # `GitRefusal` too — "git invocation failed" for an unresolvable HEAD,
+        # a path that previously reported `HEAD could not be read, so the
+        # revision is unverified` and now raised through `verify_pin` as an
+        # uncaught `ValueError`, because two catch sites still named only the
+        # process error. An independent reading reproduced it against the
+        # previous candidate. Only the integrity refusal carries a reason a
+        # report would otherwise lose, so only it is translated; every other
+        # refusal keeps the shape its callers already handle.
+        if isinstance(exc, gitread.IntegrityError):
             raise ValueError(str(exc)) from exc
         raise subprocess.CalledProcessError(
             1, ["git", *arguments], output="", stderr=str(exc)) from exc

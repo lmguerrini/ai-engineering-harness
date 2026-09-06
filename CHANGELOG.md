@@ -78,6 +78,27 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the closure reading found the standing rule had a blind spot
+
+Deleting three false closures made the filter keys fall to the rule that an
+unclosed program-valued key refuses — and that rule read one configuration file
+while Git applied two. With `extensions.worktreeConfig`, Git also applies
+`config.worktree`, which `git config --local --list` never shows, so a filter
+declared there stayed invisible and ran seven times through the guarded reader.
+Both sources are inspected now. The extension key was always visible to
+`--local`; the module had what it needed to ask the second question and asked
+only the first.
+
+The same reading found a regression in the repair before it: preserving an
+integrity refusal's words was implemented by testing which module an exception
+came from, which caught `GitRefusal` too, so an unresolvable HEAD raised out of
+`verify_pin` instead of reporting `HEAD could not be read`. Narrowed to the
+integrity refusal.
+
+Two oracles written for that work were green against their own defect — one
+drove the single verb the binding exempts, the other did not exist — and
+mutation caught both.
+
 ### The certification found four, and they were two questions
 
 Designed first, because both move an authority boundary:

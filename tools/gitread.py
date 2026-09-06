@@ -883,9 +883,33 @@ def program_valued_config(
 
 
 def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
+    """Every configuration source Git will actually apply, not just the obvious one.
+
+    **`--local` READS EXACTLY ONE FILE**, and Git applies more than one. With
+    `extensions.worktreeConfig = true` it also applies `config.worktree` — in the
+    main worktree beside `config`, in a linked worktree under
+    `$GIT_COMMON_DIR/worktrees/<name>/` — and `--local` never lists it. So a
+    `filter.x.clean` declared there was invisible to this inspection while Git ran
+    it on every worktree conversion: an independent reading configured one with
+    two `git config` calls and watched it execute seven times through this very
+    module.
+    
+    The extension key itself IS visible to `--local`, and `git config --worktree
+    --list` shows the file's contents, so this module had everything it needed to
+    ask the second question and asked only the first. It asks both now. Reading a
+    configuration cannot execute anything, which is why the discovery is safe even
+    when what it discovers is not.
+    """
     try:
         listing = _run(repository, "config", "--local", "--list", "--name-only", "-z",
                        timeout=timeout)
+        try:
+            # Errors when the extension is off, which is the ordinary case and
+            # not a finding — there is no such file to read.
+            listing += _run(repository, "config", "--worktree", "--list", "--name-only",
+                            "-z", timeout=timeout)
+        except GitRefusal:
+            pass
     except GitRefusal as refusal:
         # A DEADLINE THE CALLER SET IS THE CALLER'S REFUSAL. This inspection runs
         # inside the caller's timeout, so an impatient caller expired here first

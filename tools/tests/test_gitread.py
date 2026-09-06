@@ -1053,3 +1053,130 @@ def test_a_standalone_repository_and_a_linked_worktree_still_read(tmp_path):
     _git(main, "worktree", "add", "-q", "--detach", str(linked))
     assert gitread._run(linked, "rev-parse", "HEAD", timeout=30).strip()
     assert gitread._run(linked, "ls-files", timeout=30).strip()
+
+
+# --- RP2.4.1: every configuration source Git applies, and every verb bound -----
+
+def _worktree_config_repo(tmp_path, name, program):
+    """A repository declaring a filter in `config.worktree` rather than `config`."""
+    repo = tmp_path / name
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    (repo / ".gitattributes").write_text("* filter=x\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    _git(repo, "config", "--worktree", "filter.x.clean", str(program))
+    (repo / "f.txt").write_text("hello\nchanged\n")
+    return repo
+
+
+def test_a_program_declared_in_the_worktree_config_is_seen_and_refused(tmp_path):
+    """`--local` reads exactly one file and Git applies more than one.
+
+    With `extensions.worktreeConfig`, Git also applies `config.worktree`, which
+    `--local` never lists — so a `filter.x.clean` declared there was invisible to
+    this inspection while Git ran it on every worktree conversion. An independent
+    reading configured one with two `git config` calls and watched it execute
+    seven times through this module. The marker below is the whole assertion: it
+    must not exist.
+    """
+    marker = tmp_path / "the-program-ran"
+    program = tmp_path / "p.sh"
+    program.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+    program.chmod(0o755)
+    repo = _worktree_config_repo(tmp_path, "wtcfg", program)
+
+    local_listing = _git(repo, "config", "--local", "--list", "--name-only")
+    assert "filter.x.clean" not in str(getattr(local_listing, "stdout", local_listing)), (
+        "the fixture does not mean what it says: --local already lists the key")
+    assert gitread.program_valued_config(repo) == ["filter.x.clean"]
+    for verb in (("diff", "--stat"), ("status", "--porcelain"), ("ls-files", "--others")):
+        with pytest.raises(_IntegrityError):
+            gitread._run(repo, *verb, timeout=30)
+    assert not marker.exists(), "the repository's own program ran during a read"
+
+
+def test_a_worktree_config_program_in_a_linked_worktree_is_seen_too(tmp_path):
+    """The layout this pack develops in, where the file lives under the main
+    repository's `worktrees/<name>/` rather than beside `config`."""
+    marker = tmp_path / "linked-ran"
+    program = tmp_path / "q.sh"
+    program.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+    program.chmod(0o755)
+    main = _worktree_config_repo(tmp_path, "mainwt", program)
+    linked = tmp_path / "linked"
+    _git(main, "worktree", "add", "-q", "--detach", str(linked))
+    _git(linked, "config", "--worktree", "filter.x.clean", str(program))
+    assert gitread.program_valued_config(linked) == ["filter.x.clean"]
+    with pytest.raises(_IntegrityError):
+        gitread._run(linked, "status", "--porcelain", timeout=30)
+    assert not marker.exists()
+
+
+def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
+    """The bound: the second question must not refuse ordinary repositories."""
+    repo = tmp_path / "ordinary2"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    assert gitread.program_valued_config(repo) == []
+    assert gitread._run(repo, "rev-parse", "HEAD", timeout=30).strip()
+
+
+@pytest.mark.parametrize("verb", [
+    ("ls-files",), ("status", "--porcelain"), ("diff", "--stat"),
+    ("log", "--oneline", "-1"), ("cat-file", "-t", "HEAD"), ("for-each-ref",),
+])
+def test_the_root_binding_covers_every_verb_not_only_the_enumeration(tmp_path, verb):
+    """M4. Every binding test drove `ls-files`, so *for every caller, every verb*
+    was enforced by code and pinned by nothing. A redirect must refuse whatever
+    the caller happened to ask for."""
+    repo = tmp_path / "bound"
+    repo.mkdir()
+    elsewhere = tmp_path / "away"
+    elsewhere.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    assert gitread._run(repo, *verb, timeout=30) is not None
+
+    _git(repo, "config", "core.worktree", str(elsewhere))
+    with pytest.raises(_IntegrityError, match="different directory"):
+        gitread._run(repo, *verb, timeout=30)
+
+
+def test_a_root_reached_through_a_symlink_is_the_same_root(tmp_path):
+    """M3. Both sides of the comparison are resolved, which is what lets a root
+    reached through a symlinked parent verify. Nothing pinned it, so a mutant
+    comparing the caller's spelling survived."""
+    real = tmp_path / "real"
+    real.mkdir()
+    _git(real, "init", "-q", "-b", "main")
+    _git(real, "config", "user.email", "t@e.invalid")
+    _git(real, "config", "user.name", "T")
+    (real / "f.txt").write_text("hello\n")
+    _git(real, "add", "-A")
+    _git(real, "commit", "-q", "-m", "base")
+
+    link = tmp_path / "through-a-link"
+    link.symlink_to(real, target_is_directory=True)
+    # A BOUND VERB, not `rev-parse`. The binding deliberately exempts `rev-parse`
+    # to avoid asking Git about Git, so an oracle written on it never reaches the
+    # comparison at all — which is exactly why the spelling mutant survived the
+    # first version of this test. Git resolves the symlink and reports the real
+    # path, so a comparison of the caller's spelling refuses here and a
+    # comparison of the resolved paths does not.
+    assert gitread._run(link, "ls-files", timeout=30).strip()
+    assert gitread._run(f"{real}/", "ls-files", timeout=30).strip()
+    assert gitread._run(f"{real}/.", "ls-files", timeout=30).strip()

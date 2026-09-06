@@ -885,3 +885,22 @@ def test_an_archive_inside_another_checkout_cannot_be_decided(pack, tmp_path):
     assert not any("covers 0 files" in problem for problem in problems), problems
     assert any(problem.startswith(pack_pin.UNESTABLISHED) or "different directory" in problem
                for problem in problems), problems
+
+
+def test_a_checkout_whose_head_does_not_resolve_reports_rather_than_raises(pack):
+    """A refusal that is not an integrity finding must keep the shape its callers
+    already handle.
+
+    The translation that preserves an integrity refusal's words was written to
+    test the module an exception came from, which caught `GitRefusal` too — so an
+    unresolvable HEAD, previously reported as `HEAD could not be read, so the
+    revision is unverified`, raised out of `verify_pin` as an uncaught
+    `ValueError`. `run_cli` promises refusals are reported rather than raised,
+    and `verify_pin` promises every check it cannot perform is a finding. Both
+    were falsified by the repair that preserved the reason.
+    """
+    _git(pack, "symbolic-ref", "HEAD", "refs/heads/gone")
+    problems = pack_pin.verify_pin(pack, expect_version="2.1.1",
+                                   expect_sha="0" * 40, expect_state="QUALIFIED_AND_FROZEN")
+    assert problems, "an unresolvable HEAD produced no finding at all"
+    assert any("HEAD could not be read" in problem for problem in problems), problems
