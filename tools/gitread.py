@@ -903,13 +903,36 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
     try:
         listing = _run(repository, "config", "--local", "--list", "--name-only", "-z",
                        timeout=timeout)
-        try:
-            # Errors when the extension is off, which is the ordinary case and
-            # not a finding — there is no such file to read.
-            listing += _run(repository, "config", "--worktree", "--list", "--name-only",
-                            "-z", timeout=timeout)
-        except GitRefusal:
-            pass
+        # ASKED ONLY WHEN GIT WOULD APPLY IT, AND NEVER SWALLOWED.
+        #
+        # The first version wrapped this read in `except GitRefusal: pass`,
+        # reasoning that it errors when the extension is off. It does — and it
+        # also errors when it TIMES OUT, so a worktree configuration large or
+        # slow enough to outlast the caller's deadline cleared the inspection
+        # and the governed read proceeded. Reproduced against real Git with a
+        # caller-supplied deadline: `filter.x.clean` was applied by Git,
+        # `program_valued_config` returned `[]`, and `ls-files` ran. That is the
+        # fail-open this function's sibling handler already refuses two branches
+        # below, for the same reason and in the same words.
+        #
+        # So the extension is read from the local listing first — it is the only
+        # place Git accepts it, and `include.path` is itself refused as
+        # program-valued, so it cannot arrive unseen. When the extension is off,
+        # there is no second file and nothing is asked. When it is on, the read
+        # is not optional: a timeout stays the caller's refusal, and any other
+        # failure is an unreadable subject, which this module does not clear.
+        if any(key.strip().lower() == "extensions.worktreeconfig"
+               for key in nul_paths(listing.encode() if isinstance(listing, str) else listing)):
+            # NOT CAUGHT HERE. The handler below already owns every way this
+            # read can fail — it re-raises a timeout as the caller's refusal and
+            # treats an unreadable configuration as a finding rather than an
+            # empty one. A second `except` beside it was written first, and a
+            # mutation showed its unreachable half: Git validates the worktree
+            # file during the LOCAL read too, so a malformed or unreadable one
+            # fails before this line and the outer handler answers. Two handlers
+            # for one question is the shape this release exists to remove.
+            listing += _run(repository, "config", "--worktree", "--list",
+                            "--name-only", "-z", timeout=timeout)
     except GitRefusal as refusal:
         # A DEADLINE THE CALLER SET IS THE CALLER'S REFUSAL. This inspection runs
         # inside the caller's timeout, so an impatient caller expired here first

@@ -1180,3 +1180,94 @@ def test_a_root_reached_through_a_symlink_is_the_same_root(tmp_path):
     assert gitread._run(link, "ls-files", timeout=30).strip()
     assert gitread._run(f"{real}/", "ls-files", timeout=30).strip()
     assert gitread._run(f"{real}/.", "ls-files", timeout=30).strip()
+
+
+def _slow_worktree_config(tmp_path, name):
+    """A repository whose per-worktree configuration takes measurably longer to
+    read than its local one — inert padding, no program declared in the padding."""
+    repo = tmp_path / name
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    _git(repo, "config", "--worktree", "filter.x.clean", "/bin/cat")
+    worktree_config = repo / ".git" / "config.worktree"
+    padding = "\n".join(f"\tpad{index} = {'y' * 160}" for index in range(60000))
+    worktree_config.write_text(worktree_config.read_text() + "\n[padding]\n" + padding + "\n")
+    return repo
+
+
+def test_a_worktree_inspection_that_times_out_does_not_clear_the_read(tmp_path):
+    """A deadline the caller set is the caller's refusal, not a clean bill of health.
+
+    The first version of the worktree inspection wrapped its read in
+    `except GitRefusal: pass`, reasoning that it errors when the extension is
+    off. It does — and it also errors when it TIMES OUT. So a per-worktree
+    configuration large enough to outlast a caller-supplied deadline cleared the
+    inspection and the governed read proceeded, with `filter.x.clean` applied by
+    Git the whole time. Reproduced by an independent reading against real Git.
+    """
+    repo = _slow_worktree_config(tmp_path, "slowwt")
+    assert gitread.program_valued_config(repo, timeout=30) == ["filter.x.clean"], (
+        "the fixture does not mean what it says: the key is not configured")
+
+    local = _timed(repo, "--local")
+    worktree = _timed(repo, "--worktree")
+    if worktree <= local:
+        pytest.skip("this host reads both configuration files too fast to separate them")
+    budget = local + (worktree - local) / 2
+
+    with pytest.raises(GitRefusal):
+        gitread.program_valued_config(repo, timeout=budget)
+    with pytest.raises((GitRefusal, _IntegrityError)):
+        gitread._run(repo, "ls-files", timeout=budget)
+
+
+def _timed(repository, scope):
+    import time
+    start = time.time()
+    gitread._run(repository, "config", scope, "--list", "--name-only", "-z", timeout=30)
+    return time.time() - start
+
+
+def test_an_unreadable_worktree_configuration_is_refused_not_cleared(tmp_path):
+    """A check that cannot read its subject has not cleared it.
+
+    Answered by the handler that already owns every failure of this read, not by
+    a second one beside it: Git validates `config.worktree` during the LOCAL
+    read as well, so a malformed file fails before the worktree listing is even
+    attempted. Written first as its own `except`, and a mutation showed that
+    half of it was unreachable.
+    """
+    repo = tmp_path / "brokenwt"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    (repo / ".git" / "config.worktree").write_text("[broken\nnot valid config\n")
+    with pytest.raises(_IntegrityError):
+        gitread.program_valued_config(repo, timeout=30)
+    with pytest.raises(_IntegrityError):
+        gitread._run(repo, "ls-files", timeout=30)
+
+
+def test_a_repository_without_the_extension_is_not_asked_a_second_time(tmp_path):
+    """The bound: the second read happens only where Git would apply the file."""
+    repo = tmp_path / "noext"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    assert gitread.program_valued_config(repo, timeout=30) == []
+    assert gitread._run(repo, "rev-parse", "HEAD", timeout=30).strip()

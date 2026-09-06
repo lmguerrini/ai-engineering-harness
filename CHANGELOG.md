@@ -78,6 +78,21 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the reading of that repair found the widened read could be skipped
+
+The worktree inspection was wrapped in `except GitRefusal: pass`, on the
+reasoning that it errors when the extension is off. It does — and it also errors
+when it times out, so a per-worktree configuration large enough to outlast a
+caller's deadline returned an empty inspection while Git applied the filter, and
+the read went ahead. The handler two branches below already refuses exactly
+that, in the same words.
+
+It is not caught at all now; that handler owns every way the read can fail. The
+fix is smaller than the thing it replaces. A defensive branch the first attempt
+added alongside it turned out to be unreachable — Git validates the worktree
+file during the local read too — and mutation is what showed it, so it is gone
+rather than kept.
+
 ### And the closure reading found the standing rule had a blind spot
 
 Deleting three false closures made the filter keys fall to the rule that an

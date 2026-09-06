@@ -904,3 +904,20 @@ def test_a_checkout_whose_head_does_not_resolve_reports_rather_than_raises(pack)
                                    expect_sha="0" * 40, expect_state="QUALIFIED_AND_FROZEN")
     assert problems, "an unresolvable HEAD produced no finding at all"
     assert any("HEAD could not be read" in problem for problem in problems), problems
+
+
+def test_the_bytes_reader_also_keeps_an_integrity_refusal_readable(pack, tmp_path):
+    """`_git_bytes` carries the same translation as `_git`, and nothing pinned it.
+
+    Reverting only the bytes helper left the unresolved-HEAD test green, because
+    that test reaches its finding through the manifest branch either way. So the
+    manifest comparison is driven here against a root the reader refuses, where
+    the reason is the whole point of the report.
+    """
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+    _git(pack, "config", "core.worktree", str(elsewhere))
+    with pytest.raises(ValueError, match="different directory"):
+        pack_pin._git_bytes(pack, "show", f"HEAD:{pack_pin.MANIFEST_NAME}")
+    problems = pack_pin.verify_pin(pack)
+    assert any("different directory" in problem for problem in problems), problems
