@@ -894,45 +894,34 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
     two `git config` calls and watched it execute seven times through this very
     module.
     
-    The extension key itself IS visible to `--local`, and `git config --worktree
-    --list` shows the file's contents, so this module had everything it needed to
-    ask the second question and asked only the first. It asks both now. Reading a
-    configuration cannot execute anything, which is why the discovery is safe even
-    when what it discovers is not.
+    So the question is not *which files exist* but **which configuration Git will
+    apply**, and Git will answer it directly: `--show-scope` labels every applied
+    key with where it came from. Keeping the `local` and `worktree` scopes reads
+    the repository's own configuration exactly, whatever files that turns out to
+    involve. Reading a configuration cannot execute anything, which is why the
+    discovery is safe even when what it discovers is not.
     """
     try:
-        listing = _run(repository, "config", "--local", "--list", "--name-only", "-z",
+        # ASK GIT WHICH CONFIGURATION IT APPLIES, NOT WHERE IT MIGHT BE WRITTEN.
+        #
+        # Three versions of this read answered a proxy for that question and two
+        # of them shipped a defect. `--local` alone missed `config.worktree`
+        # entirely, so a declared filter was invisible and ran. Asking for the
+        # worktree file separately then required deciding what a FAILURE of that
+        # second read meant, and there was no answer: swallowing it swallowed a
+        # timeout, and not swallowing it refused two configurations Git reads
+        # perfectly well — an enabled extension whose optional file was never
+        # created, and an explicitly disabled extension in a repository with
+        # more than one worktree. Both were reproduced against real Git.
+        #
+        # `--show-scope` ends the guessing. Git reports the configuration it
+        # will actually apply and labels each key with where it came from, so
+        # whether the extension is on, whether the file exists, whether this is
+        # a linked worktree, and the rule that `--worktree` needs the extension
+        # are all Git's business and never this module's. One question, one
+        # answer, one place that can be wrong.
+        listing = _run(repository, "config", "--list", "--name-only", "--show-scope", "-z",
                        timeout=timeout)
-        # ASKED ONLY WHEN GIT WOULD APPLY IT, AND NEVER SWALLOWED.
-        #
-        # The first version wrapped this read in `except GitRefusal: pass`,
-        # reasoning that it errors when the extension is off. It does — and it
-        # also errors when it TIMES OUT, so a worktree configuration large or
-        # slow enough to outlast the caller's deadline cleared the inspection
-        # and the governed read proceeded. Reproduced against real Git with a
-        # caller-supplied deadline: `filter.x.clean` was applied by Git,
-        # `program_valued_config` returned `[]`, and `ls-files` ran. That is the
-        # fail-open this function's sibling handler already refuses two branches
-        # below, for the same reason and in the same words.
-        #
-        # So the extension is read from the local listing first — it is the only
-        # place Git accepts it, and `include.path` is itself refused as
-        # program-valued, so it cannot arrive unseen. When the extension is off,
-        # there is no second file and nothing is asked. When it is on, the read
-        # is not optional: a timeout stays the caller's refusal, and any other
-        # failure is an unreadable subject, which this module does not clear.
-        if any(key.strip().lower() == "extensions.worktreeconfig"
-               for key in nul_paths(listing.encode() if isinstance(listing, str) else listing)):
-            # NOT CAUGHT HERE. The handler below already owns every way this
-            # read can fail — it re-raises a timeout as the caller's refusal and
-            # treats an unreadable configuration as a finding rather than an
-            # empty one. A second `except` beside it was written first, and a
-            # mutation showed its unreachable half: Git validates the worktree
-            # file during the LOCAL read too, so a malformed or unreadable one
-            # fails before this line and the outer handler answers. Two handlers
-            # for one question is the shape this release exists to remove.
-            listing += _run(repository, "config", "--worktree", "--list",
-                            "--name-only", "-z", timeout=timeout)
     except GitRefusal as refusal:
         # A DEADLINE THE CALLER SET IS THE CALLER'S REFUSAL. This inspection runs
         # inside the caller's timeout, so an impatient caller expired here first
@@ -973,8 +962,26 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
             "an empty one",
             repository=str(repository), refusal=str(refusal)[:160],
         ) from refusal
+    # `--show-scope -z` answers as strictly alternating scope and key, NUL after
+    # each. Anything else is not an answer this function understands.
+    fields = nul_paths(listing.encode() if isinstance(listing, str) else listing)
+    if len(fields) % 2:
+        raise IntegrityError(
+            "this repository's configuration listing was not the scope-labelled answer this "
+            "check reads, so which configuration Git applies cannot be established. An answer "
+            "that cannot be parsed is not an empty one",
+            repository=str(repository), fields=len(fields),
+        )
     found = []
-    for key in nul_paths(listing.encode() if isinstance(listing, str) else listing):
+    for scope, key in zip(fields[::2], fields[1::2]):
+        # ONLY THE REPOSITORY'S OWN CONFIGURATION, which is what this function
+        # promises and what the caller can be held to. `global` and `system` are
+        # the environment's, already neutralised by this module and not the
+        # subject here; `command` and any scope a later Git adds are not the
+        # repository's either. Keeping a named pair rather than dropping a named
+        # one means a new scope arrives ignored instead of silently trusted.
+        if scope.strip().lower() not in ("local", "worktree"):
+            continue
         lowered = key.strip().lower()
         if not lowered:
             continue

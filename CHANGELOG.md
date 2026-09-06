@@ -78,6 +78,40 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the reading of THAT repair found it refused valid repositories
+
+Not catching the worktree read meant every way it could fail now reached the
+caller — including two that are not failures of the repository at all. Git lets
+`extensions.worktreeConfig` be enabled without `config.worktree` ever being
+created, and it refuses `--worktree` outright when the extension is off and more
+than one worktree exists. Both are ordinary repositories that `git ls-files`
+reads perfectly well, and both were refused.
+
+That is the third answer this inspection has given to one question, and the
+second to be wrong, so the question itself was reconsidered rather than the
+handling patched again. The check must know **which configuration Git will
+apply**. It had been inferring that — first from a single file, then from the
+extension key's presence, then from whether a second read failed. Git will
+simply say: `--show-scope` labels every applied key with where it came from.
+
+The reasoning is frozen in `docs/RP2.4.1-DESIGN-B5-configuration-scope.md`,
+written before the change and recording the two designs rejected — classifying
+the second read's failures more finely, and parsing `config.worktree` directly.
+
+One read now replaces two, keeping the keys Git labels `local` or `worktree`.
+The extension's value, the missing optional file, linked worktrees, and Git's
+own rule about `--worktree` are all Git's business again. Keeping the scopes
+rather than dropping the ones to ignore is deliberate: a scope a later Git adds
+arrives ignored instead of silently trusted.
+
+The scope filter is load-bearing. Under this module's hardened environment Git
+reports fifteen program-valued keys in `command` and `unknown` scope, including
+the module's own hardening flags; without the filter the check refuses every
+repository. Mutation also showed the framing guard had no test, and that
+removing it made a reply the parser could not read return *nothing found* —
+this check's own fail-open, arriving through the parser. The guard stayed and
+the missing test was written.
+
 ### And the reading of that repair found the widened read could be skipped
 
 The worktree inspection was wrapped in `except GitRefusal: pass`, on the

@@ -1117,6 +1117,108 @@ def test_a_worktree_config_program_in_a_linked_worktree_is_seen_too(tmp_path):
     assert not marker.exists()
 
 
+def _committed(tmp_path, name):
+    """An ordinary repository with one commit."""
+    repo = tmp_path / name
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    return repo
+
+
+def test_an_enabled_extension_with_no_worktree_file_still_reads(tmp_path):
+    """O2. Git lets the extension be enabled without the optional file ever being
+    created, and reads such a repository perfectly well. A version of this check
+    asked for the file whenever the key was present and turned Git's `no such
+    file` into a refusal, so enabling an extension and writing nothing to it
+    blocked every governed read of a valid repository."""
+    repo = _committed(tmp_path, "enabled_nofile")
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    assert not (repo / ".git" / "config.worktree").exists()
+    assert gitread.program_valued_config(repo) == []
+    assert gitread._run(repo, "ls-files", timeout=30).strip() == "f.txt"
+
+
+def test_a_disabled_extension_still_reads_with_several_worktrees(tmp_path):
+    """O3. Git refuses `--worktree` outright when the extension is off and more
+    than one worktree exists. A version of this check tested the key's PRESENCE
+    rather than Git's reading of its VALUE, so an explicitly disabled extension
+    took the same branch as an enabled one and that refusal reached the caller."""
+    main = _committed(tmp_path, "disabled_many")
+    linked = tmp_path / "disabled_many_linked"
+    _git(main, "config", "extensions.worktreeConfig", "false")
+    _git(main, "worktree", "add", "-q", "--detach", str(linked))
+    for repository in (main, linked):
+        assert gitread.program_valued_config(repository) == []
+        assert gitread._run(repository, "ls-files", timeout=30).strip() == "f.txt"
+
+
+def test_a_disabled_extension_hides_nothing_because_git_ignores_it(tmp_path):
+    """O4. The other side of O3: a `config.worktree` that Git does not apply is
+    not a finding. Reporting it would refuse a repository over a program Git
+    will never run, and this check reports what Git applies."""
+    repo = _committed(tmp_path, "disabled_withfile")
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    _git(repo, "config", "--worktree", "filter.x.clean", "/bin/cat")
+    assert gitread.program_valued_config(repo) == ["filter.x.clean"]
+    _git(repo, "config", "extensions.worktreeConfig", "false")
+    assert (repo / ".git" / "config.worktree").exists()
+    assert gitread.program_valued_config(repo) == []
+    assert gitread._run(repo, "ls-files", timeout=30).strip() == "f.txt"
+
+
+def test_only_the_repositorys_own_scopes_are_inspected(tmp_path):
+    """O5. The function promises the repository's OWN configuration. A key
+    supplied on the command line is applied by Git and labelled `command`, so a
+    check that kept every scope would report the caller's own environment as a
+    finding of the repository."""
+    repo = _committed(tmp_path, "scoped")
+    listing = gitread._run(
+        repo, "config", "--list", "--name-only", "--show-scope", "-z", timeout=30)
+    scopes = {field for field in gitread.nul_paths(listing.encode())[::2]}
+    assert scopes <= {"local", "worktree", "global", "system", "command", "unknown"}
+    injected = subprocess.run(
+        ["git", "-c", "filter.y.clean=/bin/cat", "config", "--list",
+         "--name-only", "--show-scope", "-z"],
+        cwd=repo, capture_output=True, check=True).stdout
+    fields = gitread.nul_paths(injected)
+    assert "filter.y.clean" in fields
+    assert dict(zip(fields[1::2], fields[::2]))["filter.y.clean"] == "command"
+    assert gitread.program_valued_config(repo) == []
+
+
+def test_an_unparseable_scope_listing_is_refused_not_read_as_empty(tmp_path):
+    """O7. An answer this function cannot parse is not an answer of `nothing`.
+
+    `--show-scope -z` frames its reply as strictly alternating scope and key. If
+    a future Git framed it differently — keys alone, say — the pairing would
+    read every second key as a scope, match none of them against the repository
+    scopes, and return `[]`. That is the fail-open this whole check exists to
+    prevent, arriving through the parser instead of through a swallowed error,
+    and mutation scoring found it: deleting the parity guard changed no test.
+
+    Driven at the seam because Git cannot be made to emit the malformed framing;
+    what is under test is this function's reading of the reply, not Git's.
+    """
+    repo = _committed(tmp_path, "oddframing")
+    real = gitread._run
+
+    def odd_listing(repository, *args, **kwargs):
+        if args[:1] == ("config",):
+            return "\0".join(["filter.x.clean", "core.pager", "gpg.program"]) + "\0"
+        return real(repository, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(gitread, "_run", odd_listing)
+        with pytest.raises(_IntegrityError) as refused:
+            gitread.program_valued_config(repo)
+    assert "not an empty one" in str(refused.value)
+
+
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
     """The bound: the second question must not refuse ordinary repositories."""
     repo = tmp_path / "ordinary2"
@@ -1215,23 +1317,35 @@ def test_a_worktree_inspection_that_times_out_does_not_clear_the_read(tmp_path):
     assert gitread.program_valued_config(repo, timeout=30) == ["filter.x.clean"], (
         "the fixture does not mean what it says: the key is not configured")
 
-    local = _timed(repo, "--local")
-    worktree = _timed(repo, "--worktree")
-    if worktree <= local:
-        pytest.skip("this host reads both configuration files too fast to separate them")
-    budget = local + (worktree - local) / 2
+    # Calibrated against the read the inspection actually performs. An earlier
+    # version timed `--local` and `--worktree` separately and set a deadline
+    # between them, which stopped meaning anything the moment the inspection
+    # stopped being two reads: the single scope-labelled read finished inside
+    # that budget and the oracle passed without ever reaching a timeout.
+    cost = _timed(repo)
+    budget = cost / 4
+    if budget <= 0:
+        pytest.skip("this host reads the configuration too fast to time")
 
-    with pytest.raises(GitRefusal):
+    # NOT `== []`. The failure being guarded is precisely an inspection that
+    # cannot finish and reports nothing found, so an empty list here is the
+    # defect and must not be mistaken for a pass.
+    with pytest.raises(GitRefusal) as refusal:
         gitread.program_valued_config(repo, timeout=budget)
+    assert "timed out" in str(refusal.value)
     with pytest.raises((GitRefusal, _IntegrityError)):
         gitread._run(repo, "ls-files", timeout=budget)
 
 
-def _timed(repository, scope):
+def _timed(repository):
+    """How long the inspection's own read of this repository takes, warm."""
     import time
-    start = time.time()
-    gitread._run(repository, "config", scope, "--list", "--name-only", "-z", timeout=30)
-    return time.time() - start
+    gitread._run(repository, "config", "--list", "--name-only", "--show-scope", "-z",
+                 timeout=30)
+    start = time.monotonic()
+    gitread._run(repository, "config", "--list", "--name-only", "--show-scope", "-z",
+                 timeout=30)
+    return time.monotonic() - start
 
 
 def test_an_unreadable_worktree_configuration_is_refused_not_cleared(tmp_path):
