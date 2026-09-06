@@ -1,8 +1,10 @@
 # RP 2.4.1 — gate record
 
 A bounded blocker-repair release. It closes the six defects an independent full
-behavioural audit of frozen 2.4.0 reproduced, and nothing else. No Evolution
-Candidate is implemented here, no capability is added, and 2.4.0 is untouched.
+behavioural audit of frozen 2.4.0 reproduced, **and the defects that the
+independent readings of those repairs went on to reproduce in the repairs
+themselves**, and nothing else. No Evolution Candidate is implemented here, no
+capability is added, and 2.4.0 is untouched.
 
 ## Subject
 
@@ -28,6 +30,32 @@ documentation, or the module beside it, already said it did:
 | R4 | `gitread`: neutralised "for *every* invocation rather than at the call sites somebody remembered" |
 | R5 | `pack_pin`: "a verifier must mean exactly what the documentation around it claims" |
 | R6 | `pack_pin`: "a pinned release is a claim about the *directory*, not only about the index" |
+| B1–B4 | `gitread`: the hardened boundary answers about the directory it was asked about |
+| B5 | `gitread`: the inspection reports the configuration **Git applies**, not the one it guessed |
+| B6 | `gitread`: `nul_paths`' own promise, that a byte string which cannot be decoded still reaches a checker |
+
+## What the readings of the repairs found
+
+Each repair was read by an auditor that did not write it, and four of those
+readings reproduced a defect **inside the repair being closed**. They are listed
+because a release whose gate record names only its first six repairs understates
+what a founder is being asked to freeze.
+
+| Found in | Reproduced defect | Closed by |
+|---|---|---|
+| the R4 repair | three keys were closed as "reachable only through `--filters`", which ordinary `diff` disproves | deleting the false closures |
+| that repair | Git answered about a different directory than the one asked about | binding the answer to the directory, for every verb but `config` and `rev-parse` |
+| that repair | the widened configuration read was wrapped in `except GitRefusal: pass`, which also swallowed a **timeout** | not catching it; the handler around the function already owns every failure |
+| that repair | not catching it refused two repositories real Git reads: an enabled extension with no `config.worktree`, and a disabled extension beside several worktrees | asking Git which configuration it applies, by scope |
+| that repair | a configuration Git reads without complaint raised `UnicodeEncodeError` out of every governed read — a denial naming no cause, and neither of this module's refusals | reading the listing as bytes, as every other `-z` enumeration here already does |
+
+The last row is why `_program_valued_config` now issues one scope-labelled read
+rather than two. Three versions of that inspection answered a proxy for its own
+question and two shipped a defect, so the fourth stopped inferring: `--show-scope`
+makes the extension's value, a missing optional file, linked worktrees and Git's
+multiple-worktree rule Git's business rather than this module's. The reasoning,
+the two rejected designs and a correction recorded after mutation scoring are in
+`docs/RP2.4.1-DESIGN-B5-configuration-scope.md`.
 
 MINOR was checked and rejected: no policy, tool or capability is added.
 `DesignRecord.problems` gains one keyword argument that defaults to 2.4.0's
@@ -101,9 +129,26 @@ tests which fail on any byte change** — the six identity-comparing tests
 2.4.0 limitation 70 records this pack scoring one of its own passes without that
 exclusion, so the exclusion is stated here rather than assumed. All nine killed.
 
+Each later repair cycle was scored in its own run against its own green
+baseline, the last two scoring five mutants each and killing all five, with the
+exact pre-repair code restored as a mutant so the new oracle is shown to
+discriminate rather than merely to pass. Those runs used overlapping mutant sets, so they are reported
+per cycle rather than added into a single figure this record cannot support.
+Scoring did not merely confirm the repairs: in two cases it is what showed the
+code was wrong rather than the tests.
+A defensive branch proved unreachable and was deleted; a framing guard proved
+load-bearing — deleting it made an unparseable reply report *nothing found* —
+and was kept with the missing oracle written. Both dispositions are recorded
+where the code is, with the reason they differ.
+
+One mutation run was killed by a foreground timeout and left the subject
+mutated. It was restored from a pristine copy before anything else ran, and the
+scores above were taken afterwards; the harness now refuses to score against a
+baseline that is not green.
+
 ## Evolution evidence
 
-All six repairs classify as `RECURRENCE` under
+All repairs classify as `RECURRENCE` under
 `tools/evolution_evidence.py` against `policy/recurrence-classes.json`. No new
 class was created, none was merged by guess, and no occurrence was overwritten.
 

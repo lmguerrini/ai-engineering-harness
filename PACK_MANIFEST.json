@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": "2026-09-05",
-  "tree_digest_sha256": "639d5f1469f4c7822f3cbbbea27824422cb6a6210164820b04d3cb369c16de37",
+  "tree_digest_sha256": "1b54146a51349a9271167e7ee7948d027a8057636340eecfaa69913b8dfb1682",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 2835
+    "passed": 2836
   },
   "gate_record": "docs/RP2.4.1-GATE.md",
   "delta_audit": "docs/RP2.4-CAPABILITY-MAP.md",

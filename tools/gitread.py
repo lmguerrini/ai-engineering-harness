@@ -920,8 +920,19 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
         # a linked worktree, and the rule that `--worktree` needs the extension
         # are all Git's business and never this module's. One question, one
         # answer, one place that can be wrong.
+        # READ AS BYTES, like every other `-z` enumeration in this module.
+        #
+        # `_run` decodes text with `surrogateescape` because a byte string need
+        # not be valid UTF-8, and `nul_paths` decodes the same way for the same
+        # reason. Handing it a str meant re-encoding, and a bare `.encode()`
+        # cannot invert a `surrogateescape` decode: a repository with a
+        # non-UTF-8 subsection name — which Git reads without complaint — left
+        # this function raising `UnicodeEncodeError` out of every governed read,
+        # a denial that names no cause and is neither of this module's refusals.
+        # There is no round trip to get wrong now.
         listing = _run(repository, "config", "--list", "--name-only", "--show-scope", "-z",
-                       timeout=timeout)
+                       timeout=timeout, text=False)
+        assert isinstance(listing, bytes)
     except GitRefusal as refusal:
         # A DEADLINE THE CALLER SET IS THE CALLER'S REFUSAL. This inspection runs
         # inside the caller's timeout, so an impatient caller expired here first
@@ -964,7 +975,7 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
         ) from refusal
     # `--show-scope -z` answers as strictly alternating scope and key, NUL after
     # each. Anything else is not an answer this function understands.
-    fields = nul_paths(listing.encode() if isinstance(listing, str) else listing)
+    fields = nul_paths(listing)
     if len(fields) % 2:
         raise IntegrityError(
             "this repository's configuration listing was not the scope-labelled answer this "

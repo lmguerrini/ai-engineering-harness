@@ -1209,7 +1209,10 @@ def test_an_unparseable_scope_listing_is_refused_not_read_as_empty(tmp_path):
 
     def odd_listing(repository, *args, **kwargs):
         if args[:1] == ("config",):
-            return "\0".join(["filter.x.clean", "core.pager", "gpg.program"]) + "\0"
+            # Bytes, because that is what the inspection now asks `_run` for; a
+            # fake that answers in the wrong type would be testing the seam
+            # rather than the parsing.
+            return b"\0".join([b"filter.x.clean", b"core.pager", b"gpg.program"]) + b"\0"
         return real(repository, *args, **kwargs)
 
     with pytest.MonkeyPatch.context() as patch:
@@ -1217,6 +1220,41 @@ def test_an_unparseable_scope_listing_is_refused_not_read_as_empty(tmp_path):
         with pytest.raises(_IntegrityError) as refused:
             gitread.program_valued_config(repo)
     assert "not an empty one" in str(refused.value)
+
+
+def test_a_configuration_git_cannot_decode_is_still_read_and_still_inspected(tmp_path):
+    """O8. A configuration key need not be valid UTF-8, and Git reads one that
+    is not without complaint.
+
+    `_run` decodes text with `surrogateescape` and `nul_paths` decodes the same
+    way, both deliberately: a byte string that cannot be decoded must still
+    reach a checker, because refusing to represent it is how it goes unexamined.
+    Handing `nul_paths` a str meant re-encoding it, and a bare `.encode()`
+    cannot invert a `surrogateescape` decode — so a repository carrying a
+    non-UTF-8 subsection name raised `UnicodeEncodeError` out of every governed
+    read: a denial naming no cause, which is neither of this module's refusals.
+    Found by an independent reading, and it predated the scope repair on the
+    line the repair rewrote.
+
+    Both directions are asserted. The harmless case must READ, and the
+    program-valued case must still be FOUND — a fix that made the undecodable
+    key merely disappear would pass the first half and open the hole the whole
+    check exists to close.
+    """
+    harmless = _committed(tmp_path, "undecodable")
+    (harmless / ".git" / "config").write_bytes(
+        (harmless / ".git" / "config").read_bytes()
+        + b'[remote "caf\xe9"]\n\turl = https://example.invalid/x\n')
+    assert gitread.program_valued_config(harmless) == []
+    assert gitread._run(harmless, "ls-files", timeout=30).strip() == "f.txt"
+
+    declared = _committed(tmp_path, "undecodable_program")
+    (declared / ".git" / "config").write_bytes(
+        (declared / ".git" / "config").read_bytes()
+        + b'[filter "caf\xe9"]\n\tclean = /bin/cat\n')
+    assert gitread.program_valued_config(declared) == ["filter.caf\udce9.clean"]
+    with pytest.raises(_IntegrityError):
+        gitread._run(declared, "ls-files", timeout=30)
 
 
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
@@ -1323,7 +1361,11 @@ def test_a_worktree_inspection_that_times_out_does_not_clear_the_read(tmp_path):
     # stopped being two reads: the single scope-labelled read finished inside
     # that budget and the oracle passed without ever reaching a timeout.
     cost = _timed(repo)
-    budget = cost / 4
+    # Capped as well as scaled. The budget came from one warm measurement, so a
+    # transient inflation of that measurement alone would raise the deadline
+    # above the real read and the oracle would stop biting. A smaller budget can
+    # only make the timeout more certain, which is the direction this test wants.
+    budget = min(cost / 4, 0.02)
     if budget <= 0:
         pytest.skip("this host reads the configuration too fast to time")
 

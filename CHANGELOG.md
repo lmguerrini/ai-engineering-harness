@@ -78,6 +78,31 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the reading of THAT one found a configuration Git reads and this did not
+
+A configuration key need not be valid UTF-8. Git reads one that is not without
+complaint, and `nul_paths` decodes with `surrogateescape` for exactly that
+reason — its own words are that a byte string which cannot be decoded must still
+reach a checker, because refusing to represent it is how it goes unexamined.
+
+The scope-labelled listing was being read as text and re-encoded to hand back,
+and a bare `.encode()` cannot invert a `surrogateescape` decode. A repository
+carrying a non-UTF-8 subsection name therefore raised `UnicodeEncodeError` out of
+`program_valued_config` and out of every governed read: a denial that names no
+cause, and neither of this module's two refusals. The defect predated the scope
+repair, on the line that repair rewrote, and had no test.
+
+The listing is read as bytes now, which is what every other `-z` enumeration in
+this module already did, so there is no round trip left to invert. Both
+directions are pinned by one oracle: the harmless case must read, and a
+program-valued key whose subsection cannot be decoded must still be found and
+refused — a repair that merely made the undecodable key disappear would have
+passed the first half and opened the hole the check exists to close.
+
+The same reading noted the timeout oracle set its deadline from a single warm
+measurement, so a transient inflation of that one measurement would stop it
+biting. The budget is capped as well as scaled now.
+
 ### And the reading of THAT repair found it refused valid repositories
 
 Not catching the worktree read meant every way it could fail now reached the
