@@ -6,6 +6,7 @@ throwaway repo is the fixture.
 
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -1420,6 +1421,17 @@ def test_no_spelling_of_a_nested_git_executes_the_subjects_program(tmp_path, spe
             f"a nested .git spelled as a {spelling} executed its own configuration "
             f"under `git {' '.join(arguments)}`"
         )
+    # AND THE ANSWER IS STILL THE TRUTH. Not executing is half the property: a
+    # build that simply omitted the nested `.git` from the view would also execute
+    # nothing, and would describe a repository that is not there. Mutation found
+    # that gap — a mutant which dropped a symlinked `.git` from the walk passed
+    # every assertion above.
+    marker.write_bytes(b"")
+    expected, got = _exactly_as_real_git(sup, "status", "--porcelain")
+    assert expected is not None, "real git refused the fixture, so this proves nothing"
+    assert got == expected, (
+        f"a nested .git spelled as a {spelling} changed what the superproject reports"
+    )
     assert ran_for_real_git > 0, (
         f"real git ran no program for the {spelling} fixture, so this row carries no "
         f"positive control and proves nothing"
@@ -1984,3 +1996,40 @@ def test_concurrent_governed_reads_do_not_share_state(tmp_path):
     for index, answer in results.items():
         assert answer.answered, f"{index}: {answer.cause}"
     assert _did_it_run(marker) == 0
+
+
+def test_the_view_builder_actually_runs_its_own_post_condition(tmp_path, monkeypatch):
+    """The check exists and the builder must CALL it.
+
+    Mutation found this gap rather than review: deleting the call site left the
+    direct test of the check passing, because that test invokes the check itself.
+    A guard nobody reaches is not a guard, so the wiring is pinned separately from
+    the property."""
+    calls = []
+    original = _sterile._every_git_in_the_view_is_ours
+
+    def recording(view, built):
+        calls.append((Path(view), set(built)))
+        return original(view, built)
+
+    monkeypatch.setattr(_sterile, "_every_git_in_the_view_is_ours", recording)
+
+    subject = tmp_path / "subject"
+    subject.mkdir()
+    _git(subject, "init", "-q", "-b", "main")
+    _commit_all(subject)
+    nested = subject / "nested"
+    nested.mkdir()
+    _git(nested, "init", "-q", "-b", "main")
+    _commit_all(nested, "n.txt")
+
+    read = _sterile.build(subject)
+    try:
+        assert calls, "the view was built without its post-condition being run"
+        _view, built = calls[-1]
+        assert built, "the post-condition was handed no built set, so it can accept anything"
+        scratch = os.path.realpath(str(read.scratch))
+        for made in built:
+            assert os.path.realpath(str(made)).startswith(scratch), made
+    finally:
+        read.discard()
