@@ -218,8 +218,16 @@ durable restart with no phantom work, producer completion, failure and capacity,
 rollback and refusal — are exercised by `test_two_consumer_rehearsal.py`,
 `test_adoption_rehearsal.py`, `test_lifecycle_rehearsal.py`,
 `test_continuation_rehearsal.py`, `test_consumer_compatibility.py` and
-`test_background_governance.py`, which run **174 tests** and are part of the
-suite this release records.
+`test_background_governance.py`, which are part of the suite this release
+records. Their population is not restated here, for the same reason the delta is
+not — measure it:
+
+```bash
+python3 -m pytest tools/tests/test_two_consumer_rehearsal.py \
+    tools/tests/test_adoption_rehearsal.py tools/tests/test_lifecycle_rehearsal.py \
+    tools/tests/test_continuation_rehearsal.py tools/tests/test_consumer_compatibility.py \
+    tools/tests/test_background_governance.py -q
+```
 
 ## The hostile matrix, against the shipped implementation
 
