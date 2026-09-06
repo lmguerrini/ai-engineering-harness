@@ -78,6 +78,40 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the certification found the inspection asking about one repository
+
+A populated submodule is a second repository, and Git applies **its**
+configuration when it runs the nested `status` and `diff` that an ordinary
+superproject read requires. The inspection listed only the superproject's, so a
+clean filter declared one directory down was invisible to it and ran — nine
+times in one reproduction, through this pack's own `workspace_report` path.
+
+That is the fifth defect in this area and the same shape as the first, so the
+rule is stated once rather than patched again: **the inspection's subject is
+whatever configuration Git will apply to this read.** `--local` read one file
+while Git applied two; the general `protocol.allow` was assumed to cover the
+specific key Git consults; a lower-cased name was written where Git keeps the
+subsection verbatim; and now the superproject was inspected while Git also read
+the submodule.
+
+Every populated submodule is inspected now, under the rule the superproject
+already lives under, and the finding names the path that owns it. The reasoning,
+the recurrence table and the two rejected designs are in
+`docs/RP2.4.1-DESIGN-B12-nested-repository-config.md`. Suppressing
+the nested processes instead was rejected: it would close the route by making
+the reports lie, and a submodule change would stop appearing in `status` and
+`diff` — trading repository-chosen execution for a false report.
+
+The cost is recorded in `known_limitations` rather than discovered later: a
+superproject whose submodule declares a program-valued key is refused where it
+was read before.
+
+Mutation found two gaps in the first version of these tests. Dropping the gitlink
+mode check left every tracked path treated as a possible submodule, so a tracked
+symlink pointing at an unrelated repository would have refused the superproject;
+and the depth bound returned what the walk had seen instead of refusing, which is
+a partial inspection reported as a clean one. Both are pinned now.
+
 ### And mutation found the same repair matching two transports as one
 
 The pin compared the repository's spelling case-insensitively against the

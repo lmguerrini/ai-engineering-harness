@@ -4,13 +4,13 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": "2026-09-05",
-  "tree_digest_sha256": "c9e5e613267446eaa9dd0171b5eb71546c63033c0a8aa8ce5e411586e916a0db",
+  "tree_digest_sha256": "2d9a99e14a115ac36ff994a5812a736da0c7fc8aded2fac929287f07f3016595",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
   "tests": {
     "command": "python3 -m pytest tools/tests/ -q",
-    "passed": 2848
+    "passed": 2854
   },
   "gate_record": "docs/RP2.4.1-GATE.md",
   "delta_audit": "docs/RP2.4-CAPABILITY-MAP.md",
@@ -126,7 +126,8 @@
     "A READING SCOPED TO A DELTA CANNOT SEE WHAT THE DELTA DID NOT TOUCH, AND THIS RELEASE MISTOOK THAT FOR CONVERGENCE. Three successive bounded readings of three repair deltas found fewer and fewer defects, and the last two found none in the pack's behaviour at all — which was read as the release settling. It was the DELTAS settling. A fourth reading pointed at the modules a consuming project actually calls returned SEVEN reproduced behavioural defects, none of them a test-only finding, in code no repair had touched since the first round. They are closed and pinned in tools/tests/test_behaviour_findings.py. Recorded because the wrong conclusion was drawn from evidence that could not have supported it, and the next release should read the whole subject at least once after its last delta rather than only the delta.",
     "THREE OF THE SEVEN BEHAVIOURAL DEFECTS WERE TWO MECHANISMS ANSWERING ONE QUESTION DIFFERENTLY — the class this release's headline repair was for. `capability_open` called the adapter verifier by a path the repair to `verify_contract` never reached, so readiness reported VERIFIED where the verifier refused; `derive` did not consult a recorded producer where `reconcile` did, so one record was WAITING and RECOVERY_REQUIRED at once; and the projection's headline resolved artifacts against the process while its own panel resolved them against the record, so one page said WAITING and A RESULT IS WAITING TO BE READ. Fixing one caller of a shared question does not fix the question.",
     "EVERY READING OF CODE WRITTEN IN THIS SESSION FOUND DEFECTS IN IT, AND THE RATE DID NOT FALL. A reading of the pack's behaviour found seven; a reading of the repairs for those seven, plus two new tools, found eleven more — ten blocking. Of those eleven, three were the SAME `str(None)` defect the release had fixed in tools/qualification.py hours earlier, remade in a new module; two were repairs that covered some call sites of a shared question and not others; and two were oracles passing for the wrong reason. Newly written code is where this release's defects are, and a reading of it is worth more than another reading of what was already read.",
-    "THIS RELEASE SCORED ONE OF ITS OWN MUTATION PASSES INVALIDLY. Six tests fail on ANY byte change because they compare a recorded digest or count; this release labelled them NOT A MUTATION ORACLE so a reader would exclude them, and then ran a mutation pass without excluding them — so every mutant exited non-zero and every verdict read KILLED. Re-scored against a clean baseline, one of the ten had survived. Recorded because the labelling was done for other readers and not applied by the person who wrote it, which is the same shape as a rule stated in prose and not enforced in code."
+    "THIS RELEASE SCORED ONE OF ITS OWN MUTATION PASSES INVALIDLY. Six tests fail on ANY byte change because they compare a recorded digest or count; this release labelled them NOT A MUTATION ORACLE so a reader would exclude them, and then ran a mutation pass without excluding them — so every mutant exited non-zero and every verdict read KILLED. Re-scored against a clean baseline, one of the ten had survived. Recorded because the labelling was done for other readers and not applied by the person who wrote it, which is the same shape as a rule stated in prose and not enforced in code.",
+    "A SUBMODULE'S OWN CONFIGURATION WAS NEVER INSPECTED, AND GIT APPLIES IT. A populated submodule is a second repository, and Git applies its configuration when it runs the nested `status` and `diff` an ordinary superproject read requires. A `filter.*.clean` declared in `sup/.git/modules/<name>/config` therefore ran while `program_valued_config` reported nothing — reproduced through this pack's own `workspace_report` path, nine executions in one run. Two statements were false while it stood: `diff.external` was closed as \"disabled by --no-ext-diff on every verb that accepts it\", which is not true of the nested diff Git launches itself, and limitation 10 said a clean filter falls to the standing rule and refuses, which was not true of a submodule's. Every populated submodule is inspected now, under the rule the superproject already lives under, and the finding names the path that owns it. THE COST, STATED: a superproject whose submodule declares a program-valued key is refused where it was previously read — the same treatment the superproject already gets for the same key, and the Git-LFS shape limitation 10 calls the common one is newly reachable through a submodule. The walk is bounded at 32 and exceeding the bound refuses, because a partial inspection is not a clean one."
   ],
   "deferred": {
     "RP2.3 DEFER_WITH_TRIGGER": "see docs/RP2.3-CAPABILITY-MAP.md for each item and the observation that reopens it: the full routing-evidence schema; the clean-clone reproducibility gate; a commit-subject length ceiling; publication readiness beyond the profile declaration; a write-ceiling runtime for delegation scope.",
@@ -139,7 +140,7 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 190,
+  "digest_file_count": 191,
   "failure_mode_closure": "docs/RP2.3-FAILURE-MODE-CLOSURE.md",
   "evolution_candidates": [
     "A DURABLE EVENT LOG. Seven event classes ship because seven are what durable artifacts date; a capability opening, an audit being dispatched and a finding being recorded are not among them, because nothing writes their time down. Trigger: a project wanting a timeline of governance events rather than of artifacts.",

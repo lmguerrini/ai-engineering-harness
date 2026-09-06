@@ -929,19 +929,90 @@ def program_valued_config(
     return _inspect(repository, timeout, allow_transports)[0]
 
 
+#: How deep the walk into nested repositories goes before it refuses. Submodules
+#: nest, and a repository can be arranged to link to itself; a bound that refuses
+#: is the difference between a check that stops and a check that hangs.
+MAXIMUM_NESTED_DEPTH = 32
+
+
 def _inspect(repository, timeout, allow_transports) -> tuple[list[str], tuple[str, ...]]:
     """Both questions the one configuration listing answers: which keys name a
-    program Git would run, and which transports this repository turns on."""
+    program Git would run, and which transports this repository turns on.
+
+    Asked of **every repository whose configuration Git will apply to this
+    read**, not only the one named. A populated submodule is a second repository
+    and Git applies its configuration when it runs the nested `status` and `diff`
+    an ordinary superproject read requires — so a clean filter declared there ran
+    while this function reported nothing.
+    """
     import fnmatch
 
     if _inspecting():
         return [], ()
     _INSPECTION.active = True
     try:
-        return _program_valued_config(repository, fnmatch, timeout,
-                                      allow_transports=allow_transports)
+        return _inspect_tree(repository, fnmatch, timeout, allow_transports)
     finally:
         _INSPECTION.active = False
+
+
+def _gitlink_paths(repository, timeout) -> list[str]:
+    """Submodule paths, taken from the index rather than from `.gitmodules`.
+
+    The index is what Git itself consults for gitlinks, and it costs one read.
+    `.gitmodules` is a tracked file a repository controls and can disagree with
+    the index, which would make the walk skip a submodule that Git still enters.
+    """
+    try:
+        raw = _run(repository, "ls-files", "--stage", "-z", timeout=timeout, text=False)
+    except GitRefusal:
+        # Not a repository, or one whose index cannot be read. The caller's own
+        # verb will produce the refusal that names the real problem.
+        return []
+    found = []
+    for record in nul_paths(raw):
+        # `<mode> <object> <stage>\t<path>`; 160000 is a gitlink.
+        head, _, path = record.partition("\t")
+        if path and head.split(" ", 1)[0] == "160000":
+            found.append(path)
+    return found
+
+
+def _inspect_tree(repository, fnmatch, timeout, allow_transports,
+                  *, seen=None, depth=0) -> tuple[list[str], tuple[str, ...]]:
+    """The inspection applied to this repository and to every populated
+    submodule beneath it, under one rule and one set of closures."""
+    here = Path(repository).resolve()
+    seen = {here} if seen is None else seen | {here}
+    if depth > MAXIMUM_NESTED_DEPTH:
+        # REFUSES rather than returning what it managed to look at. A partial
+        # inspection is not a clean one, and this is the branch a repository
+        # arranged to nest without end would otherwise use to exhaust the walk.
+        raise IntegrityError(
+            "this repository nests deeper than the inspection will walk, so whether a nested "
+            "repository names a program for Git to run cannot be established. A partial "
+            "inspection is not a clean one",
+            repository=str(here), depth=depth,
+        )
+    found, protocols = _program_valued_config(
+        repository, fnmatch, timeout, allow_transports=allow_transports)
+    found = list(found)
+    protocols = list(protocols)
+    for relative in _gitlink_paths(repository, timeout):
+        nested = (here / relative)
+        # Listed in the index but never checked out: nothing of its own is
+        # applied, because there is no configuration there to apply.
+        if not (nested / ".git").exists():
+            continue
+        if nested.resolve() in seen:
+            continue
+        deeper, nested_protocols = _inspect_tree(
+            nested, fnmatch, timeout, allow_transports, seen=seen, depth=depth + 1)
+        # Reported against the path that owns them, so the refusal names which
+        # repository is responsible rather than only which key.
+        found.extend(f"{relative}: {key}" for key in deeper)
+        protocols.extend(nested_protocols)
+    return sorted(set(found)), tuple(sorted(set(protocols)))
 
 
 def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=()) -> list[str]:

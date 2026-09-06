@@ -38,6 +38,7 @@ documentation, or the module beside it, already said it did:
 | B9 | `gitread`: the key a refusal writes is the key Git will consult, subsection case included |
 | B10 | `gitread`: two transports that differ only in spelling are two transports, not one |
 | B11 | `qualification`: one boundary decides what is unestablished, for the identity as well as the record |
+| B12 | `gitread`: the inspection's subject is every repository whose configuration Git applies |
 
 ## What the readings of the repairs found
 

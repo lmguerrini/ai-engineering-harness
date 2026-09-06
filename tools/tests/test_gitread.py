@@ -1454,6 +1454,137 @@ def test_a_transport_spelled_differently_from_the_enabled_one_is_still_pinned(tm
         "from the one the caller enabled")
 
 
+def _superproject(tmp_path, name, *, declare=None, populate=True):
+    """A superproject with one submodule, and a marker the submodule's program
+    writes if Git ever runs it."""
+    inner = tmp_path / f"{name}-inner"
+    inner.mkdir()
+    _git(inner, "init", "-q", "-b", "main")
+    _git(inner, "config", "user.email", "t@e.invalid")
+    _git(inner, "config", "user.name", "T")
+    (inner / "s.txt").write_text("aaaa\n")
+    (inner / ".gitattributes").write_text("*.txt filter=x\n")
+    _git(inner, "add", "-A")
+    _git(inner, "commit", "-q", "-m", "s1")
+
+    sup = tmp_path / name
+    sup.mkdir()
+    _git(sup, "init", "-q", "-b", "main")
+    _git(sup, "config", "user.email", "t@e.invalid")
+    _git(sup, "config", "user.name", "T")
+    (sup / "p.txt").write_text("p\n")
+    _git(sup, "add", "-A")
+    _git(sup, "commit", "-q", "-m", "p1")
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "sub")
+    _git(sup, "commit", "-q", "-m", "add sub")
+
+    marker = tmp_path / f"{name}-MARKER"
+    if declare:
+        program = tmp_path / f"{name}-prog.sh"
+        program.write_text(f"#!/bin/sh\nprintf 'x' >> {marker}\ncat 2>/dev/null\nexit 0\n")
+        program.chmod(0o755)
+        _git(sup / "sub", "config", declare, str(program))
+        _git(sup, "config", "diff.submodule", "diff")
+        (sup / "sub" / "s.txt").write_text("bbbb\n")
+    if not populate:
+        import shutil
+        shutil.rmtree(sup / "sub")
+        (sup / "sub").mkdir()
+    return sup, marker
+
+
+def test_a_program_declared_in_a_submodule_is_seen_and_refused(tmp_path):
+    """O1. A populated submodule is a second repository, and Git applies ITS
+    configuration when it runs the nested `status` and `diff` an ordinary
+    superproject read requires. The inspection listed only the superproject's
+    configuration, so a clean filter declared one directory down was invisible.
+
+    The finding names the path, because a refusal that says only which key was
+    found leaves the operator to search for which repository declared it.
+    """
+    sup, _ = _superproject(tmp_path, "sm_seen", declare="filter.x.clean")
+    assert gitread.program_valued_config(sup) == ["sub: filter.x.clean"]
+    with pytest.raises(_IntegrityError):
+        gitread._run(sup, "status", "--porcelain", timeout=30)
+
+
+def test_a_submodule_program_does_not_run_through_whitespace_damage(tmp_path):
+    """O2. The reproduced route was this pack's own `workspace_report`, through
+    `whitespace_damage` → `diff --check` → Git's nested `status`. Nine
+    executions in one run of the original reproduction.
+
+    The marker is the assertion; refusing after the program has already run
+    would satisfy a test that only checked for the refusal.
+    """
+    sup, marker = _superproject(tmp_path, "sm_run", declare="filter.x.clean")
+    with pytest.raises(_IntegrityError):
+        gitread.whitespace_damage(sup)
+    assert not marker.exists(), "the submodule's own program ran through the guarded reader"
+
+
+def test_a_superproject_with_an_ordinary_submodule_still_reads(tmp_path):
+    """O3. The bound. A submodule that declares nothing must cost nothing: the
+    rule applied is the one the superproject already lives under, not a new
+    suspicion of submodules."""
+    sup, marker = _superproject(tmp_path, "sm_plain")
+    assert gitread.program_valued_config(sup) == []
+    assert gitread._run(sup, "ls-files", timeout=30).strip()
+    assert not marker.exists()
+
+
+def test_an_unpopulated_submodule_is_not_a_finding(tmp_path):
+    """O4. A gitlink in the index whose directory was never checked out has no
+    configuration for Git to apply, so it is not something to refuse over."""
+    sup, _ = _superproject(tmp_path, "sm_empty", populate=False)
+    assert gitread.program_valued_config(sup) == []
+    assert gitread._run(sup, "ls-files", timeout=30).strip()
+
+
+def test_a_tracked_symlink_to_another_repository_is_not_walked(tmp_path):
+    """O5. Only a gitlink is a submodule. A tracked SYMLINK that happens to point
+    at a directory containing `.git` is an ordinary tracked file to Git, which
+    never enters it and never applies its configuration — so inspecting it would
+    refuse a superproject over a repository Git does not read.
+
+    Mutation found this: dropping the mode test left every tracked path treated
+    as a possible submodule, and no test told the difference.
+    """
+    other = tmp_path / "unrelated"
+    other.mkdir()
+    _git(other, "init", "-q", "-b", "main")
+    _git(other, "config", "user.email", "t@e.invalid")
+    _git(other, "config", "user.name", "T")
+    (other / "f.txt").write_text("x\n")
+    _git(other, "add", "-A")
+    _git(other, "commit", "-q", "-m", "base")
+    _git(other, "config", "filter.x.clean", "/bin/cat")
+
+    repo = _committed(tmp_path, "symlinked")
+    (repo / "link").symlink_to(other)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "link")
+
+    assert gitread.program_valued_config(repo) == []
+    assert gitread._run(repo, "ls-files", timeout=30).strip()
+
+
+def test_nesting_past_the_bound_refuses_rather_than_reporting_what_it_saw(tmp_path):
+    """O6. The walk is bounded because submodules nest and a repository can be
+    arranged to link to itself. Exceeding the bound must REFUSE: returning what
+    the walk managed to look at is a partial inspection reported as a clean one,
+    which is this check's own fail-open class.
+
+    Driven by lowering the bound rather than by building thirty-three nested
+    repositories; what is under test is the branch, not the arithmetic.
+    """
+    sup, _ = _superproject(tmp_path, "sm_deep")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(gitread, "MAXIMUM_NESTED_DEPTH", 0)
+        with pytest.raises(_IntegrityError) as refused:
+            gitread.program_valued_config(sup)
+    assert "not a clean one" in str(refused.value)
+
+
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):
     """The bound: the second question must not refuse ordinary repositories."""
     repo = tmp_path / "ordinary2"
