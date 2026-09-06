@@ -143,8 +143,80 @@ is a claim:
 | 7 | three callers asked Git where the repository is | under the boundary Git answers about the build; `activity` counted one repository as six |
 | 8 | `ls-tree` was routed through the boundary without `-z` | a C-quoted path would reach the delta as an escaped literal |
 
+## Mutation scoring
+
+Eleven well-formed mutants against a verified-green baseline of the twenty-four
+oracle tests, each reversing one thing the design says is load-bearing. **Eleven
+killed, none survived, none malformed**, and the harness asserts the subject is
+byte-identical afterwards.
+
+Scoring did not merely confirm the implementation. It found three things a
+reading had not:
+
+| What scoring found | Why it mattered |
+|---|---|
+| A **non-effective mutant**, rejected rather than counted | "nested detection asks the TYPE" used `Path.is_dir()`, which *follows* a symlink, so it still detected the spelling it was written to miss. Replaced with the defect that actually shipped — the directory-symlink branch running before the name check — which the oracle kills |
+| The post-condition's **call site was unpinned** | Deleting the call left the direct test of the check passing, because that test invokes the check itself. It measured the property and never the wiring |
+| An oracle measuring **half the property** | A mutant that dropped a symlinked `.git` from the walk executed nothing and passed every assertion. Not executing is half the guarantee: a view that omits a nested repository describes a repository that is not there. The oracle now also compares the superproject's answer against real Git's |
+
+The harness itself was wrong once and the run is what showed it: a mutant killed
+in isolation survived in a full run. That is order dependence from CPython's
+`(mtime, size)` bytecode cache under a loop that rewrites the same paths many
+times a second, not a property of the subject. The harness now clears
+`__pycache__` and sets `PYTHONDONTWRITEBYTECODE` before every run, because a
+score taken against a stale `.pyc` is wrong in whichever direction happens to
+suit.
+
+## Consumer rehearsal
+
+Two disposable consumers, copied from the real projects and never written back.
+The real `consumer-a-v0.1.0-baseline` tree is fingerprinted before and after and
+is byte-identical; `consumer-c-v1` is 437 MB and only its contract surface was
+copied, so nothing of it was touched either.
+
+| Check | Result |
+|---|---|
+| frozen 2.4.0 verifies from a working directory belonging to neither consumer | PASS |
+| the candidate verifies against its own manifest and still declares `IN_PROGRESS`, so no project may pin it | PASS |
+| migration reports a pin class without adopting anything | PASS |
+| both consumers verify concurrently, from a foreign working directory | PASS |
+| a governed read of a directory that is not a repository refuses rather than answering | PASS |
+| the real project is byte-identical afterwards | PASS |
+| no sterile scratch directory survives the rehearsal | PASS |
+
+The behaviours the plan names beyond these — the design-first gate, discovery of
+an unseen model identifier, per-configuration qualification and `UNKNOWN`,
+durable restart with no phantom work, producer completion, failure and capacity,
+rollback and refusal — are exercised by `test_two_consumer_rehearsal.py`,
+`test_adoption_rehearsal.py`, `test_lifecycle_rehearsal.py`,
+`test_continuation_rehearsal.py`, `test_consumer_compatibility.py` and
+`test_background_governance.py`, which run **174 tests** and are part of the
+suite this release records.
+
+## The hostile matrix, against the shipped implementation
+
+Re-run against `tools/sterile.py` as committed rather than against the prototype:
+**zero execution leaks**. Every verbosity spelling including `--verbo`; an
+explicitly requested `--textconv` and `--ext-diff`; the ignored never-a-submodule
+checkout that broke `workspace_report`; a nested `.git` that is a symlink to a
+directory; `sha256` reads; `reftable` refuses by name; a dangling symlink, an
+empty file and a FIFO in place of a nested `.git` each refuse and name the path.
+
 ## Not yet done
 
-The implementation, its oracles, mutation scoring, the consumer rehearsals, the
-independent certifications and the terminal gates. Each is recorded here when it
-has run, with the command that produced it.
+The independent certifications, and the terminal gates that depend on them.
+
+`AUTH-4` holds the Codex/Astra budget until its weekly reset, and the findings an
+independent design reading produced are that reader's own, so their independent
+closure must route to the other provider against the implementation rather than
+against the prototype. No self-review substitutes for it, and this record does
+not treat the repair of those findings as confirmed until it has run.
+
+One thing this line does not yet satisfy, recorded rather than left to be
+discovered: three of its own commit messages predate the discipline the rest of
+the line follows and do not conform to `tools/commit_gate.py`. Repairing a commit
+message rewrites the commit, and `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md`
+is frozen at one of the revisions that would move — so the repair trades the
+commit-range gate for the design-provenance gate, in a clean-room clone where the
+old object does not exist. It is a history rewrite either way, which is a founder
+decision and is not taken here.
