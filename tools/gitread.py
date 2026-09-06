@@ -416,7 +416,10 @@ def _run(
     # check's opinion about it. Hijacking that refusal turned "your config does
     # not parse" into a security finding about a repository nobody could read.
     if not _inspecting() and verb != "config":
-        executable = program_valued_config(repository, timeout=timeout)
+        # The transports this invocation enables decide which closures still
+        # hold, so the inspection is told the same thing the environment is.
+        executable = program_valued_config(
+            repository, timeout=timeout, allow_transports=allow_transports)
         if executable:
             raise IntegrityError(
                 "this repository's own configuration names a program for Git to run, by a key "
@@ -759,6 +762,9 @@ CLOSED_PROGRAM_KEYS = {
     "core.editor": "neutralised in the standing config",
     "core.pager": "neutralised in the standing config, and output is captured",
     "core.askpass": "neutralised in the standing config",
+    # CONDITIONAL. The condition is real and is enforced by CONDITIONAL_CLOSURES
+    # below; this entry alone is not a closure, and reading it as one is how a
+    # repository's own ssh program came to run through this module.
     "core.sshcommand": "neutralised, and removed only when ssh is deliberately enabled",
     "core.fsmonitor": "neutralised in the standing config",
     "core.hookspath": "neutralised to /dev/null",
@@ -773,6 +779,17 @@ CLOSED_PROGRAM_KEYS = {
     "diff.*.command": "an attribute-selected driver, disabled by --no-ext-diff",
     "diff.*.textconv": "disabled by --no-textconv, and --textconv is refused as an argument",
 }
+
+# A CLOSURE THAT HOLDS ONLY SOMETIMES IS NOT A CLOSURE WHILE THE CONDITION FAILS.
+#
+# `_transport_settings` removes a neutralisation when a caller deliberately
+# enables the matching transport, which hands the repository's own value back to
+# Git. The closure above says so in words; this says so in a way the inspection
+# can act on. Reproduced before it was written: `publication_gate.verify_remote`
+# enabled `ssh`, the override was popped, and a repository's `core.sshCommand`
+# ran through this module's own reader while the inspection reported nothing —
+# no network, no socket, no ssh binary involved.
+CONDITIONAL_CLOSURES = {"core.sshcommand": "ssh"}
 
 #: **THEY WERE NEVER CLOSED.** `filter.*.clean`, `filter.*.smudge` and
 #: `filter.*.process` sat in the table above claiming to be "reachable only
@@ -864,7 +881,8 @@ def _inspecting() -> bool:
 
 
 def program_valued_config(
-    repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS
+    repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    allow_transports: tuple[str, ...] = (),
 ) -> list[str]:
     """Local config keys this repository sets whose value Git would execute.
 
@@ -877,12 +895,13 @@ def program_valued_config(
         return []
     _INSPECTION.active = True
     try:
-        return _program_valued_config(repository, fnmatch, timeout)
+        return _program_valued_config(repository, fnmatch, timeout,
+                                      allow_transports=allow_transports)
     finally:
         _INSPECTION.active = False
 
 
-def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
+def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=()) -> list[str]:
     """Every configuration source Git will actually apply, not just the obvious one.
 
     **`--local` READS EXACTLY ONE FILE**, and Git applies more than one. With
@@ -983,6 +1002,10 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
             "that cannot be parsed is not an empty one",
             repository=str(repository), fields=len(fields),
         )
+    # Closures whose condition this invocation breaks are not closures here.
+    enabled = {transport.strip().lower() for transport in allow_transports}
+    closed = {key: reason for key, reason in CLOSED_PROGRAM_KEYS.items()
+              if CONDITIONAL_CLOSURES.get(key) not in enabled}
     found = []
     for scope, key in zip(fields[::2], fields[1::2]):
         # ONLY THE REPOSITORY'S OWN CONFIGURATION, which is what this function
@@ -998,7 +1021,7 @@ def _program_valued_config(repository, fnmatch, timeout) -> list[str]:
             continue
         if not any(fnmatch.fnmatchcase(lowered, p) for p in PROGRAM_VALUED_CONFIG):
             continue
-        if any(fnmatch.fnmatchcase(lowered, p) for p in CLOSED_PROGRAM_KEYS):
+        if any(fnmatch.fnmatchcase(lowered, p) for p in closed):
             continue
         found.append(lowered)
     return sorted(set(found))

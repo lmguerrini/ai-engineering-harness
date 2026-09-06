@@ -833,7 +833,10 @@ def test_the_inspection_guard_is_per_thread_and_not_per_module(tmp_path):
     entered, release = threading.Event(), threading.Event()
     original = gitread._program_valued_config
 
-    def slow(repository, fnmatch, timeout):
+    # `**_` so this stays a test of thread-locality: the inspection's own
+    # parameters are not this oracle's subject, and pinning them here would make
+    # it fail whenever they change for unrelated reasons.
+    def slow(repository, fnmatch, timeout, **_):
         entered.set()
         release.wait(5)
         return original(repository, fnmatch, timeout)
@@ -1255,6 +1258,67 @@ def test_a_configuration_git_cannot_decode_is_still_read_and_still_inspected(tmp
     assert gitread.program_valued_config(declared) == ["filter.caf\udce9.clean"]
     with pytest.raises(_IntegrityError):
         gitread._run(declared, "ls-files", timeout=30)
+
+
+def _ssh_program_repo(tmp_path, name):
+    """A repository whose `core.sshCommand` is a local program that leaves a
+    marker, so whether Git ran it is a fact on disk rather than an inference."""
+    repo = _committed(tmp_path, name)
+    marker = tmp_path / f"{name}-MARKER"
+    program = tmp_path / f"{name}-ssh.py"
+    program.write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        f"pathlib.Path({str(marker)!r}).write_text('ran')\n"
+        "sys.stdout.write('0' * 40 + chr(9) + 'HEAD' + chr(10))\n")
+    program.chmod(0o755)
+    _git(repo, "config", "core.sshCommand", str(program))
+    _git(repo, "remote", "add", "origin", "ssh://example.invalid/x.git")
+    return repo, marker
+
+
+def test_an_ssh_command_is_refused_when_ssh_is_actually_enabled(tmp_path):
+    """O1. `core.sshcommand` is excused from the inspection because the standing
+    configuration neutralises it — but `_transport_settings` POPS that
+    neutralisation when a caller enables `ssh`, handing the repository's value
+    straight back to Git. The closure said so in its own words and was applied
+    anyway, so a repository's program ran through this module's hardened reader
+    with no network, no socket and no ssh binary involved.
+
+    The marker is the assertion. A test that only checked the refusal would pass
+    against a version that refused *after* running the program.
+    """
+    repo, marker = _ssh_program_repo(tmp_path, "sshprog")
+    enabled = ("ssh", "https", "file")
+    assert gitread.program_valued_config(repo, allow_transports=enabled) == ["core.sshcommand"]
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "ls-remote", "origin", negative_statuses=(),
+                      allow_transports=enabled)
+    assert not marker.exists(), "the repository's own ssh program was executed"
+
+
+def test_an_ssh_command_does_not_refuse_an_ordinary_read(tmp_path):
+    """O2. The other half. While `ssh` is not enabled the neutralisation IS
+    applied, the program genuinely cannot run, and refusing the repository would
+    be the over-refusal this release has already repaired twice."""
+    repo, marker = _ssh_program_repo(tmp_path, "sshprog_local")
+    assert gitread.program_valued_config(repo) == []
+    assert gitread._run(repo, "ls-files", timeout=30).strip() == "f.txt"
+    assert not marker.exists()
+
+
+def test_every_conditional_closure_is_known_to_the_inspection(tmp_path):
+    """O4. Asked of the behaviour, not of the source: enabling each allowable
+    transport and seeing which neutralisation disappears is what actually
+    decides whether a closure still holds. A future override removed on the same
+    condition arrives here as a failure rather than as a silent exemption."""
+    baseline = set(gitread._config_environment(()))
+    for transport in gitread.ALLOWABLE_TRANSPORTS:
+        removed = baseline - set(gitread._config_environment((transport,)))
+        for key in removed:
+            assert gitread.CONDITIONAL_CLOSURES.get(key.lower()) == transport, (
+                f"enabling {transport} removes the neutralisation of {key}, so any closure "
+                f"claimed for it stops holding — declare it in CONDITIONAL_CLOSURES")
 
 
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):

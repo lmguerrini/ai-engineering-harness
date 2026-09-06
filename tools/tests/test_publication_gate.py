@@ -740,3 +740,37 @@ def test_an_expectation_without_the_exact_revision_is_refused():
     otherwise verify clean."""
     with pytest.raises(_PreconditionError):
         publication_gate.expectation_from_refspec("refs/heads/main:refs/heads/main", "abc123")
+
+
+def test_remote_verification_refuses_a_repository_supplied_ssh_program(tmp_path):
+    """O3. The reported path, end to end. `verify_remote` enables `ssh`, which
+    removes the `core.sshCommand` neutralisation; a repository configuring that
+    key had its program executed and could answer the verification with a
+    fabricated ref advertisement — a clean publication result computed from the
+    repository's own claim about itself.
+    """
+    repo = tmp_path / "pubssh"
+    repo.mkdir()
+    for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@e.invalid"),
+                 ("config", "user.name", "T")):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+    (repo / "f.txt").write_text("hi\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True, capture_output=True)
+
+    marker = tmp_path / "MARKER"
+    program = tmp_path / "ssh.py"
+    program.write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        f"pathlib.Path({str(marker)!r}).write_text('ran')\n"
+        "sys.stdout.write('0' * 40 + chr(9) + 'refs/heads/main' + chr(10))\n")
+    program.chmod(0o755)
+    subprocess.run(["git", "config", "core.sshCommand", str(program)],
+                   cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "remote", "add", "origin", "ssh://example.invalid/x.git"],
+                   cwd=repo, check=True, capture_output=True)
+
+    with pytest.raises(_gitread.IntegrityError):
+        verify_remote(repo, "origin", expected={"refs/heads/main": "0" * 40})
+    assert not marker.exists(), "the repository's own ssh program was executed"

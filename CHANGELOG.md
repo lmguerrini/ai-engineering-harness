@@ -78,6 +78,37 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the certification found a closure that holds only sometimes
+
+`CLOSED_PROGRAM_KEYS` excuses a program-valued key from the safety inspection
+when this module can show Git will never run it. One entry excused itself on a
+condition and was then applied unconditionally:
+
+    "core.sshcommand": "neutralised, and removed only when ssh is deliberately enabled"
+
+The standing configuration does neutralise it. But the transport settings
+**remove that neutralisation** when a caller deliberately enables `ssh`, which
+hands the repository's own value back to Git — and the inspection skipped the
+key anyway, because the closure named a condition nothing acted on.
+
+Reproduced with no network, no socket and no ssh binary: a repository
+configuring `core.sshCommand` to a local program had that program executed
+through this module's own hardened reader by the publication gate's remote
+verification, while the inspection reported nothing. The fabricated ref
+advertisement it printed could then be read as a clean verification — a
+publication result computed from the repository's own claim about itself.
+
+This is the fourth time this release has found a key called closed on a premise
+that does not hold on every path; the first three claimed reachability only
+through `--filters`, which ordinary `diff` disproved. The condition is now
+declared where the inspection can act on it, and the transports a call enables
+reach the inspection that decides which closures still hold. A repository
+declaring the key is refused for the SSH operation, by name, and reads normally
+otherwise. Pinning the key to Git's default instead was rejected: it would have
+silently discarded a legitimate per-repository SSH wrapper, and deleting the
+closure outright would have refused every ordinary read of such a repository.
+The reasoning is in `docs/RP2.4.1-DESIGN-B7-conditional-closure.md`.
+
 ### And the reading of THAT one found a configuration Git reads and this did not
 
 A configuration key need not be valid UTF-8. Git reads one that is not without
