@@ -238,6 +238,55 @@ checkout that broke `workspace_report`; a nested `.git` that is a symlink to a
 directory; `sha256` reads; `reftable` refuses by name; a dangling symlink, an
 empty file and a FIFO in place of a nested `.git` each refuse and name the path.
 
+## Mechanical gates, and the commands that produced them
+
+Run on the revision this record is committed with. Each is repeatable from a
+checkout; none of the figures below is transcribed from a previous run.
+
+| Gate | Command | Result |
+|---|---|---|
+| release identity | `python3 tools/pack_pin.py . --version <VERSION> --sha <HEAD> --digest <manifest digest> --state IN_PROGRESS` | verified |
+| release delta | `python3 tools/release_delta.py . --baseline 9d906ce…` | DELTA COMPLETE, nothing omitted |
+| design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A{1,2}-*.md --repository .` | DESIGN FROZEN, both |
+| surface derivation | `python3 tools/surface_diff.py . 9d906ce… HEAD` | additions only over the compared surface |
+| full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
+| clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | every gate passed and the suite was green, with a tree reporting nothing changed |
+| line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
+| hostile Git configuration | `<scratch>/repro/module_check.py`, `spellings.py`, and the batteries an independent design reading wrote | zero executions |
+| mutation | `<scratch>/mutation/mutate.py` | every mutant killed, subject byte-identical afterwards |
+| consumer rehearsal | `<scratch>/rehearsal/rehearse.py` | every check passed, the real project byte-identical |
+
+The clean-room clone is the one that matters most for the design records: it
+establishes that both `**Base revision:**` values still resolve in a repository
+that has only this line's commits, which a rewrite of any commit in that ancestry
+would end.
+
+## Evolution evidence
+
+Every repair in this release classifies against classes
+`policy/recurrence-classes.json` already carries — chiefly *read-only Git
+executing repository-configured programs*, *shared object/path enumeration
+incomplete*, *oracle satisfied for a reason other than its claim*, *vacuous
+mutation test*, *transcribed counts drifting from computable facts*, and
+*projection becoming authority*, which is the class the founder's constraint on
+keeping the enumeration's names as projections is guarding against and which
+`test_no_refusal_depends_on_a_projection` is the live oracle for.
+
+**No class was added, and one was considered and rejected.** The architectural
+lesson this release carries — that an authority mechanism whose completeness
+obligation grows with the system it guards does not converge — was drafted as a
+new class and withdrawn: `policy/recurrence-classes.json` has a prose twin in
+`docs/RP2.3-REFALSIFICATION-MAP.md` and a test that requires the two to hold the
+same classes, so adding it would have meant editing a 2.3 release record to
+carry a 2.5.0 lesson. The lesson is in `docs/RP2.5.0-RECURRENCE-MAP.md`, which is
+this release's own document and the place a reader would look for it.
+
+One selector *was* corrected, because the test it named no longer exists: the
+class *a repository disabling the check that inspects it* selected
+`breaking_its_own or re_enter`, and the re-entrancy guard those matched went with
+the mechanism. It now selects the tests that carry the same guarantee under the
+new one.
+
 ## Not yet done
 
 The independent certifications, and the terminal gates that depend on them.
