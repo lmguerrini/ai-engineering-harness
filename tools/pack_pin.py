@@ -211,6 +211,23 @@ def untracked_files(root: str | Path) -> list[str]:
             f"this release tracks nested ignore declarations ({', '.join(nested)}), and the "
             f"enumeration supplies rules to Git root-relatively, so their per-directory meaning "
             f"cannot be expressed here. Refused rather than approximated")
+    # THE DIRECTORY GIT ANSWERS ABOUT MUST BE THE ONE WE ASKED ABOUT.
+    # `core.worktree` in the checkout's own config redirects what Git treats as
+    # the working tree, so `ls-files --others` scanned somewhere else entirely:
+    # an unreviewed module sat in the named release root and the pin printed
+    # `pack pin verified`. It is a PATH, not a program, so the hardened reader's
+    # program-valued neutralisation does not cover it. Asked rather than
+    # neutralised, because a linked worktree sets this legitimately and its
+    # toplevel IS the root — the redirect is exactly the case where they differ.
+    try:
+        answering_about = Path(_git(root, "rev-parse", "--show-toplevel").strip()).resolve()
+    except (OSError, subprocess.CalledProcessError):
+        answering_about = None
+    if answering_about is not None and answering_about != root:
+        raise ValueError(
+            f"this checkout's configuration points Git at {answering_about} while the release "
+            f"root asked about is {root}, so an enumeration of untracked files would describe a "
+            f"different directory. Refused rather than answered about the wrong tree")
     arguments = ["ls-files", "--others", "-z"]
     if declared:
         arguments.append(f"--exclude-from={root / '.gitignore'}")

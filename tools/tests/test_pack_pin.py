@@ -826,3 +826,20 @@ def test_the_manifest_comparison_is_over_bytes(pack):
     manifest.write_bytes(manifest.read_bytes().replace(b"\n", b"\r\n"))
     assert any("differs from the one committed at HEAD" in problem
                for problem in pack_pin.verify_pin(pack))
+
+
+def test_a_redirected_working_tree_is_refused_not_answered_about(pack, tmp_path):
+    """`core.worktree` points Git at a different directory, and the enumeration
+    then described that one: an unreviewed module sat in the named release root
+    while `pack pin verified` printed. It is a path rather than a program, so the
+    hardened reader's program-valued neutralisation does not cover it. Asked
+    rather than neutralised, because a linked worktree sets it legitimately."""
+    (pack / "unreviewed_module.py").write_text("print('unreviewed')\n")
+    assert "unreviewed_module.py" in pack_pin.untracked_files(pack)
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+    _git(pack, "config", "core.worktree", str(elsewhere))
+    with pytest.raises(ValueError, match="points Git at"):
+        pack_pin.untracked_files(pack)
+    problems = pack_pin.verify_pin(pack)
+    assert any("points Git at" in problem for problem in problems), problems

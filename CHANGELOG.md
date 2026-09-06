@@ -78,6 +78,25 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### A whole-candidate reading found the verifier could be pointed elsewhere
+
+`core.worktree` in a checkout's own configuration redirects what Git treats as
+the working tree. The untracked-file enumeration then described that other
+directory: an unreviewed module sat in the named release root and the pin
+printed `pack pin verified`. It is a path rather than a program, so the hardened
+reader's program-valued neutralisation never reached it.
+
+The verifier now asks Git which directory it is answering about and refuses when
+that is not the root it was given. Asked rather than neutralised, because a
+linked worktree sets that key legitimately and its toplevel *is* its root —
+which is precisely the case a blanket neutralisation would have broken.
+
+The same reading caught a sentence carried forward from 2.4.0 saying **a project
+may pin this release** while `state` read `IN_PROGRESS`. A manifest that
+contradicts its own state field about adoptability is the one thing a reader
+consults it for. It now states 2.4.0's freeze as history, and no entry claims
+this candidate is pinnable.
+
 ### And the reading of THAT one found the same hole wearing a new name
 
 A third bounded reading — routed to a different reader, because the one who
