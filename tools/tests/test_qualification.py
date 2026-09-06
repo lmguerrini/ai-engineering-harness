@@ -609,3 +609,44 @@ def test_pool_id_is_normalised_through_the_same_boundary():
     # the safe answer; a value with a space travels in the structured mapping.
     spaced = q.identity_from_configuration(f"{base} pool_id=UN KNOWN")
     assert spaced.ambiguous_tokens and not spaced.complete
+
+
+@pytest.mark.parametrize("absent", [None, "", False, True, "unknown", "UNKNOWN",
+                                    "un_known", "UN KNOWN", "   "])
+@pytest.mark.parametrize("dimension", ["effort", "model_observed", "surface", "family",
+                                       "client", "isolation", "network",
+                                       "authentication_class"])
+def test_explicit_absence_never_inherits_a_packed_value(dimension, absent):
+    """O7. A key the writer bothered to include is a statement about that
+    dimension. If it says nothing, the dimension is UNKNOWN — never whatever an
+    earlier source happened to say.
+
+    A row carrying `identity: {"effort": null}` — the natural JSON for *the
+    surface did not report it* — had that key DROPPED before the overlay, so the
+    packed string's `effort=high` survived, the identity came out COMPLETE, and
+    two such rows graded `confirmed` for a configuration nothing had
+    established. The string `"unknown"` refused correctly on the same path,
+    which is what made it look covered.
+    """
+    packed = ("surface=codex-cli family=gpt-6 agent=0.153.3 model_observed=a-model "
+              "model=a-model effort_observed=high isolation=workspace-write "
+              "network=denied auth=subscription identity_method=turn_context")
+    identity = q.identity_from_observation(
+        {"configuration": packed, "identity": {dimension: absent}})
+    assert not identity.complete, (
+        f"{dimension}={absent!r} inherited a packed value and completed an identity")
+    assert any(dimension in reason for reason in identity.incompleteness()), (
+        identity.incompleteness())
+
+
+def test_a_real_structured_value_still_overrides_the_packed_one():
+    """The other direction: the overlay exists so a row can say what the packed
+    string cannot hold."""
+    packed = ("surface=codex-cli family=gpt-6 agent=0.153.3 model_observed=a-model "
+              "model=a-model effort_observed=high isolation=workspace-write "
+              "network=denied auth=subscription identity_method=turn_context")
+    identity = q.identity_from_observation(
+        {"configuration": packed, "identity": {"model_observed": "a model with spaces"}})
+    assert identity.complete
+    assert identity.model_observed == "a model with spaces"
+    assert identity.effort == "high"

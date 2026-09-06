@@ -721,6 +721,7 @@ def _repo_setting(tmp_path, key, value="/bin/sh"):
 @pytest.mark.parametrize("key", [
     "alias.x", "merge.m.driver", "submodule.a.update", "protocol.ext.command",
     "remote.o.vcs", "trailer.t.command", "interactive.difffilter", "guitool.g.cmd",
+    "filter.f.clean", "filter.f.smudge", "filter.f.process",
 ])
 def test_a_program_valued_key_with_no_named_closure_refuses(tmp_path, key):
     """Five separate routes by which a repository being read chose a program to
@@ -739,12 +740,21 @@ def test_a_program_valued_key_with_no_named_closure_refuses(tmp_path, key):
 
 
 @pytest.mark.parametrize("key", ["core.pager", "core.editor", "diff.external",
-                                 "filter.f.smudge", "credential.helper"])
+                                 "credential.helper"])
 def test_a_program_valued_key_this_module_actually_closes_is_allowed(tmp_path, key):
     """The bound, and it matters more than the test above. Refusing to read a
     repository because its developer set a pager is hardening in name and
     obstruction in fact — the closure is what protects, not the absence of the
-    key."""
+    key.
+
+    **`filter.f.smudge` used to be in this list and has moved to the one above.**
+    Its closure said the filter chain was "reachable only through --filters,
+    which is refused as an argument", and that was not true: an ordinary `diff`
+    converts the worktree through the clean filter, and a whole-candidate
+    reading watched one run twice while this module reported nothing to see. A
+    closure that is merely asserted is worse than an absent one, because the key
+    is then exempt from the shape rule that catches everything nobody has
+    traced."""
     repo = _repo_setting(tmp_path, key)
     assert gitread.program_valued_config(repo) == []
     assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
@@ -937,3 +947,109 @@ def test_an_object_typed_commit_with_no_message_separator_is_refused(tmp_path, m
     monkeypatch.setattr(gitread, "_run", malformed)
     with pytest.raises(_IntegrityError):
         gitread.commit_messages(tmp_path, "HEAD")
+
+
+# --- RP2.4.1 B1/B3/B4: what a read may execute, and what it may answer about ---
+
+def test_a_configured_clean_filter_is_refused_rather_than_run(tmp_path):
+    """O1/O9. The closure said a filter chain was reachable only through
+    `--filters`, which this module refuses as an argument. An ordinary `diff`
+    converts the worktree through the clean filter regardless, and a
+    whole-candidate reading watched one run twice while `program_valued_config`
+    reported nothing to see."""
+    repo = tmp_path / "filtered"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    marker = tmp_path / "the-filter-ran"
+    program = tmp_path / "filter.sh"
+    program.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+    program.chmod(0o755)
+    (repo / "f.txt").write_text("hello\n")
+    (repo / ".gitattributes").write_text("f.txt filter=evil\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "config", "filter.evil.clean", str(program))
+    (repo / "f.txt").write_text("hello\nchanged\n")
+
+    assert gitread.program_valued_config(repo) == ["filter.evil.clean"]
+    with pytest.raises(_IntegrityError):
+        gitread._run(repo, "diff", "HEAD", timeout=30)
+    assert not marker.exists(), "the repository's own program ran during a read"
+
+
+def test_a_repository_with_no_filter_still_reads(tmp_path):
+    """O3. The bound. Refusing every repository would be obstruction, not
+    hardening."""
+    repo = tmp_path / "ordinary"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("hello\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    assert gitread.program_valued_config(repo) == []
+    assert gitread._run(repo, "rev-parse", "HEAD", timeout=30).strip()
+
+
+def test_a_redirected_worktree_is_refused_for_every_caller(tmp_path):
+    """O4. `core.worktree` sent reads to a sibling directory, so a workspace
+    gate reported no unclassified files while one sat in the project it was
+    asked about. The binding lives here so no caller has to remember it."""
+    repo = tmp_path / "project"
+    repo.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@e.invalid")
+    _git(repo, "config", "user.name", "T")
+    (repo / "tracked.txt").write_text("t\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    (repo / "unreviewed.py").write_text("u\n")
+    assert "unreviewed.py" in gitread._run(repo, "ls-files", "--others", timeout=30)
+
+    _git(repo, "config", "core.worktree", str(elsewhere))
+    with pytest.raises(_IntegrityError, match="different directory"):
+        gitread._run(repo, "ls-files", "--others", timeout=30)
+
+
+def test_a_directory_inside_another_repository_is_refused(tmp_path):
+    """O5. A release unpacked into an ignored vendor directory is not a checkout
+    of its own: Git discovers the enclosing repository and answers about that."""
+    outer = tmp_path / "adopter"
+    outer.mkdir()
+    _git(outer, "init", "-q", "-b", "main")
+    _git(outer, "config", "user.email", "t@e.invalid")
+    _git(outer, "config", "user.name", "T")
+    (outer / "README.md").write_text("the adopter\n")
+    _git(outer, "add", "-A")
+    _git(outer, "commit", "-q", "-m", "base")
+    vendored = outer / "vendor"
+    vendored.mkdir()
+    (vendored / "VERSION").write_text("2.4.1\n")
+    with pytest.raises(_IntegrityError, match="different directory"):
+        gitread._run(vendored, "ls-files", timeout=30)
+
+
+def test_a_standalone_repository_and_a_linked_worktree_still_read(tmp_path):
+    """O6. The two layouts that must keep working — and the linked worktree is
+    the one the first attempt at this repair broke, by binding the resolved
+    repository on the premise that its git dir sits under its own root. It does
+    not; it lives under the main repository."""
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init", "-q", "-b", "main")
+    _git(main, "config", "user.email", "t@e.invalid")
+    _git(main, "config", "user.name", "T")
+    (main / "VERSION").write_text("1.0.0\n")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-q", "-m", "base")
+    assert gitread._run(main, "rev-parse", "HEAD", timeout=30).strip()
+
+    linked = tmp_path / "linked"
+    _git(main, "worktree", "add", "-q", "--detach", str(linked))
+    assert gitread._run(linked, "rev-parse", "HEAD", timeout=30).strip()
+    assert gitread._run(linked, "ls-files", timeout=30).strip()

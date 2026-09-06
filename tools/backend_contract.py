@@ -79,7 +79,13 @@ def normalised_identity_value(value: object) -> str:
     else is returned stripped and otherwise untouched, because a real identifier
     may contain spaces and this is not the place to be clever about it.
     """
-    text = "" if value is None else str(value).strip()
+    # A BOOLEAN IS NOT AN IDENTIFIER. `False` stringified to `'False'` and read
+    # as an established dimension, which is the same defect as a dropped null
+    # wearing a different type: a writer sending a boolean is not naming an
+    # effort, a model or a surface.
+    if value is None or isinstance(value, bool):
+        return UNKNOWN
+    text = str(value).strip()
     word = "".join(character for character in text.lower() if character.isalnum())
     if not word or word == "unknown":
         return UNKNOWN

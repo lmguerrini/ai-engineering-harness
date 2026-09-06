@@ -115,6 +115,15 @@ def _git(root: str | Path, *arguments: str) -> str:
         # Translated, so every caller's existing handling of "Git could not
         # answer" keeps working — including the branch that reports a copy
         # outside a checkout as UNDECIDABLE rather than as a failed pin.
+        #
+        # THE REASON SURVIVES THE TRANSLATION. `CalledProcessError` renders as
+        # "returned non-zero exit status 1" and drops its `stderr`, so a refusal
+        # that carefully named which directory Git was answering about reached
+        # the report as an exit code. A refusal whose reason is discarded on the
+        # way out is the shape this module exists to refuse, so a refusal from
+        # the guarded reader is re-raised carrying its own words.
+        if exc.__class__.__module__ == "errors":
+            raise ValueError(str(exc)) from exc
         raise subprocess.CalledProcessError(
             1, ["git", *arguments], output="", stderr=str(exc)) from exc
 
@@ -131,6 +140,8 @@ def _git_bytes(root: str | Path, *arguments: str) -> bytes:
     try:
         return gitread._run(root, *arguments, timeout=60, text=False)
     except Exception as exc:
+        if exc.__class__.__module__ == "errors":
+            raise ValueError(str(exc)) from exc
         raise subprocess.CalledProcessError(
             1, ["git", *arguments], output="", stderr=str(exc)) from exc
 
@@ -211,23 +222,9 @@ def untracked_files(root: str | Path) -> list[str]:
             f"this release tracks nested ignore declarations ({', '.join(nested)}), and the "
             f"enumeration supplies rules to Git root-relatively, so their per-directory meaning "
             f"cannot be expressed here. Refused rather than approximated")
-    # THE DIRECTORY GIT ANSWERS ABOUT MUST BE THE ONE WE ASKED ABOUT.
-    # `core.worktree` in the checkout's own config redirects what Git treats as
-    # the working tree, so `ls-files --others` scanned somewhere else entirely:
-    # an unreviewed module sat in the named release root and the pin printed
-    # `pack pin verified`. It is a PATH, not a program, so the hardened reader's
-    # program-valued neutralisation does not cover it. Asked rather than
-    # neutralised, because a linked worktree sets this legitimately and its
-    # toplevel IS the root — the redirect is exactly the case where they differ.
-    try:
-        answering_about = Path(_git(root, "rev-parse", "--show-toplevel").strip()).resolve()
-    except (OSError, subprocess.CalledProcessError):
-        answering_about = None
-    if answering_about is not None and answering_about != root:
-        raise ValueError(
-            f"this checkout's configuration points Git at {answering_about} while the release "
-            f"root asked about is {root}, so an enumeration of untracked files would describe a "
-            f"different directory. Refused rather than answered about the wrong tree")
+    # The directory Git answers about is bound by `gitread` for every caller,
+    # so the local copy this function grew is gone rather than left as a second
+    # answer to one question.
     arguments = ["ls-files", "--others", "-z"]
     if declared:
         arguments.append(f"--exclude-from={root / '.gitignore'}")
@@ -429,7 +426,7 @@ def verify_pin(
 
     try:
         actual_digest, actual_count = tree_digest(root)
-    except (OSError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         # NOT A MISMATCH. The digest is defined over the TRACKED tree, so
         # outside a checkout there is no way to know which files belong to the
         # release — and the answer to *is this the pinned pack* is that it
@@ -476,7 +473,7 @@ def verify_pin(
     # what a reader verified and what a reader read.
     try:
         committed = _git_bytes(root, "show", f"HEAD:{MANIFEST_NAME}")
-    except (OSError, subprocess.CalledProcessError) as exc:
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         problems.append(
             f"{UNESTABLISHED}: the committed manifest could not be read, so whether this "
             f"directory's manifest is the one at the pinned revision cannot be decided ({exc})")

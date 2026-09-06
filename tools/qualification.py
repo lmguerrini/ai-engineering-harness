@@ -360,10 +360,20 @@ def identity_from_observation(row: dict) -> ConfigurationIdentity:
         # `confirmed` for a configuration nothing had established. A second
         # normaliser here would have been a second answer to one question, so
         # there is one function and both paths call it.
+        # PRESENT-BUT-EMPTY IS NOT ABSENT, and the difference decided a
+        # qualification. A row carrying `identity: {"effort": null}` — the
+        # natural JSON for *the surface did not report it* — had that key
+        # DROPPED before the overlay, so the packed string's `effort=high`
+        # survived, the identity came out COMPLETE and two such rows graded
+        # `confirmed` for a configuration nothing had established. The string
+        # "unknown" refused correctly on the same path, which is what made it
+        # look covered. A whole-candidate reading found it.
+        #
+        # A key the writer bothered to include is a statement about that
+        # dimension. If it says nothing, the dimension is UNKNOWN — never
+        # whatever an earlier source happened to say.
         supplied = {name: normalised_identity_value(value)
-                    for name, value in declared.items()
-                    if value is not None and not isinstance(value, bool)
-                    and str(value).strip()}
+                    for name, value in declared.items()}
         if supplied:
             # **AN AMBIGUOUS STRING IS REFUSED, WHATEVER THE MAPPING SAYS.**
             #

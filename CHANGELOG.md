@@ -78,6 +78,52 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### The certification found four, and they were two questions
+
+Designed first, because both move an authority boundary:
+`docs/RP2.4.1-DESIGN-B1B4-git-read-authority.md`, frozen against the audited
+candidate and committed before any implementation commit. Three architectures
+were considered and two rejected — neutralising arbitrary filter names, which an
+empty clean command turns into breakage wearing the costume of neutralisation,
+and a per-caller binding, which is the divergence this release exists to close.
+
+**That record also carries a correction, rather than being reshaped to match
+what shipped.** Its selected design bound the resolved repository as well as the
+worktree, on the premise that a linked worktree's git dir sits under its own
+root. It does not — it lives under the main repository — so that binding refused
+every linked worktree, which is the layout this pack develops in. Execution
+falsified it before anything was committed, and the design it had rejected is
+what ships.
+
+
+A whole-candidate reading before adoption returned four blockers. They reduce to
+two questions, and both belonged to the one reader that already claims to answer
+them for every caller.
+
+**What a read may execute.** Three filter closures were asserted and never true:
+`filter.*.clean`, `.smudge` and `.process` were listed as reachable only through
+`--filters`, which this reader refuses as an argument. An ordinary `diff`
+converts the worktree through the clean filter regardless, and the reading
+watched a configured program run twice while the inspection reported nothing to
+see. They are no longer listed, so they fall to the standing rule that an
+unclosed program-valued key refuses. A repository legitimately using such
+filters is now refused — stated as a limitation rather than discovered later.
+
+**What a read may answer about.** `core.worktree` redirected reads to a sibling
+directory, so a workspace gate reported no unclassified files while one sat in
+the project it was asked about; and a release unpacked into a vendor directory
+let Git discover the enclosing repository and return zero tracked paths, so the
+pin digested an empty tree and declared a byte-identical release not to be the
+pack. Git's toplevel is now compared with the requested root inside `gitread`,
+once, for every caller — and the local copy `pack_pin` had grown is deleted
+rather than left as a second answer.
+
+**And explicit absence stopped inheriting.** A row carrying
+`identity: {"effort": null}` — the natural JSON for *the surface did not report
+it* — had that key dropped before the overlay, so the packed `effort=high`
+survived and two such rows graded `confirmed`. A key a writer includes is a
+statement about that dimension; if it says nothing, the dimension is UNKNOWN.
+
 ### A whole-candidate reading found the verifier could be pointed elsewhere
 
 `core.worktree` in a checkout's own configuration redirects what Git treats as

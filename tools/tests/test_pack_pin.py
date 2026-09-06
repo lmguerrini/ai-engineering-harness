@@ -15,6 +15,7 @@ after the fact.
 """
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -839,7 +840,48 @@ def test_a_redirected_working_tree_is_refused_not_answered_about(pack, tmp_path)
     elsewhere = tmp_path / "somewhere-else"
     elsewhere.mkdir()
     _git(pack, "config", "core.worktree", str(elsewhere))
-    with pytest.raises(ValueError, match="points Git at"):
+    # REFUSED BY THE SHARED READER NOW, not by this module. The local copy this
+    # function grew is gone: binding the answer to the directory asked about is
+    # one question, and `gitread` answers it for all twelve callers rather than
+    # for whichever ones remembered.
+    with pytest.raises(Exception, match="different directory"):
         pack_pin.untracked_files(pack)
     problems = pack_pin.verify_pin(pack)
-    assert any("points Git at" in problem for problem in problems), problems
+    assert any("different directory" in problem for problem in problems), problems
+
+
+def test_an_archive_inside_another_checkout_cannot_be_decided(pack, tmp_path):
+    """O8. A release unpacked into an ignored vendor directory inside another
+    project's checkout is not a checkout of its own. Git discovered the PARENT
+    repository and returned zero tracked paths scoped to the archive, so the pin
+    digested an empty tree and said confidently that a byte-identical release
+    was not the pinned pack. An adopting project meets this by vendoring the
+    release, with no tampering at all."""
+    outer = tmp_path / "adopter"
+    outer.mkdir()
+    _git(outer, "init", "--quiet", "--initial-branch", "main")
+    for key, value in (("user.name", "T"), ("user.email", "t@e.invalid"),
+                       ("commit.gpgsign", "false")):
+        _git(outer, "config", key, value)
+    (outer / "README.md").write_text("the adopting project\n")
+    (outer / ".gitignore").write_text("vendor/\n")
+    _git(outer, "add", "-A")
+    _git(outer, "commit", "--quiet", "-m", "the adopter's own repository")
+
+    vendored = outer / "vendor"
+    vendored.mkdir()
+    for entry in sorted(pack.iterdir()):
+        if entry.name == ".git":
+            continue
+        target = vendored / entry.name
+        if entry.is_dir():
+            shutil.copytree(entry, target)
+        else:
+            shutil.copy2(entry, target)
+
+    problems = pack_pin.verify_pin(vendored)
+    assert problems, "a non-checkout inside another repository verified"
+    assert not any("is not the pinned pack" in problem for problem in problems), problems
+    assert not any("covers 0 files" in problem for problem in problems), problems
+    assert any(problem.startswith(pack_pin.UNESTABLISHED) or "different directory" in problem
+               for problem in problems), problems

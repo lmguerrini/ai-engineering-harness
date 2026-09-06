@@ -427,6 +427,30 @@ def _run(
                 "waiting to be found",
                 repository=str(repository), keys=", ".join(executable),
             )
+    # THE ANSWER IS BOUND TO THE DIRECTORY ASKED ABOUT.
+    #
+    # Launching Git *in* a directory is not the same as Git answering *about*
+    # it, and two blockers came from that gap. `core.worktree` redirected reads
+    # to a sibling, so a workspace gate reported no unclassified files while one
+    # sat in the project it was asked about. And a release archive unpacked
+    # inside another checkout let Git discover the PARENT repository and return
+    # zero tracked paths scoped to the archive, so the pin digested an empty
+    # tree and said confidently that a byte-identical release was not the pinned
+    # pack.
+    #
+    # `pack_pin` grew a local version of this check and it did not help the
+    # other eleven callers — which is the shape this release exists to close. It
+    # lives here now, beside the environment hardening, and the local copy is
+    # gone.
+    #
+    # Two questions, because one does not cover the other: the REPOSITORY Git
+    # resolves must be the one at the requested root (a directory inside another
+    # checkout fails this), and where Git reports a WORKTREE at all it must be
+    # the requested root (a redirect fails this). A bare repository reports no
+    # worktree and is unaffected, which is why the second question is asked only
+    # when there is an answer.
+    if not _inspecting() and verb not in ("config", "rev-parse"):
+        _bind_answer_to(repository, timeout=timeout)
     arguments = (
         (arguments[0], *_NO_EXTERNAL_PROGRAMS, *arguments[1:])
         if verb in EXTERNAL_PROGRAM_VERBS else arguments
@@ -748,10 +772,26 @@ CLOSED_PROGRAM_KEYS = {
     "remote.*.uploadpack": "overridden by --upload-pack on every transport read",
     "diff.*.command": "an attribute-selected driver, disabled by --no-ext-diff",
     "diff.*.textconv": "disabled by --no-textconv, and --textconv is refused as an argument",
-    "filter.*.clean": "reachable only through --filters, which is refused as an argument",
-    "filter.*.smudge": "reachable only through --filters, which is refused as an argument",
-    "filter.*.process": "reachable only through --filters, which is refused as an argument",
 }
+
+#: **THEY WERE NEVER CLOSED.** `filter.*.clean`, `filter.*.smudge` and
+#: `filter.*.process` sat in the table above claiming to be "reachable only
+#: through --filters, which is refused as an argument". That is not true: an
+#: ordinary `diff` converts the worktree through the clean filter, and neither
+#: `--no-ext-diff` nor `--no-textconv` suppresses it. A whole-candidate reading
+#: configured one and watched it run twice while `program_valued_config`
+#: reported nothing to see.
+#:
+#: They are not listed here at all now, so they fall to this module's standing
+#: rule — a program-valued key with no named closure REFUSES. Neutralising them
+#: instead was considered and rejected: filter names are arbitrary, so it would
+#: mean enumerating and blanking each, and an empty clean command makes Git fail
+#: rather than proceed, which is breakage wearing the costume of neutralisation.
+#:
+#: **The cost, stated rather than discovered:** a repository that legitimately
+#: uses clean or smudge filters — Git-LFS is the common one — is refused by this
+#: reader. Fail-closed is the direction that cannot run somebody else's program,
+#: and a project needing those filters governs that as its own decision.
 
 
 #: Re-entrancy guard for the config inspection below. **Thread-local, and a
@@ -771,6 +811,52 @@ CLOSED_PROGRAM_KEYS = {
 #: over six minutes without finishing. A guard on the verb was a guard on one
 #: of the paths the function takes.
 _INSPECTION = threading.local()
+
+
+def _bind_answer_to(repository, *, timeout: float) -> None:
+    """Refuse when Git would answer about a directory other than the one asked about.
+
+    **The worktree is the whole question, and asking a second one was wrong.**
+    The frozen design for this repair proposed binding the resolved REPOSITORY
+    as well, on the premise that a linked worktree's git dir sits under its
+    root. It does not — it lives under the main repository — so that binding
+    refused every linked worktree, which is the layout this pack develops in.
+    Falsified by execution before it shipped; the design record carries the
+    correction rather than quietly matching what was built.
+
+    Git's own toplevel answers all four cases the certification found:
+
+    *   a linked worktree reports itself, and passes;
+    *   a standalone checkout reports itself, and passes;
+    *   `core.worktree` pointing elsewhere reports elsewhere, and refuses;
+    *   a directory inside another checkout reports that checkout, and refuses,
+        which is what stops a release archive being digested as an empty tree
+        and declared not to be the pack it byte-identically is.
+
+    A bare repository reports no worktree at all. There is nothing to bind and
+    nothing to answer wrongly about, so it is left alone.
+    """
+    here = Path(repository).resolve()
+    token = getattr(_INSPECTION, "active", False)
+    _INSPECTION.active = True
+    try:
+        try:
+            toplevel = _run(repository, "rev-parse", "--show-toplevel",
+                            timeout=timeout).strip()
+        except Exception:
+            # Not a repository, or bare, or Git cannot say. The caller's own
+            # verb produces the refusal that names the real problem; this check
+            # has nothing to add and must not hijack it.
+            return
+        if toplevel and Path(toplevel).resolve() != here:
+            raise IntegrityError(
+                "Git answers about a different directory than the one asked about, so a reading "
+                "here would describe somewhere else. Either this path sits inside another "
+                "checkout, or its configuration points at another working tree",
+                repository=str(here), answers_about=str(Path(toplevel).resolve()),
+            )
+    finally:
+        _INSPECTION.active = token
 
 
 def _inspecting() -> bool:
