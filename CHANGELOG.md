@@ -78,6 +78,37 @@ each is a **recurrence of a class this pack already records** — `RECURRENCE` f
   exemption. Untracked material is now measured against the `.gitignore` files
   the release actually tracks.
 
+### And the certification of THAT repair found reach described, not observed
+
+Two more, with one cause. `diff.*.textconv` is excused as disabled by
+`--no-textconv`, a flag this module adds for the diff-producing verbs — and
+`git status -v` prints a patch, applies textconv drivers, and accepts no
+`--no-textconv` by any spelling. And the nested walk enumerated index gitlinks
+while Git's inline submodule diff opens `<path>/.git` from the working tree,
+whether or not that path is still a gitlink; `git rm` of a submodule leaves
+exactly such a directory behind on every other machine.
+
+Both are the same mistake in the same place: **this module described its own
+behaviour and called that the reach.** The flags it passes became "the flag is
+passed"; the index it reads became "these are the nested repositories". Reach is
+a fact about Git, and both facts were there to be checked.
+
+`-v` and `--verbose` are refused as arguments now, beside `--textconv` and
+`--ext-diff`, so the closure stays true rather than narrowed and
+`status --porcelain` — which emits no patch and reaches no driver — keeps
+reading. The walk enumerates directories containing `.git`, which strictly
+contains the populated gitlinks, stopping at each repository it finds.
+
+Repairing them exposed a third: `remote.*.uploadpack` had been grouped with the
+diff keys as though one flag covered both. `--upload-pack` goes on the transport
+reads and `--no-ext-diff` on the diff verbs, so that grouping was wrong in both
+directions at once — closing the key where its flag is absent and opening it
+where its flag is passed. Each flag-based closure carries its own verbs now.
+
+The reasoning and the two rejected designs are in
+`docs/RP2.4.1-DESIGN-B14-reach-by-observation.md`. The cost of the walk is
+recorded in `known_limitations` rather than left to be discovered.
+
 ### And the certification of that walk found two defects inside it
 
 **A closure reaches only as far as its mechanism does.** `diff.external` and the

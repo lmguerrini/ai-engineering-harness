@@ -40,6 +40,7 @@ documentation, or the module beside it, already said it did:
 | B11 | `qualification`: one boundary decides what is unestablished, for the identity as well as the record |
 | B12 | `gitread`: the inspection's subject is every repository whose configuration Git applies |
 | B13 | `gitread`: a closure holds only where its mechanism reaches, and a check that cannot read its subject has not cleared it |
+| B14 | `gitread`: reach is a fact about Git, not a description of this module |
 
 ## What the readings of the repairs found
 

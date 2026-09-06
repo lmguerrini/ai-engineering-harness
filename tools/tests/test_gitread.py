@@ -757,7 +757,7 @@ def test_a_program_valued_key_this_module_actually_closes_is_allowed(tmp_path, k
     is then exempt from the shape rule that catches everything nobody has
     traced."""
     repo = _repo_setting(tmp_path, key)
-    assert gitread.program_valued_config(repo) == []
+    assert gitread.program_valued_config(repo, verb="diff") == []
     assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
 
 
@@ -1622,52 +1622,60 @@ def test_a_diff_helper_in_the_outer_repository_stays_closed(tmp_path):
     sup, marker = _superproject_with_diff_helper(tmp_path, "flagouter", where="outer")
     assert gitread.program_valued_config(sup) == []
     assert gitread.probe(sup, "diff", negative_statuses=()).ok
+    # And the argument that would reach the driver on a verb carrying no
+    # `--no-textconv` is refused outright, so the closure stays true rather than
+    # being narrowed: `status -v` prints a patch and applies textconv drivers.
+    with pytest.raises(_IntegrityError):
+        gitread.probe(sup, "status", "-v", negative_statuses=())
+    assert gitread.probe(sup, "status", "--porcelain", negative_statuses=()).answered
     assert not marker.exists()
 
 
-def test_an_index_listing_timeout_is_the_callers_refusal(tmp_path):
-    """O3. The gitlink listing was wrapped in `except GitRefusal: return []`,
-    reasoning that it errors for a path that is not a repository. It does — and
-    it also errors when it TIMES OUT, so an index read past the caller's
-    deadline reported "no submodules" and the governed read proceeded with a
-    submodule's filter applied. That is limitation 14 written again, in a new
-    function, one cycle after it was recorded.
+def test_a_walk_that_cannot_look_refuses_rather_than_finding_nothing(tmp_path):
+    """The nested walk replaced an index listing, and the property it carried has
+    to survive the change of mechanism.
 
-    Driven at the seam: what is under test is that a timeout stays a timeout,
-    not how long an index takes to read on this host.
+    The index listing was wrapped in `except GitRefusal: return []`, so a read
+    past the caller's deadline reported no nested repositories — limitation 14
+    written again. The walk is a filesystem traversal now and has no deadline of
+    its own, but it can still fail to look, and a directory it could not read is
+    not a directory it has cleared.
     """
-    sup, _ = _superproject(tmp_path, "idx_timeout")
+    sup, _ = _superproject(tmp_path, "walk_blind")
+    real = os.scandir
+
+    def blind(path):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(gitread.os, "scandir", blind)
+        with pytest.raises(_IntegrityError) as refused:
+            gitread.program_valued_config(sup)
+    assert "could not look" in str(refused.value)
+    # And the guarantee it protects: nothing proceeds on that answer.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(gitread.os, "scandir", blind)
+        with pytest.raises(_IntegrityError):
+            gitread._run(sup, "status", "--porcelain", timeout=30)
+
+
+def test_the_configuration_read_still_surfaces_its_own_timeout(tmp_path):
+    """The walk no longer runs Git, so it has no timeout to swallow — but the
+    configuration read beside it does, and that guarantee is unchanged. Asserted
+    here so the removal of the index listing cannot quietly take it along."""
+    repo = _committed(tmp_path, "cfg_timeout")
     real = gitread._run
 
-    def slow_index(repository, *args, **kwargs):
-        if args[:1] == ("ls-files",):
+    def slow_config(repository, *args, **kwargs):
+        if args[:1] == ("config",):
             raise GitRefusal("git invocation timed out", timeout=0.001)
         return real(repository, *args, **kwargs)
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(gitread, "_run", slow_index)
+        patch.setattr(gitread, "_run", slow_config)
         with pytest.raises(GitRefusal) as refusal:
-            gitread.program_valued_config(sup)
+            gitread.program_valued_config(repo)
     assert "timed out" in str(refusal.value)
-
-
-def test_an_unreadable_index_is_refused_not_read_as_no_submodules(tmp_path):
-    """O4. The other half of not swallowing: a repository whose index cannot be
-    read has not been shown to be free of nested repositories. A check that
-    cannot read its subject has not cleared it."""
-    sup, _ = _superproject(tmp_path, "idx_unreadable")
-    real = gitread._run
-
-    def broken_index(repository, *args, **kwargs):
-        if args[:1] == ("ls-files",):
-            raise GitRefusal("fatal: index file corrupt")
-        return real(repository, *args, **kwargs)
-
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(gitread, "_run", broken_index)
-        with pytest.raises(_IntegrityError) as refused:
-            gitread.program_valued_config(sup)
-    assert "not an empty one" in str(refused.value)
 
 
 def test_every_flag_based_closure_is_declared(tmp_path):
@@ -1679,6 +1687,111 @@ def test_every_flag_based_closure_is_declared(tmp_path):
         assert mentions_flag == (key in gitread.FLAG_BASED_CLOSURES), (
             f"{key!r} is justified by {reason!r}; declare it in FLAG_BASED_CLOSURES "
             f"if that reason is a command-line flag, which does not reach a nested repository")
+
+
+def test_a_textconv_driver_is_refused_on_a_verb_the_flag_never_reaches(tmp_path):
+    """O1. `diff.*.textconv` is excused as "disabled by `--no-textconv`". That
+    flag goes on the diff-producing verbs, and `git status -v` prints a patch,
+    applies textconv drivers, and accepts no `--no-textconv` by any spelling —
+    so the closure's mechanism could not reach it and the driver ran twice.
+
+    Closed by refusing the argument rather than by narrowing the closure: this
+    module controls its own command line, and `status --porcelain` reaches no
+    driver and keeps working.
+    """
+    repo = _committed(tmp_path, "textconv")
+    marker = tmp_path / "textconv-MARKER"
+    driver = tmp_path / "textconv.sh"
+    driver.write_text(f"#!/bin/sh\nprintf 'x' >> {marker}\necho converted\n")
+    driver.chmod(0o755)
+    (repo / "a.dat").write_text("x\n")
+    (repo / ".gitattributes").write_text("*.dat diff=t\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "one")
+    _git(repo, "config", "diff.t.textconv", str(driver))
+    (repo / "a.dat").write_text("y\n")
+    _git(repo, "add", "a.dat")
+
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "status", "-v", negative_statuses=())
+    with pytest.raises(_IntegrityError):
+        gitread.probe(repo, "status", "--verbose", negative_statuses=())
+    assert not marker.exists(), "the repository's textconv driver ran"
+    # SCOPED TO THE VERB, and the bound matters as much as the refusal. `-v` on
+    # `check-ignore` names the matching rule and executes nothing; this pack's
+    # own workspace report asks for it, and refusing the spelling everywhere
+    # refused a reader that runs no repository code at all.
+    assert gitread.probe(repo, "check-ignore", "-v", "a.dat",
+                         negative_statuses=(1,)).answered
+
+
+def test_a_textconv_driver_stays_closed_where_the_flag_is_passed(tmp_path):
+    """O2. The bound. The diff verbs do carry `--no-textconv`, and a repository
+    that merely configures a driver must still be readable there — and through
+    the ordinary porcelain status, which produces no patch at all."""
+    repo = _committed(tmp_path, "textconv_ok")
+    driver = tmp_path / "textconv_ok.sh"
+    driver.write_text("#!/bin/sh\necho converted\n")
+    driver.chmod(0o755)
+    _git(repo, "config", "diff.t.textconv", str(driver))
+    assert gitread.program_valued_config(repo) == []
+    assert gitread.probe(repo, "diff", negative_statuses=()).answered
+    assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
+
+
+def test_a_nested_repository_not_in_the_index_is_still_inspected(tmp_path):
+    """O3. Git's inline submodule diff opens `<path>/.git` from the WORKING TREE
+    for a gitlink change in the commit being read, whether or not that path is
+    still a gitlink — and `git rm` of a submodule leaves exactly such a directory
+    behind on every other machine. A walk over index gitlinks listed none of
+    them, so the nested configuration went uninspected and its helper ran.
+    """
+    sup, marker = _superproject_with_diff_helper(tmp_path, "stale", where="sub")
+    # Move the submodule's own HEAD so the superproject records a GITLINK change:
+    # that is what makes Git open the nested repository when the commit is shown.
+    (sup / "sub" / "s.txt").write_text("moved\n")
+    _git(sup / "sub", "add", "-A")
+    _git(sup / "sub", "commit", "-q", "-m", "s2")
+    _git(sup, "add", "sub")
+    _git(sup, "commit", "-q", "-m", "bump")
+    bump = _git(sup, "rev-parse", "HEAD").strip()
+    # Stop tracking it, leaving the populated directory behind — which is what a
+    # `git rm` of a submodule leaves on every other machine. `add -u` touches
+    # only tracked paths, so it does not re-add the directory as an embedded repo.
+    _git(sup, "rm", "-q", "-r", "--cached", "sub")
+    (sup / ".gitmodules").unlink(missing_ok=True)
+    _git(sup, "add", "-u")
+    _git(sup, "commit", "-q", "-m", "remove sub")
+
+    assert "sub" in gitread._nested_repository_paths(sup, 30)
+    assert gitread.program_valued_config(sup) == ["sub: diff.external"]
+    with pytest.raises(_IntegrityError):
+        gitread.probe(sup, "show", bump, negative_statuses=())
+    assert not marker.exists(), "the stale nested repository's helper ran"
+
+
+def test_the_walk_stops_at_each_nested_repository(tmp_path):
+    """O7. Descent stops where a repository begins: a nested repository's own
+    nesting is the recursion's business, not this walk's.
+
+    Without the stop the walk traverses every nested repository's whole working
+    tree from the outer root and reports the same repository twice, once at a
+    path relative to the wrong root. Mutation found it — the duplicate refusals
+    still refused, so no safety test noticed.
+    """
+    sup, _ = _superproject(tmp_path, "stopwalk")
+    inner = sup / "sub" / "deeper"
+    inner.mkdir()
+    _git(inner, "init", "-q", "-b", "main")
+    _git(inner, "config", "user.email", "t@e.invalid")
+    _git(inner, "config", "user.name", "T")
+    (inner / "d.txt").write_text("d\n")
+    _git(inner, "add", "-A")
+    _git(inner, "commit", "-q", "-m", "d1")
+
+    assert gitread._nested_repository_paths(sup, 30) == ["sub"], (
+        "the walk descended past a repository boundary instead of leaving the "
+        "nested repository's own nesting to the recursion")
 
 
 def test_a_repository_declaring_no_worktree_config_still_reads(tmp_path):

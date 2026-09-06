@@ -197,6 +197,15 @@ _NO_EXTERNAL_PROGRAMS = ("--no-ext-diff", "--no-textconv")
 CODE_ENABLING_OPTIONS = ("--ext-diff", "--textconv", "--filters",
                          "--submodule=diff", "--recurse-submodules")
 
+#: Options that enable repository-chosen execution ON ONE VERB and mean something
+#: harmless elsewhere. `git status -v` prints a patch, which applies the
+#: repository's textconv drivers, and `status` accepts no `--no-textconv` to undo
+#: it — the driver ran twice under an ordinary `probe(repo, "status", "-v")`.
+#: `-v` on `check-ignore` merely names the matching rule, and this pack's own
+#: workspace report asks for it, so refusing the spelling everywhere refused a
+#: reader that executes nothing. Scoped to the verb it is dangerous on.
+VERB_ENABLING_OPTIONS = {"status": ("-v", "--verbose")}
+
 #: Verbs that may cross a network boundary, and the only ones for which
 #: `allow_transports` means anything. `archive --remote` is a second network
 #: read and was reachable through the generic API with `ssh` enabled — found by
@@ -414,7 +423,8 @@ def _run(
         # `previous` carries the option this argument might be the value of.
         if (any(option_text == form or option_text.startswith(form + "=")
                 for form in CODE_ENABLING_OPTIONS)
-                or f"{previous}={option_text}" in CODE_ENABLING_OPTIONS):
+                or f"{previous}={option_text}" in CODE_ENABLING_OPTIONS
+                or option_text in VERB_ENABLING_OPTIONS.get(verb, ())):
             raise IntegrityError(
                 "this option lets the repository being read choose a program to run, and a "
                 "read-only interface that executes the subject's code is not read-only",
@@ -452,7 +462,7 @@ def _run(
     if not _inspecting() and verb != "config":
         # The transports this invocation enables decide which closures still
         # hold, so the inspection is told the same thing the environment is.
-        executable, refuse_protocols = _inspect(repository, timeout, allow_transports)
+        executable, refuse_protocols = _inspect(repository, timeout, allow_transports, verb)
         if executable:
             raise IntegrityError(
                 "this repository's own configuration names a program for Git to run, by a key "
@@ -832,9 +842,17 @@ CONDITIONAL_CLOSURES = {"core.sshcommand": "ssh"}
 # line is Git's, not this module's. So these four are closed for the repository
 # the flags were passed to and OPEN for every nested one, which is how a
 # submodule's `diff.external` ran under a table that called it handled.
-FLAG_BASED_CLOSURES = frozenset({
-    "diff.external", "diff.*.command", "diff.*.textconv", "remote.*.uploadpack",
-})
+# Mapped to the verbs whose command line actually carries the flag, because the
+# flags are not one set: `--no-ext-diff --no-textconv` go on the diff-producing
+# verbs, `--upload-pack` on the transport reads. Treating them as one set closed
+# `remote.*.uploadpack` for `diff` and opened it for `ls-remote`, which is the
+# reverse of the truth in both directions.
+FLAG_BASED_CLOSURES = {
+    "diff.external": EXTERNAL_PROGRAM_VERBS,
+    "diff.*.command": EXTERNAL_PROGRAM_VERBS,
+    "diff.*.textconv": EXTERNAL_PROGRAM_VERBS,
+    "remote.*.uploadpack": TRANSPORT_VERBS,
+}
 
 #: **THEY WERE NEVER CLOSED.** `filter.*.clean`, `filter.*.smudge` and
 #: `filter.*.process` sat in the table above claiming to be "reachable only
@@ -927,7 +945,7 @@ def _inspecting() -> bool:
 
 def program_valued_config(
     repository: str | Path, *, timeout: float = DEFAULT_TIMEOUT_SECONDS,
-    allow_transports: tuple[str, ...] = (),
+    allow_transports: tuple[str, ...] = (), verb: str = "",
 ) -> list[str]:
     """Local config keys this repository sets whose value Git would execute.
 
@@ -938,7 +956,11 @@ def program_valued_config(
 
     if _inspecting():
         return []
-    return _inspect(repository, timeout, allow_transports)[0]
+    # WITHOUT A VERB, THE CONSERVATIVE ANSWER. Some closures hold only on the
+    # verbs whose command line carries their flag, so with no verb named this
+    # cannot say they hold — and reporting a key as closed when it may not be is
+    # the direction that lets a program run. `_run` always names the real verb.
+    return _inspect(repository, timeout, allow_transports, verb)[0]
 
 
 #: How deep the walk into nested repositories goes before it refuses. Submodules
@@ -947,7 +969,7 @@ def program_valued_config(
 MAXIMUM_NESTED_DEPTH = 32
 
 
-def _inspect(repository, timeout, allow_transports) -> tuple[list[str], tuple[str, ...]]:
+def _inspect(repository, timeout, allow_transports, verb="") -> tuple[list[str], tuple[str, ...]]:
     """Both questions the one configuration listing answers: which keys name a
     program Git would run, and which transports this repository turns on.
 
@@ -963,53 +985,71 @@ def _inspect(repository, timeout, allow_transports) -> tuple[list[str], tuple[st
         return [], ()
     _INSPECTION.active = True
     try:
-        return _inspect_tree(repository, fnmatch, timeout, allow_transports)
+        return _inspect_tree(repository, fnmatch, timeout, allow_transports, verb=verb)
     finally:
         _INSPECTION.active = False
 
 
-def _gitlink_paths(repository, timeout) -> list[str]:
-    """Submodule paths, taken from the index rather than from `.gitmodules`.
+def _nested_repository_paths(repository, timeout) -> list[str]:
+    """Directories in the working tree that hold a repository Git can open.
 
-    The index is what Git itself consults for gitlinks, and it costs one read.
-    `.gitmodules` is a tracked file a repository controls and can disagree with
-    the index, which would make the walk skip a submodule that Git still enters.
+    NOT the index. Git's inline submodule diff opens `<path>/.git` from the
+    WORKING TREE for a gitlink change in the commit being read, whether or not
+    that path is still a gitlink — and `git rm` of a submodule leaves exactly
+    such a directory behind on every other machine. A walk over mode-160000
+    entries listed none of them and the nested configuration went uninspected.
+
+    This set strictly contains the populated index gitlinks, because a populated
+    gitlink is a directory with a `.git` in it; an unpopulated one has no
+    configuration for Git to apply. So it replaces that listing rather than
+    adding to it.
     """
-    try:
-        raw = _run(repository, "ls-files", "--stage", "-z", timeout=timeout, text=False)
-    except GitRefusal as refusal:
-        # NOT SWALLOWED. The first version of this read caught every refusal and
-        # returned "no submodules", which is limitation 14 written again: an
-        # index read that TIMED OUT reported an empty walk and the governed read
-        # went ahead, with a submodule's `filter.x.clean` applied the whole time.
-        # Reproduced at 35ms and 40ms deadlines against a 90,000-entry index.
-        #
-        # Answered in the shape this module already proved for the configuration
-        # read next door, for the same three reasons.
-        if "timed out" in str(refusal):
-            raise
-        here = Path(repository)
-        looks_like_one = (here / ".git").exists() or (
-            (here / "HEAD").is_file() and (here / "objects").is_dir())
-        if not looks_like_one:
-            return []
-        raise IntegrityError(
-            "this repository's index could not be read, so whether it contains a nested "
-            "repository naming a program for Git to run cannot be established. An unreadable "
-            "index is not an empty one",
-            repository=str(here), refusal=str(refusal)[:160],
-        ) from refusal
+    root = Path(repository)
+    # A path that is not a directory at all is the caller's verb's business, and
+    # hijacking it here reported a missing directory as a nested-repository
+    # finding. The same rule the configuration handler beside this one uses.
+    if not root.is_dir():
+        return []
     found = []
-    for record in nul_paths(raw):
-        # `<mode> <object> <stage>\t<path>`; 160000 is a gitlink.
-        head, _, path = record.partition("\t")
-        if path and head.split(" ", 1)[0] == "160000":
-            found.append(path)
-    return found
+    try:
+        stack = [(root, 0)]
+        while stack:
+            here, depth = stack.pop()
+            if depth > MAXIMUM_NESTED_DEPTH:
+                raise IntegrityError(
+                    "this working tree nests deeper than the inspection will walk, so whether a "
+                    "nested repository names a program for Git to run cannot be established. A "
+                    "partial inspection is not a clean one",
+                    repository=str(root), depth=depth,
+                )
+            for entry in os.scandir(here):
+                # `is_dir(follow_symlinks=False)`: a directory symlink is not a
+                # nested repository Git enters, and following one is how a walk
+                # loops or wanders outside the subject.
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                if entry.name == ".git":
+                    continue
+                nested = Path(entry.path)
+                if (nested / ".git").exists():
+                    # Its own nesting belongs to the recursion, not to this walk.
+                    found.append(str(nested.relative_to(root)))
+                    continue
+                stack.append((nested, depth + 1))
+    except OSError as failure:
+        # REFUSED, not skipped. A walk that could not look has not established
+        # that there is nothing there.
+        raise IntegrityError(
+            "this working tree could not be walked, so whether it contains a nested repository "
+            "naming a program for Git to run cannot be established. A walk that could not look "
+            "is not a walk that found nothing",
+            repository=str(root), failure=str(failure)[:160],
+        ) from failure
+    return sorted(found)
 
 
 def _inspect_tree(repository, fnmatch, timeout, allow_transports,
-                  *, seen=None, depth=0) -> tuple[list[str], tuple[str, ...]]:
+                  *, seen=None, depth=0, verb="") -> tuple[list[str], tuple[str, ...]]:
     """The inspection applied to this repository and to every populated
     submodule beneath it, under one rule and one set of closures."""
     here = Path(repository).resolve()
@@ -1025,10 +1065,11 @@ def _inspect_tree(repository, fnmatch, timeout, allow_transports,
             repository=str(here), depth=depth,
         )
     found, protocols = _program_valued_config(
-        repository, fnmatch, timeout, allow_transports=allow_transports, nested=depth > 0)
+        repository, fnmatch, timeout, allow_transports=allow_transports,
+        nested=depth > 0, verb=verb)
     found = list(found)
     protocols = list(protocols)
-    for relative in _gitlink_paths(repository, timeout):
+    for relative in _nested_repository_paths(repository, timeout):
         nested = (here / relative)
         # Listed in the index but never checked out: nothing of its own is
         # applied, because there is no configuration there to apply.
@@ -1037,7 +1078,8 @@ def _inspect_tree(repository, fnmatch, timeout, allow_transports,
         if nested.resolve() in seen:
             continue
         deeper, nested_protocols = _inspect_tree(
-            nested, fnmatch, timeout, allow_transports, seen=seen, depth=depth + 1)
+            nested, fnmatch, timeout, allow_transports, seen=seen, depth=depth + 1,
+            verb=verb)
         # Reported against the path that owns them, so the refusal names which
         # repository is responsible rather than only which key.
         found.extend(f"{relative}: {key}" for key in deeper)
@@ -1046,7 +1088,7 @@ def _inspect_tree(repository, fnmatch, timeout, allow_transports,
 
 
 def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=(),
-                           nested=False) -> list[str]:
+                           nested=False, verb="") -> list[str]:
     """Every configuration source Git will actually apply, not just the obvious one.
 
     **`--local` READS EXACTLY ONE FILE**, and Git applies more than one. With
@@ -1149,6 +1191,13 @@ def _program_valued_config(repository, fnmatch, timeout, *, allow_transports=(),
         )
     # Closures whose condition this invocation breaks are not closures here.
     enabled = {transport.strip().lower() for transport in allow_transports}
+    # A flag-based closure holds where the flag is actually on the command line:
+    # for the verbs it is added for, and never for a nested process whose command
+    # line Git builds itself. `status -v` applies textconv drivers and does not
+    # accept `--no-textconv` by any spelling, so the closure could not reach it.
+    # A flag-based closure holds on this module's own command lines — the
+    # arguments that would reach a driver anyway are refused outright — and NOT
+    # on a nested process, whose command line Git builds for itself.
     closed = {key: reason for key, reason in CLOSED_PROGRAM_KEYS.items()
               if CONDITIONAL_CLOSURES.get(key) not in enabled
               and not (nested and key in FLAG_BASED_CLOSURES)}
