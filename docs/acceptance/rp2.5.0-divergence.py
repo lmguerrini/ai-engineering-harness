@@ -100,6 +100,42 @@ commit(d, body="two\n")
 git("merge", "--no-commit", "--no-ff", "side", cwd=d)
 row("pseudo-ref: rev-parse MERGE_HEAD", d, "rev-parse", "MERGE_HEAD", kind="ref state")
 
+# --- state that is not configuration, and that `config --list` cannot declare ----
+d = repo("grafts")
+commit(d, body="one\n"); commit(d, body="two\n"); commit(d, body="three\n")
+head = git("rev-parse", "HEAD", cwd=d).stdout.strip()
+(d / ".git" / "info").mkdir(exist_ok=True)
+(d / ".git" / "info" / "grafts").write_text(head + "\n")
+row("info/grafts: rev-list --count", d, "rev-list", "--count", "HEAD", kind="gitdir file")
+
+d = repo("headlink")
+commit(d)
+(d / ".git" / "HEAD").unlink()
+os.symlink("refs/heads/main", d / ".git" / "HEAD")
+row("HEAD as a symlink", d, "status", "--porcelain", "--branch", kind="gitdir file")
+
+d = repo("upstream")
+commit(d)
+bare = BASE / "upstream-remote.git"
+git("init", "-q", "--bare", str(bare), cwd=BASE)
+git("remote", "add", "origin", str(bare), cwd=d)
+git("push", "-q", "origin", "main", cwd=d)
+git("branch", "--set-upstream-to=origin/main", "main", cwd=d)
+commit(d, name="ahead.txt", body="ahead\n")
+row("an ordinary clone's upstream", d, "status", "--porcelain", "--branch", kind="config")
+
+d = repo("submodule-config")
+commit(d)
+inner = repo("submodule-inner")
+commit(inner, name="i.txt")
+git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "mod", cwd=d)
+git("-c", "user.email=t@e.invalid", "-c", "user.name=T", "commit", "-qm", "sub", cwd=d)
+module = d / ".git" / "modules" / "mod"
+if module.is_dir():
+    git("config", "status.showUntrackedFiles", "no", cwd=module)
+    (d / "mod" / "untracked.txt").write_text("u\n")
+    row("a gitlink's OWN config", d, "status", "--porcelain", kind="nested config")
+
 width = max(len(r[0]) for r in ROWS) + 2
 print(f"{'case':{width}} {'kind':11} {'verdict':20} {'real git':40} boundary")
 divergent = 0
