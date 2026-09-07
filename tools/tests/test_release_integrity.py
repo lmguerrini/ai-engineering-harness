@@ -1331,7 +1331,7 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
     #: written for is worse than the unbound number it replaced.
     number = r"(?:\d+|thirteen|twenty-?nine|ninety-?five|forty|fifty|sixty|seventy|eighty|ninety|hundred)"
     pattern = re.compile(
-        rf"(?<![\d.])(?:"
+        rf"(?<![^\s|])(?:"
         rf"{number}\s+(?:[\w/-]+\s+){{0,3}}(?:diverg|disagree|under-match|over-match)"
         rf"|{number}\s*\(\s*{number}\s+(?:under|over)"
         rf"|(?:left|leaving|remaining|remained)\s+(?:only\s+)?{number}\b"
@@ -1339,6 +1339,14 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
         rf")",
         re.IGNORECASE,
     )
+    #: The number must START A WORD: preceded by nothing, whitespace, or a table
+    #: pipe. The earlier `(?<![\d.])` only refused a preceding digit or dot, so
+    #: `python3 divergence_corpus.py` read as "3 diverg…" and
+    #: `sys.exit(1 if divergent else 0)` as "1 … divergent" — both in this
+    #: release's own shipped acceptance script, neither one a count. A guard that
+    #: cries wolf on its own tree gets suppressed, which is how the unbound
+    #: number came back last time. The samples below pin both directions.
+    #:
     #: **This is a heuristic over prose and it is not complete.** It kills every
     #: restatement shape that has actually occurred, and a determined sentence
     #: can evade it. That is why the durable repair is the *computation* in
@@ -1352,6 +1360,21 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
     #: same failure as a hand-written grid. **No prose states a divergence count
     #: at all** — the history is told without numbers, and the numbers live in
     #: the two test modules that compute them.
+
+    # THE GUARD MUST STILL SEE WHAT IT WAS WRITTEN FOR. Every shape below is one
+    # that actually occurred in this tree; a tightening that stops matching any
+    # of them is not a tightening, it is a hole.
+    for sample in ("13 divergences", "twenty-nine divergences",
+                   "95 (88 under, 7 over)", "400 (390 under, 10 over)",
+                   "| 0 refusals, 0 divergences |", "leaving only 13"):
+        assert pattern.search(sample), (
+            f"the guard no longer catches {sample!r}, which is a shape it exists to catch")
+    # And the shapes that are not counts at all. Both of these were reported as
+    # offenders by the previous pattern.
+    for sample in ("python3 divergence_corpus.py", "sys.exit(1 if divergent else 0)",
+                   "version 1.13 diverges", "python3 rp2.5.0-divergence.py"):
+        assert not pattern.search(sample), (
+            f"the guard reads {sample!r} as a divergence count, and it is not one")
 
     #: **Every tracked file**, not a hand-written list. The sibling machine-path
     #: guard already worked this way; this one did not, so a restatement in a

@@ -35,8 +35,9 @@ it, and nothing here pretends it shipped.
 
 ### What replaces it
 
-`docs/RP2.5.0-DESIGN-A1-sterile-execution.md` is the frozen design, committed
-before a line of implementation existed. It replaces the question. Instead of
+`docs/RP2.5.0-DESIGN-A1-sterile-execution.md` was the first frozen design,
+committed before a line of implementation existed — see *Six designs, six
+falsifications* below for what became of it and of the five that followed. It replaces the question. Instead of
 asking which of a repository's settings are dangerous, the boundary makes every
 configuration source Git consults a file this harness wrote:
 
@@ -177,6 +178,61 @@ prevent, so they ship.
   decides and the kind of the entry never does; anything that cannot be rebuilt
   sterile refuses the read; and the finished view is checked by walking it
   rather than by trusting the loop that built it.
+
+### Six designs, six falsifications, and the question underneath them
+
+Every generation was frozen before implementation, read blind by independent
+readers, and broken by them. None has been implemented. This section records what
+each one died of, because the pattern is the finding.
+
+`docs/RP2.5.0-DESIGN-A3-owned-or-refused.md` stopped enumerating what a read
+needs and asked instead which keys the harness owns. A reader found an owned-key
+exemption resting on a judgement about what a setting could probably affect,
+which is the open set again under a new name.
+
+`docs/RP2.5.0-DESIGN-A4-sources-and-standing.md` replaced that with declared
+sources and standing. A reader found a source outside all four generations'
+models: the case-folding semantics of the volume the harness materialised on.
+
+`docs/RP2.5.0-DESIGN-A5-authentic-read-denied-exec.md` stopped reproducing the
+subject at all — read the real repository, and deny the process the ability to
+execute. Two readers working blind and separately returned the same verdict from
+opposite directions. One found an ordinary `git status` rewriting the subject's
+real index while merely answering. The other found that permitting the Git binary
+permits *every Git subcommand*, chosen by the repository: with `diff.external`
+set to the bare word `git` and a working-tree file named after a subcommand, a
+governed read repacked the subject's own object store, at exit zero, with every
+child process completing successfully.
+
+`docs/RP2.5.0-DESIGN-A6-authentic-or-declared.md` took away the capability the
+barrier could not safely grant — the process could create no child at all and
+could write to neither the subject nor its resolved Git directory — and let the
+kernel's denial bit choose between the authentic answer and a fallback. Two
+readers broke it too. Denying execution turned out not to be denying *influence*:
+`core.fsmonitor` is a boolean that names no program, and a repository that leaves
+a socket where Git expects its file-system monitor is believed by Git, over a
+channel that creates no process and so is never denied. A governed read then
+reported a tampered file as clean, three times running, and labelled the answer
+authentic. Ordinary configuration does the same thing without any socket at all.
+
+The pattern across all six is a question this pack has not answered, and each
+design has been judged against both answers at once:
+
+> **Should a governed read report what the repository says, or what the harness
+> says?**
+
+The promise above — *every configuration source Git consults during a governed
+read is a file this harness created* — answers *the harness*.
+`docs/acceptance/rp2.5.0-divergence.py` answers *the repository*: it scores a
+governed read against real Git and calls every disagreement a divergence to be
+closed, beginning with a repository that sets `status.showUntrackedFiles` and is
+therefore obeyed. A1 through A4 satisfy the promise and fail that corpus. A5 and
+A6 satisfy the corpus and fail the promise. The two standards cannot both be met,
+which is what six falsifications look like from the inside.
+
+Deciding which one governs is a human decision under `DECISIONS.md` D14 and D23,
+and it is not taken here. Until it is taken, 2.5.0 remains `IN_PROGRESS` and
+2.4.0 remains the release a project pins.
 
 ## 2.4.1 — the six the full-release audit reproduced
 

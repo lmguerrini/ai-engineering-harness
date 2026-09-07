@@ -1,6 +1,6 @@
 """Every reproduced case where a governed read disagrees with real Git.
 
-    python3 divergence_corpus.py [pack root]
+    python3 docs/acceptance/rp2.5.0-divergence.py [pack root]
 
 This is the evidence A3 is derived against. Each row builds an ORDINARY repository
 -- none of them is hostile, none names a program -- runs real Git and the governed
