@@ -350,6 +350,24 @@ def dot_git_name(here: Path, names) -> "str | None":
     return DOT_GIT
 
 
+def _refuse_unreadable(error: OSError) -> None:
+    """`os.walk` swallows a directory it cannot read and simply yields less.
+
+    A view built from a walk that skipped one is a SMALLER TREE than the subject,
+    and Git answers confidently about it: a tracked file under an unreadable
+    directory came back reported as DELETED while real Git said nothing. That is a
+    wrong answer at exit 0 produced by an inability to look, which is the state this
+    design refuses rather than answers.
+    """
+    raise GitRefusal(
+        "a directory inside the working tree could not be read, so the view would be a "
+        "smaller tree than the subject and every answer taken from it would describe a "
+        "repository that is not there",
+        path=str(getattr(error, "filename", "") or "(unknown)"),
+        because=f"{type(error).__name__}: {error}",
+    )
+
+
 def nested_repository_paths(subject: Path) -> list:
     """Every directory under the subject that carries an entry named `.git`.
 
@@ -364,7 +382,8 @@ def nested_repository_paths(subject: Path) -> list:
     """
     subject = Path(subject).resolve()
     found: list = []
-    for root, directories, files in os.walk(subject, followlinks=False):
+    for root, directories, files in os.walk(subject, followlinks=False,
+                                            onerror=_refuse_unreadable):
         here = Path(root)
         relative = here.relative_to(subject)
         if ".git" in relative.parts:
@@ -388,7 +407,8 @@ def _build_view(subject: Path, scratch: Path) -> Path:
         shutil.rmtree(view)
     view.mkdir(parents=True)
     nested: list = []
-    for root, directories, files in os.walk(subject, followlinks=False):
+    for root, directories, files in os.walk(subject, followlinks=False,
+                                            onerror=_refuse_unreadable):
         here = Path(root)
         relative = here.relative_to(subject)
         if ".git" in relative.parts:
@@ -420,12 +440,23 @@ def _build_view(subject: Path, scratch: Path) -> Path:
             source, destination = here / name, view / relative / name
             if os.path.lexists(destination):
                 continue
+            if source.is_symlink():
+                # THE SYMLINK BRANCH RUNS FIRST, BECAUSE `os.link` NEVER FAILS ON ONE.
+                #
+                # `os.link` follows symlinks by default, so it succeeded and made a
+                # hard link to the TARGET -- a committed symlink arrived in the view
+                # as an ordinary file. Git compared mode 100644 against the 120000
+                # in the index and reported `T` for a typechange the subject does
+                # not have, and `diff` invented a deleted file mode. The handling
+                # was already written, and it sat in an `except OSError` that the
+                # one case needing it could never reach. Deciding by what the entry
+                # IS, before attempting anything, is the same order the `.git` name
+                # check uses above, and for the same reason.
+                os.symlink(os.readlink(source), destination)
+                continue
             try:
                 os.link(source, destination)          # a link, so no content is copied
             except OSError:
-                if source.is_symlink():
-                    os.symlink(os.readlink(source), destination)
-                else:
                     # THE FALLBACK MUST PRODUCE THE SAME FILE THE LINK WOULD HAVE.
                     #
                     # `os.link` fails with EXDEV whenever the subject and this

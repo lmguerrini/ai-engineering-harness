@@ -37,7 +37,8 @@ release could not confirm, because the path it named is not in this tree.
 Independently reproduced in this session against Git 2.50.1 before being accepted:
 B15a — and a **third** unenumerated spelling, `--verbo`, that no reader had reported;
 B15b — `workspace_report.classify_workspace` raising `IntegrityError` where real Git
-exits 0. The reproduction is `<scratch>/repro/b15.py`.
+exits 0. That reproduction was a script in the author's scratch directory and does
+not ship, so it is named here as provenance and not as something a reader can run.
 
 ## The one assumption
 

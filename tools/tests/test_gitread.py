@@ -1905,6 +1905,79 @@ def test_a_view_built_across_a_filesystem_boundary_keeps_every_mode(tmp_path, mo
     )
 
 
+def test_a_committed_symlink_is_a_symlink_in_the_constructed_view(tmp_path):
+    """The view must BE the tree, and `os.link` quietly makes it not be.
+
+    `os.link` follows symlinks by default, so it never fails on one — it succeeds
+    and hard-links the TARGET. A committed symlink therefore arrived in the view as
+    an ordinary file, Git compared mode 100644 with the 120000 in the index, and a
+    governed `status` reported `T` for a typechange the subject does not have while
+    `diff` invented a deleted file mode. The symlink handling existed the whole
+    time, inside an `except OSError` the one case that needed it could never reach.
+
+    Found by an independent certification. Pinned against real Git rather than
+    against an expectation typed here, and over three verbs, because the wrong
+    answer showed up differently in each.
+    """
+    root = _repo(tmp_path, "symlinked")
+    (root / "target.txt").write_text("target\n")
+    os.symlink("target.txt", root / "link-inside")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside\n")
+    os.symlink(str(outside), root / "link-outside")
+    os.symlink("nowhere-at-all", root / "link-dangling")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "links")
+    # a nested repository is what makes the build construct a view at all
+    (root / "nest").mkdir()
+    _git(root / "nest", "init", "-q", "-b", "main")
+
+    assert _git(root, "ls-files", "-s", "link-inside").split()[0] == "120000", (
+        "the fixture did not commit a symlink, so this test would prove nothing"
+    )
+    for arguments in (("status", "--porcelain"), ("diff", "--name-status"), ("ls-files", "-s")):
+        expected, got = _exactly_as_real_git(root, *arguments)
+        assert expected is not None, f"real git refused {arguments}, so this proves nothing"
+        assert got == expected, (
+            f"the view disagreed with real git on `git {' '.join(arguments)}`: "
+            f"{got!r} against {expected!r}"
+        )
+
+
+def test_a_directory_the_walk_cannot_read_refuses_instead_of_answering(tmp_path):
+    """An inability to look must not become a smaller tree.
+
+    `os.walk` swallows a directory it cannot read and simply yields less of the
+    tree. The view built from it was missing a whole subtree, and Git answered
+    confidently about what was left: a tracked file under an unreadable directory
+    came back REPORTED AS DELETED while real Git said nothing about it. That is the
+    pack's own `UNKNOWN coerced into an answer` class, arriving through a walk
+    rather than through a comparison.
+    """
+    root = _repo(tmp_path, "unreadable")
+    (root / "sub").mkdir()
+    (root / "sub" / "tracked.txt").write_text("tracked\n")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "sub")
+    (root / "nest").mkdir()
+    _git(root / "nest", "init", "-q", "-b", "main")
+
+    os.chmod(root / "sub", 0o000)
+    try:
+        with _pytest.raises(_GitRefusal) as raised:
+            gitread._run(root, "status", "--porcelain")
+        assert "could not be read" in str(raised.value.cause), raised.value.cause
+    finally:
+        os.chmod(root / "sub", 0o755)
+
+    # AND THE BOUND: it must not refuse a tree it can read. Without this the repair
+    # could be a blanket refusal and the test above would still pass.
+    expected, got = _exactly_as_real_git(root, "status", "--porcelain")
+    assert expected is not None and got == expected, (
+        f"the same subject, readable, no longer answers as real git: {got!r} against {expected!r}"
+    )
+
+
 def _exactly_as_real_git(repo, *arguments):
     """Byte for byte, through `_run` rather than `probe`.
 

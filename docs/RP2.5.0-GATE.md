@@ -171,7 +171,7 @@ is corrected afterwards is no longer evidence of what was decided beforehand:
 
 | Record | Oracle | Selector as frozen | The test that implements it |
 |---|---|---|---|
-| A1 | O2 | `test_a_nested_repositorys_configuration_never_executes` | `test_no_spelling_of_a_nested_git_executes_the_subjects_program`, parametrised over four spellings of a nested `.git` — A2 widened the property from *a* nested repository to *any spelling of one*, and the name followed |
+| A1 | O2 | `test_a_nested_repositorys_configuration_never_executes` | `test_no_spelling_of_a_nested_git_executes_the_subjects_program`, parametrised over every spelling of a nested `.git` this release could build — A2 widened the property from *a* nested repository to *any spelling of one*, and the name followed. The count is not written here: adding a spelling is exactly the change this table should not have to be edited for, and a stated "four" survived the commit that made it five |
 
 Every other oracle in A1 and A2 names a test that exists and runs.
 
@@ -363,7 +363,7 @@ neither of which is how this release works.
 
 **The three non-blocking findings, and the one that matters most.** The
 certification found that this record still said "three behaviour changes" where
-the changelog lists six — **and that the table above already claimed the count was
+the changelog lists more — **and that the table above already claimed the count was
 gone**. It was not: the sentence is line-wrapped, the edit that was supposed to
 remove it did not match, and nobody checked. A record that asserts its own repair
 without verifying it is the same defect as a figure nobody recomputed, one level
@@ -428,8 +428,7 @@ new one.
 
 ## What the second qualification pass found in this release's own work
 
-The first independent certification returned READY on revision `3dec69a`, the
-parent of this one. A second pass ran anyway, on the principle that a certification
+The first independent certification returned READY on revision `3dec69a`. A second pass ran anyway, on the principle that a certification
 is evidence and not a guarantee, and it found four defects that certification had
 not: one in the mechanism this release exists to introduce, and three in the
 oracles whose whole job is to catch exactly that. All four are repaired here, each
@@ -562,7 +561,8 @@ docstring, which justified one of them by a safety reason that is no longer true
 now says so. Removing them would remove a public name 2.4.0 shipped, which is a
 SemVer decision this release does not take. Some private constants and a private
 helper have no remaining caller, and `sterile.build`'s `needs_working_tree=False`
-branch and its `overlay` parameter have no caller either; they are disclosed here
+branch has no caller, and its `overlay` parameter is passed by `gitread._run` but
+never with a value; they are disclosed here
 rather than removed, because churn in a candidate under certification buys less
 than an accurate record does.
 
@@ -579,7 +579,7 @@ commit added two test functions — so the sentence was stale before it was
 committed, in the field that carries the version derivation, under the words
 "measured rather than transcribed". And this record told a reader that the shipped
 hostile matrix "reports 13 cases with 9 carrying a positive control, and that is
-the figure a reader can recompute", four hundred lines above a later sentence
+the figure a reader can recompute", in the same document as a later sentence
 saying the matrix had gained a row. A reader who accepts the invitation gets 14
 and 10.
 
@@ -588,9 +588,15 @@ no removal or signature change falls outside `tools/tests/`, and that the matrix
 passes with a positive control on every row it claims one for. **The defect was
 that they were written down at all.** A count a shipped command derives does not
 belong in prose that ships beside it, because prose does not get recomputed when
-the tree changes and the command does. Every such total is now gone from this
-record and from the manifest, replaced by the claim a test binds and by a pointer
-to the line the script prints. That is the third time this release has met this
+the tree changes and the command does. Every total that a reader is INVITED TO
+RECOMPUTE is now gone from this record and from the manifest, replaced by the claim
+a test binds and by a pointer to the line each script prints. A first draft of this
+sentence said *every* such total was gone, which the next certification falsified in
+a paragraph: the numbers describing what that certification itself found are still
+here, and have to be, because a finding is not reproducible without them. They are
+narrative about a moment, not standing claims about the tree — and the difference
+matters only because a reader cannot tell them apart unless the record says which is
+which, which is what this sentence now does. That is the third time this release has met this
 class — a figure from a script that did not ship, then a repair claim that did not
 match the tree, and now two counts that aged in place — and it is the first time
 the answer has been to stop writing the number rather than to correct it.
@@ -635,6 +641,59 @@ recorded that it had tested one filesystem only. A limitation honestly disclosed
 still a limitation: it says where to look next, and looking there is what found
 this. The same disclosure still stands for Windows, for `core.symlinks=false` and
 for network transports, and those remain **unestablished** rather than passing.
+
+### And the certification after that one found the view is not the tree
+
+A third certification of this line returned **NOT_READY** with a code blocker that
+matters more than anything else this record describes, because it is a wrong answer
+and it was reachable without any hostility at all.
+
+**A committed symlink arrived in the constructed view as an ordinary file.**
+`os.link` follows symlinks by default, so it never fails on one — it succeeds, and
+hard-links the *target*. Git then compared mode `100644` against the `120000` in
+the index and a governed `status` reported `T` for a typechange the subject does not
+have, while `diff` invented a deleted file mode. What makes this worth stating
+plainly: the symlink handling was already written, and it sat inside an
+`except OSError` that the one case needing it could never reach. A branch guarded by
+a condition that cannot occur is not a repair; it is a comment that looks like one.
+The check now runs first, deciding by what the entry *is* before anything is
+attempted, which is the same order the `.git` name check uses and for the same reason.
+
+**And a directory the walk could not read became a smaller tree.** `os.walk`
+swallows an unreadable directory and simply yields less, so the view was missing a
+subtree and Git answered confidently about what was left: a tracked file under it
+came back reported as **deleted** while real Git said nothing. An inability to look
+had turned into a definite negative, which is this pack's own `UNKNOWN coerced into
+an answer` class arriving through a filesystem walk rather than through a
+comparison. Both walks now refuse by name instead, and the oracle carries the bound
+as well as the property — it checks that the same subject, once readable, still
+answers exactly as real Git, so the repair cannot be a blanket refusal.
+
+Both were reproduced before repair and both oracles were run against the defect they
+name and against each other: each fails on its own and passes the other.
+
+**Three certifications of this line have now each found something the previous one
+did not**, and the pattern is worth naming. The first found records that contradicted
+the tree. The second found records that had aged between being written and being
+committed. The third found the mechanism itself answering wrongly on inputs no
+earlier reader had built — symlinks, an unreadable directory — because each reader
+attacked what the previous one had not. That is what independent reading buys, and
+it is the argument for spending it again rather than for concluding that a clean
+verdict was ever near.
+
+### A disclosed over-acceptance, adjudicated rather than repaired
+
+The same certification found that a directory whose `.git` contains only a `HEAD`
+file is **answered about** by this boundary where real Git refuses it as "not a git
+repository". The polarity is the opposite of the one already recorded above: this
+release refuses a corrupted ref store where Git limps on, and here it proceeds where
+Git stops. It is disclosed rather than repaired because repairing it means deciding
+what a repository *is* — Git's own answer is `HEAD` plus `objects/` plus `refs/` —
+and adding that triple is another enumeration of the kind this release exists to
+remove. Every consumer of this pack lands conservatively on such a subject (the pin
+fails, the workspace is not closable), so the exposure is a wrong answer to a
+question no shipped caller asks. **Unrepaired, stated, and the first thing a later
+release should take up.**
 
 ## Not yet done
 
