@@ -553,12 +553,6 @@ from errors import (
 )
 
 
-def _config_pairs(environment):
-    count = int(environment["GIT_CONFIG_COUNT"])
-    return {environment[f"GIT_CONFIG_KEY_{i}"]: environment[f"GIT_CONFIG_VALUE_{i}"]
-            for i in range(count)}
-
-
 def _transport_probe(directory, url, transports=()):
     return _gitread.probe(directory, "ls-remote", url, negative_statuses=(),
                           allow_transports=transports)

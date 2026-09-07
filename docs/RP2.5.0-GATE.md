@@ -53,9 +53,10 @@ surface only grew, **and** a new tool ships, which is the criterion `PACK_MANIFE
 
 MAJOR was checked and rejected: no contract key or CLI input is added or removed,
 no project's pin moves, and no migration changes. Behaviour that previously
-refused and now reads is the repair rather than an incompatibility — but three
-behaviour changes a consumer can observe are disclosed in `CHANGELOG.md` rather
-than left for one to discover.
+refused and now reads is the repair rather than an incompatibility. Every
+consumer-observable change is listed under *What a consumer will notice* in
+`CHANGELOG.md` rather than left for one to discover; the number is not restated
+here, for the same reason no other count in this record is.
 
 ## Design before build
 
@@ -81,7 +82,7 @@ Against real Git 2.50.1 on macOS, before the design record was written:
 
 | | |
 |---|---|
-| Hostile cases | 31 |
+| Hostile cases | measured by `docs/acceptance/rp2.5.0-hostile-matrix.py`, which ships |
 | Execution leaks | **0** |
 | Answers equal to real Git, byte for byte | every case where real Git answers, except where real Git's answer *contains the helper's output* |
 | Child processes started, by `GIT_TRACE2_EVENT` | 0 |
@@ -257,9 +258,9 @@ checkout; none of the figures below is transcribed from a previous run.
 | full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
 | clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | every gate passed and the suite was green, with a tree reporting nothing changed |
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
-| hostile Git configuration | `<scratch>/repro/module_check.py`, `spellings.py`, and the batteries an independent design reading wrote | zero executions |
-| mutation | `<scratch>/mutation/mutate.py` | every mutant killed, subject byte-identical afterwards |
-| consumer rehearsal | `<scratch>/rehearsal/rehearse.py` | every check passed, the real project byte-identical |
+| hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
+| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | every mutant killed, none malformed, subject byte-identical afterwards |
+| consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
 
 The clean-room clone is the one that matters most for the design records: it
 establishes that both `**Base revision:**` values still resolve in a repository
@@ -277,7 +278,7 @@ four are repaired, because a non-blocking finding that is true is still true.
 | the record said "three" behaviour changes where the changelog lists more | loose prose in this record | the count is gone; the changelog's list is the disclosure |
 | `design_record` tallies three rejected designs where this record said four | the parser does not count `REJECTED as a barrier` | stated above, in the tool's terms and the record's |
 | `ALLOWABLE_TRANSPORTS` is consulted in a refusal, while A1 lists it among names that decide nothing | the design's phrasing was wrong | it is a **caller-capability** allowlist, not a projection: it bounds what a caller may ask to enable, and the subject's own transport settings are not read at all. Said where the constant is defined |
-| the mutation and hostile-matrix figures cited scripts outside the release | a reader could reproduce the property but not the number | both ship as `docs/acceptance/rp2.5.0-mutation.py` and `docs/acceptance/rp2.5.0-hostile-matrix.py` |
+| the mutation and hostile-matrix figures cited scripts outside the release | a reader could reproduce the property but not the number | both ship as `docs/acceptance/rp2.5.0-mutation.py` and `docs/acceptance/rp2.5.0-hostile-matrix.py`. The pre-design prototype's "31 hostile cases" is gone: the shipped script reports 13 cases with 9 carrying a positive control, and that is the figure a reader can recompute |
 
 **And a finding the certification's third point led to, which was larger than the
 point itself.** Chasing why `ALLOWABLE_TRANSPORTS` appeared to be consulted twice
@@ -289,21 +290,29 @@ those tests were green about a code path no governed read executes. That is this
 pack's own recurrence class *oracle satisfied for a reason other than its claim*,
 sitting inside the release built to end a different one.
 
-The machinery is deleted. Six of the seven tests were rewritten to assert the
-same guarantees against the live path — a transport refusal is now measured by
-asking Git to reach a remote rather than by reading a dictionary the code no
-longer builds — and one, which asserted that enabling a transport lifts a
-neutralisation of `core.sshCommand`, is gone with the mechanism: the sterile
-configuration never sets that key, because the subject's is not read.
+The machinery is deleted. **Five** test functions referenced it, not seven:
+**three** were rewritten to assert the same guarantees against the live path — a
+transport refusal is now measured by asking Git to reach a remote rather than by
+reading a dictionary the code no longer builds — and **two** were removed, one
+asserting that enabling a transport lifts a neutralisation of `core.sshCommand`
+and one asserting that every conditional closure is known to an inspection that
+no longer exists.
 
-## The second certification attempt, and what it found before it ended
+The first version of this paragraph said seven and six and one. An independent
+certification measured five, three and two, and corroborated it from this
+release's own arithmetic: `tests.passed` went 2873 → 2871, a net loss of two,
+which "six rewritten and one dropped" cannot produce. The figure was wrong in a
+record whose whole subject is figures being wrong, and it is corrected here
+rather than quietly.
 
-A re-certification of the revision before this one reported a **blocker-class
-record defect** and then ended without issuing a verdict — its session could not
-be resumed. Under this project's own rule an environmental failure is neither a
-finding nor a successful certification, so **that run is not a certification of
-anything**, and the findings it did produce were still reproduced and repaired
-before it was set aside.
+## The second certification, and the four things it found
+
+A whole-candidate re-certification of the revision before this one returned
+**NOT_READY**: one release blocker and three non-blocking findings, plus an
+observation. Its verdict is superseded by the repairs below — every repair
+invalidates every certification taken before it — but its findings are recorded
+here because three of them are about this record's own truthfulness, and one of
+them is that a repair this record claimed to have made had not been made.
 
 **The blocker.** `PACK_MANIFEST.json` `supersedes` carried 2.4.1's text verbatim:
 it called this release **PATCH** and stated that **no tool, policy or capability
@@ -319,6 +328,31 @@ And six limitations — 9, 10, 14, 98, 99 and 100 — describe the pre-2.5.0 mec
 in the present tense, including one that says `-v`/`--verbose` "is refused as an
 argument now" and that the walk "enumerates directories containing `.git`",
 neither of which is how this release works.
+
+**The three non-blocking findings, and the one that matters most.** The
+certification found that this record still said "three behaviour changes" where
+the changelog lists six — **and that the table above already claimed the count was
+gone**. It was not: the sentence is line-wrapped, the edit that was supposed to
+remove it did not match, and nobody checked. A record that asserts its own repair
+without verifying it is the same defect as a figure nobody recomputed, one level
+up. It is removed now, and the removal was verified by searching for it again
+rather than by assuming.
+
+It also found the accounting of the deleted layer wrong — corrected below, in the
+certification's numbers rather than mine — and the "31 hostile cases" figure
+unrecomputable, because it came from a prototype that does not ship. That figure
+is gone; the shipped script's own output stands in its place. A dead helper the
+deleted tests left behind is removed. And `qualified_at` carried a date under a
+state that says the release is not qualified, which is how a reader comes to
+believe a candidate was qualified on a day nobody qualified it; the field now says
+what it actually records.
+
+What the certification could **not** break is worth as much as what it found: it
+established independently that deleting the environment layer weakened no
+guarantee — every property it carried is measured on the live path, and
+`protocol.file.allow=always` no longer standing is a tightening — and that the
+rewritten tests discriminate rather than merely passing, which mutation confirms
+by killing the mutant that drops the standing transport refusal.
 
 Those six are **kept verbatim and marked**, not corrected and not deleted. They
 are the evidence `docs/RP2.5.0-RECURRENCE-MAP.md` argues from — the repairs whose
