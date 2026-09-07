@@ -179,6 +179,35 @@ prevent, so they ship.
   sterile refuses the read; and the finished view is checked by walking it
   rather than by trusting the loop that built it.
 
+### One governing interface, two backends qualified separately
+
+`docs/RP2.5.0-DESIGN-A7-qualified-semantics-hardened.md` did not survive its own
+reading. Permitting exactly the Git binary is not a boundary: the helpers in
+`git-core` are symlinks to that binary, so the clause admitted Git's own
+background daemons, while the helper a remote read needs is a separate binary
+the same clause denied. Eleven frozen tests regressed, one of them asserting
+against that failure by name.
+
+`docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md` supersedes it. The
+governed interface stays one interface, and the execution policy is chosen from
+the operation the caller asked for, never from anything the repository controls:
+
+* a **local read** may create no child process at all, and any attempt fails
+  closed. No list of programs takes part in that decision, so nothing about
+  which binaries exist or what they are named can widen it;
+* the **remote-verification capability** keeps the mechanism already qualified
+  for it, because its legitimate semantics require programs a local read never
+  needs.
+
+A populated submodule is the case where those two rules would collide, since the
+previous release answers it by letting Git start a child. It is answered instead
+by composing independently governed childless reads — submodule identities taken
+from stage-zero gitlinks rather than from `.gitmodules`, each submodule observed
+by its own top-level governed read, and the result assembled with Git's own
+porcelain field rather than a reimplementation. Eleven fixtures across ten read
+forms match the previous release byte for byte, and six deliberate defects were
+introduced to prove the corpus can fail.
+
 ### The question was answered, and the seventh design follows from the answer
 
 The owner ruled that **harness-defined semantics are authoritative** for a governed
