@@ -795,11 +795,10 @@ against the prototype. No self-review substitutes for it, and this record does
 not treat the repair of those findings as confirmed until it has run.
 
 One thing this line does not satisfy, and the decision that was taken about it.
-Three of its own commit messages — `154be5f`, `fb2f450` and `f773db9` — predate the
-discipline the rest of the line follows and do not conform to
-`tools/commit_gate.py`. Repairing a commit message rewrites the commit, and
-`docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` is frozen at one of the revisions
-that would move, so the repair trades the commit-range gate for the
+Four of its own commit messages — `154be5f`, `fb2f450`, `f773db9` and `45d87fb` —
+do not conform to `tools/commit_gate.py`. Repairing a commit message rewrites the
+commit, and `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` is frozen at one of the
+revisions that would move, so the repair trades the commit-range gate for the
 design-provenance gate in exactly the clean-room clone where the old object does
 not exist.
 
@@ -810,15 +809,36 @@ that the clean-room gate exists to prove. So the history stands as it is, and:
 
     python3 tools/commit_gate.py --range HEAD --baseline 9d906ce --repo .
 
-REPORTS NINE VIOLATIONS OVER THOSE THREE COMMITS AND EXITS NON-ZERO. That raw
+REPORTS TWELVE VIOLATIONS OVER THOSE FOUR COMMITS AND EXITS NON-ZERO. That raw
 result is the truth and is left raw. It is not reinterpreted as a pass, no
 exemption is added to `commit_gate.py`, and nothing here weakens the checker: **a
 raw non-zero checker result is never rewritten as a pass.** A reader who runs the
-command sees the same nine violations this record admits to.
+command sees the same twelve violations this record admits to.
 
 Run with `--default-terms .` — the vocabulary a consuming PROJECT declares rather
-than the one this pack self-applies — the same command reports FIVE non-conforming
-commits, because `beb81d8` and `710fc54` use a word that vocabulary makes private.
-Three is the number under `NO_PRIVATE_TERMS`, which is the contract this pack's own
-`validate_range` tests use and therefore the one its own history is judged by. Both
-numbers are recorded so neither is a surprise.
+than the one this pack self-applies — the same command reports TWELVE
+non-conforming commits and TWENTY-TWO violations, because eight further commits use
+a word that vocabulary makes private. Four is the number under `NO_PRIVATE_TERMS`,
+which is the contract this pack's own `validate_range` tests use and therefore the
+one its own history is judged by. Both numbers are recorded so neither is a
+surprise.
+
+**`45d87fb` is not covered by the founder's row 9 adjudication, and this record does
+not pretend it is.** That adjudication was taken over three commits dated
+2026-09-06, on the ground that they predate the discipline the rest of the line
+follows. `45d87fb` is dated 2026-09-07 and sits eighth from this record's own tip;
+it fails the same three structural rules, and it was made *after* the discipline
+was in force. Its rewrite would still move `4e9386f` and `673d97f`, which
+`docs/RP2.5.0-DESIGN-A7-qualified-semantics-hardened.md` and
+`docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md` name as their base
+revisions, so the trade the founder weighed is the same trade — but the premise
+that made it easy is not, and extending an adjudication is the founder's to do,
+not this record's. **It is carried to the founder as an open decision**, and until
+it is taken the raw twelve stands.
+
+Both figures above are derived, not transcribed. `test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_produces`
+recomputes them from the range and fails if this paragraph drifts from the checker
+again — which is exactly what it did: this record read "nine violations over three
+commits" while the checker reported twelve over four, and no guard noticed, because
+the release-truth guards check the claims a release makes about its *records* and
+this was a claim about its *history*.

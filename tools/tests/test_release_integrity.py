@@ -848,6 +848,138 @@ def test_the_baseline_figure_this_release_quotes_is_the_baselines_own():
     )
 
 
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20, "twenty-one": 21, "twenty-two": 22,
+}
+
+
+def _non_conforming_range(term_set):
+    """The commits in this release's own range that fail its own commit contract."""
+    import sys
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    import commit_gate
+    import gitread
+
+    shas = gitread._run(str(ROOT), "rev-list", f"{QUALIFIED_BASELINE}..HEAD").split()
+    found = []
+    for sha in shas:
+        violations = commit_gate.validate_message(
+            gitread.commit_message(str(ROOT), sha), term_set
+        )
+        if violations:
+            found.append((sha, violations))
+    return found
+
+
+def _pack_default_term_set():
+    """The vocabulary `--default-terms .` applies, built through the shipped path."""
+    import sys
+    from types import SimpleNamespace
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    import commit_gate
+
+    return commit_gate._term_set_from_args(
+        SimpleNamespace(project=None, default_terms=str(ROOT), term=[], pattern=[])
+    )
+
+
+def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_produces():
+    """This line's own history is one of the few claims no guard was deriving,
+    and it went stale exactly the way every transcribed figure here has.
+
+    The gate record and the manifest both said the range reported **nine
+    violations over three commits**. The checker reported **twelve over four**:
+    `45d87fb` had joined them, seven commits before this record's own tip, and
+    nothing noticed — the release-truth guards check what a release claims about
+    its *records*, and this is a claim about its *history*.
+
+    So the figures are derived here and the prose is checked against them, in
+    both places that state them. The raw result stays raw: this guard asserts
+    that the records tell the truth about a non-zero checker result, never that
+    the checker passes.
+    """
+    import json
+    import re
+    import sys
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    import commit_gate
+
+    strict = _non_conforming_range(commit_gate.NO_PRIVATE_TERMS)
+    strict_commits = len(strict)
+    strict_violations = sum(len(v) for _, v in strict)
+    assert strict_violations, (
+        "this guard exists to keep a non-zero result honestly recorded; the range now "
+        "conforms, so the records it checks should be rewritten rather than this "
+        "assertion relaxed"
+    )
+
+    shipped = _non_conforming_range(_pack_default_term_set())
+    shipped_commits = len(shipped)
+    shipped_violations = sum(len(v) for _, v in shipped)
+
+    gate = (ROOT / "docs" / "RP2.5.0-GATE.md").read_text(encoding="utf-8")
+    manifest = json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    entry = next(
+        item for item in manifest["known_limitations"]
+        if "COMMIT CONTRACT" in item and "commit_gate.py --range" in item
+    )
+
+    # Both records ENUMERATE the failing commits, and a substring search anywhere in
+    # the text is not that: the manifest entry mentions the newest of them twice, so a
+    # first version of this guard passed after the enumeration itself had been emptied.
+    # Read each enumeration, and compare it as a set.
+    expected = {sha[:7] for sha, _ in strict}
+    gate_listed = re.search(
+        r"commit messages\s+—\s+(.+?)\s+—\s+do not conform", gate, re.S
+    )
+    assert gate_listed, "the gate record no longer enumerates the failing commits in the checked form"
+    entry_listed = re.search(
+        r"reports [a-z-]+ violations over (.+?) and exits non-zero", entry, re.S
+    )
+    assert entry_listed, "the manifest entry no longer enumerates the failing commits in the checked form"
+
+    for where, listing in (("docs/RP2.5.0-GATE.md", gate_listed), ("the manifest entry", entry_listed)):
+        named = set(re.findall(r"[0-9a-f]{7,40}", listing.group(1)))
+        named = {sha[:7] for sha in named}
+        assert named == expected, (
+            f"{where} enumerates {sorted(named) or 'no commits'} as failing this line's own "
+            f"commit contract; the checker reports {sorted(expected)}"
+        )
+
+    stated = re.search(
+        r"REPORTS ([A-Z-]+) VIOLATIONS OVER THOSE ([A-Z]+) COMMITS AND EXITS NON-ZERO", gate
+    )
+    assert stated, "the gate record no longer states its commit-range result in the checked form"
+    said_violations = _NUMBER_WORDS[stated.group(1).lower()]
+    said_commits = _NUMBER_WORDS[stated.group(2).lower()]
+    assert (said_violations, said_commits) == (strict_violations, strict_commits), (
+        f"docs/RP2.5.0-GATE.md says {said_violations} violations over {said_commits} commits; "
+        f"the checker reports {strict_violations} over {strict_commits} "
+        f"({', '.join(sha[:7] for sha, _ in strict)})"
+    )
+
+    shipped_stated = re.search(
+        r"reports ([A-Z-]+)\s+non-conforming commits and ([A-Z-]+) violations", gate
+    )
+    assert shipped_stated, (
+        "the gate record no longer states its --default-terms result in the checked form"
+    )
+    assert (
+        _NUMBER_WORDS[shipped_stated.group(1).lower()],
+        _NUMBER_WORDS[shipped_stated.group(2).lower()],
+    ) == (shipped_commits, shipped_violations), (
+        f"docs/RP2.5.0-GATE.md states a --default-terms result of "
+        f"{shipped_stated.group(1).lower()} commits and {shipped_stated.group(2).lower()} "
+        f"violations; the checker reports {shipped_commits} and {shipped_violations}"
+    )
+
+
 def test_every_pointer_at_the_decision_layer_reaches_the_last_decision(manifest):
     """`DECISIONS.md` is append-only, so every range naming its end goes stale
     the next time a decision is added — and two did: the README said `D1-D19`
