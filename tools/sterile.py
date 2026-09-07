@@ -15,15 +15,15 @@ question:
 
 `GIT_DIR` decides which files are local and worktree configuration, and the
 caller chooses `GIT_DIR`. So the harness builds the git directory: its own
-config from a blank slate, the subject's objects attached rather than copied,
-refs and `HEAD` copied as plain files with no Git involved, the index copied so
-that a refresh writes to ours.
+configuration root from a blank slate, the subject's objects attached rather
+than copied, and every other git-directory entry carried as plain data.
 
-**Everything here is built by ADDING what a read needs, never by REMOVING what
-it must not have.** That polarity is the whole argument. Anything this module
-fails to add makes a read *fail*; nothing it fails to remove can execute,
-because nothing was inherited. 2.4.1's denylist had the opposite polarity, and
-that is why narrowing it to stop over-refusing widened the hole.
+**The only files this build omits by name are configuration roots.** Every
+route Git has for extending repository configuration is declared from the
+subject's own `config`, so replacing that root removes the whole graph. The
+complement is carried by enumerating the directory, not by guessing which state
+the next Git feature will need. 2.4.1's denylist and this module's former short
+state list both failed by growing one missed name at a time.
 """
 
 from __future__ import annotations
@@ -74,15 +74,21 @@ STORAGE_KEYS = frozenset({
     "core.sparsecheckoutcone",
 })
 
-#: Plain files carried from the subject's git directory because Git reads them as
-#: DATA and a governed answer differs from real Git's without them. Each one is
-#: here because a differential test established it, not because it seemed likely:
-#: `info/exclude` is an ignore source, `info/sparse-checkout` decides which paths
-#: the working tree is expected to hold, and `shallow` bounds the history.
+#: These are configuration ROOTS, rather than ordinary git-directory state.
 #:
-#: None of them can name a program: an attributes or ignore file selects a driver
-#: by NAME, and the driver's program comes from configuration, which is ours.
-CARRIED_DATA = ("info/exclude", "info/sparse-checkout", "info/attributes", "shallow")
+#: Git only opens `config.worktree` after `extensions.worktreeConfig` in `config`
+#: tells it to, and `include.path` and `includeIf` can only name another file from
+#: `config`.  In other words every route by which the subject's configuration can
+#: enter is declared in that one subject-owned root.  Replacing both roots with
+#: the harness's generated `config` therefore excludes the whole graph; copying a
+#: list of include keys could never make that claim.  The names are ignored at
+#: every level because `modules/` and `worktrees/` contain the same Git layouts.
+CONFIGURATION_ROOTS = frozenset({"config", "config.worktree"})
+
+#: `commondir` is a layout pointer, not state to reproduce verbatim.  A linked
+#: worktree's common and private directories are merged into one sterile directory;
+#: carrying the pointer would send Git back to the subject's common directory.
+_LAYOUT_MARKERS = frozenset({"commondir"})
 
 #: What this module does outside itself. It writes, so it says why.
 BLAST_RADIUS = BlastRadius(
@@ -246,10 +252,9 @@ def _ref_store_is_reproducible(gitdir: Path, common: Path) -> bool:
     return declared is None or declared.strip().lower() == REPRODUCIBLE_REF_STORAGE
 
 
-def _write_config(into: Path, common: Path, gitdir: Path) -> None:
+def _write_config(into: Path, common: Path) -> None:
     """The only configuration Git will read, written from a blank slate."""
     declared = config_as_data(common / "config")
-    declared.update(config_as_data(gitdir / "config.worktree"))
     core = {
         name[len("core."):]: value
         for name, value in declared.items()
@@ -258,20 +263,44 @@ def _write_config(into: Path, common: Path, gitdir: Path) -> None:
     core.setdefault("repositoryformatversion", "0")
     core["bare"] = "false"
     lines = ["[core]\n"] + [f"\t{key} = {value}\n" for key, value in sorted(core.items())]
-    # EVERY `extensions.*` VERBATIM, and that needs no allowlist. An extension
-    # changes how Git interprets the GIT DIRECTORY, and this git directory holds
-    # only files this build created — so an extension can only ever point Git at
-    # our own files. One naming a store this build did not import (`reftable`)
-    # makes the read fail, which is the polarity this design is built on.
+    # `objectFormat` describes the object store's encoding, so it belongs with
+    # the carried storage descriptors.  `worktreeConfig` does NOT: it declares a
+    # second configuration root.  Carrying it would make our generated `config`
+    # ask Git to read the subject's `config.worktree`, defeating replacement of
+    # the root before an include or key-level check could help.
     extensions = {
         name[len("extensions."):]: value
         for name, value in declared.items()
-        if name.startswith("extensions.")
+        if name == "extensions.objectformat"
     }
     if extensions:
         lines.append("[extensions]\n")
         lines += [f"\t{key} = {value}\n" for key, value in sorted(extensions.items())]
     (into / "config").write_text("".join(lines), encoding="utf-8")
+
+
+def _copy_git_state(source: Path, into: Path) -> None:
+    """Carry every git-directory file except configuration roots and objects.
+
+    The object database is carried by attachment below: copying it would make
+    every governed read proportional to repository size.  Every other entry is
+    copied by the directory's own enumeration, not by a growing list of names.
+    That is why reflogs, pseudorefs, grafts, and state Git adds later arrive
+    without this boundary having to predict them.
+    """
+    if not source.is_dir():
+        return
+    shutil.copytree(
+        source,
+        into,
+        dirs_exist_ok=True,
+        symlinks=True,
+        ignore=shutil.ignore_patterns(
+            *CONFIGURATION_ROOTS,
+            *_LAYOUT_MARKERS,
+            "objects",
+        ),
+    )
 
 
 def build_git_directory(subject: Path, into: Path) -> tuple:
@@ -282,9 +311,13 @@ def build_git_directory(subject: Path, into: Path) -> tuple:
     if into.exists():
         shutil.rmtree(into)
     (into / "objects" / "info").mkdir(parents=True)
-    (into / "refs").mkdir(parents=True)
-    (into / "info").mkdir(parents=True, exist_ok=True)
-    _write_config(into, common, gitdir)
+    # A linked worktree divides its state between `common` and `gitdir`.  The
+    # sterile directory deliberately has no such division, so carry both in the
+    # order Git layers them: common state first, then this worktree's state.
+    _copy_git_state(common, into)
+    if gitdir.resolve() != common.resolve():
+        _copy_git_state(gitdir, into)
+    _write_config(into, common)
     # Objects are ATTACHED, never copied: a release-sized repository would
     # otherwise pay its whole size on every read.
     alternates = [str(common / "objects")]
@@ -295,36 +328,6 @@ def build_git_directory(subject: Path, into: Path) -> tuple:
             if line.strip()
         ]
     (into / "objects" / "info" / "alternates").write_text("\n".join(alternates) + "\n", encoding="utf-8")
-    for name, source in (("HEAD", gitdir / "HEAD"), ("packed-refs", common / "packed-refs")):
-        if source.is_file():
-            shutil.copyfile(source, into / name)
-    if (common / "refs").is_dir():
-        shutil.copytree(common / "refs", into / "refs", dirs_exist_ok=True, symlinks=True)
-    # The index is COPIED, so that a `status` refresh writes to this build's copy
-    # and the subject is left byte-identical by every governed read.
-    if (gitdir / "index").is_file():
-        shutil.copyfile(gitdir / "index", into / "index")
-        # A SPLIT INDEX NAMES A SECOND FILE, AND THE BUILD HAS TO CARRY IT TOO.
-        #
-        # Under `core.splitIndex` the bulk of the entries live in a
-        # `sharedindex.<oid>` file and the `index` only references it. Copying one
-        # and not the other made Git exit 128 with "unable to read sharedindex",
-        # so this boundary REFUSED an ordinary repository that real Git reads
-        # without complaint. Fail-closed is the right polarity and it is not a
-        # licence to over-refuse: the release before this one reached a convergence
-        # blocker with an over-refusal in one hand and an under-refusal in the
-        # other. Both files are index data, and neither names a program.
-        for shared in gitdir.glob("sharedindex.*"):
-            if shared.is_file():
-                shutil.copyfile(shared, into / shared.name)
-    for relative in CARRIED_DATA:
-        source = gitdir / relative
-        if not source.is_file():
-            source = common / relative
-        if source.is_file():
-            destination = into / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, destination)
     return into, _head_as_data(gitdir, common), _ref_store_is_reproducible(gitdir, common)
 
 

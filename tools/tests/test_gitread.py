@@ -1602,6 +1602,109 @@ def test_every_configuration_source_git_reports_is_one_the_harness_wrote(tmp_pat
         read.discard()
 
 
+@pytest.mark.parametrize("route", ("config", "config.worktree", "include.path", "includeIf"))
+def test_replacing_the_configuration_root_excludes_every_subject_config_route(tmp_path, route):
+    """The subject can only declare another configuration source from `config`.
+
+    `extensions.worktreeConfig` selects `config.worktree`, while `include.path`
+    and `includeIf` select their named files.  Each is deliberately live when
+    Git reads the subject, then absent when it reads the generated root.  The
+    included files themselves are carried as state: their presence is harmless
+    because the declaration that reaches them was replaced with the root.
+    """
+    repo = _committed(tmp_path, route.replace(".", "-"))
+    key = f"subject.{route.replace('.', '')}"
+    value = f"entered-through-{route}"
+    config = repo / ".git" / "config"
+
+    if route == "config":
+        with config.open("a", encoding="utf-8") as handle:
+            handle.write(f"\n[subject]\n\tconfig = {value}\n")
+    elif route == "config.worktree":
+        _git(repo, "config", "extensions.worktreeConfig", "true")
+        key, value = "core.bigfilethreshold", "123"
+        (repo / ".git" / "config.worktree").write_text(
+            f"[core]\n\tbigFileThreshold = {value}\n", encoding="utf-8")
+    elif route == "include.path":
+        (repo / ".git" / "included").write_text(
+            f"[subject]\n\tincludepath = {value}\n", encoding="utf-8")
+        _git(repo, "config", "include.path", "included")
+    else:
+        (repo / ".git" / "conditional").write_text(
+            f"[subject]\n\tincludeif = {value}\n", encoding="utf-8")
+        with config.open("a", encoding="utf-8") as handle:
+            handle.write('\n[includeIf "onbranch:main"]\n\tpath = conditional\n')
+
+    assert _git(repo, "config", "--get", key).strip() == value
+    read = _sterile.build(repo)
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", key], cwd=str(read.cwd), env=read.environment,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1 and result.stdout == "", result.stderr
+    finally:
+        read.discard()
+
+
+def _isolated_git(repo, *args):
+    """Construct state without this machine's global configuration changing it."""
+    return _git(repo, *args, env={
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+    })
+
+
+def _isolated_committed_repo(tmp_path, name):
+    """An ordinary repository whose state has no ambient-config dependency."""
+    repo = tmp_path / name
+    repo.mkdir()
+    _isolated_git(repo, "init", "-q", "-b", "main")
+    _isolated_git(repo, "config", "user.email", "t@e.invalid")
+    _isolated_git(repo, "config", "user.name", "T")
+    (repo / "f.txt").write_text("one\n")
+    _isolated_git(repo, "add", "-A")
+    _isolated_git(repo, "commit", "-q", "-m", "first")
+    return repo
+
+
+def test_the_reflog_is_carried_for_log_g(tmp_path):
+    """A previous short list omitted `logs/`, making `log -g` answer empty."""
+    repo = _isolated_committed_repo(tmp_path, "reflog")
+    assert gitread._run(repo, "log", "-g", "-1", "--format=%s") == "first\n"
+
+
+def test_the_reflog_is_carried_for_head_at_one(tmp_path):
+    """`HEAD@{1}` is state in the reflog, not a ref this build can reconstruct."""
+    repo = _isolated_committed_repo(tmp_path, "head-at-one")
+    first = _isolated_git(repo, "rev-parse", "HEAD").strip()
+    (repo / "f.txt").write_text("two\n")
+    _isolated_git(repo, "add", "-A")
+    _isolated_git(repo, "commit", "-q", "-m", "second")
+    assert gitread._run(repo, "rev-parse", "HEAD@{1}") == first + "\n"
+
+
+def test_the_merge_head_pseudoref_is_carried(tmp_path):
+    """A merge in progress records its other head as git-directory state."""
+    repo = _isolated_committed_repo(tmp_path, "merge-head")
+    head = _isolated_git(repo, "rev-parse", "HEAD").strip()
+    (repo / ".git" / "MERGE_HEAD").write_text(head + "\n", encoding="utf-8")
+    assert gitread._run(repo, "rev-parse", "MERGE_HEAD") == head + "\n"
+
+
+def test_info_grafts_is_carried_for_history_walks(tmp_path):
+    """A graft changes ancestry even though it is neither a ref nor configuration."""
+    repo = _isolated_committed_repo(tmp_path, "grafts")
+    for number in (2, 3):
+        (repo / "f.txt").write_text(f"{number}\n")
+        _isolated_git(repo, "add", "-A")
+        _isolated_git(repo, "commit", "-q", "-m", f"commit {number}")
+    head = _isolated_git(repo, "rev-parse", "HEAD").strip()
+    (repo / ".git" / "info" / "grafts").write_text(head + "\n", encoding="utf-8")
+    assert gitread._run(repo, "rev-list", "--count", "HEAD") == "1\n"
+
+
 # O5 — a store this build cannot import refuses rather than answering -----------------
 
 def test_a_ref_store_the_build_cannot_import_is_refused_not_answered(tmp_path):
