@@ -82,6 +82,15 @@ anything missed makes a read fail loudly instead of running a program.
 - A remote **name** is resolved to its URL from the repository's configuration
   read as data, so `url.<base>.insteadOf` rewriting no longer applies. The
   address contacted is the one written in the file and visible to the caller.
+- A working tree containing a directory named `.Git` or `.GIT` is **read** on a
+  case-insensitive volume, where a second qualification pass found it crashing a
+  tool with an unhandled `FileExistsError`. Which entry Git will open as `.git`
+  is now resolved through the filesystem rather than by comparing a name to a
+  string, so the detector and the copier cannot disagree about it.
+- **Every** failure of the sterile construction is now a refusal with a named
+  cause. Anything it can raise that is not one of this pack's own refusals used
+  to escape both `run_cli` and `probe` and reach the operator as a traceback
+  indistinguishable from a bug in the tool.
 
 ### The 2.4.1 records this tree carries
 

@@ -315,6 +315,41 @@ def build_git_directory(subject: Path, into: Path) -> tuple:
     return into, _head_as_data(gitdir, common), _ref_store_is_reproducible(gitdir, common)
 
 
+#: The name Git opens a repository from in a working tree. Compared through the
+#: FILESYSTEM rather than as a string, because the two are not the same question.
+DOT_GIT = ".git"
+
+
+def dot_git_name(here: Path, names) -> "str | None":
+    """The on-disk spelling of the entry Git will open as `.git` in `here`.
+
+    `os.path.lexists(here / ".git")` is answered by the filesystem, and a
+    case-insensitive volume answers it YES for `.GIT` and `.Git` as well. Asking
+    the same question a second way, by comparing a walked name to the literal
+    `".git"`, gave a different answer -- so the detector saw a nested repository
+    that the copier then reproduced into the view verbatim, and the build tried
+    to install its own `.git` over a name that already existed. One question, one
+    answer, and the answer comes from the filesystem that Git will itself consult.
+
+    Returns None where Git would not find a repository here at all, which on a
+    case-SENSITIVE volume is exactly what `.GIT` means.
+    """
+    probe = here / DOT_GIT
+    if not os.path.lexists(probe):
+        return None
+    try:
+        target = os.lstat(probe)
+    except OSError:
+        return DOT_GIT
+    for name in names:
+        try:
+            if os.path.samestat(os.lstat(here / name), target):
+                return name
+        except OSError:
+            continue
+    return DOT_GIT
+
+
 def nested_repository_paths(subject: Path) -> list:
     """Every directory under the subject that carries an entry named `.git`.
 
@@ -335,11 +370,12 @@ def nested_repository_paths(subject: Path) -> list:
         if ".git" in relative.parts:
             directories[:] = []
             continue
-        if ".git" in directories:
-            directories.remove(".git")
-        if ".git" in files:
-            files.remove(".git")
-        if relative != Path(".") and os.path.lexists(here / ".git"):
+        entry = dot_git_name(here, list(directories) + list(files))
+        if entry in directories:
+            directories.remove(entry)
+        if entry in files:
+            files.remove(entry)
+        if relative != Path(".") and entry is not None:
             found.append(relative)
     return found
 
@@ -361,12 +397,15 @@ def _build_view(subject: Path, scratch: Path) -> Path:
         (view / relative).mkdir(parents=True, exist_ok=True)
         # THE NAME FIRST, before anything classifies it, and removed from both
         # lists so that no later branch can reproduce it. The directory-symlink
-        # branch below is exactly the branch that used to.
-        if ".git" in directories:
-            directories.remove(".git")
-        if ".git" in files:
-            files.remove(".git")
-        if relative != Path(".") and os.path.lexists(here / ".git"):
+        # branch below is exactly the branch that used to. The name is resolved
+        # through the filesystem, so a case-insensitive volume's `.GIT` is removed
+        # here rather than copied and then collided with.
+        entry = dot_git_name(here, list(directories) + list(files))
+        if entry in directories:
+            directories.remove(entry)
+        if entry in files:
+            files.remove(entry)
+        if relative != Path(".") and entry is not None:
             nested.append(relative)
         for name in list(directories):
             source = here / name
@@ -423,9 +462,12 @@ def _every_git_in_the_view_is_ours(view: Path, built: set) -> None:
     # subject's own configuration inside it. The set of directories this build
     # actually made is the only thing that establishes what it claims.
     for root, directories, files in os.walk(view, followlinks=False):
-        for name in list(directories) + list(files):
-            if name != ".git":
-                continue
+        # The SAME predicate the build used. Comparing the walked name to the
+        # literal `".git"` here would skip the spelling a case-insensitive volume
+        # resolves, which is the one route by which a `.git` the build did not
+        # make could sit in the view unexamined.
+        name = dot_git_name(Path(root), list(directories) + list(files))
+        if name is not None:
             here = Path(root) / name
             try:
                 resolved = here.resolve(strict=True)
@@ -442,8 +484,8 @@ def _every_git_in_the_view_is_ours(view: Path, built: set) -> None:
                     entry=str(here), resolves_to=str(resolved),
                     built=", ".join(sorted(str(one) for one in built)) or "nothing",
                 )
-        if ".git" in directories:
-            directories.remove(".git")
+            if name in directories:
+                directories.remove(name)
 
 
 @dataclass
@@ -528,9 +570,30 @@ def build(repository, *, needs_working_tree: bool = True, overlay: dict | None =
         _confirm_head(subject, gitdir, environment, cwd, head, reproducible, timeout)
         return SterileRead(scratch=scratch, gitdir=gitdir, worktree=worktree, cwd=cwd,
                            environment=environment, head=head)
-    except BaseException:
+    except (GitRefusal, IntegrityError):
         shutil.rmtree(scratch, ignore_errors=True)
         raise
+    except (KeyboardInterrupt, SystemExit):
+        shutil.rmtree(scratch, ignore_errors=True)
+        raise
+    except BaseException as exc:
+        # EVERY WAY THIS CONSTRUCTION CAN FAIL IS A REFUSAL, NOT A TRACEBACK.
+        #
+        # `errors.run_cli` catches `HxError` and `gitread.probe` catches
+        # `GitRefusal`, so anything else escapes both and reaches the operator as
+        # an unhandled traceback indistinguishable from a bug in the tool -- the
+        # exact defect this pack recorded when three tools crashed identically.
+        # It was repaired once for ONE spelling, a `subprocess.TimeoutExpired`
+        # escaping the construction, and a second spelling then arrived: an
+        # ordinary directory named `.Git` on a case-insensitive volume raised
+        # `FileExistsError` out of the view builder. Repairing spellings does not
+        # converge, so the CLASS is closed here instead.
+        shutil.rmtree(scratch, ignore_errors=True)
+        raise GitRefusal(
+            "the sterile construction could not be completed, so this read is refused rather "
+            "than performed against configuration the subject wrote",
+            repository=str(subject), because=f"{type(exc).__name__}: {exc}",
+        ) from exc
 
 
 def _is_bare(subject: Path) -> bool:

@@ -1127,9 +1127,22 @@ def _superproject_with_diff_helper(tmp_path, name, *, where):
 
 
 def test_every_flag_based_closure_is_declared(tmp_path):
-    """O6. A closure whose stated reason rests on a command-line flag has to be
-    declared as one, or the next entry added will quietly cover a nested
-    repository the flag never reaches."""
+    """O6, KEPT BUT NO LONGER A SAFETY PROPERTY, and said so here rather than left
+    to be inferred.
+
+    This asserted that a closure resting on a command-line flag was declared as
+    one, "or the next entry added will quietly cover a nested repository the flag
+    never reaches". That reason was true of the 2.4.1 enumeration and is false
+    here: `CLOSED_PROGRAM_KEYS` and `FLAG_BASED_CLOSURES` are retained public
+    names under the founder's AUTH-2 and nothing consults them —
+    `test_no_refusal_depends_on_a_projection` empties all four and shows no answer,
+    no refusal and no execution changes. So what remains is a coherence check over
+    two inert tables, and an independent read was right to call it a green test
+    about a relationship no governed read uses. It is kept rather than deleted
+    because a frozen 2.4.1 design record names this selector as O6, and dropping a
+    named oracle is a provenance cost with nothing bought. Removing the tables
+    themselves would remove a public name 2.4.0 shipped, which is a SemVer
+    decision and not one this release takes."""
     for key, reason in gitread.CLOSED_PROGRAM_KEYS.items():
         mentions_flag = "--" in reason
         assert mentions_flag == (key in gitread.FLAG_BASED_CLOSURES), (
@@ -1370,13 +1383,33 @@ def _superproject_with_nested(tmp_path, script, spelling):
         os.symlink(pointer, entry)
     elif spelling == "absolute gitlink file":
         entry.write_text(f"gitdir: {module}\n")
+    elif spelling == "case variant of the name":
+        # THE NAME RULE, ASKED OF A FILESYSTEM THAT DOES NOT COMPARE NAMES AS A
+        # STRING COMPARISON DOES. `os.path.lexists(here / ".git")` is answered by
+        # the volume, and a case-insensitive one answers YES for `.Git`, while
+        # `name != ".git"` answers NO. The build asked both ways, believed both,
+        # copied the entry into the view and then collided installing its own.
+        entry.write_text(f"gitdir: {module}\n")
+        os.rename(entry, sup / "mod" / ".Git")
     (sup / "mod" / "i.txt").write_text("changed in the nested repository\n")
     return sup
 
 
+def _names_are_case_insensitive(directory) -> bool:
+    """Whether THIS volume resolves `.GIT` to `.git`. Measured, because it differs
+    between an ordinary macOS volume and an ordinary Linux one, and the answer
+    decides whether `.Git` is a repository Git can find at all."""
+    probe = Path(directory) / ".case-probe"
+    probe.write_text("")
+    try:
+        return (Path(directory) / ".CASE-PROBE").exists()
+    finally:
+        probe.unlink()
+
+
 @pytest.mark.parametrize("spelling", [
     "gitlink file", "absolute gitlink file", "symlink to directory",
-    "symlink to gitlink file",
+    "symlink to gitlink file", "case variant of the name",
 ])
 def test_no_spelling_of_a_nested_git_executes_the_subjects_program(tmp_path, spelling):
     """**The blocker an independent design reading found, before implementation.**
@@ -1390,6 +1423,11 @@ def test_no_spelling_of_a_nested_git_executes_the_subjects_program(tmp_path, spe
     decides and the kind of the entry never does, which is what this
     parametrisation exists to hold: adding a spelling here must not require
     adding a branch to the subject."""
+    if spelling == "case variant of the name" and not _names_are_case_insensitive(tmp_path):
+        pytest.skip(
+            "this volume compares names case-sensitively, so Git does not find `.Git` either "
+            "and the row would carry no positive control"
+        )
     script, marker = _marker_script(tmp_path)
     sup = _superproject_with_nested(tmp_path, script, spelling)
 
@@ -1765,6 +1803,68 @@ def test_an_operators_home_does_not_shape_a_governed_answer(tmp_path, monkeypatc
 
 
 # O10 / O16 — the answer equals real Git's, wherever real Git answers ------------------
+
+def test_a_governed_read_discards_its_construction_however_the_read_ends(tmp_path, monkeypatch):
+    """THE CALL SITE, not the method.
+
+    `SterileRead.discard` has its own coverage, and `_run` promises in a comment
+    that the construction is discarded however the read ends. Deleting the call
+    left every behavioural test in this file green: the only failures a full suite
+    produced were the identity-and-digest ones that fail on ANY byte change, which
+    say nothing about this guarantee. The same suite leaked thousands of
+    directories into the system temp directory while staying green. A guarantee
+    asserted in a comment is not pinned by anything, which is this pack's own
+    recurrence class `oracle satisfied for a reason other than its claim`.
+    """
+    root = _repo(tmp_path)
+    built: list = []
+    real_build = _sterile.build
+
+    def watched(*args, **kwargs):
+        read = real_build(*args, **kwargs)
+        built.append(Path(read.scratch))
+        return read
+
+    monkeypatch.setattr(gitread.sterile, "build", watched)
+
+    gitread._run(root, "rev-parse", "HEAD")
+    with _pytest.raises(_GitRefusal):
+        gitread._run(root, "rev-parse", "--verify", "refs/heads/no-such-branch")
+
+    # A POSITIVE CONTROL. Without this the test passes when nothing was ever
+    # constructed, which is exactly how it would pass if `_run` stopped going
+    # through the boundary at all.
+    assert len(built) >= 2, f"the construction ran {len(built)} times, so this proves nothing"
+    assert not [one for one in built if one.exists()], (
+        f"a governed read left its construction behind: {[str(o) for o in built if o.exists()]}"
+    )
+
+
+def test_the_construction_refuses_by_name_rather_than_raising_whatever_it_hit(tmp_path, monkeypatch):
+    """Anything the construction can raise reaches the caller as a REFUSAL.
+
+    `errors.run_cli` catches `HxError` and `probe` catches `GitRefusal`, so an
+    exception that is neither escapes both and reaches the operator as a traceback
+    indistinguishable from a bug in the tool. That was repaired once, for one
+    spelling — a `subprocess.TimeoutExpired` out of the construction — and a second
+    spelling arrived anyway: a `FileExistsError` from the view builder. Spellings
+    do not converge, so the class is pinned here instead of the instance.
+    """
+    root = _repo(tmp_path)
+
+    def explode(*_args, **_kwargs):
+        raise FileExistsError(17, "File exists")
+
+    monkeypatch.setattr(_sterile, "_build_view", explode)
+    # A nested repository is what sends the build through the view builder at all.
+    (root / "nest").mkdir()
+    _git(root / "nest", "init", "-q", "-b", "main")
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(root, "status", "--porcelain")
+    assert "sterile construction" in str(raised.value.cause), raised.value.cause
+    assert "FileExistsError" in raised.value.render(), raised.value.render()
+
 
 def _exactly_as_real_git(repo, *arguments):
     """Byte for byte, through `_run` rather than `probe`.

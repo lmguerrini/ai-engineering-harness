@@ -11,7 +11,8 @@ been established.** Anything not below has not been done. The release is
 | Version | 2.5.0 (`VERSION`) |
 | Baseline | `9d906ce64bd69cb1a29594a7110829da7df5d996` — the 2.4.0 release commit. 2.4.1 was never released |
 | State | `IN_PROGRESS`. **No project may pin this.** |
-| Revision, digest | in `PACK_MANIFEST.json`, recomputed over the tree this gate ran against |
+| Digest | `PACK_MANIFEST.json` `tree_digest_sha256`, recomputed over the tree this gate ran against |
+| Revision | **not in the manifest** — `PACK_MANIFEST.json` `revision` says so in as many words, because a file cannot name the commit that contains it. It is `git rev-parse HEAD` here, and a consumer records it in its own pin |
 
 ## Why this release is not 2.4.2
 
@@ -39,9 +40,18 @@ over the non-test modules reports **additions only**:
     tools/design_record.py   added_optional_parameter  DesignRecord.problems
     tools/backend_contract.py  added_public_name  normalised_identity_value  (+ star export)
 
-**Nothing is removed and no signature changes**, which is the point of keeping the
-enumeration's names as projections: the mechanism behind them is gone and the
-surface a consumer imports is not.
+**No non-test name is removed and no non-test signature changes**, which is the
+point of keeping the enumeration's names as projections: the mechanism behind them
+is gone and the surface a consumer imports is not.
+
+Over the WHOLE compared surface — test modules included — the same command reports
+**92 added public names, 10 removed and 5 changed signatures**, and every one of
+those removals and signature changes is inside `tools/tests/`. That is not a
+compatibility event: `tools/tests/` is not a surface anything imports, and it is
+where the obsolete mechanism's tests were removed and rewritten. Both numbers are
+stated because an earlier draft of this record and of `PACK_MANIFEST.json` gave
+only the first and described it as the whole, which the cited command contradicts
+in its own output.
 
 **And a blind spot in that derivation, stated rather than left to be found.**
 `surface_diff` compares modules present at both revisions, so `tools/sterile.py`
@@ -179,10 +189,17 @@ is a claim:
 
 ## Mutation scoring
 
-Eleven well-formed mutants against a verified-green baseline of the twenty-four
-oracle tests, each reversing one thing the design says is load-bearing. **Eleven
-killed, none survived, none malformed**, and the harness asserts the subject is
+Eleven well-formed mutants against a verified-green baseline of the oracles they
+name, each reversing one thing the design says is load-bearing. **Eleven killed,
+none survived, none malformed**, and the harness asserts the subject is
 byte-identical afterwards.
+
+The baseline population is **not stated here**. This record used to say
+twenty-four oracle tests; collection said twenty-two, and neither number could be
+recomputed from anything that ships — the same defect as a figure cited from a
+script that does not exist. The harness now derives and prints it
+(`10 oracle selectors green over 23 collected tests`), so the figure a reader
+recomputes is the only one written down.
 
 Scoring did not merely confirm the implementation. It found three things a
 reading had not:
@@ -249,12 +266,18 @@ empty file and a FIFO in place of a nested `.git` each refuse and name the path.
 Run on the revision this record is committed with. Each is repeatable from a
 checkout; none of the figures below is transcribed from a previous run.
 
+**Copy these verbatim.** An independent read found three rows that did not run as
+printed: a brace expansion handed two records to a CLI that takes one, and a
+typographic ellipsis inside `9d906ce…` is not a revision Git resolves. A command
+a reader cannot paste is not a repeatable command, whatever the row claims, so
+the full baseline is spelled out and the two design records are two invocations.
+
 | Gate | Command | Result |
 |---|---|---|
 | release identity | `python3 tools/pack_pin.py . --version <VERSION> --sha <HEAD> --digest <manifest digest> --state IN_PROGRESS` | verified |
-| release delta | `python3 tools/release_delta.py . --baseline 9d906ce…` | DELTA COMPLETE, nothing omitted |
-| design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A{1,2}-*.md --repository .` | DESIGN FROZEN, both |
-| surface derivation | `python3 tools/surface_diff.py . 9d906ce… HEAD` | additions only over the compared surface |
+| release delta | `python3 tools/release_delta.py . --baseline 9d906ce64bd69cb1a29594a7110829da7df5d996` | DELTA COMPLETE, nothing omitted |
+| design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A1-sterile-execution.md --repository .` then the same for `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` | DESIGN FROZEN, both |
+| surface derivation | `python3 tools/surface_diff.py . 9d906ce… HEAD` | additions only over the NON-TEST modules; 92 added, 10 removed and 5 changed signatures over the whole compared surface, every removal and change inside `tools/tests/` |
 | full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
 | clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | every gate passed and the suite was green, with a tree reporting nothing changed |
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
@@ -341,7 +364,12 @@ rather than by assuming.
 It also found the accounting of the deleted layer wrong — corrected below, in the
 certification's numbers rather than mine — and the "31 hostile cases" figure
 unrecomputable, because it came from a prototype that does not ship. That figure
-is gone; the shipped script's own output stands in its place. A dead helper the
+is gone FROM THIS RECORD, and the shipped script's own output stands in its place.
+It survives in `docs/RP2.5.0-DESIGN-A1-sterile-execution.md`, which is FROZEN and
+must not be edited: there it is a prototype measurement taken before the design
+was written, which is what a design record is for. An earlier draft of this
+sentence said the figure was gone without saying from where, and a reader
+grepping the tree found it and was right to. A dead helper the
 deleted tests left behind is removed. And `qualified_at` carried a date under a
 state that says the release is not qualified, which is how a reader comes to
 believe a candidate was qualified on a day nobody qualified it; the field now says
@@ -389,6 +417,143 @@ class *a repository disabling the check that inspects it* selected
 the mechanism. It now selects the tests that carry the same guarantee under the
 new one.
 
+## What the second qualification pass found in this release's own work
+
+The first independent certification returned READY on this tree. A second pass ran
+anyway, on the principle that a certification is evidence and not a guarantee, and
+it found four defects the certification had not — one of them in the mechanism this
+release exists to introduce, and two of them in the evidence that ships as proof.
+All four are repaired here, each reproduced before it was repaired.
+
+**A shipped tool reached the operator as a traceback, on a repository nobody had to
+be hostile to build.** `os.path.lexists(here / ".git")` is answered by the
+FILESYSTEM, and a case-insensitive volume — the ordinary macOS default — answers it
+YES for `.GIT` and `.Git`. Comparing a walked name to the literal `".git"` answers
+NO. `tools/sterile.py` asked that one question both ways and believed both answers:
+the detector saw a nested repository, the copier reproduced the entry into the view
+verbatim, and the build then raised `FileExistsError` installing its own `.git`
+over a name that already existed. `errors.run_cli` catches `HxError` and
+`gitread.probe` catches `GitRefusal`, so an `OSError` from the construction escaped
+both — `python3 tools/workspace_report.py` on a repository containing an ordinary
+empty directory named `.Git` printed a Python traceback. **The safety property was
+never broken**: measured against a real positive control, plain Git ran the
+subject's program for 36 marker bytes on every case-variant fixture and the
+boundary ran it for none. The defect was the crash.
+
+It is repaired as the class rather than the spelling, twice over. `dot_git_name()`
+resolves the on-disk spelling THROUGH the filesystem and is now the single answer
+used by `nested_repository_paths`, `_build_view` and the post-condition alike — one
+question, one answer, from the same source Git will consult. And `build` now
+converts anything that is not one of this pack's own refusals into a named
+`GitRefusal`, which closes a class this release had already repaired once for a
+single spelling, a `subprocess.TimeoutExpired` escaping the same construction.
+
+**The evidence that ships passed with the mechanism gutted.** A mutant deleting the
+line that installs each rebuilt nested repository into the view — so that the view
+describes repositories that are not there — still produced *13 cases, 9 carrying a
+positive control, 0 execution leaks* and exit 0 from
+`docs/acceptance/rp2.5.0-hostile-matrix.py`. The suite caught that mutant; the
+script a reader is told to recompute did not, because it counted marker bytes and
+never compared an answer. That is this pack's own recurrence class *an oracle that
+measured half the property*, which this release had already found once and fixed in
+the suite only. The matrix now also compares each row's `status --porcelain`
+against real Git's — a STATE report, so a driver that rewrites CONTENT does not
+make the reference unfair, which a content verb like `diff` would — counts the
+comparisons so that a comparison of nothing cannot pass, treats an exception that
+is not a refusal as a failure rather than printing it at exit 0, and carries a new
+row for the case-variant spelling. It now fails on both defects above.
+
+**A guarantee lived in a comment.** `gitread._run` discards the construction in a
+`finally`, and the comment beside it says that is where zero residual scratch is
+kept true. Deleting the call left every behavioural test green — a full suite
+produced only the four identity-and-digest failures that any byte change produces —
+while that same run leaked 3,548 directories into the system temp directory.
+`test_a_governed_read_discards_its_construction_however_the_read_ends` now pins the
+CALL SITE, and asserts the construction actually ran, so it cannot pass by
+measuring nothing.
+
+**The non-regression check measured against the wrong release.**
+`QUALIFIED_BASELINE` named 2.3.0's tip while `PACK_MANIFEST.json`
+`baseline_revision` declares 2.4.0 and 2.4.0 is what consumers pin. 2.3.0 is an
+ancestor, so the check ran and passed — but a public name introduced in 2.4.0 and
+removed here is absent from a 2.3.0 surface and produces no change at all, which is
+a blind spot in the direction of the claim. Corrected to the declared baseline.
+Measured before and after: zero such names exist, so this closed a gap rather than
+reporting a regression.
+
+Each of the three new oracles was run against the defect it claims to catch and
+fails there, and against the other two and does not.
+
+### And what a second independent reader found in the records
+
+A cross-vendor read of the records — deliberately scoped away from the execution
+surface another reader held — reproduced thirteen findings against them. The ones
+that were true are repaired above and here; the ones that were not are said so.
+
+**A limitation described the deleted mechanism in the present tense, unmarked.**
+`known_limitations[64]` still said an unrecognised program-valued key "refuses"
+and that the inspection costs two extra Git processes per repository. Both are
+false here: nothing refuses on that list and the inspection that ran those
+processes is gone. Six entries like it were marked as historical when the
+mechanism was deleted; this one was missed, which is exactly the class the
+marking exists to prevent. It is now marked and dated rather than deleted,
+because the recurrence map argues from the original sentence.
+
+**Three rows of the command table did not run as printed**, in a table whose own
+preamble says each row is repeatable from a checkout. A brace expansion handed
+two design records to a CLI that accepts one, and `9d906ce…` carries a
+typographic ellipsis that Git does not resolve. Both are now spelled out. A
+command a reader cannot paste is not a repeatable command, whatever the row says.
+
+**The record said a figure was gone that is still in the tree.** The pre-design
+prototype's "31 hostile cases" is gone from this record, and it remains in
+`docs/RP2.5.0-DESIGN-A1-sterile-execution.md`, which is frozen and must not be
+edited — there it is a prototype measurement that predates the design, which is
+what a design record is for. The sentence now says from where.
+
+**The mutation baseline was a transcribed number.** This record said twenty-four
+oracle tests; collection said twenty-two, and after the new spelling above it says
+twenty-three. No figure that moves when a parametrisation changes should be typed
+into prose, so the harness derives and prints its own population and this record
+cites nothing.
+
+**The record and the manifest contradicted each other about the revision.** This
+record placed it in `PACK_MANIFEST.json`; the manifest says in as many words that
+it is not there, and cannot be. Split into two rows.
+
+**The recurrence map claimed every source was on disk.** Two of the five are
+session records outside the release envelope, and a reader holding only this
+release cannot inspect them — the path the map named is not in this tree. The map
+now says which three ship and which two do not.
+
+**And one the repair above uncovered, which no reader reported.** Correcting the
+non-regression baseline made
+`test_the_baseline_figure_this_release_quotes_is_the_baselines_own` fail, and it
+was right to. The manifest's held-prose entry is **byte-identical to 2.4.0's** and
+compares this release to 2.3.0 — the release before its own baseline. It is the
+same defect as the `supersedes` field an earlier certification caught: a previous
+release's text carried forward without being recomputed. The check that should
+have caught it was reading the same wrong baseline, so it was green *because* it
+was wrong. Measured rather than assumed on the way out: `skills/core/*.md` plus
+`policy/*.md` is 1896 lines at 2.4.0 and 1896 lines here, so the figure itself was
+right and only the comparison was stale.
+
+**Reported and not repaired, recorded so the next reader does not re-derive them.**
+The frozen `A2` record assigns O12 ten named nested-`.git` constructions and its
+selector parametrises five, and assigns O15 both a global ignore file and global
+attributes while its selector constructs only the ignore file. The record is
+frozen and is not edited to match the code; the shortfall is stated here instead,
+and the attributes half is **unestablished**, not passing. Separately,
+`CLOSED_PROGRAM_KEYS`, `FLAG_BASED_CLOSURES`, `CONDITIONAL_CLOSURES` and
+`MAXIMUM_NESTED_DEPTH` are retained public names that nothing consults; O6's
+docstring, which justified one of them by a safety reason that is no longer true,
+now says so. Removing them would remove a public name 2.4.0 shipped, which is a
+SemVer decision this release does not take. Some private constants and a private
+helper have no remaining caller, and `sterile.build`'s `needs_working_tree=False`
+branch and its `overlay` parameter have no caller either; they are disclosed here
+rather than removed, because churn in a candidate under certification buys less
+than an accurate record does.
+
 ## Not yet done
 
 The independent certifications, and the terminal gates that depend on them.
@@ -399,11 +564,31 @@ closure must route to the other provider against the implementation rather than
 against the prototype. No self-review substitutes for it, and this record does
 not treat the repair of those findings as confirmed until it has run.
 
-One thing this line does not yet satisfy, recorded rather than left to be
-discovered: three of its own commit messages predate the discipline the rest of
-the line follows and do not conform to `tools/commit_gate.py`. Repairing a commit
-message rewrites the commit, and `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md`
-is frozen at one of the revisions that would move — so the repair trades the
-commit-range gate for the design-provenance gate, in a clean-room clone where the
-old object does not exist. It is a history rewrite either way, which is a founder
-decision and is not taken here.
+One thing this line does not satisfy, and the decision that was taken about it.
+Three of its own commit messages — `154be5f`, `fb2f450` and `f773db9` — predate the
+discipline the rest of the line follows and do not conform to
+`tools/commit_gate.py`. Repairing a commit message rewrites the commit, and
+`docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` is frozen at one of the revisions
+that would move, so the repair trades the commit-range gate for the
+design-provenance gate in exactly the clean-room clone where the old object does
+not exist.
+
+**The founder took `policy/hitl-matrix.md` row 9 and accepted it as a limitation
+rather than authorising the rewrite**, on the ground that rewriting would dangle a
+frozen design record's stated base revision and cost the reconstructible ancestry
+that the clean-room gate exists to prove. So the history stands as it is, and:
+
+    python3 tools/commit_gate.py --range HEAD --baseline 9d906ce --repo .
+
+REPORTS NINE VIOLATIONS OVER THOSE THREE COMMITS AND EXITS NON-ZERO. That raw
+result is the truth and is left raw. It is not reinterpreted as a pass, no
+exemption is added to `commit_gate.py`, and nothing here weakens the checker: **a
+raw non-zero checker result is never rewritten as a pass.** A reader who runs the
+command sees the same nine violations this record admits to.
+
+Run with `--default-terms .` — the vocabulary a consuming PROJECT declares rather
+than the one this pack self-applies — the same command reports FIVE non-conforming
+commits, because `beb81d8` and `710fc54` use a word that vocabulary makes private.
+Three is the number under `NO_PRIVATE_TERMS`, which is the contract this pack's own
+`validate_range` tests use and therefore the one its own history is judged by. Both
+numbers are recorded so neither is a surprise.

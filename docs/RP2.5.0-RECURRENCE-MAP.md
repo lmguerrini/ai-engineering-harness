@@ -5,9 +5,14 @@ Input to the 2.5.0 architecture, written before any 2.5.0 design. It reads the
 them, and asks one question of the set rather than of each row: **what did every
 one of these repairs assume?**
 
-Sources, all on disk and all independently produced: `evolution/OVERNIGHT-HANDOFF.md`
-(cycles 1–11), `docs/RP2.4.1-GATE.md`, the eight frozen `RP2.4.1-DESIGN-*` records,
-and the Astra whole-candidate certification of `71e24f8` that returned `NOT_READY`.
+Sources, all independently produced. Three ship inside this release and are
+inspectable from a checkout: `docs/RP2.4.1-GATE.md`, the eight frozen
+`RP2.4.1-DESIGN-*` records, and the history of `evolution/rp2.4.1` at `71e24f8`.
+Two do NOT ship and cannot be inspected from a checkout — the coordinator's
+cycle-by-cycle handoff, and the whole-candidate certification of `71e24f8` that
+returned `NOT_READY`; both are session records held outside the release envelope.
+An earlier draft said every source was "on disk", which a reader with only this
+release could not confirm, because the path it named is not in this tree.
 
 ## The map
 

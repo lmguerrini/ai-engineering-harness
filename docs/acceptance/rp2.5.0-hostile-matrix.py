@@ -73,13 +73,34 @@ def hostile(repo):
 ROWS = []
 
 
-def row(label, repo, *invocations):
+#: The invocation whose ANSWER every row is compared on. `status --porcelain`
+#: reports repository STATE rather than file CONTENT, so a driver that rewrites
+#: content does not change what a truthful answer looks like -- which is what
+#: makes it a fair reference even on a row where the program did run. A content
+#: verb like `diff` is not: there, real Git's output IS the driver's output, and
+#: requiring the boundary to match it would assert the leak rather than refute it.
+REFERENCE = ("status", "--porcelain")
+
+
+def row(label, repo, *invocations, reference=REFERENCE):
+    """Two measurements per row, because NOT EXECUTING IS ONLY HALF OF IT.
+
+    A build that silently DROPPED every nested repository from the constructed
+    view executes nothing at all -- and describes a repository that is not there.
+    This script counted marker bytes and nothing else, so that mutant reported
+    `0 execution leaks` at exit 0. The suite caught it; the evidence that ships
+    did not, and the evidence that ships is what a reader recomputes.
+
+    AND AN UNEXPECTED EXCEPTION IS A FAILURE, NOT A PRINTED OUTCOME. `Exception`
+    was caught and rendered into the outcome column, where it read like a
+    refusal, so a `FileExistsError` escaping the construction reported exit 0.
+    """
     real_bytes = 0
     for arguments in invocations:
         reset()
         git(*arguments, cwd=repo)
         real_bytes = max(real_bytes, ran())
-    guarded_bytes, outcome = 0, "read"
+    guarded_bytes, outcome, escape = 0, "read", None
     for arguments in invocations:
         reset()
         try:
@@ -89,9 +110,30 @@ def row(label, repo, *invocations):
         except (GitRefusal, IntegrityError) as refusal:
             outcome = f"REFUSED: {refusal.cause[:44]}"
         except Exception as exc:                                  # noqa: BLE001
-            outcome = f"{type(exc).__name__}: {exc}"[:60]
+            escape = f"{type(exc).__name__}: {exc}"
+            outcome = f"ESCAPED: {escape}"[:60]
         guarded_bytes = max(guarded_bytes, ran())
-    ROWS.append((label, real_bytes, guarded_bytes, outcome))
+    difference, compared = None, False
+    if reference is not None and outcome == "read":
+        expected = git(*reference, cwd=repo)
+        # RESET BETWEEN THE REFERENCE AND THE MEASUREMENT. Real Git runs the
+        # program on these fixtures -- that is the positive control -- so leaving
+        # its marker bytes in place reported eight leaks that belonged to the
+        # reference run. Caught by the pristine control, which is what one is for.
+        reset()
+        if expected.returncode == 0:
+            try:
+                answer = gitread.probe(repo, *reference, negative_statuses=(1,))
+                if answer.answered and answer.ok:
+                    compared = True
+                    if answer.value.rstrip("\n") != expected.stdout.rstrip("\n"):
+                        difference = (f"{' '.join(reference)}: "
+                                      f"git={expected.stdout.rstrip(chr(10))!r} "
+                                      f"boundary={answer.value.rstrip(chr(10))!r}")
+            except Exception as exc:                              # noqa: BLE001
+                escape = escape or f"{type(exc).__name__}: {exc}"
+        guarded_bytes = max(guarded_bytes, ran())
+    ROWS.append((label, real_bytes, guarded_bytes, outcome, difference, escape, compared))
 
 
 VERBOSITY = [("status", spelling) for spelling in
@@ -141,6 +183,26 @@ for spelling in ("gitlink file", "symlink to directory", "symlink to gitlink fil
     row(f"nested .git as a {spelling}", sup,
         ("status", "--porcelain"), ("status", "-v"), ("diff", "--submodule=diff"))
 
+# A CASE VARIANT OF THE NAME. `os.path.lexists(here / ".git")` is answered by the
+# FILESYSTEM, and a case-insensitive volume answers it YES for `.Git`; comparing a
+# walked name to the literal `".git"` answers NO. The build asked one question two
+# ways, got two answers, copied the `.Git` into the view verbatim and then raised
+# `FileExistsError` installing its own -- which reached the operator as a traceback
+# out of a shipped tool rather than as a refusal. On a case-SENSITIVE volume Git
+# does not find `.Git` either, so this row is an ordinary read there and honestly
+# reports no positive control.
+variant = new_repo("sup-case-variant")
+commit(variant, "top.txt")
+git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "mod", cwd=variant)
+git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "sub", cwd=variant)
+variant_module = variant / ".git" / "modules" / "mod"
+for key in ("filter.evil.clean", "diff.evil.textconv", "diff.external"):
+    git("config", key, str(EVIL), cwd=variant_module)
+os.rename(variant / "mod" / ".git", variant / "mod" / ".Git")
+(variant / "mod" / "i.txt").write_text("changed\n")
+row("a nested .git spelled .Git", variant,
+    ("status", "--porcelain"), ("status", "-v"), ("diff", "--submodule=diff"))
+
 for kind in ("dangling symlink", "empty file", "fifo"):
     outer = new_repo(f"unbuildable-{kind.replace(' ', '-')}")
     commit(outer)
@@ -178,13 +240,23 @@ row("a .git that is a file (--separate-git-dir)", separate,
 width = max(len(label) for label, *_ in ROWS)
 print(f"{'case':{width}}  real  guarded  outcome")
 print("-" * (width + 34))
-leaks = 0
-for label, real_bytes, guarded_bytes, outcome in ROWS:
+leaks = differing = escapes = compared = 0
+for label, real_bytes, guarded_bytes, outcome, difference, escape, matched in ROWS:
     leaks += guarded_bytes > 0
+    differing += difference is not None
+    escapes += escape is not None
+    compared += matched
     print(f"{label:{width}}  {real_bytes:>4}  {guarded_bytes:>7}  "
-          f"{'*** LEAK *** ' if guarded_bytes else ''}{outcome}")
+          f"{'*** LEAK *** ' if guarded_bytes else ''}"
+          f"{'*** ANSWER DIFFERS *** ' if difference else ''}{outcome}")
+    if difference:
+        print(f"{'':{width}}    {difference}")
 controls = sum(1 for _l, real_bytes, *_ in ROWS if real_bytes > 0)
 print(f"\n{len(ROWS)} cases, {controls} of them carrying a positive control "
-      f"(real git ran a program), {leaks} execution leaks")
+      f"(real git ran a program), {leaks} execution leaks, "
+      f"{compared} rows whose answer was compared with real git, "
+      f"{differing} of them differing, {escapes} escaped exceptions")
 print(f"fixtures {BASE}")
-sys.exit(1 if leaks else 0)
+# A COMPARISON THAT COMPARED NOTHING IS NOT A PASS, for the same reason a row
+# without a positive control is not one: an oracle has to be shown able to fail.
+sys.exit(1 if leaks or differing or escapes or compared == 0 else 0)

@@ -14,6 +14,7 @@ subject after a timeout or an interruption; an unrelated failure is not a kill.
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -27,11 +28,12 @@ ARGUMENTS = parser.parse_args()
 ROOT = Path(ARGUMENTS.root)
 
 NESTED_BEFORE = (
-    '        if ".git" in directories:\n'
-    '            directories.remove(".git")\n'
-    '        if ".git" in files:\n'
-    '            files.remove(".git")\n'
-    '        if relative != Path(".") and os.path.lexists(here / ".git"):\n'
+    '        entry = dot_git_name(here, list(directories) + list(files))\n'
+    '        if entry in directories:\n'
+    '            directories.remove(entry)\n'
+    '        if entry in files:\n'
+    '            files.remove(entry)\n'
+    '        if relative != Path(".") and entry is not None:\n'
     '            nested.append(relative)\n'
     '        for name in list(directories):\n'
     '            source = here / name\n'
@@ -57,8 +59,8 @@ SPELLING_ORACLE = ("tools/tests/test_gitread.py::"
 MUTANTS = [
     ("the symlink branch consumes .git before the name check sees it",
      "tools/sterile.py", NESTED_BEFORE, NESTED_AFTER, SPELLING_ORACLE),
-    ("the name check ignores a .git that is a symlink", "tools/sterile.py",
-     '        if relative != Path(".") and os.path.lexists(here / ".git"):\n'
+    ("the name check asks the KIND of .git instead of the name", "tools/sterile.py",
+     '        if relative != Path(".") and entry is not None:\n'
      '            nested.append(relative)',
      '        if relative != Path(".") and (here / ".git").is_dir() '
      'and not (here / ".git").is_symlink():\n            nested.append(relative)',
@@ -106,6 +108,23 @@ MUTANTS = [
 ]
 
 
+def collect(selectors, timeout=900):
+    """How many tests the named oracles actually amount to, asked of pytest.
+
+    The gate record stated this number in prose, where it went stale the moment a
+    parametrisation changed: the record said twenty-four and collection said
+    twenty-two. A figure a reader cannot recompute is the thing this pack's own
+    rule about figures exists to stop, so it is derived here and printed.
+    """
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+         "--no-header", *selectors],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=timeout,
+        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+    found = re.search(r"(\d+) tests? collected", proc.stdout)
+    return int(found.group(1)) if found else 0
+
+
 def run(selector, timeout=900):
     """No bytecode cache, ever.
 
@@ -136,13 +155,13 @@ def main():
 
     print("baseline: every named oracle on the pristine subject")
     oracles = sorted({mutant[4] for mutant in MUTANTS})
-    code, summary, _seconds = run(" ".join(oracles) if False else oracles[0])
+    collected = collect(oracles)
     for oracle in oracles:
         code, summary, _seconds = run(oracle)
         if code != 0:
             print(f"  BASELINE NOT GREEN: {oracle}\n    {summary}")
             return 2
-    print(f"  {len(oracles)} oracle selectors green\n")
+    print(f"  {len(oracles)} oracle selectors green over {collected} collected tests\n")
 
     results = []
     try:

@@ -486,10 +486,15 @@ def test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it():
     assert checked >= 5, f"only {checked} role rows compared; the parser is not seeing the table"
 
 
-#: The frozen release this candidate must not regress against. Not read from a
-#: document — the digest and state of that revision are what `pack_pin` checks,
-#: and this is the same revision by name.
-QUALIFIED_BASELINE = "ab7dea97a12c699e8123bcb5d5be976cd05c075e"
+#: The frozen release this candidate must not regress against, which is the one
+#: `PACK_MANIFEST.json` `baseline_revision` declares and the one consumers pin.
+#: IT USED TO NAME 2.3.0's TIP. That is an ancestor of this baseline, so the check
+#: still ran and still passed — but a public name INTRODUCED in 2.4.0 and removed
+#: here is absent from a 2.3.0 surface and therefore produces no change at all,
+#: which is a blind spot in the direction the claim is made. Measured when it was
+#: corrected: zero such names exist and the check is green against both, so this
+#: closes a gap rather than reporting a regression.
+QUALIFIED_BASELINE = "9d906ce64bd69cb1a29594a7110829da7df5d996"
 
 
 def test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline():
