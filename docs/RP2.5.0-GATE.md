@@ -595,6 +595,47 @@ class — a figure from a script that did not ship, then a repair claim that did
 match the tree, and now two counts that aged in place — and it is the first time
 the answer has been to stop writing the number rather than to correct it.
 
+### And a wrong answer, found by building the volume nobody had
+
+Every certification of this release so far has run on one filesystem, and each has
+said so in its own limitations. Building the missing one — a case-sensitive APFS
+image, which is also a genuinely different *device* from the system temp directory
+— confirmed what the design claimed about case-sensitive volumes and then produced
+a defect nothing else had reached.
+
+    real git : M file.txt
+    boundary : M file.txt
+               M payload.sh      <- an executable, reported modified
+
+`_build_view` hardlinks each of the subject's files into the constructed view,
+because a link copies no content. `os.link` fails with `EXDEV` when the subject and
+the scratch directory are on different filesystems, and the fallback was
+`shutil.copyfile`, which copies **content only**. The executable arrived in the view
+as `644`, Git compared it with `100755` in the index, and a governed `status`
+reported a file modified that real Git said nothing about.
+
+This release's own design record calls a wrong answer at exit 0 the worst outcome
+the boundary can produce, and this one required no hostility whatever: only a
+subject that does not live on the same volume as the system temp directory — an
+external disk, a network mount, a second volume, a container bind mount. It needed
+a nested repository too, since that is what makes the build construct a view at
+all, which is why every fixture on one filesystem agreed and this one did not.
+
+The fallback now copies the metadata as well as the bytes, so it produces the same
+file the link would have. `test_a_view_built_across_a_filesystem_boundary_keeps_every_mode`
+pins it without requiring two filesystems: it makes `os.link` raise `EXDEV` so the
+fallback runs anywhere, and it fails when the metadata copy is removed. Verified on
+the real cross-device volume afterwards, where `status --porcelain`,
+`status --porcelain -uall`, `diff --stat` and `ls-files -s` now all match real Git.
+
+**What it says about the certifications, and about this record.** Three independent
+readings passed over this code without finding it, and none of them was careless —
+the defect is invisible unless the subject sits on another device, and each reader
+recorded that it had tested one filesystem only. A limitation honestly disclosed is
+still a limitation: it says where to look next, and looking there is what found
+this. The same disclosure still stands for Windows, for `core.symlinks=false` and
+for network transports, and those remain **unestablished** rather than passing.
+
 ## Not yet done
 
 The independent certifications, and the terminal gates that depend on them.

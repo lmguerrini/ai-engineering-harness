@@ -1866,6 +1866,45 @@ def test_the_construction_refuses_by_name_rather_than_raising_whatever_it_hit(tm
     assert "FileExistsError" in raised.value.render(), raised.value.render()
 
 
+def test_a_view_built_across_a_filesystem_boundary_keeps_every_mode(tmp_path, monkeypatch):
+    """The subject does not have to be on the same filesystem as the scratch
+    directory, and when it is not, `os.link` fails with EXDEV and the copy fallback
+    runs. That fallback copied CONTENT ONLY: an executable arrived in the view as
+    644, Git compared it with 100755 in the index, and a governed `status` reported
+    a file MODIFIED that real Git said nothing about — a wrong answer at exit 0,
+    from a subject nobody had to make hostile.
+
+    Reproduced first on a real case-sensitive disk image, where the subject and the
+    system temp directory genuinely are different devices. It is pinned here by
+    making `os.link` fail instead, so the fallback is exercised on one filesystem
+    and the oracle does not need two.
+    """
+    root = _repo(tmp_path, "xdev")
+    program = root / "program.sh"
+    program.write_text("#!/bin/sh\ntrue\n")
+    program.chmod(0o755)
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "exe")
+    # a nested repository is what makes the build construct a view at all
+    (root / "nest").mkdir()
+    _git(root / "nest", "init", "-q", "-b", "main")
+
+    def no_hardlinks(*_args, **_kwargs):
+        raise OSError(18, "Cross-device link")
+
+    monkeypatch.setattr(_sterile.os, "link", no_hardlinks)
+
+    expected, got = _exactly_as_real_git(root, "status", "--porcelain")
+    assert expected is not None, "real git refused the fixture, so this proves nothing"
+    assert got == expected, (
+        "a view built through the copy fallback disagreed with real git: "
+        f"{got!r} against {expected!r}"
+    )
+    assert "program.sh" not in got, (
+        "the executable arrived in the view without its mode, so the read called it modified"
+    )
+
+
 def _exactly_as_real_git(repo, *arguments):
     """Byte for byte, through `_run` rather than `probe`.
 

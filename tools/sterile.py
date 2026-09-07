@@ -426,7 +426,20 @@ def _build_view(subject: Path, scratch: Path) -> Path:
                 if source.is_symlink():
                     os.symlink(os.readlink(source), destination)
                 else:
+                    # THE FALLBACK MUST PRODUCE THE SAME FILE THE LINK WOULD HAVE.
+                    #
+                    # `os.link` fails with EXDEV whenever the subject and this
+                    # scratch directory are on different filesystems -- an external
+                    # disk, a network mount, a second volume, a container bind
+                    # mount. `shutil.copyfile` copies CONTENT ONLY, so every mode
+                    # was dropped: an executable file arrived in the view as 644,
+                    # Git compared it against 100755 in the index, and a governed
+                    # `status` reported it MODIFIED while real Git reported nothing.
+                    # A wrong answer at exit 0 is the worst thing this boundary can
+                    # produce, and it needed no hostility at all -- only a subject
+                    # that does not live on the same volume as the system temp dir.
                     shutil.copyfile(source, destination, follow_symlinks=False)
+                    shutil.copystat(source, destination, follow_symlinks=False)
     built: set = set()
     for index, relative in enumerate(dict.fromkeys(nested)):
         try:
