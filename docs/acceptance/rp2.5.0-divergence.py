@@ -1,4 +1,24 @@
-"""Every reproduced case where a governed read disagrees with real Git.
+"""Every reproduced case where a governed read answers differently from real Git.
+
+WHAT THIS SCRIPT IS AND IS NOT, after the semantic-authority decision.
+
+Harness-defined semantics are authoritative for a governed read. Equivalence to
+real Git running under configuration the repository supplied is NOT required and
+is NOT a defect. So this corpus no longer scores every difference: it separates
+the two things it had been conflating.
+
+  HARNESS-AUTHORITATIVE  the repository set something that would change how the
+      checker itself behaves -- what a status hides, how a name is quoted, how
+      wide an abbreviation is. The harness decides these, deliberately, and a
+      difference here is the design working. Recorded, never scored.
+
+  STATE FIDELITY  the difference is not about configuration at all. It is data
+      the constructed view failed to carry: a reflog, a pseudo-ref, a graft
+      file, the shape of HEAD. The harness is not choosing a different meaning
+      here, it is failing to see something. These remain defects and are scored.
+
+The rows are UNCHANGED and none was deleted. Only their classification and the
+exit status changed, so the previously recorded behaviour stays reproducible.
 
     python3 docs/acceptance/rp2.5.0-divergence.py [pack root]
 
@@ -45,16 +65,26 @@ def commit(d, name="a.txt", body="one\n"):
     git("commit", "-qm", "c", cwd=d)
 
 
+#: The kinds whose differences the semantic-authority decision makes expected.
+#: Anything not listed here is a fidelity question about repository STATE, which
+#: no decision about configuration authority can excuse.
+HARNESS_AUTHORITATIVE = ("config", "nested config")
+
+
 def row(label, d, *arguments, kind="config"):
     real = git(*arguments, cwd=d)
     try:
         got, refused = gitread._run(d, *arguments), None
     except Exception as exc:                                          # noqa: BLE001
         got, refused = None, f"{type(exc).__name__}"
+    authoritative = kind in HARNESS_AUTHORITATIVE
     if refused is None and real.returncode == 0:
-        verdict = "agree" if got.strip() == real.stdout.strip() else "DIVERGENCE"
+        if got.strip() == real.stdout.strip():
+            verdict = "agree"
+        else:
+            verdict = "EXPECTED (harness)" if authoritative else "DIVERGENCE"
     elif refused is not None and real.returncode == 0:
-        verdict = "OVER-REFUSAL"
+        verdict = "EXPECTED (harness)" if authoritative else "OVER-REFUSAL"
     elif refused is None and real.returncode != 0:
         verdict = "UNDER-REFUSAL"
     else:
@@ -138,11 +168,17 @@ if module.is_dir():
 
 width = max(len(r[0]) for r in ROWS) + 2
 print(f"{'case':{width}} {'kind':11} {'verdict':20} {'real git':40} boundary")
-divergent = 0
+scored = expected = 0
 for label, kind, verdict, real, got in ROWS:
-    divergent += verdict != "agree" and not verdict.startswith("agree")
+    if verdict.startswith("agree"):
+        pass
+    elif verdict.startswith("EXPECTED"):
+        expected += 1
+    else:
+        scored += 1
     print(f"{label:{width}} {kind:11} {verdict:20} {real!r:40} {got!r}")
-print(f"\n{len(ROWS)} ordinary repositories, {divergent} where the governed read does not match "
-      f"real Git. None of them is hostile and none names a program.")
+print(f"\n{len(ROWS)} ordinary repositories. None is hostile and none names a program.")
+print(f"  expected under harness-defined semantics, recorded and not scored : {expected}")
+print(f"  state the constructed view failed to carry, and still a defect    : {scored}")
 print(f"fixtures {BASE}")
-sys.exit(1 if divergent else 0)
+sys.exit(1 if scored else 0)

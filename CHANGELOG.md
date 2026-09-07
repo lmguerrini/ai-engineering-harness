@@ -179,6 +179,28 @@ prevent, so they ship.
   sterile refuses the read; and the finished view is checked by walking it
   rather than by trusting the loop that built it.
 
+### The question was answered, and the seventh design follows from the answer
+
+The owner ruled that **harness-defined semantics are authoritative** for a governed
+read: equivalence to real Git running under configuration the repository supplied
+is not required, and the qualified 2.4.0 contract is the non-regression floor.
+
+That retires the standard the first six designs were judged against.
+`docs/acceptance/rp2.5.0-divergence.py` has been reclassified rather than
+deleted, and every row it recorded is still reproduced. What changed is that it
+now separates two things it had been scoring as one: rows where the repository
+asked to change how the checker itself behaves, which the decision makes
+expected, from rows where the constructed view simply failed to carry
+git-directory state, which remain defects and still fail the script.
+
+`docs/RP2.5.0-DESIGN-A7-qualified-semantics-hardened.md` is the design that
+follows. It leaves the qualified sterile read exactly as it is and wraps the
+OS barrier — the one part of A5 and A6 that no reader ever broke — around it:
+writes to the subject denied, every execution but Git's own binary denied, and
+no configuration key named anywhere in the profile. The enumeration stays
+exactly as qualified and stops being the only thing between a missed key and a
+running program.
+
 ### Six designs, six falsifications, and the question underneath them
 
 Every generation was frozen before implementation, read blind by independent
