@@ -252,9 +252,18 @@ therefore obeyed. A1 through A4 satisfy the promise and fail that corpus. A5 and
 A6 satisfy the corpus and fail the promise. The two standards cannot both be met,
 which is what six falsifications look like from the inside.
 
-Deciding which one governs is a human decision under `DECISIONS.md` D14 and D23,
-and it is not taken here. Until it is taken, 2.5.0 remains `IN_PROGRESS` and
-2.4.0 remains the release a project pins.
+Deciding which one governs was a human decision under `DECISIONS.md` D14 and
+D23, and **it has been taken: harness-defined semantics are authoritative for a
+governed read.** Equivalence to real Git running under configuration the
+repository supplied is not required and is not a defect. The qualified 2.4.0
+contract is the non-regression floor: subject-supplied configuration is input to
+inspect and report where the contract says so, and is not authority over how the
+governed checker itself behaves.
+
+That ruling settles which standard applies. It settles nothing else: 2.5.0
+remains `IN_PROGRESS`, no project may pin it, and 2.4.0 remains the release a
+project pins. In particular the ruling does not authorise losing a capability
+2.4.0 holds — that remains a separate decision under the same two entries.
 
 ## 2.4.1 — the six the full-release audit reproduced
 
