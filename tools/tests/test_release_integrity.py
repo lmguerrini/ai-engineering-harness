@@ -67,6 +67,16 @@ def _current_gate_record() -> Path:
     return ROOT / json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))["gate_record"]
 
 
+def _superseded_design_records(manifest) -> frozenset[str]:
+    """The design records that are history, as declared by the release manifest.
+
+    A falsified design is superseded by a new record and left exactly as written.
+    Release-truth guards must therefore follow the manifest's current authority,
+    rather than forcing every later design correction into the historical record.
+    """
+    return frozenset(manifest["design_records"]["superseded"])
+
+
 @pytest.fixture(scope="module")
 def manifest():
     return json.loads((ROOT / pack_pin.MANIFEST_NAME).read_text(encoding="utf-8"))
@@ -131,6 +141,24 @@ def test_the_manifest_declares_a_known_state(manifest):
 def test_the_gate_record_the_manifest_names_exists(manifest):
     gate = manifest["gate_record"]
     assert (ROOT / gate).is_file(), f"{gate} is named by the manifest and is not on disk"
+
+
+def test_the_manifest_declares_one_current_design_and_all_superseded_history(manifest):
+    records = manifest["design_records"]
+    authoritative = records["authoritative"]
+    superseded = tuple(records["superseded"])
+    declared = {authoritative, *superseded}
+    actual = {
+        str(path.relative_to(ROOT))
+        for path in ROOT.glob(f"docs/{_release_doc_prefix()}-DESIGN-*.md")
+    }
+    assert isinstance(authoritative, str) and (ROOT / authoritative).is_file()
+    assert superseded and len(superseded) == len(set(superseded))
+    assert authoritative not in superseded
+    assert declared == actual, (
+        "the manifest must classify every design record as current authority or history: "
+        f"declared {sorted(declared)}, found {sorted(actual)}"
+    )
 
 
 def test_the_gate_record_names_this_version(manifest, version):
@@ -820,7 +848,7 @@ def test_the_baseline_figure_this_release_quotes_is_the_baselines_own():
     )
 
 
-def test_every_pointer_at_the_decision_layer_reaches_the_last_decision():
+def test_every_pointer_at_the_decision_layer_reaches_the_last_decision(manifest):
     """`DECISIONS.md` is append-only, so every range naming its end goes stale
     the next time a decision is added — and two did: the README said `D1-D19`
     and the packet said `D14-D19` while the file held D22, routing a reader
@@ -846,10 +874,13 @@ def test_every_pointer_at_the_decision_layer_reaches_the_last_decision():
             if not path.is_file():
                 continue
             name = str(path.relative_to(ROOT))
+            if name in _superseded_design_records(manifest):
+                continue
             scanned += 1
             body = path.read_text(encoding="utf-8")
             # A previous release's entry is history and is left as written; the
-            # rule applies to the entry this release is adding.
+            # rule applies to the entry this release is adding. Superseded
+            # design records have the same status, declared in the manifest.
             if name == "CHANGELOG.md":
                 body = _current_changelog_section(body)
             for number, line in enumerate(body.splitlines(), 1):
@@ -932,7 +963,7 @@ def _restated_counts(text: str) -> list:
     return found
 
 
-def test_no_document_restates_a_count_of_things_the_repository_can_count():
+def test_no_document_restates_a_count_of_things_the_repository_can_count(manifest):
     """The unbound-figure class, closed structurally rather than corrected again.
 
     This release has now shipped seven figures of this shape: a divergence
@@ -943,8 +974,10 @@ def test_no_document_restates_a_count_of_things_the_repository_can_count():
     can compute, and every one went stale the moment the thing it counted
     changed.
 
-    So no document may restate them. Each is one command away, and a reader who
-    wants the number should run that command rather than trust a sentence.
+    So no current release claim may restate them. Each is one command away, and
+    a reader who wants the number should run that command rather than trust a
+    sentence. Superseded design records are history, not current claims, and
+    stay byte-for-byte evidence of the decisions that replaced them.
 
     Deliberately narrow. A release record is full of legitimate counts —
     findings, rounds, occurrences, and true sentences about the past like
@@ -961,6 +994,8 @@ def test_no_document_restates_a_count_of_things_the_repository_can_count():
             if name in seen or not path.is_file():
                 continue
             seen.add(name)
+            if name in _superseded_design_records(manifest):
+                continue
             for number, what in _restated_counts(path.read_text(encoding="utf-8")):
                 offenders.append(f"{name}:{number}: {what!r}")
     assert len(seen) >= 6, f"only {len(seen)} owned documents scanned; the globs are not matching"
@@ -1313,24 +1348,11 @@ def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
     )
 
 
-def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
-    """The figure is computed in `test_pathmatch.py` and stated nowhere else.
-
-    It was written from memory twice and was wrong twice — 13 on a grid that had
-    been replaced, then 29 on the replaced grid in the commit that widened it
-    again. Two independent audits caught it. The durable repair is not a better
-    number: it is that no prose carries one, so there is nothing left to drift.
-    """
+def _pathmatch_divergence_pattern():
     import re
 
-    #: Every shape a hand-written divergence count takes. The first version
-    #: required a digit immediately followed by the word, so
-    #: `95 (88 under, 7 over)` — the only real restatement in the tree — sailed
-    #: past it, and a third audit round shipped a fabricated `400 (390 under, 10
-    #: over)` green to prove it. A guard that cannot see the thing it was
-    #: written for is worse than the unbound number it replaced.
     number = r"(?:\d+|thirteen|twenty-?nine|ninety-?five|forty|fifty|sixty|seventy|eighty|ninety|hundred)"
-    pattern = re.compile(
+    return re.compile(
         rf"(?<![^\s|])(?:"
         rf"{number}\s+(?:[\w/-]+\s+){{0,3}}(?:diverg|disagree|under-match|over-match)"
         rf"|{number}\s*\(\s*{number}\s+(?:under|over)"
@@ -1339,6 +1361,69 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
         rf")",
         re.IGNORECASE,
     )
+
+
+def _pathmatch_divergence_offenders(documents, pattern, manifest):
+    """Find divergence figures in current release claims, not design history."""
+    offenders = []
+    exempt_line = ("BASELINE_DIVERGENCES = (", "number = r", "rf\"")
+    for name, text in documents:
+        if name in _superseded_design_records(manifest):
+            continue
+        # This test carries the pattern's own negative and positive samples;
+        # scanning it would turn its proof into a false release finding.
+        if name == "tools/tests/test_release_integrity.py":
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line) and not any(marker in line for marker in exempt_line):
+                offenders.append(f"{name}:{number}: {line.strip()[:90]}")
+    return offenders
+
+
+def test_pathmatch_guard_rejects_a_defect_in_the_authoritative_design_record(manifest):
+    """The history exemption must not become a general exemption.
+
+    Construct the same offending shape under the manifest's current authority;
+    the shared scan must report it.
+    """
+    authoritative = manifest["design_records"]["authoritative"]
+    offenders = _pathmatch_divergence_offenders(
+        [(authoritative, "ordinary repositories: 600 of 600, 0 divergences")],
+        _pathmatch_divergence_pattern(), manifest,
+    )
+    assert offenders, "the current authoritative design's defect was not reported"
+
+
+def test_pathmatch_guard_skips_an_actual_defect_in_superseded_design_history(manifest):
+    """The skipped historical record is proven to contain the offending shape."""
+    pattern = _pathmatch_divergence_pattern()
+    historical = next(
+        name for name in _superseded_design_records(manifest)
+        if pattern.search((ROOT / name).read_text(encoding="utf-8"))
+    )
+    text = (ROOT / historical).read_text(encoding="utf-8")
+    assert pattern.search(text), f"{historical} no longer contains the historical defect"
+    assert not _pathmatch_divergence_offenders([(historical, text)], pattern, manifest)
+
+
+def test_no_document_states_a_pathmatch_divergence_figure_of_its_own(manifest):
+    """The figure is computed in `test_pathmatch.py` and stated nowhere in
+    current release claims.
+
+    It was written from memory twice and was wrong twice — 13 on a grid that had
+    been replaced, then 29 on the replaced grid in the commit that widened it
+    again. Two independent audits caught it. The durable repair is not a better
+    number: it is that no current claim carries one, so there is nothing left to
+    drift. Superseded design records remain frozen evidence, even when they carry
+    the defect this guard exists to prevent.
+    """
+    #: Every shape a hand-written divergence count takes. The first version
+    #: required a digit immediately followed by the word, so
+    #: `95 (88 under, 7 over)` — the only real restatement in the tree — sailed
+    #: past it, and a third audit round shipped a fabricated `400 (390 under, 10
+    #: over)` green to prove it. A guard that cannot see the thing it was
+    #: written for is worse than the unbound number it replaced.
+    pattern = _pathmatch_divergence_pattern()
     #: The number must START A WORD: preceded by nothing, whitespace, or a table
     #: pipe. The earlier `(?<![\d.])` only refused a preceding digit or dot, so
     #: `python3 divergence_corpus.py` read as "3 diverg…" and
@@ -1357,9 +1442,10 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
     #: No exemptions by phrasing. A list of "this line is historical" markers was
     #: the first attempt and it is the wrong shape: it has to be extended every
     #: time somebody writes a sentence the list did not anticipate, which is the
-    #: same failure as a hand-written grid. **No prose states a divergence count
-    #: at all** — the history is told without numbers, and the numbers live in
-    #: the two test modules that compute them.
+    #: same failure as a hand-written grid. Current release claims state no
+    #: divergence count; superseded design records are excluded by the manifest
+    #: because their wording is preserved history, and the numbers live in the
+    #: two test modules that compute them.
 
     # THE GUARD MUST STILL SEE WHAT IT WAS WRITTEN FOR. Every shape below is one
     # that actually occurred in this tree; a tightening that stops matching any
@@ -1376,17 +1462,20 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
         assert not pattern.search(sample), (
             f"the guard reads {sample!r} as a divergence count, and it is not one")
 
-    #: **Every tracked file**, not a hand-written list. The sibling machine-path
+    #: **Every touched current-claim file**, not a hand-written list. The sibling machine-path
     #: guard already worked this way; this one did not, so a restatement in a
     #: file nobody had listed was invisible. `tools/tests/test_pathmatch.py` is
-    #: the one exemption: it is where the figure legitimately lives.
+    #: the one exemption: it is where the figure legitimately lives. Superseded
+    #: design records are skipped from the manifest's history declaration, not
+    #: from a filename allowlist.
     import subprocess
 
-    #: Only what this release wrote. A prior release's gate record is history,
-    #: left as written — the same rule `_current_changelog_section` applies —
-    #: and a convention introduced now cannot retroactively govern it. Derived
-    #: from the diff rather than from a hand-written list of filenames, which is
-    #: the shape that let a restatement hide in the first place.
+    #: Only what this release wrote. A prior release's gate record and a
+    #: superseded design record are history, left as written — the same rule
+    #: `_current_changelog_section` applies — and a convention introduced now
+    #: cannot retroactively govern them. Derived from the diff rather than from
+    #: a hand-written list of filenames, which is the shape that let a
+    #: restatement hide in the first place.
     changed = subprocess.run(
         ["git", "diff", "--name-only", "-z",
          "4495e61850c08027e47eac6d0db84b4b3380e300", "HEAD"],
@@ -1395,27 +1484,16 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own():
     touched = [entry.decode("utf-8") for entry in changed.split(b"\0") if entry]
     assert touched, "the diff against the baseline is empty; the scan would cover nothing"
 
-    offenders = []
+    documents = []
     for name in touched:
-        # Exempted by *line*, not by filename. Exempting the whole file let the
-        # refuted `13` survive in that module's own prose — the hand-written
-        # filename list this rule elsewhere says it rejects. Only the assignment
-        # that carries the computed figure, and this rule's own description of
-        # itself, are allowed to contain one.
-        exempt_line = ("BASELINE_DIVERGENCES = (", "number = r", "rf\"")
-        if name == "tools/tests/test_release_integrity.py":
-            continue        # where this rule lives and describes itself
         if not (ROOT / name).exists():
             continue        # deleted in the delta
         try:
             text = (ROOT / name).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):  # pragma: no cover - environment
             continue
-        for number, line in enumerate(text.splitlines(), 1):
-            if pattern.search(line) and not any(
-                marker in line for marker in exempt_line
-            ):
-                offenders.append(f"{name}:{number}: {line.strip()[:90]}")
+        documents.append((name, text))
+    offenders = _pathmatch_divergence_offenders(documents, pattern, manifest)
     assert not offenders, (
         "these state a divergence count in prose; the figure is computed by "
         "test_pathmatch.BASELINE_DIVERGENCES and must not be restated: " + "; ".join(offenders)
@@ -1935,6 +2013,8 @@ def test_every_release_record_that_summarises_the_adjudication_carries_its_occur
     named = {}
     silent = []
     for path in surfaces:
+        if str(path.relative_to(ROOT)) in _superseded_design_records(manifest):
+            continue
         if path == adjudication:
             continue
         raw = path.read_text(encoding="utf-8")
