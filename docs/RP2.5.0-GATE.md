@@ -296,6 +296,39 @@ longer builds — and one, which asserted that enabling a transport lifts a
 neutralisation of `core.sshCommand`, is gone with the mechanism: the sterile
 configuration never sets that key, because the subject's is not read.
 
+## The second certification attempt, and what it found before it ended
+
+A re-certification of the revision before this one reported a **blocker-class
+record defect** and then ended without issuing a verdict — its session could not
+be resumed. Under this project's own rule an environmental failure is neither a
+finding nor a successful certification, so **that run is not a certification of
+anything**, and the findings it did produce were still reproduced and repaired
+before it was set aside.
+
+**The blocker.** `PACK_MANIFEST.json` `supersedes` carried 2.4.1's text verbatim:
+it called this release **PATCH** and stated that **no tool, policy or capability
+is new**. Both are false, and the second is false about the single fact the MINOR
+derivation rests on — `tools/sterile.py`. A manifest that contradicts its own gate
+record is exactly the defect, and the machine-readable record is the one a
+consumer reads first.
+
+**The same staleness, found by following it.** `known_limitations[0]` still
+described this candidate as the one that "closes six defects an independent full
+behavioural audit reproduced in frozen 2.4.0" and pointed at `docs/RP2.4.1-GATE.md`.
+And six limitations — 9, 10, 14, 98, 99 and 100 — describe the pre-2.5.0 mechanism
+in the present tense, including one that says `-v`/`--verbose` "is refused as an
+argument now" and that the walk "enumerates directories containing `.git`",
+neither of which is how this release works.
+
+Those six are **kept verbatim and marked**, not corrected and not deleted. They
+are the evidence `docs/RP2.5.0-RECURRENCE-MAP.md` argues from — the repairs whose
+failure to converge is the case for replacing the mechanism — so rewriting them
+would weaken the argument they support, and removing them would erase it. Each now
+opens with a marker saying the mechanism was deleted in 2.5.0 and that its present
+tense should be read as the state at 2.4.1. `supersedes` and limitation 0, which
+make claims about **this** release rather than recording a past one, are corrected
+outright.
+
 ## Evolution evidence
 
 Every repair in this release classifies against classes
