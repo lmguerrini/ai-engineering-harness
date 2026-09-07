@@ -4,7 +4,7 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": "NOT QUALIFIED. The state is IN_PROGRESS and this field records no qualification: it carries the date the candidate's records were last recomputed, 2026-09-07. A release becomes qualified when the founder takes policy/hitl-matrix.md row 2, and this field is rewritten then. An independent certification observed a date sitting here under a state that says the opposite, which is how a reader comes to believe a candidate was qualified on a day nobody qualified it.",
-  "tree_digest_sha256": "83ed866896f30997a31e24a7af32b81b19023a25fd820a87b8fe97303b276238",
+  "tree_digest_sha256": "0e251b9020f73c92b310697b6d004c3dbbd249da373b1f923d5ec7b844f1a192",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
@@ -143,7 +143,7 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 203,
+  "digest_file_count": 205,
   "failure_mode_closure": "docs/RP2.3-FAILURE-MODE-CLOSURE.md",
   "evolution_candidates": [
     "A DURABLE EVENT LOG. Seven event classes ship because seven are what durable artifacts date; a capability opening, an audit being dispatched and a finding being recorded are not among them, because nothing writes their time down. Trigger: a project wanting a timeline of governance events rather than of artifacts.",
