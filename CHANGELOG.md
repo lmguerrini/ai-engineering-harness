@@ -133,6 +133,23 @@ and finding that no answer, no refusal and no execution changed.
 `tools/release_delta.py` was the last caller that reached Git around the boundary
 and now goes through it, so `gitread` is the toolbelt's only path to Git.
 
+### Evidence this release ships as runnable files
+
+- `docs/acceptance/rp2.5.0-hostile-matrix.py` — the hostile Git-configuration
+  matrix: every verbosity spelling, an explicitly requested driver, an ignored
+  never-a-submodule checkout, a nested `.git` in three spellings, three that
+  cannot be rebuilt, `sha256`, `reftable`, and a `.git` that is a file. It reports
+  how many rows carry a positive control, because a row where real Git runs
+  nothing proves nothing.
+- `docs/acceptance/rp2.5.0-mutation.py` — the mutation harness, which verifies a
+  green baseline first, refuses to count a malformed mutant, and asserts the
+  subject is byte-identical afterwards.
+
+Both were in the author's scratch directory when the gate record first cited
+their figures. An independent certification could reproduce the properties and
+not the numbers, which is exactly what this pack's rule about figures exists to
+prevent, so they ship.
+
 ### Records this release adds
 
 - `docs/RP2.5.0-GATE.md` — this release's gate record, written as the release is

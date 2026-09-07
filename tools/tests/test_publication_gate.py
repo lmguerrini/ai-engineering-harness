@@ -559,33 +559,56 @@ def _config_pairs(environment):
             for i in range(count)}
 
 
-def test_every_ordinary_read_still_refuses_every_protocol():
+def _transport_probe(directory, url, transports=()):
+    return _gitread.probe(directory, "ls-remote", url, negative_statuses=(),
+                          allow_transports=transports)
+
+
+def test_every_ordinary_read_still_refuses_every_protocol(tmp_path):
     """The negative control, and it is the point of the whole exercise. A
     rehearsal that only proved the postcondition works would hide a global
-    widening."""
-    pairs = _config_pairs(_gitread._environment(None))
-    assert pairs["protocol.allow"] == "never"
-    assert not any(key.startswith("protocol.") and key.endswith(".allow")
-                   and key not in ("protocol.allow", "protocol.file.allow")
-                   for key in pairs), sorted(pairs)
+    widening.
+
+    **Asked of Git, not of a dictionary.** This used to read the environment
+    `gitread` built and assert on its `GIT_CONFIG_*` pairs. That environment is no
+    longer what a read runs in — `tools/sterile.py` builds one — and the old test
+    stayed green about a code path no governed read executes. It now asserts the
+    behaviour, which is what the pairs were ever standing in for.
+    """
+    repo = tmp_path / "ordinary"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=repo, check=True,
+                   capture_output=True)
+    for url in ("ssh://git@no-such-host.invalid/x.git", "https://no-such-host.invalid/x.git",
+                "git://no-such-host.invalid/x.git"):
+        answer = _transport_probe(repo, url)
+        assert "not allowed" in answer.detail, f"{url}: {answer.detail}"
 
 
-def test_the_widening_names_transports_beside_the_standing_refusal():
-    """`protocol.allow = never` is not relaxed; specific protocols are added
-    beside it, and Git consults the specific key first. Everything unnamed
-    stays refused even inside the widened operation."""
-    pairs = _config_pairs(_gitread._environment(None, ("ssh", "https")))
-    assert pairs["protocol.allow"] == "never"
-    assert pairs["protocol.ssh.allow"] == "always"
-    assert pairs["protocol.https.allow"] == "always"
-    assert "protocol.ftp.allow" not in pairs
+def test_the_widening_names_transports_beside_the_standing_refusal(tmp_path):
+    """The standing refusal is not relaxed; a named transport is enabled beside
+    it, and everything unnamed stays refused inside the widened operation."""
+    repo = tmp_path / "widened"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=repo, check=True,
+                   capture_output=True)
+    enabled = _transport_probe(repo, "ssh://git@no-such-host.invalid/x.git", ("ssh", "https"))
+    assert "transport 'ssh' not allowed" not in enabled.detail, enabled.detail
+    still_refused = _transport_probe(repo, "git://no-such-host.invalid/x.git", ("ssh", "https"))
+    assert "not allowed" in still_refused.detail, still_refused.detail
 
 
-def test_a_transport_this_module_will_not_enable_is_refused_by_name():
+def test_a_transport_this_module_will_not_enable_is_refused_by_name(tmp_path):
     """Free-form protocol names would let a caller re-enable an unreviewed
-    transport by spelling it."""
+    transport by spelling it. This bounds the CALLER, not the subject: a
+    repository's own protocol settings are not read at all."""
+    repo = tmp_path / "unlisted"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=repo, check=True,
+                   capture_output=True)
     with pytest.raises(_IntegrityError) as caught:
-        _gitread._environment(None, ("ftp",))
+        _gitread.probe(repo, "ls-remote", "ftp://no-such-host.invalid/x.git",
+                       negative_statuses=(), allow_transports=("ftp",))
     assert "ssh" in caught.value.render() and "ftp" in caught.value.render()
 
 
@@ -620,23 +643,6 @@ def test_the_hardening_is_what_refused_ssh_and_the_scoped_widening_is_what_lifts
     # failure from "not allowed" to "unable to fork" without restoring anything.
     assert "unable to fork" not in widened.detail, widened.detail
     assert "cannot run :" not in widened.detail, widened.detail
-
-
-def test_the_ssh_command_neutralisation_is_lifted_only_where_ssh_is_enabled():
-    """`core.sshCommand = ""` does not mean "no ssh command" — Git runs the
-    empty string. This module recorded that exact lesson for `diff.external`
-    and set the ssh key to empty anyway."""
-    ordinary = _config_pairs(_gitread._environment(None))
-    assert ordinary["core.sshCommand"] == "", "the neutralisation must stand everywhere else"
-
-    widened = _config_pairs(_gitread._environment(None, ("ssh",)))
-    assert "core.sshCommand" not in widened, (
-        "absent, not empty: Git falls through to its own default, and every ambient GIT_* "
-        "variable is already stripped"
-    )
-
-    https_only = _config_pairs(_gitread._environment(None, ("https",)))
-    assert https_only["core.sshCommand"] == "", "a transport that needs no external program lifts nothing"
 
 
 def test_the_postcondition_says_why_a_remote_could_not_be_read(tmp_path):

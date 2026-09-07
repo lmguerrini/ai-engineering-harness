@@ -931,20 +931,6 @@ def _ssh_program_repo(tmp_path, name):
     return repo, marker
 
 
-def test_every_conditional_closure_is_known_to_the_inspection(tmp_path):
-    """O4. Asked of the behaviour, not of the source: enabling each allowable
-    transport and seeing which neutralisation disappears is what actually
-    decides whether a closure still holds. A future override removed on the same
-    condition arrives here as a failure rather than as a silent exemption."""
-    baseline = set(gitread._config_environment(()))
-    for transport in gitread.ALLOWABLE_TRANSPORTS:
-        removed = baseline - set(gitread._config_environment((transport,)))
-        for key in removed:
-            assert gitread.CONDITIONAL_CLOSURES.get(key.lower()) == transport, (
-                f"enabling {transport} removes the neutralisation of {key}, so any closure "
-                f"claimed for it stops holding — declare it in CONDITIONAL_CLOSURES")
-
-
 def _transport_reenable_repo(tmp_path, name, *, worktree_scope=False):
     """A repository that turns a transport back on and names a program to run
     over it. The marker is written by the program, so execution is a fact on

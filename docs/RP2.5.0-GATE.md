@@ -67,8 +67,13 @@ than left for one to discover.
 | Committed at | `154be5fe2547293aa8a2a16bb1edbe523bb35b7c`, **before any implementation existed** |
 | Checked by | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A1-sterile-execution.md --repository .` → `DESIGN FROZEN` |
 
-Four alternatives were rejected with reasons, including the observational design
-kept as an oracle because detection after execution is not a barrier.
+`design_record.py` tallies **three** rejected alternatives for A1, and the record
+considers five designs. The fifth — the observational one, kept as an oracle
+because detection after execution is not a barrier — has the verdict
+`REJECTED as a barrier`, which the parser does not count as `REJECTED`. Three
+rejected outright, one rejected in the role it was proposed for and retained in
+another. An independent certification read the mismatch as an inconsistency, and
+it was: the prose said four where the tool says three.
 
 ## What has been measured
 
@@ -260,6 +265,36 @@ The clean-room clone is the one that matters most for the design records: it
 establishes that both `**Base revision:**` values still resolve in a repository
 that has only this line's commits, which a rewrite of any commit in that ancestry
 would end.
+
+## What the first independent certification found
+
+A whole-candidate certification returned **READY** with no release blocker, three
+non-blocking findings and one coverage gap. All four were reproduced here and all
+four are repaired, because a non-blocking finding that is true is still true.
+
+| Finding | What it was | What was done |
+|---|---|---|
+| the record said "three" behaviour changes where the changelog lists more | loose prose in this record | the count is gone; the changelog's list is the disclosure |
+| `design_record` tallies three rejected designs where this record said four | the parser does not count `REJECTED as a barrier` | stated above, in the tool's terms and the record's |
+| `ALLOWABLE_TRANSPORTS` is consulted in a refusal, while A1 lists it among names that decide nothing | the design's phrasing was wrong | it is a **caller-capability** allowlist, not a projection: it bounds what a caller may ask to enable, and the subject's own transport settings are not read at all. Said where the constant is defined |
+| the mutation and hostile-matrix figures cited scripts outside the release | a reader could reproduce the property but not the number | both ship as `docs/acceptance/rp2.5.0-mutation.py` and `docs/acceptance/rp2.5.0-hostile-matrix.py` |
+
+**And a finding the certification's third point led to, which was larger than the
+point itself.** Chasing why `ALLOWABLE_TRANSPORTS` appeared to be consulted twice
+showed that `_NEUTRALISED_CONFIG`, `_config_environment`, `_GIT_ENVIRONMENT` and
+`_environment` — the whole pre-2.5.0 environment layer — were still in
+`tools/gitread.py` with **no production caller**. They were unreachable, so they
+could not disagree with anything; but **seven tests still exercised them**, and
+those tests were green about a code path no governed read executes. That is this
+pack's own recurrence class *oracle satisfied for a reason other than its claim*,
+sitting inside the release built to end a different one.
+
+The machinery is deleted. Six of the seven tests were rewritten to assert the
+same guarantees against the live path — a transport refusal is now measured by
+asking Git to reach a remote rather than by reading a dictionary the code no
+longer builds — and one, which asserted that enabling a transport lifts a
+neutralisation of `core.sshCommand`, is gone with the mechanism: the sterile
+configuration never sets that key, because the subject's is not read.
 
 ## Evolution evidence
 

@@ -68,51 +68,6 @@ def _repository(repository: str | Path) -> str:
     return str(Path(repository))
 
 
-#: Configuration whose value names a program Git will execute, neutralised for
-#: *every* invocation rather than at the call sites somebody remembered.
-#:
-#: A repository-local setting cannot override an environment-supplied one, so
-#: this holds even against a worker that writes whatever it likes into its own
-#: config. Empty values are used where Git wants a command, because an empty
-#: command is not run; `/dev/null` where Git wants a path to read.
-_NEUTRALISED_CONFIG = {
-    "core.hooksPath": "/dev/null",
-    "core.attributesFile": "/dev/null",
-    "core.fsmonitor": "",
-    "core.alternateRefsCommand": "",
-    "credential.helper": "",
-    # Runs a program to obtain a password. Neutralised for the same reason as
-    # every other key in this table.
-    "core.askPass": "",
-    # A nested Git process is a second process, and the parent's command line
-    # does not reach it. `diff --submodule=diff` ran the SUBMODULE's own
-    # `diff.external` straight through the hardening that protects the parent —
-    # found by a blind reader after the first hardening landed. The option is
-    # refused and recursion is turned off in config, because two answers to
-    # "will this recurse" are better than one when the cost of the wrong answer
-    # is running somebody else's program.
-    "submodule.recurse": "false",
-    "core.sshCommand": "",
-    "core.editor": "",
-    "core.pager": "",
-    # `diff.external` is deliberately absent. An empty value does not mean "no
-    # external diff" — Git tries to run the empty string and every diff dies
-    # with "cannot run". The diff family has its own switch for this.
-    "sequence.editor": "",
-    "uploadpack.packObjectsHook": "",
-    # Signing runs a program of the repository's choosing.
-    "commit.gpgSign": "false",
-    "tag.gpgSign": "false",
-    "gpg.program": "",
-    "gpg.openpgp.program": "",
-    "gpg.x509.program": "",
-    "gpg.ssh.program": "",
-    # Only the transports this module actually uses.
-    "protocol.allow": "never",
-    "protocol.file.allow": "always",
-}
-
-
 #: Every Git command this module may run, and nothing else.
 #:
 #: `DECISIONS.md` D2 extracted this module precisely to leave the write verbs
@@ -239,114 +194,15 @@ TRANSPORT_VERBS = frozenset({"ls-remote"})
 #: it, and a caller that names it now gets the same refusal as one naming a
 #: protocol that does not exist. Narrowing the exception is the repair; there
 #: was no way to keep the protocol and close the hole.
+#:
+#: Transports a caller may deliberately enable for the one operation that must
+#: cross a boundary. **NOT a projection.** The names below are a bound on what a
+#: CALLER may ask for, and `_run` refuses one that is not here — a caller-capability
+#: allowlist, which is a different question from the one this release replaced. The
+#: subject's own `protocol.<name>.allow` is not read at all, so nothing a repository
+#: writes is consulted here. An independent certification read the design's list of
+#: projections as covering this name; it does not, and the design says so now.
 ALLOWABLE_TRANSPORTS = ("ssh", "https", "http", "file")
-
-
-def _config_environment(allow_transports: tuple[str, ...] = (),
-                        refuse_protocols: tuple[str, ...] = ()) -> dict[str, str]:
-    """`_NEUTRALISED_CONFIG` in the form Git reads from the environment.
-
-    `allow_transports` re-enables **named** protocols for one invocation, and
-    does so by adding `protocol.<name>.allow` entries beside the standing
-    `protocol.allow = never` rather than by relaxing it.
-
-    Git consults `protocol.<name>.allow` first and falls back to `protocol.allow`
-    — and for a while this module concluded from that alone that every transport
-    the caller did not name stays refused. It does not follow: the two are
-    DIFFERENT KEYS, so the general refusal at command scope never contests the
-    specific one, and the **repository being read** can set the specific one. A
-    repository declaring `protocol.ext.allow = always` and an `ext::` remote had
-    its own program executed with no transport enabled by any caller, and
-    falsified the `core.gitProxy` closure next door, which says `git://` is not
-    enablable.
-
-    `refuse_protocols` closes that: the transport names the repository itself
-    mentions are pinned to `never` HERE, at command scope, where the same key
-    outranks the repository's copy. The names come from the subject rather than
-    from a list of transports someone remembered, because `protocol.<name>.allow`
-    accepts any remote-helper name.
-
-    It exists because a check that must cross a boundary was disabled by the
-    hardening that correctly protects every other read: the postcondition after
-    a push could not read any real remote, so the one observation of what a
-    push actually did was unavailable on every transport but `file`.
-    """
-    settings = dict(_NEUTRALISED_CONFIG)
-    #: Transports that reach the network through an external program, and the
-    #: neutralisation that has to be lifted with them.
-    #:
-    #: **Enabling the transport is not enough**, and finding that out is what
-    #: makes this a second defect rather than a detail. `core.sshCommand = ""`
-    #: does not mean "no ssh command": Git tries to run the empty string and
-    #: dies with `cannot run :`. This module already recorded that exact lesson
-    #: two entries above, for `diff.external`, and deliberately left that key
-    #: absent for the same reason — and then set the ssh one to empty anyway.
-    #: So a caller that enabled `ssh` got past the protocol refusal and into
-    #: `unable to fork`, which is the same non-functional postcondition wearing
-    #: a different error.
-    #:
-    #: Removed rather than set: absent, Git falls through to its own default,
-    #: which is deterministic here because every ambient `GIT_*` variable is
-    #: already stripped and the global and system files are `/dev/null`.
-    for transport in allow_transports:
-        if transport not in ALLOWABLE_TRANSPORTS:
-            raise IntegrityError(
-                "that transport is not one this module will enable for an operation",
-                transport=transport, allowable=", ".join(ALLOWABLE_TRANSPORTS),
-            )
-        settings[f"protocol.{transport}.allow"] = "always"
-        if transport == "ssh":
-            settings.pop("core.sshCommand", None)
-    # Pinned AFTER the enablements above, and never over one of them: a caller
-    # that deliberately enabled a transport keeps it, and everything else the
-    # repository tried to turn on is turned back off by the same key at a scope
-    # it cannot outrank.
-    # EXACTLY, not case-insensitively. `protocol.File.allow` and
-    # `protocol.file.allow` name different transports to Git — the first enables
-    # a `git-remote-File` helper — so treating them as the same word let a
-    # repository keep a helper enabled by spelling it differently from the
-    # transport the caller asked for. Reproduced: with `file` enabled and the
-    # repository declaring `File`, the helper ran. Only the spelling the caller
-    # actually enabled is left alone.
-    enabled = {str(transport).strip() for transport in allow_transports}
-    for name in sorted({str(one).strip() for one in refuse_protocols}):
-        if name and name not in enabled:
-            settings[f"protocol.{name}.allow"] = "never"
-    environment = {"GIT_CONFIG_COUNT": str(len(settings))}
-    for index, (key, value) in enumerate(sorted(settings.items())):
-        environment[f"GIT_CONFIG_KEY_{index}"] = key
-        environment[f"GIT_CONFIG_VALUE_{index}"] = value
-    return environment
-
-
-#: Git reads its most fundamental arguments from the environment. `GIT_DIR`,
-#: `GIT_WORK_TREE`, `GIT_OBJECT_DIRECTORY`, `GIT_CONFIG_GLOBAL` and their
-#: relatives can point every invocation at a different repository, different
-#: objects or a different configuration than the one the caller named.
-#: Inheriting the whole environment and then setting two variables controlled
-#: two variables. Every `GIT_*` value is supplied here and none is inherited.
-_GIT_ENVIRONMENT = {
-    "GIT_NO_REPLACE_OBJECTS": "1",
-    # No ambient user or machine configuration is read. Git treats a missing
-    # file as empty.
-    "GIT_CONFIG_GLOBAL": "/dev/null",
-    "GIT_CONFIG_SYSTEM": "/dev/null",
-    # No invocation of this module's Git may stop to ask a human for
-    # credentials. This module is not interactive, so a prompt is a hang.
-    "GIT_TERMINAL_PROMPT": "0",
-    "GIT_ATTR_NOSYSTEM": "1",
-}
-
-
-def _environment(
-    overlay: dict[str, str] | None, allow_transports: tuple[str, ...] = (),
-    refuse_protocols: tuple[str, ...] = (),
-) -> dict[str, str]:
-    inherited = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
-    return {
-        **inherited, **_GIT_ENVIRONMENT,
-        **_config_environment(allow_transports, refuse_protocols), **(overlay or {})
-    }
 
 
 #: Everything this module does outside itself, declared before it does any of
