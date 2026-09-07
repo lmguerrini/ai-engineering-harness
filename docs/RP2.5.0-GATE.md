@@ -44,14 +44,24 @@ over the non-test modules reports **additions only**:
 point of keeping the enumeration's names as projections: the mechanism behind them
 is gone and the surface a consumer imports is not.
 
-Over the WHOLE compared surface — test modules included — the same command reports
-**92 added public names, 10 removed and 5 changed signatures**, and every one of
-those removals and signature changes is inside `tools/tests/`. That is not a
-compatibility event: `tools/tests/` is not a surface anything imports, and it is
-where the obsolete mechanism's tests were removed and rewritten. Both numbers are
-stated because an earlier draft of this record and of `PACK_MANIFEST.json` gave
-only the first and described it as the whole, which the cited command contradicts
-in its own output.
+Over the WHOLE compared surface — test modules included — the same command also
+reports removals and signature changes, **and every one of them is inside
+`tools/tests/`**. That is not a compatibility event: `tools/tests/` is not a
+surface anything imports, and it is where the obsolete mechanism's tests were
+removed and rewritten.
+
+**No totals are written here, and that is the second time this record has had to
+learn it.** An earlier draft claimed the tool reported "additions only", which its
+own output contradicts. The correction then stated the three totals — and the very
+commit that stated them added two test functions, so "92 added public names" was
+already the PREVIOUS revision's figure when it was written, and an independent
+certification recomputed 94 and called it a release blocker. It was right to. A
+figure that changes whenever the tree changes cannot be transcribed into prose that
+ships with the tree. What is stated instead is the claim the version actually rests
+on, and that claim is bound by a test rather than by a sentence:
+`test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline`
+compares every `tools/*.py` against the declared baseline and fails on any removal
+or signature change outside `tools/tests/`.
 
 **And a blind spot in that derivation, stated rather than left to be found.**
 `surface_diff` compares modules present at both revisions, so `tools/sterile.py`
@@ -197,9 +207,8 @@ byte-identical afterwards.
 The baseline population is **not stated here**. This record used to say
 twenty-four oracle tests; collection said twenty-two, and neither number could be
 recomputed from anything that ships — the same defect as a figure cited from a
-script that does not exist. The harness now derives and prints it
-(`10 oracle selectors green over 23 collected tests`), so the figure a reader
-recomputes is the only one written down.
+script that does not exist. The harness now derives and prints its own population on its baseline line, so the
+figure a reader recomputes is the only one that exists. None is repeated here.
 
 Scoring did not merely confirm the implementation. It found three things a
 reading had not:
@@ -277,7 +286,7 @@ the full baseline is spelled out and the two design records are two invocations.
 | release identity | `python3 tools/pack_pin.py . --version <VERSION> --sha <HEAD> --digest <manifest digest> --state IN_PROGRESS` | verified |
 | release delta | `python3 tools/release_delta.py . --baseline 9d906ce64bd69cb1a29594a7110829da7df5d996` | DELTA COMPLETE, nothing omitted |
 | design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A1-sterile-execution.md --repository .` then the same for `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` | DESIGN FROZEN, both |
-| surface derivation | `python3 tools/surface_diff.py . 9d906ce… HEAD` | additions only over the NON-TEST modules; 92 added, 10 removed and 5 changed signatures over the whole compared surface, every removal and change inside `tools/tests/` |
+| surface derivation | `python3 tools/surface_diff.py . 9d906ce64bd69cb1a29594a7110829da7df5d996 HEAD` | additions only over the NON-TEST modules; every removal and every signature change it reports is inside `tools/tests/`. No totals are quoted here — see *Why this release is not 2.4.2* for why |
 | full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
 | clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | every gate passed and the suite was green, with a tree reporting nothing changed |
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
@@ -301,7 +310,7 @@ four are repaired, because a non-blocking finding that is true is still true.
 | the record said "three" behaviour changes where the changelog lists more | loose prose in this record | the count is gone; the changelog's list is the disclosure |
 | `design_record` tallies three rejected designs where this record said four | the parser does not count `REJECTED as a barrier` | stated above, in the tool's terms and the record's |
 | `ALLOWABLE_TRANSPORTS` is consulted in a refusal, while A1 lists it among names that decide nothing | the design's phrasing was wrong | it is a **caller-capability** allowlist, not a projection: it bounds what a caller may ask to enable, and the subject's own transport settings are not read at all. Said where the constant is defined |
-| the mutation and hostile-matrix figures cited scripts outside the release | a reader could reproduce the property but not the number | both ship as `docs/acceptance/rp2.5.0-mutation.py` and `docs/acceptance/rp2.5.0-hostile-matrix.py`. The pre-design prototype's "31 hostile cases" is gone: the shipped script reports 13 cases with 9 carrying a positive control, and that is the figure a reader can recompute |
+| the mutation and hostile-matrix figures cited scripts outside the release | a reader could reproduce the property but not the number | both ship as `docs/acceptance/rp2.5.0-mutation.py` and `docs/acceptance/rp2.5.0-hostile-matrix.py`. The pre-design prototype's "31 hostile cases" is gone from this record: the shipped script counts its own cases and its own positive controls in its last line, and THAT is the figure a reader recomputes. No number is written here, because one was — "13 cases with 9" — and it went stale the moment a row was added |
 
 **And a finding the certification's third point led to, which was larger than the
 point itself.** Chasing why `ALLOWABLE_TRANSPORTS` appeared to be consulted twice
@@ -419,11 +428,14 @@ new one.
 
 ## What the second qualification pass found in this release's own work
 
-The first independent certification returned READY on this tree. A second pass ran
-anyway, on the principle that a certification is evidence and not a guarantee, and
-it found four defects the certification had not — one of them in the mechanism this
-release exists to introduce, and two of them in the evidence that ships as proof.
-All four are repaired here, each reproduced before it was repaired.
+The first independent certification returned READY on revision `3dec69a`, the
+parent of this one. A second pass ran anyway, on the principle that a certification
+is evidence and not a guarantee, and it found four defects that certification had
+not: one in the mechanism this release exists to introduce, and three in the
+oracles whose whole job is to catch exactly that. All four are repaired here, each
+reproduced before it was repaired — which is why the READY on `3dec69a` is
+SUPERSEDED rather than carried forward. A certification belongs to the tree it
+read, and this is not that tree.
 
 **A shipped tool reached the operator as a traceback, on a repository nobody had to
 be hostile to build.** `os.path.lexists(here / ".git")` is answered by the
@@ -553,6 +565,35 @@ helper have no remaining caller, and `sterile.build`'s `needs_working_tree=False
 branch and its `overlay` parameter have no caller either; they are disclosed here
 rather than removed, because churn in a candidate under certification buys less
 than an accurate record does.
+
+### And what the certification of THAT work found, which was the same defect again
+
+The pass described above was itself certified, and returned **NOT_READY** on two
+release blockers. Both were in the records the pass had just rewritten, and both
+were the class it had just spent a day closing.
+
+`PACK_MANIFEST.json` and this record stated that `surface_diff` reports **92**
+added public names. The tree reports 94. The 92 was correct at the PARENT revision
+and stopped being correct in the very commit that wrote it down, because that
+commit added two test functions — so the sentence was stale before it was
+committed, in the field that carries the version derivation, under the words
+"measured rather than transcribed". And this record told a reader that the shipped
+hostile matrix "reports 13 cases with 9 carrying a positive control, and that is
+the figure a reader can recompute", four hundred lines above a later sentence
+saying the matrix had gained a row. A reader who accepts the invitation gets 14
+and 10.
+
+Neither figure was load-bearing — the certification confirmed independently that
+no removal or signature change falls outside `tools/tests/`, and that the matrix
+passes with a positive control on every row it claims one for. **The defect was
+that they were written down at all.** A count a shipped command derives does not
+belong in prose that ships beside it, because prose does not get recomputed when
+the tree changes and the command does. Every such total is now gone from this
+record and from the manifest, replaced by the claim a test binds and by a pointer
+to the line the script prints. That is the third time this release has met this
+class — a figure from a script that did not ship, then a repair claim that did not
+match the tree, and now two counts that aged in place — and it is the first time
+the answer has been to stop writing the number rather than to correct it.
 
 ## Not yet done
 
