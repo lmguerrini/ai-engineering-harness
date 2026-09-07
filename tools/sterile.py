@@ -304,6 +304,19 @@ def build_git_directory(subject: Path, into: Path) -> tuple:
     # and the subject is left byte-identical by every governed read.
     if (gitdir / "index").is_file():
         shutil.copyfile(gitdir / "index", into / "index")
+        # A SPLIT INDEX NAMES A SECOND FILE, AND THE BUILD HAS TO CARRY IT TOO.
+        #
+        # Under `core.splitIndex` the bulk of the entries live in a
+        # `sharedindex.<oid>` file and the `index` only references it. Copying one
+        # and not the other made Git exit 128 with "unable to read sharedindex",
+        # so this boundary REFUSED an ordinary repository that real Git reads
+        # without complaint. Fail-closed is the right polarity and it is not a
+        # licence to over-refuse: the release before this one reached a convergence
+        # blocker with an over-refusal in one hand and an under-refusal in the
+        # other. Both files are index data, and neither names a program.
+        for shared in gitdir.glob("sharedindex.*"):
+            if shared.is_file():
+                shutil.copyfile(shared, into / shared.name)
     for relative in CARRIED_DATA:
         source = gitdir / relative
         if not source.is_file():

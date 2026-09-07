@@ -1978,6 +1978,33 @@ def test_a_directory_the_walk_cannot_read_refuses_instead_of_answering(tmp_path)
     )
 
 
+def test_a_split_index_is_carried_rather_than_refused(tmp_path):
+    """OVER-REFUSAL IS A FAILURE, NOT A SAFE DEFAULT.
+
+    `core.splitIndex` leaves the bulk of the entries in a `sharedindex.<oid>` file
+    and the `index` only references it. The build copied the index and not the file
+    it names, so Git exited 128 with "unable to read sharedindex" and this boundary
+    refused an ordinary repository real Git reads without complaint. The release
+    before this one reached a convergence blocker holding an over-refusal in one
+    hand and an under-refusal in the other, so a refusal is only correct when the
+    read genuinely cannot be reproduced.
+
+    Both files are index DATA and neither names a program, so carrying the second
+    is the same decision as carrying the first.
+    """
+    root = _repo(tmp_path, "splitindex")
+    _git(root, "update-index", "--split-index")
+    shared = list((root / ".git").glob("sharedindex.*"))
+    assert shared, "the fixture has no shared index, so this test would prove nothing"
+    (root / "f.txt").write_text("changed\n")
+
+    expected, got = _exactly_as_real_git(root, "status", "--porcelain")
+    assert expected is not None, "real git refused the fixture, so this proves nothing"
+    assert got == expected, (
+        f"a split index disagreed with real git: {got!r} against {expected!r}"
+    )
+
+
 def _exactly_as_real_git(repo, *arguments):
     """Byte for byte, through `_run` rather than `probe`.
 
@@ -2008,6 +2035,17 @@ def test_the_sterile_answer_equals_real_gits_answer(tmp_path, shape):
         (repo / "f.txt").write_text("one\r\ntwo\r\n", newline="")
         _git(repo, "add", "-A")
         _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c")
+        # REWRITTEN AFTER THE COMMIT, ON PURPOSE, WITH THE SAME BYTES.
+        #
+        # Git trusts the index's cached stat and does not re-read a file whose
+        # mtime and size still match it, so whether this row exercises end-of-line
+        # conversion AT ALL depended on landing inside Git's one-second "racily
+        # clean" window. It usually did, and occasionally did not: the mutant that
+        # drops the content-encoding descriptors was killed on its own every time
+        # and SURVIVED intermittently inside a full mutation run. An oracle whose
+        # discrimination depends on the clock is not an oracle. Touching the file
+        # makes the cached stat stale, so Git must compare content every time.
+        (repo / "f.txt").write_text("one\r\ntwo\r\n", newline="")
     elif shape == "unborn":
         (repo / "f.txt").write_text("x\n")
     else:

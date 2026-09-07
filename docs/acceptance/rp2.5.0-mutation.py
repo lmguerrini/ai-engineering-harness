@@ -164,6 +164,7 @@ def main():
     print(f"  {len(oracles)} oracle selectors green over {collected} collected tests\n")
 
     results = []
+    unstable: list = []
     try:
         for index, (name, path, before, after, oracle) in enumerate(MUTANTS):
             if ARGUMENTS.only is not None and index != ARGUMENTS.only:
@@ -178,6 +179,22 @@ def main():
             (ROOT / path).write_text(source.replace(before, after, 1), encoding="utf-8")
             try:
                 code, summary, seconds = run(oracle)
+                if code == 0:
+                    # A SURVIVOR IS A CLAIM ABOUT AN ORACLE, AND ONE OBSERVATION IS
+                    # NOT ONE. A mutant killed on its own every time was seen to
+                    # survive inside a full run: the oracle it belonged to compared
+                    # end-of-line conversion only when the fixture landed inside
+                    # Git's one-second racily-clean window, so under load it
+                    # sometimes compared nothing and passed. The fixture is fixed,
+                    # and this stands behind it — because the next oracle to depend
+                    # on the clock should cost a visible UNSTABLE line rather than a
+                    # quietly wrong score.
+                    again, again_summary, again_seconds = run(oracle)
+                    seconds += again_seconds
+                    if again != 0:
+                        print(f"[{index}] UNSTABLE   {name}  survived once, killed on re-run")
+                        unstable.append((index, name))
+                        code, summary = again, again_summary
             finally:
                 restore()
             verdict = "KILLED" if code != 0 else "SURVIVED"
@@ -194,11 +211,16 @@ def main():
     killed = [r for r in results if r[2] == "KILLED"]
     survived = [r for r in results if r[2] == "SURVIVED"]
     malformed = [r for r in results if r[2] == "MALFORMED"]
+    if unstable:
+        print(f"\n{len(unstable)} mutant(s) gave a different verdict on re-run, which means an "
+              f"oracle here does not discriminate deterministically:")
+        for index, name in unstable:
+            print(f"  UNSTABLE [{index}] {name}")
     print(f"\n{len(killed)} killed, {len(survived)} survived, {len(malformed)} malformed, "
           f"{len(results)} attempted")
     for row in survived + malformed:
         print(f"  {row[2]:9} [{row[0]}] {row[1]}  {row[3]}")
-    return 0 if not survived and not malformed else 1
+    return 0 if not survived and not malformed and not unstable else 1
 
 
 if __name__ == "__main__":

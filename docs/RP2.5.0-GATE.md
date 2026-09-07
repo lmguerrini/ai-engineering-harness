@@ -695,6 +695,95 @@ fails, the workspace is not closable), so the exposure is a wrong answer to a
 question no shipped caller asks. **Unrepaired, stated, and the first thing a later
 release should take up.**
 
+### Where a governed answer deliberately differs from real Git, said out loud
+
+Three more divergences were reported by the same certification. Each was measured
+here rather than accepted, and they did not all end the same way, which is the
+reason for listing them together.
+
+**A split index was an over-refusal, and is repaired.** Under `core.splitIndex` the
+entries live in a `sharedindex.<oid>` file and the `index` only points at it. The
+build copied the index and not the file it names, so Git exited 128 with "unable to
+read sharedindex" and this boundary **refused an ordinary repository that real Git
+reads without complaint**. Fail-closed is the correct polarity and it is not a
+licence to over-refuse: the release before this one reached its convergence blocker
+holding an over-refusal in one hand and an under-refusal in the other. Both files
+are index data, neither names a program, and the build now carries both.
+
+**Replace refs are deliberately not honoured, and that was never written down until
+now.** `GIT_NO_REPLACE_OBJECTS=1` is set in the built environment, so
+`git log -1 --format=%s` on a repository carrying a replacement reports the real
+commit where real Git reports the replacement. That is a defensible choice — a
+replace ref is a local rewriting of what history says, and a governed read answering
+about the objects that are actually there is the more truthful of the two. It stops
+being defensible the moment it is undisclosed, because a caller cannot then tell
+which of the two answers it is holding. It is a **stated divergence** from here on.
+`info/grafts`, the deprecated ancestor of the same feature, is not carried either.
+
+**And one reported divergence that is not one.** `core.quotepath` was said to make
+the two disagree about a non-ASCII path. Measured in a clean environment they agree
+exactly — both print the same escaped name, and `-z` agrees as well. They differ
+only where the *operator* has set `core.quotepath=false`, which is the same
+deliberate class as the operator's global ignore file: this boundary does not read
+the machine's preferences, and the release cannot vouch for rules it cannot see.
+Written down because a reported finding that turns out to be the design working is
+worth recording as carefully as one that turns out to be a defect.
+
+### The certification that returned READY, and the two things it still found
+
+A certification of this line returned **READY**, with no release blocker: the
+invariant held when asked of Git directly, no hostile fixture executed anything
+against live positive controls, unreproducible states refused, answers matched real
+Git across every filesystem shape it could build, and every record claim it
+recomputed was true. It attacked the three newest repairs with a mutation diagonal
+and found each oracle precise — reverting symlink-first fails only the symlink
+oracle, removing the metadata copy fails only the cross-device one, removing the
+walk's error handler fails only the unreadable-directory one.
+
+It also found two things worth writing down, and both are repaired or scoped here.
+
+**The suite was not deterministic, and the defect was in a fixture's ordering.** One
+run failed on `test_monitor_is_not_evidence_the_panel_renders_what_reconciliation_says`
+where the next passed. `declared_at` is recorded truncated to whole seconds, and the
+fixture wrote its sentinel BEFORE declaring the wait — so a file written a fraction
+of a second earlier compared as contemporaneous when both landed in the same second
+and as predating the wait when they straddled the boundary. The test asserted the
+first outcome and had been getting it by luck.
+
+The fixture now writes the sentinel AFTER declaring, which is the order a real
+coordinator uses — it declares a wait and the job then writes — and which is
+deterministic by construction rather than by observation: truncation can only move
+`declared_at` EARLIER, so a write that follows the declaration can never compare as
+preceding it, whatever the clock does. **An attempted repair inside
+`continuation.py` was discarded first, on the way to this one**, because measuring
+it against a forced straddle showed it changed nothing at all — it was a no-op that
+twelve consecutive green runs would have been happy to call a fix. Recorded because
+this release's whole argument is that a repair is what a measurement shows, not what
+a passing run permits.
+
+**And a related one in the mutation harness.** The same class turned up in the
+shipped evidence: the mutant that drops the content-encoding descriptors was killed
+every time on its own and survived intermittently inside a full run, because the
+oracle's end-of-line row only exercised conversion when its fixture landed inside
+Git's one-second racily-clean window — under load it sometimes compared nothing and
+passed. The fixture now touches its file after committing, so Git must compare
+content every time. Behind that, the harness no longer reports a survivor on one
+observation: it re-runs the oracle, and if the two disagree it prints an explicit
+`UNSTABLE` line and the run FAILS. An oracle whose discrimination depends on the
+clock should cost a visible failure, not a quietly wrong score.
+
+**Scoped, not repaired: the unreadable-directory refusal is broader than its
+reason.** The refusal exists because a view missing a subtree describes a repository
+that is not there. In two shapes the certification built, real Git answers cleanly
+and this boundary still refuses: an unreadable directory inside an EMBEDDED
+(non-submodule) repository, which Git never recurses into, and one inside a
+`.gitignore`d directory, which Git never reads. The missing subtree changes no
+answer Git would give, so the refusal is correct in polarity and wrong in reach.
+It is fail-closed, so it is safe, and it is stated here rather than narrowed at this
+stage because narrowing it means deciding which parts of a tree Git would have read
+— which is a design question and not an edit. **The next release should narrow it,
+and this record is the reason it will not be a surprise.**
+
 ## Not yet done
 
 The independent certifications, and the terminal gates that depend on them.

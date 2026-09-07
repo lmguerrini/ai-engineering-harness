@@ -544,11 +544,22 @@ def test_monitor_is_not_evidence_the_panel_renders_what_reconciliation_says(tmp_
     """
     import projection
 
-    (tmp_path / "j.md").write_text("a report", encoding="utf-8")
     watcher = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     try:
         record = _record(_path_wait(tmp_path, waiter=" ".join(
             progress.waiter_command("j", watcher.pid, sentinel=str(tmp_path / "j.md")))))
+        # THE SENTINEL IS WRITTEN AFTER THE WAIT IS DECLARED, WHICH IS BOTH THE
+        # REAL ORDER AND THE ONLY DETERMINISTIC ONE.
+        #
+        # `declared_at` is recorded truncated to whole seconds, so a sentinel
+        # written just BEFORE the declaration compares as contemporaneous when the
+        # two land in the same second and as predating it when they straddle the
+        # boundary. Written first, this test asserted COMPLETED_UNCONSUMED and got
+        # it by luck: an independent certification hit the other side of the
+        # boundary and the suite failed once in a run that otherwise passed. A
+        # coordinator declares a wait and the job then writes, so writing here in
+        # that order is what the guarantee is actually about.
+        (tmp_path / "j.md").write_text("a report", encoding="utf-8")
         rendered = projection._background_panel(record, tmp_path).render()
 
         # What reconciliation says, said by the panel.
