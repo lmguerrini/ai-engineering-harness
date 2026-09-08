@@ -290,7 +290,7 @@ the full baseline is spelled out and the two design records are two invocations.
 | full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
 | clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | every gate passed and the suite was green, with a tree reporting nothing changed |
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
-| frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 3825 comparisons over 25 fixtures and 153 read forms; the residual difference count and what each row is are in *The floor this release is measured against* below |
+| frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 8,600 comparisons over 43 fixtures and 200 read forms; every residual row is classified in *The floor this release is measured against* below |
 | hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
 | mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | every mutant killed, none malformed, subject byte-identical afterwards |
 | consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
@@ -699,33 +699,45 @@ release should take up.**
 ### The floor this release is measured against
 
 `docs/acceptance/rp2.5.0-floor-differential.py` calls the same public entry point on this release
-and on frozen 2.4.0, in separate interpreters, and compares raw bytes — answers and refusals alike
-— over 25 fixtures and 153 read forms. It needs a 2.4.0 checkout, named by `FLOOR_FROZEN_ROOT`,
-because the floor is a *release*, not a file. It writes its report outside the checkout so that
-running it does not unpin the tree.
+and on frozen 2.4.0, in separate interpreters, and compares raw bytes — answers and refusals alike.
+It needs a 2.4.0 checkout, named by `FLOOR_FROZEN_ROOT`, because the floor is a *release*, not a
+file, and it writes its report outside the checkout so running it does not unpin the tree.
 
-It found **339** differences on its first run. **175 of those were capability regressions and are
+**43 fixtures x 200 read forms = 8,600 comparisons.** It began at 25 x 153; the population was more
+than doubled deliberately, because a small corpus that finds nothing is weak evidence and this one
+had already proved that four capability regressions can hide from every other oracle. A further 221
+rows were added in which Git itself rejects the form on both sides; those are not differences and
+are not counted as such.
+
+Its first run found **339** differences, of which **175 were capability regressions and are
 repaired**: bare repositories (48), direct local-path `ls-remote` (125), a nested repository's
-`diff-index` (8), and sparse-checkout's long status (2). The residual **156** are, exactly:
+`diff-index` (8), and sparse-checkout's long status (2).
 
-* **100** `config --list` rows in its four spellings — the owned configuration root. Deliberate,
-  declared under *What a consumer will notice*, and not a regression.
-* **4** source-less `config --get` family rows on the sparse fixture — the deliberate refusal that
-  directs a caller to `config_with_origin` when `config` and `config.worktree` would both
-  contribute. A configuration-read semantics decision, unchanged here.
-* **51** `rev-parse --git-dir`, `--git-common-dir` and one `--show-toplevel` row, where this release
-  answers with the constructed view's temporary path. **This one is a regression and is not
-  repaired.** `_run` discards that directory in its `finally` block before returning, so the answer
-  is a path that does not exist by the time the caller holds it — frozen answered `.git`. Repairing
-  it means either answering the subject's own path or refusing by name, and both are public-semantics
-  decisions rather than bounded fixes. `--show-toplevel` returns the subject's real path in the
-  ordinary case and must not be "repaired" along with them.
-* **1** `status --porcelain -uall` row on a `.git`-as-a-file subject, where this release is the
-  correct side. See the divergence below.
+At the widened population it reports **334**. Every row is accounted for:
 
-**An empty result would not have been evidence**, and neither is this one on its own: 25 fixtures is
-a population, not a proof. What makes the number meaningful is that every row is either repaired,
-declared, or named above as an open regression.
+| rows | what they are | status |
+|---:|---|---|
+| 172 | `config --list` in four spellings | the owned configuration root — declared, not a regression |
+| 8 | source-less `config --get` family | the deliberate refusal directing callers to `config_with_origin` |
+| 90 | `rev-parse` path family | **a declared, unrepaired regression** — see the manifest's known limitations |
+| 46 | `core.worktree` redirection | **this release is right**: it reads the path the caller supplied, not the sibling the subject names. Already a declared limitation |
+| 10 | stat-staleness after a prior read | **this release is right**; see below |
+| 6 | `branch.upstream` / `branch.ab` missing from `status` | **a real regression**, repaired |
+| 1 | `.git`-as-a-file `status -uall` | **this release is right** — see the divergence below |
+| 1 | its NUL spelling | the same row |
+
+**The ten stat-staleness rows are worth stating carefully, because the corpus first misread them.**
+They were reported as a Unicode-normalisation defect in which this release invented a modification.
+It does not. Cold, on a fixture built from the corpus's own recipe, **this release, frozen 2.4.0 and
+real Git all report the same modification**. What differs is what a *previous* read did: frozen's
+`status` rewrites the subject's index, so its later `diff-index` sees a refreshed tree and answers
+clean, while this release never writes the subject and still sees the stale stat. The rows are an
+artifact of frozen answering about a subject it had just modified — the same shape as the
+`index.lock` divergence below. The repair is to refresh the harness's **own** index copy, never the
+subject's.
+
+**An empty result would not have been evidence, and neither is this one on its own.** What makes the
+number meaningful is that every row above is repaired, declared, or named as an open regression.
 
 ### Where a governed answer deliberately differs from real Git, said out loud
 

@@ -43,6 +43,34 @@ BASE_ENV = {
     "LANG": "C",
 }
 
+# The original release corpus is intentionally retained byte-for-byte as a
+# subset.  Keeping the widening labels explicit lets the generated report say
+# how often a newly added spelling was refused by Git on both sides.
+FLOOR_FIXTURE_COUNT = 25
+FLOOR_FORM_COUNT = 153
+ADDED_FORM_LABELS = frozenset({
+    "cat-file/batch-check-format", "cat-file/batch-check-nul", "cat-file/batch-nul",
+    "check-ignore/stdin-verbose-nul",
+    "diff/pathspec", "diff/pathspec-nul", "diff/pathspec-glob",
+    "diff-index/pathspec", "diff-index/pathspec-nul",
+    "diff-tree/pathspec", "diff-tree/pathspec-nul",
+    "for-each-ref/format-nul-atoms", "for-each-ref/format-peeled",
+    "for-each-ref/points-at", "for-each-ref/merged", "for-each-ref/contains",
+    "for-each-ref/stdin",
+    "log/pathspec", "log/pathspec-nul",
+    "ls-files/others-nul", "ls-files/ignored-nul", "ls-files/eol-nul",
+    "ls-files/pathspec", "ls-files/pathspec-nul",
+    "ls-remote/get-url", "ls-remote/symref-refs",
+    "ls-tree/nul", "ls-tree/pathspec", "ls-tree/pathspec-nul",
+    "merge-base/is-ancestor-reverse", "merge-base/octopus",
+    "rev-list/range", "rev-list/range-count", "rev-list/max-count", "rev-list/skip",
+    "rev-list/reverse", "rev-list/no-merges", "rev-list/objects-nul",
+    "show/pathspec", "show/pathspec-nul",
+    "show-ref/head", "show-ref/dereference", "show-ref/quiet-verify",
+    "status/ignored", "status/uall-nul",
+    "verify-pack/no-verbose", "verify-pack/no-stat-only",
+})
+
 
 @dataclass
 class Context:
@@ -68,6 +96,23 @@ def run_git(*args: str | Path, cwd: Path | None = None, check: bool = True) -> s
     return subprocess.run(
         ["git", *(str(arg) for arg in args)], cwd=str(cwd) if cwd else None,
         env=env_for_git(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=check,
+    )
+
+
+def run_git_input(
+    *args: str | Path, input_value: bytes, cwd: Path | None = None, check: bool = True,
+) -> subprocess.CompletedProcess:
+    """Run a deterministic setup command whose input is repository data.
+
+    This is only used to construct two Git trees which a checkout cannot
+    represent on this filesystem: an empty directory in a tree and two paths
+    which differ only in Unicode normalisation.  It does not run a helper or
+    inspect the host; it gives Git literal object/tree records.
+    """
+    return subprocess.run(
+        ["git", *(str(arg) for arg in args)], cwd=str(cwd) if cwd else None,
+        env=env_for_git(), input=input_value, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, check=check,
     )
 
@@ -296,6 +341,194 @@ def build_head_symlink(root: Path) -> Context:
     return ctx
 
 
+def build_core_worktree(root: Path) -> Context:
+    """A normal Git directory whose configured worktree is a sibling tree."""
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    redirected = root / "redirected-worktree"
+    shutil.copytree(ctx.subject, redirected, ignore=shutil.ignore_patterns(".git"))
+    write(redirected / "redirected-only.txt", "this is the configured worktree\n")
+    run_git("config", "core.worktree", str(redirected), cwd=ctx.subject)
+    return ctx
+
+
+def build_moved_main_worktree(root: Path) -> Context:
+    """A linked worktree still valid after its main checkout was renamed."""
+    main = ordinary(root / "main", worktree_changes=False)
+    linked = root / "linked"
+    run_git("worktree", "add", "-q", "-b", "moved-linked", linked, main.head, cwd=main.subject)
+    moved = root / "main-moved"
+    main.subject.rename(moved)
+    gitfile = linked / ".git"
+    old_gitdir = str(root / "main" / ".git" / "worktrees" / "linked")
+    new_gitdir = str(moved / ".git" / "worktrees" / "linked")
+    text = gitfile.read_text(encoding="utf-8")
+    if old_gitdir not in text:
+        raise RuntimeError("linked worktree gitfile did not name its original main worktree")
+    write(gitfile, text.replace(old_gitdir, new_gitdir))
+    return Context(linked, branch="moved-linked", parent=f"{main.head}^", remote=moved)
+
+
+def build_worktree_config(root: Path) -> Context:
+    """A linked worktree with a safe, non-sparse per-worktree setting."""
+    main = ordinary(root / "main", worktree_changes=False)
+    linked = root / "linked"
+    run_git("worktree", "add", "-q", "-b", "configured", linked, main.head, cwd=main.subject)
+    run_git("config", "extensions.worktreeConfig", "true", cwd=main.subject)
+    # This is ordinary configuration data, not a filter/diff/transport/helper
+    # setting.  It makes config.worktree a genuine second configuration root.
+    run_git("config", "--worktree", "feature.manyFiles", "true", cwd=linked)
+    return Context(linked, branch="configured", parent=f"{main.head}^", remote=main.subject)
+
+
+def build_nested_three_levels(root: Path) -> Context:
+    """Three independently initialised repositories nested in one another."""
+    outer = init_repo(root / "repo")
+    write(outer / "level-one" / "outer.txt", "outer\n")
+    commit(outer, "outer")
+    middle = init_repo(outer / "level-one")
+    write(middle / "level-two" / "middle.txt", "middle\n")
+    commit(middle, "middle")
+    leaf = init_repo(middle / "level-two")
+    write(leaf / "leaf.txt", "leaf\n")
+    commit(leaf, "leaf")
+    return Context(outer, paths={"nested": "level-one/outer.txt"})
+
+
+def build_detached_tag(root: Path) -> Context:
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    run_git("tag", "detached-release", ctx.head, cwd=ctx.subject)
+    run_git("checkout", "-q", "--detach", "detached-release", cwd=ctx.subject)
+    ctx.head = "HEAD"
+    ctx.tags = ["detached-release"]
+    return ctx
+
+
+def build_tag_chain(root: Path) -> Context:
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    run_git("tag", "-a", "annotated", "-m", "annotated release", ctx.head, cwd=ctx.subject)
+    tag_object = run_git("rev-parse", "annotated^{tag}", cwd=ctx.subject).stdout.decode().strip()
+    # update-ref deliberately makes a ref to the tag object itself rather than
+    # peeling it, which is the tag-of-a-tag shape Git's porcelain elides.
+    run_git("update-ref", "refs/tags/tag-of-tag", tag_object, cwd=ctx.subject)
+    ctx.tags = ["annotated", "tag-of-tag"]
+    return ctx
+
+
+def build_empty_tree_commit(root: Path) -> Context:
+    repo = init_repo(root / "repo")
+    run_git("commit", "--allow-empty", "-qm", "empty tree", cwd=repo)
+    return Context(repo)
+
+
+def build_merge_after_merge(root: Path) -> Context:
+    """Keep a conflict in progress after an earlier merge commit with two parents."""
+    repo = init_repo(root / "repo")
+    write(repo / "conflict.txt", "base\n")
+    commit(repo, "base")
+    run_git("checkout", "-q", "-b", "merge-side", cwd=repo)
+    write(repo / "side.txt", "side\n")
+    commit(repo, "side")
+    run_git("checkout", "-q", "main", cwd=repo)
+    write(repo / "main.txt", "main\n")
+    commit(repo, "main")
+    run_git("merge", "--no-ff", "-qm", "two-parent merge", "merge-side", cwd=repo)
+    run_git("checkout", "-q", "-b", "conflict-side", cwd=repo)
+    write(repo / "conflict.txt", "side conflict\n")
+    commit(repo, "conflict side")
+    run_git("checkout", "-q", "main", cwd=repo)
+    write(repo / "conflict.txt", "main conflict\n")
+    commit(repo, "main conflict")
+    run_git("merge", "conflict-side", cwd=repo, check=False)
+    return Context(repo, side="conflict-side", paths={"merge": "conflict.txt"})
+
+
+def build_binary_and_long_name(root: Path) -> Context:
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    write(ctx.subject / "binary.bin", b"binary\x00content\n")
+    write(ctx.subject / ("long-" + "x" * 220 + ".txt"), "long name\n")
+    commit(ctx.subject, "binary and long path")
+    ctx.head, ctx.parent = "HEAD", "HEAD^"
+    return ctx
+
+
+def build_unicode_normalisation(root: Path) -> Context:
+    """Put NFC and NFD names in one tree even on normalising filesystems."""
+    repo = init_repo(root / "repo")
+    nfc = "caf\u00e9.txt"
+    nfd = "cafe\u0301.txt"
+    write(repo / nfc, "normalised name\n")
+    blob = run_git("hash-object", "-w", nfc, cwd=repo).stdout.decode().strip()
+    for name in (nfc, nfd):
+        run_git("update-index", "--add", "--cacheinfo", f"100644,{blob},{name}", cwd=repo)
+    tree = run_git("write-tree", cwd=repo).stdout.decode().strip()
+    revision = run_git("commit-tree", tree, "-m", "NFC and NFD names", cwd=repo).stdout.decode().strip()
+    run_git("update-ref", "refs/heads/main", revision, cwd=repo)
+    return Context(repo, paths={"normal": nfc})
+
+
+def build_empty_directory_tree(root: Path) -> Context:
+    """An empty directory is representable in a tree though not a checkout."""
+    repo = init_repo(root / "repo")
+    empty_tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    tree = run_git_input(
+        "mktree", input_value=f"040000 tree {empty_tree}\tempty-dir\n".encode(), cwd=repo,
+    ).stdout.decode().strip()
+    revision = run_git("commit-tree", tree, "-m", "tree has empty directory", cwd=repo).stdout.decode().strip()
+    run_git("update-ref", "refs/heads/main", revision, cwd=repo)
+    return Context(repo)
+
+
+def build_ignore_case(root: Path, enabled: bool) -> Context:
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    write(ctx.subject / "CaseName.txt", "case-sensitive spelling\n")
+    commit(ctx.subject, "case spelling")
+    run_git("config", "core.ignoreCase", "true" if enabled else "false", cwd=ctx.subject)
+    ctx.head, ctx.parent = "HEAD", "HEAD^"
+    return ctx
+
+
+def build_attributes(root: Path) -> Context:
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    write(ctx.subject / ".gitattributes", "binary.bin -text\ntext.txt text\ncrlf.txt text eol=crlf\n")
+    write(ctx.subject / "binary.bin", b"binary\x00data\n")
+    write(ctx.subject / "text.txt", "text\n")
+    write(ctx.subject / "crlf.txt", "CRLF by attribute\n")
+    commit(ctx.subject, "attributes")
+    write(ctx.subject / "text.txt", "changed text\n")
+    ctx.head, ctx.parent = "HEAD", "HEAD^"
+    return ctx
+
+
+def build_shallow_clone(root: Path) -> Context:
+    source = ordinary(root / "source", worktree_changes=False)
+    repo = root / "repo"
+    run_git("clone", "-q", "--depth=1", f"file://{source.subject}", repo)
+    return Context(repo, head="HEAD", parent="HEAD^", remote=repo)
+
+
+def build_partial_clone(root: Path) -> Context:
+    source = ordinary(root / "source", worktree_changes=False)
+    run_git("config", "uploadpack.allowFilter", "true", cwd=source.subject)
+    repo = root / "repo"
+    run_git("clone", "-q", "--no-local", "--filter=blob:none", f"file://{source.subject}", repo)
+    return Context(repo, head="HEAD", parent="HEAD^", remote=repo)
+
+
+def build_many_untracked(root: Path) -> Context:
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    for index in range(512):
+        write(ctx.subject / "untracked" / f"entry-{index:04d}.txt", "untracked\n")
+    return ctx
+
+
+def build_literal_dotgit(root: Path) -> Context:
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    # This is data, not a nested repository: it has no config, HEAD, or Git
+    # metadata beyond a directory whose spelling is significant to walkers.
+    write(ctx.subject / "ordinary-directory" / ".git" / "marker", "not a repository\n")
+    return ctx
+
+
 def add_pack_and_bundle(ctx: Context) -> None:
     """Give every populated fixture the same two object-read surfaces."""
     if not (ctx.subject / "HEAD").exists() and not (ctx.subject / "refs").exists():
@@ -347,6 +580,24 @@ def make_fixture(name: str, root: Path) -> Context:
         "many-refs": lambda: build_many_refs(root),
         "sparse-checkout": lambda: build_sparse(root),
         "head-symlink": lambda: build_head_symlink(root),
+        "core-worktree": lambda: build_core_worktree(root),
+        "moved-main-worktree": lambda: build_moved_main_worktree(root),
+        "worktree-config": lambda: build_worktree_config(root),
+        "nested-three-levels": lambda: build_nested_three_levels(root),
+        "detached-at-tag": lambda: build_detached_tag(root),
+        "tag-chain": lambda: build_tag_chain(root),
+        "empty-tree-commit": lambda: build_empty_tree_commit(root),
+        "merge-after-merge": lambda: build_merge_after_merge(root),
+        "binary-and-long-name": lambda: build_binary_and_long_name(root),
+        "unicode-normalisation": lambda: build_unicode_normalisation(root),
+        "empty-directory-tree": lambda: build_empty_directory_tree(root),
+        "ignorecase-true": lambda: build_ignore_case(root, True),
+        "ignorecase-false": lambda: build_ignore_case(root, False),
+        "attributes-eol": lambda: build_attributes(root),
+        "shallow-clone": lambda: build_shallow_clone(root),
+        "partial-clone": lambda: build_partial_clone(root),
+        "many-untracked": lambda: build_many_untracked(root),
+        "literal-dotgit-directory": lambda: build_literal_dotgit(root),
     }
     ctx = builders[name]()
     add_pack_and_bundle(ctx)
@@ -380,12 +631,18 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("cat-file/all-batch-check", ("cat-file", "--batch-all-objects", "--batch-check")),
         ("cat-file/batch-check-input", ("cat-file", "--batch-check")),
         ("cat-file/batch-input", ("cat-file", "--batch")),
+        ("cat-file/batch-check-format", (
+            "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)",
+        )),
+        ("cat-file/batch-check-nul", ("cat-file", "--batch-check", "-z")),
+        ("cat-file/batch-nul", ("cat-file", "--batch", "-z")),
         ("check-ignore/path", ("check-ignore", ignored)),
         ("check-ignore/no-index", ("check-ignore", "--no-index", ignored)),
         ("check-ignore/verbose", ("check-ignore", "-v", ignored)),
         ("check-ignore/nul", ("check-ignore", "-z", ignored)),
         ("check-ignore/stdin", ("check-ignore", "--stdin")),
         ("check-ignore/stdin-nul", ("check-ignore", "--stdin", "-z")),
+        ("check-ignore/stdin-verbose-nul", ("check-ignore", "--stdin", "-v", "-z")),
         ("config/list", ("config", "--list")),
         ("config/list-short", ("config", "-l")),
         ("config/list-nul", ("config", "--null", "--list")),
@@ -410,6 +667,9 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("diff/ignore-submodules-untracked", ("diff", "--ignore-submodules=untracked", h)),
         ("diff/ignore-submodules-dirty", ("diff", "--ignore-submodules=dirty", h)),
         ("diff/ignore-submodules-all", ("diff", "--ignore-submodules=all", h)),
+        ("diff/pathspec", ("diff", h, "--", normal)),
+        ("diff/pathspec-nul", ("diff", "--name-status", "-z", h, "--", normal)),
+        ("diff/pathspec-glob", ("diff", "--name-only", h, "--", ":(glob)**/*.txt")),
         ("diff-index/plain", ("diff-index", h)),
         ("diff-index/cached", ("diff-index", "--cached", h)),
         ("diff-index/stat", ("diff-index", "--stat", h)),
@@ -421,6 +681,8 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("diff-index/ignore-submodules-untracked", ("diff-index", "--ignore-submodules=untracked", h)),
         ("diff-index/ignore-submodules-dirty", ("diff-index", "--ignore-submodules=dirty", h)),
         ("diff-index/ignore-submodules", ("diff-index", "--ignore-submodules=all", h)),
+        ("diff-index/pathspec", ("diff-index", "--name-status", h, "--", normal)),
+        ("diff-index/pathspec-nul", ("diff-index", "--name-status", "-z", h, "--", normal)),
         ("diff-tree/plain", ("diff-tree", "-r", h)),
         ("diff-tree/root", ("diff-tree", "--root", "-r", h)),
         ("diff-tree/stat", ("diff-tree", "--stat", "-r", h)),
@@ -429,11 +691,25 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("diff-tree/name-status-nul", ("diff-tree", "--name-status", "-z", "-r", h)),
         ("diff-tree/numstat", ("diff-tree", "--numstat", "-r", h)),
         ("diff-tree/raw-nul", ("diff-tree", "--raw", "-z", "-r", h)),
+        ("diff-tree/pathspec", ("diff-tree", "--root", "-r", "--name-status", h, "--", normal)),
+        ("diff-tree/pathspec-nul", (
+            "diff-tree", "--root", "-r", "--name-status", "-z", h, "--", normal,
+        )),
         ("for-each-ref/all", ("for-each-ref",)),
         ("for-each-ref/format", ("for-each-ref", "--format=%(objectname) %(refname)")),
         ("for-each-ref/count", ("for-each-ref", "--count=3")),
         ("for-each-ref/sort", ("for-each-ref", "--sort=-refname")),
         ("for-each-ref/heads", ("for-each-ref", "refs/heads")),
+        ("for-each-ref/format-nul-atoms", (
+            "for-each-ref", "--format=%(refname)%00%(objectname)%00%(objecttype)",
+        )),
+        ("for-each-ref/format-peeled", (
+            "for-each-ref", "--format=%(refname) %(objecttype) %(*objecttype) %(subject)",
+        )),
+        ("for-each-ref/points-at", ("for-each-ref", "--points-at", h)),
+        ("for-each-ref/merged", ("for-each-ref", "--merged", h)),
+        ("for-each-ref/contains", ("for-each-ref", "--contains", h)),
+        ("for-each-ref/stdin", ("for-each-ref", "--stdin", "--format=%(refname)")),
         ("log/oneline", ("log", "--oneline")),
         ("log/format-nul", ("log", "--format=%H%x00%P%x00%s")),
         ("log/stat", ("log", "--stat")),
@@ -444,6 +720,8 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("log/raw-nul", ("log", "--raw", "-z")),
         ("log/name-only-nul", ("log", "--name-only", "-z")),
         ("log/name-status-nul", ("log", "--name-status", "-z")),
+        ("log/pathspec", ("log", "--oneline", h, "--", normal)),
+        ("log/pathspec-nul", ("log", "--name-status", "-z", h, "--", normal)),
         ("ls-files/cached", ("ls-files", "--cached")),
         ("ls-files/stage", ("ls-files", "--stage")),
         ("ls-files/deleted", ("ls-files", "--deleted")),
@@ -453,20 +731,32 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("ls-files/eol", ("ls-files", "--eol")),
         ("ls-files/nul", ("ls-files", "-z")),
         ("ls-files/stage-nul", ("ls-files", "--stage", "-z")),
+        ("ls-files/others-nul", ("ls-files", "--others", "--exclude-standard", "-z")),
+        ("ls-files/ignored-nul", ("ls-files", "--ignored", "--exclude-standard", "-z")),
+        ("ls-files/eol-nul", ("ls-files", "--eol", "-z")),
+        ("ls-files/pathspec", ("ls-files", "--cached", "--", normal)),
+        ("ls-files/pathspec-nul", ("ls-files", "--cached", "-z", "--", normal)),
         ("ls-remote/plain", ("ls-remote", remote)),
         ("ls-remote/heads", ("ls-remote", "--heads", remote)),
         ("ls-remote/tags", ("ls-remote", "--tags", remote)),
         ("ls-remote/refs", ("ls-remote", "--refs", remote)),
         ("ls-remote/symref", ("ls-remote", "--symref", remote)),
+        ("ls-remote/get-url", ("ls-remote", "--get-url", remote)),
+        ("ls-remote/symref-refs", ("ls-remote", "--symref", "--refs", remote)),
         ("ls-tree/plain", ("ls-tree", h)),
         ("ls-tree/recursive", ("ls-tree", "-r", h)),
         ("ls-tree/name-only", ("ls-tree", "-r", "--name-only", h)),
         ("ls-tree/name-status-nul", ("ls-tree", "-r", "--name-status", "-z", h)),
         ("ls-tree/long", ("ls-tree", "-r", "--long", h)),
         ("ls-tree/object-only", ("ls-tree", "-r", "--object-only", h)),
+        ("ls-tree/nul", ("ls-tree", "-r", "-z", h)),
+        ("ls-tree/pathspec", ("ls-tree", "-r", h, "--", normal)),
+        ("ls-tree/pathspec-nul", ("ls-tree", "-r", "-z", h, "--", normal)),
         ("merge-base/plain", ("merge-base", h, par)),
         ("merge-base/all", ("merge-base", "--all", h, par)),
         ("merge-base/is-ancestor", ("merge-base", "--is-ancestor", par, h)),
+        ("merge-base/is-ancestor-reverse", ("merge-base", "--is-ancestor", h, par)),
+        ("merge-base/octopus", ("merge-base", "--octopus", h, par, ctx.side)),
         ("rev-list/plain", ("rev-list", h)),
         ("rev-list/count", ("rev-list", "--count", h)),
         ("rev-list/objects", ("rev-list", "--objects", h)),
@@ -476,6 +766,13 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("rev-list/header", ("rev-list", "--header", h)),
         ("rev-list/disk-usage", ("rev-list", "--disk-usage", h)),
         ("rev-list/stdin", ("rev-list", "--stdin")),
+        ("rev-list/range", ("rev-list", f"{par}..{h}")),
+        ("rev-list/range-count", ("rev-list", "--count", f"{par}..{h}")),
+        ("rev-list/max-count", ("rev-list", "--max-count=1", h)),
+        ("rev-list/skip", ("rev-list", "--skip=1", h)),
+        ("rev-list/reverse", ("rev-list", "--reverse", h)),
+        ("rev-list/no-merges", ("rev-list", "--no-merges", h)),
+        ("rev-list/objects-nul", ("rev-list", "--objects", "-z", h)),
         ("rev-parse/verify", ("rev-parse", "--verify", h)),
         ("rev-parse/short", ("rev-parse", "--short", h)),
         ("rev-parse/symbolic", ("rev-parse", "--symbolic", h)),
@@ -499,12 +796,17 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("show/name-status-nul", ("show", "--name-status", "-z", h)),
         ("show/numstat-nul", ("show", "--numstat", "-z", h)),
         ("show/no-patch-format", ("show", "--no-patch", "--format=%s", h)),
+        ("show/pathspec", ("show", "--name-status", h, "--", normal)),
+        ("show/pathspec-nul", ("show", "--name-status", "-z", h, "--", normal)),
         ("show-ref/all", ("show-ref",)),
         ("show-ref/heads", ("show-ref", "--heads")),
         ("show-ref/tags", ("show-ref", "--tags")),
         ("show-ref/hash", ("show-ref", "--hash")),
         ("show-ref/verify", ("show-ref", "--verify", "refs/heads/main")),
         ("show-ref/missing", ("show-ref", "--verify", "refs/heads/missing")),
+        ("show-ref/head", ("show-ref", "--head")),
+        ("show-ref/dereference", ("show-ref", "--dereference")),
+        ("show-ref/quiet-verify", ("show-ref", "--quiet", "--verify", "refs/heads/main")),
         ("status/plain", ("status",)),
         ("status/short", ("status", "--short")),
         ("status/porcelain-v1", ("status", "--porcelain")),
@@ -520,24 +822,32 @@ def forms(ctx: Context) -> list[tuple[str, tuple[str, ...]]]:
         ("status/nul-v1", ("status", "--porcelain", "-z")),
         ("status/nul-v2", ("status", "--porcelain=v2", "-z")),
         ("status/ignored-nul", ("status", "--porcelain=v2", "--ignored", "-z")),
+        ("status/ignored", ("status", "--porcelain", "--ignored")),
+        ("status/uall-nul", ("status", "--porcelain", "-uall", "-z")),
         ("verify-pack/verbose", ("verify-pack", "-v", pack)),
         ("verify-pack/stat-only", ("verify-pack", "--stat-only", pack)),
+        ("verify-pack/no-verbose", ("verify-pack", "--no-verbose", pack)),
+        ("verify-pack/no-stat-only", ("verify-pack", "--no-stat-only", pack)),
     ]
 
 
 def input_for(ctx: Context, label: str) -> bytes | None:
     h = ctx.head
     ignored = p(ctx, "ignored", "ignored.tmp")
-    if label == "cat-file/batch-check-input":
+    if label in {"cat-file/batch-check-input", "cat-file/batch-check-format"}:
         return (h + "\n").encode()
+    if label in {"cat-file/batch-check-nul", "cat-file/batch-nul"}:
+        return (h + "\0").encode()
     if label == "cat-file/batch-input":
         return (h + "\n").encode()
     if label == "check-ignore/stdin":
         return (ignored + "\n").encode()
-    if label == "check-ignore/stdin-nul":
+    if label in {"check-ignore/stdin-nul", "check-ignore/stdin-verbose-nul"}:
         return (ignored + "\0").encode()
     if label == "rev-list/stdin":
         return (h + "\n").encode()
+    if label == "for-each-ref/stdin":
+        return b"refs/heads\n"
     return None
 
 
@@ -610,9 +920,24 @@ def exact_outcome(outcome: dict) -> str:
     return "runner failure: " + json.dumps(outcome, ensure_ascii=True, sort_keys=True)
 
 
+def rejected_by_git(outcome: dict) -> bool:
+    """Whether `_run` reached Git and Git rejected this spelling."""
+    return (
+        outcome.get("kind") == "refusal"
+        and outcome.get("type") == "GitRefusal"
+        and outcome.get("message") == "git invocation failed"
+    )
+
+
 def write_report(rows: list[dict], fixture_names: list[str]) -> None:
     differences = [row for row in rows if not row["same"]]
     forms_per_fixture = len(rows) // len(fixture_names) if fixture_names else 0
+    both_git_rejected_new_forms = [
+        row for row in rows
+        if row["form"] in ADDED_FORM_LABELS
+        and rejected_by_git(row["candidate"])
+        and rejected_by_git(row["frozen"])
+    ]
     lines = [
         "# RP 2.5.0 frozen-floor differential corpus",
         "",
@@ -625,6 +950,10 @@ def write_report(rows: list[dict], fixture_names: list[str]) -> None:
         f"- Total comparisons: **{len(rows)}** ({len(fixture_names)} fixtures × "
         f"{forms_per_fixture} read forms).",
         f"- Exact differences: **{len(differences)}**.",
+        f"- Widening: **{len(fixture_names) - FLOOR_FIXTURE_COUNT}** fixtures and "
+        f"**{forms_per_fixture - FLOOR_FORM_COUNT}** forms beyond the original floor.",
+        f"- Newly added-form rows Git rejects on both sides: "
+        f"**{len(both_git_rejected_new_forms)}**.",
         "- Submodules: none.",
         "- Repository configuration naming a helper program: none.",
         "",
@@ -673,7 +1002,12 @@ def write_report(rows: list[dict], fixture_names: list[str]) -> None:
         "and ignored files. Separate rows cover empty/unborn/detached state, merge and "
         "conflict state, stale stat data, split index, alternates, bare and linked "
         "repositories, `.git` as a file, nested repository, reflog, grafts, packed and "
-        "many refs, sparse checkout, and a symlinked HEAD.",
+        "many refs, sparse checkout, and a symlinked HEAD. The widening adds redirected "
+        "and moved worktrees, worktree configuration, three repository nesting levels, "
+        "tag-chain and detached-tag states, an empty-tree commit, a two-parent merge plus "
+        "a later unresolved conflict, binary/long/Unicode names, an explicit empty tree "
+        "directory, both ignoreCase settings, attributes/eol, shallow and partial local "
+        "clones, 512 untracked files, and a non-repository nested `.git` directory.",
         "",
         "## Forms and limits",
         "",
@@ -682,7 +1016,10 @@ def write_report(rows: list[dict], fixture_names: list[str]) -> None:
         "reads, config read-only shapes, diff/diff-index/diff-tree patch/stat/name/numstat/raw "
         "and NUL/ignore-submodule forms, for-each-ref, log, ls-files, ls-remote, ls-tree, "
         "merge-base, rev-list (including stdin), rev-parse, show, show-ref, status porcelain "
-        "v1/v2/short/untracked/ignore-submodule/branch/long/NUL forms, and verify-pack.",
+        "v1/v2/short/untracked/ignore-submodule/branch/long/NUL forms, and verify-pack. "
+        "The widening adds pathspec and `--` spellings, batch and object-list NUL protocols, "
+        "format-atom and stdin ref enumeration, range/limit rev-list forms, merge-base "
+        "octopus, show-ref variants, ls-remote URL forms, and verify-pack negated switches.",
         "",
         "Not covered, with reasons:",
         "",
@@ -719,6 +1056,11 @@ def main() -> int:
         "reflogs", "info-grafts", "packed-refs", "many-refs", "paths-c-quoted",
         "symlink-path", "executable-change", "type-change", "deleted-file", "ignored-file",
         "sparse-checkout", "head-symlink",
+        "core-worktree", "moved-main-worktree", "worktree-config", "nested-three-levels",
+        "detached-at-tag", "tag-chain", "empty-tree-commit", "merge-after-merge",
+        "binary-and-long-name", "unicode-normalisation", "empty-directory-tree",
+        "ignorecase-true", "ignorecase-false", "attributes-eol", "shallow-clone",
+        "partial-clone", "many-untracked", "literal-dotgit-directory",
     ]
     rows: list[dict] = []
     stop_after = int(os.environ.get("RP250_STOP_AFTER", "0"))
