@@ -144,6 +144,12 @@ MUTANTS = [
      'if not any(event.get("event") == "version" for event in events):',
      "if False:",
      "tools/tests/test_gitread.py::test_a_local_read_creates_no_child"),
+    ("the public path-restoration call is bypassed",
+     "tools/gitread.py",
+     "    return _restore_subject_paths(result.stdout, read, repository)",
+     "    return result.stdout",
+     "tools/tests/test_gitread.py::"
+     "test_public_run_restores_constructed_gitdir_before_discard"),
 ]
 
 
@@ -197,13 +203,23 @@ def run(selector, timeout=900):
 def main():
     pristine = {path: (ROOT / path).read_text(encoding="utf-8")
                 for _n, path, *_rest in MUTANTS}
+    selected = [
+        (index, mutant) for index, mutant in enumerate(MUTANTS)
+        if ARGUMENTS.only is None or index == ARGUMENTS.only
+    ]
+    if not selected:
+        print(f"no mutant has index {ARGUMENTS.only}")
+        return 2
 
     def restore():
         for path, text in pristine.items():
             (ROOT / path).write_text(text, encoding="utf-8")
 
     print("baseline: every named oracle on the pristine subject")
-    oracles = sorted({mutant[4] for mutant in MUTANTS})
+    # A focused ``--only`` proof establishes only the selected mutant's
+    # baseline.  The full run remains the all-oracle baseline; making a focused
+    # proof construct unrelated fixtures would make its scope larger, not safer.
+    oracles = sorted({mutant[4] for _index, mutant in selected})
     collected = collect(oracles)
     for oracle in oracles:
         code, summary, _seconds = run(oracle)
@@ -215,9 +231,7 @@ def main():
     results = []
     unstable: list = []
     try:
-        for index, (name, path, before, after, oracle) in enumerate(MUTANTS):
-            if ARGUMENTS.only is not None and index != ARGUMENTS.only:
-                continue
+        for index, (name, path, before, after, oracle) in selected:
             source = pristine[path]
             occurrences = source.count(before)
             if occurrences != 1:

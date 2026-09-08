@@ -208,8 +208,8 @@ and now goes through it, so `gitread` is the toolbelt's only path to Git.
   of a passing run from the fact that it passed.
 - `docs/acceptance/rp2.5.0-floor-differential.py` — the frozen-floor differential:
   the same public entry point called on this release and on 2.4.0 in separate
-  interpreters, compared as raw bytes, refusals included, over 25 fixtures and 153
-  read forms. It needs a 2.4.0 checkout named by `FLOOR_FROZEN_ROOT`, because the
+  interpreters, compared as raw bytes, refusals included, over 43 fixtures and 200
+  read forms (8,600 comparisons). It needs a 2.4.0 checkout named by `FLOOR_FROZEN_ROOT`, because the
   floor is a release and not a file, and it writes its report outside the checkout
   so that running it does not unpin the tree. It found four capability regressions
   that every byte-comparing oracle baselined on this release had passed over.
@@ -263,9 +263,9 @@ previous release answers it by letting Git start a child. It is answered instead
 by composing independently governed childless reads — submodule identities taken
 from stage-zero gitlinks rather than from `.gitmodules`, each submodule observed
 by its own top-level governed read, and the result assembled with Git's own
-porcelain field rather than a reimplementation. Eleven fixtures across ten read
-forms match the previous release byte for byte, and six deliberate defects were
-introduced to prove the corpus can fail.
+porcelain field rather than a reimplementation. Sixteen fixtures across thirteen
+read forms yield 208 byte-exact rows against the previous release, with twelve
+deliberate positive controls to prove the corpus can fail.
 
 ### The question was answered, and the seventh design follows from the answer
 
@@ -291,9 +291,11 @@ running program.
 
 ### Six designs, six falsifications, and the question underneath them
 
-Every generation was frozen before implementation, read blind by independent
-readers, and broken by them. None has been implemented. This section records what
-each one died of, because the pattern is the finding.
+Every generation was frozen before implementation and read blind by independent
+readers. A1 and A2 ship in `tools/sterile.py`; A7.1 ships as the
+capability-scoped backends and submodule composition. A3 through A7 are
+falsified historical designs, not the current implementation. This section
+records what each one died of, because the pattern is the finding.
 
 `docs/RP2.5.0-DESIGN-A3-owned-or-refused.md` stopped enumerating what a read
 needs and asked instead which keys the harness owns. A reader found an owned-key

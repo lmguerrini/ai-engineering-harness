@@ -178,12 +178,79 @@ def where_is(repository) -> dict:
     }
 
 
+def _without_config_comment(text: str) -> str:
+    """Return the part before Git's next unquoted comment introducer."""
+    quoted = False
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if quoted and character == "\\":
+            # The following quote, if any, is escaped.  Whether the escape is
+            # valid is the value decoder's concern; it cannot end this run.
+            index += 2
+            continue
+        if character == '"':
+            quoted = not quoted
+        elif not quoted and character in "#;":
+            return text[:index]
+        index += 1
+    return text
+
+
+def _config_value_as_data(text: str) -> str:
+    """Decode one Git configuration VALUE without asking Git to read it.
+
+    Git strips whitespace only when it is outside quoted runs.  Keeping the
+    provenance of each character until that trim is complete is important:
+    applying ``str.strip`` after decoding loses whitespace that a pair of
+    quotes deliberately preserved.
+    """
+    characters: list[tuple[str, bool]] = []
+    quoted = False
+    index = 0
+    escapes = {'"': '"', "\\": "\\", "n": "\n", "t": "\t", "b": "\b"}
+    while index < len(text):
+        character = text[index]
+        if not quoted:
+            if character in "#;":
+                break
+            if character == '"':
+                quoted = True
+            else:
+                characters.append((character, False))
+            index += 1
+            continue
+        if character == '"':
+            quoted = False
+            index += 1
+            continue
+        if character == "\\" and index + 1 < len(text):
+            escaped = text[index + 1]
+            # Git accepts precisely these escapes in a quoted configuration
+            # value.  Valid repository configuration reaches this parser; keep
+            # an invalid escape literal here so the caller does not mistake its
+            # spelling for a different, valid value.
+            characters.append((escapes.get(escaped, "\\" + escaped), True))
+            index += 2
+            continue
+        characters.append((character, True))
+        index += 1
+
+    while characters and not characters[0][1] and characters[0][0] in " \t":
+        characters.pop(0)
+    while characters and not characters[-1][1] and characters[-1][0] in " \t":
+        characters.pop()
+    return "".join(character for character, _quoted in characters)
+
+
 def config_as_data(path: Path) -> dict:
-    """Parse a Git config FILE as text.
+    """Parse a Git config FILE as text, including Git's VALUE syntax.
 
     Nothing read here is ever handed to Git, so nothing here can execute. This is
     how the storage descriptors are learned and how a caller reads a repository's
-    own settings — a remote's URL, say — without Git resolving them.
+    own settings — a remote's URL, say — without Git resolving them.  Values use
+    Git's quoting, escaping and comment rules so these answer-bearing reads agree
+    with ``git config --get`` rather than with an approximation of it.
     """
     values: dict = {}
     section = ""
@@ -194,11 +261,11 @@ def config_as_data(path: Path) -> dict:
         line = raw.strip()
         if line.startswith(("#", ";")):
             continue
-        line = line.split("#", 1)[0].split(";", 1)[0].strip()
         if not line:
             continue
-        if line.startswith("[") and line.endswith("]"):
-            inner = line[1:-1].strip()
+        header = _without_config_comment(line).strip() if line.startswith("[") else line
+        if header.startswith("[") and header.endswith("]"):
+            inner = header[1:-1].strip()
             head, _, tail = inner.partition(" ")
             # Git folds the SECTION and the VARIABLE to lower case and keeps a
             # SUBSECTION verbatim. 2.4.1 shipped a defect for not knowing that,
@@ -208,7 +275,7 @@ def config_as_data(path: Path) -> dict:
             continue
         key, sep, value = line.partition("=")
         name = f"{section}.{key.strip().lower()}" if section else key.strip().lower()
-        values[name] = value.strip() if sep else "true"
+        values[name] = _config_value_as_data(value) if sep else "true"
     return values
 
 

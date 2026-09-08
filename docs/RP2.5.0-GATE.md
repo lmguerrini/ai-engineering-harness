@@ -82,11 +82,11 @@ here, for the same reason no other count in this record is.
 
 | | |
 |---|---|
-| Record | `docs/RP2.5.0-DESIGN-A1-sterile-execution.md` |
+| Authoritative record | `docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md` — the manifest's current design authority |
 | Class | MATERIAL |
-| Frozen at | `71e24f89cf1d0d8084531418ab758ce4f4c945fa` |
-| Committed at | `154be5fe2547293aa8a2a16bb1edbe523bb35b7c`, **before any implementation existed** |
-| Checked by | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A1-sterile-execution.md --repository .` → `DESIGN FROZEN` |
+| Frozen at | `673d97f94ba4b3406e1afd6ddc52bd5b23e56e29` |
+| Checked by | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md --repository .` → `DESIGN FROZEN` |
+| Earlier frozen history | A1 at `71e24f89cf1d0d8084531418ab758ce4f4c945fa`, committed at `154be5fe2547293aa8a2a16bb1edbe523bb35b7c` before implementation; A2 and A7 are superseded records, retained as evidence rather than current authority |
 
 `design_record.py` tallies **three** rejected alternatives for A1, and the record
 considers five designs. The fifth — the observational one, kept as an oracle
@@ -106,8 +106,7 @@ Against real Git 2.50.1 on macOS, before the design record was written:
 | Execution leaks | **0** |
 | Answers equal to real Git, byte for byte | every case where real Git answers, except where real Git's answer *contains the helper's output* |
 | Child processes started, by `GIT_TRACE2_EVENT` | 0 |
-| Cost, no nested repository | 4 ms (200 files) – 12 ms (20,000 files) |
-| Cost, nested repository present | 40 ms (200 files) – 2.3 s (20,000 files) |
+| Cost | **Not established for this release on this host.** The attempted ordinary 200-file command, `gitread._run(repo, "status", "--porcelain")`, refused because the local no-child barrier could not be established, so it produced no valid timing. No candidate-versus-floor regression figure is published. |
 
 The two blockers that stopped 2.4.1 were reproduced here first and then closed:
 `git status -vv`, `--verb` and a third spelling no reader had reported,
@@ -159,11 +158,14 @@ document next door.
 
 ## Design records, and where their oracles landed
 
-`docs/RP2.5.0-DESIGN-A1-sterile-execution.md` is frozen at
-`71e24f89cf1d0d8084531418ab758ce4f4c945fa` and committed at `154be5f`, before any
-implementation existed. `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` supersedes
-part of it after an independent design reading returned `DESIGN_BLOCKED`, and is
-frozen at `fb2f450e53db1d3b5e5f1b752af3ffb9d4900f97`.
+`docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md` is the authoritative
+record named by `PACK_MANIFEST.json`, frozen at
+`673d97f94ba4b3406e1afd6ddc52bd5b23e56e29`. It selects a local no-child backend
+and the qualified transport backend, and puts submodule composition above the
+boundary. `docs/RP2.5.0-DESIGN-A1-sterile-execution.md` and
+`docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` are earlier frozen history: A1 is
+frozen at `71e24f89cf1d0d8084531418ab758ce4f4c945fa` and committed at `154be5f`
+before implementation; A2 was frozen at `fb2f450e53db1d3b5e5f1b752af3ffb9d4900f97`.
 
 Both are left exactly as they were frozen. One selector in A1 has been superseded
 and is recorded here rather than edited there, because a frozen design record that
@@ -173,7 +175,12 @@ is corrected afterwards is no longer evidence of what was decided beforehand:
 |---|---|---|---|
 | A1 | O2 | `test_a_nested_repositorys_configuration_never_executes` | `test_no_spelling_of_a_nested_git_executes_the_subjects_program`, parametrised over every spelling of a nested `.git` this release could build — A2 widened the property from *a* nested repository to *any spelling of one*, and the name followed. The count is not written here: adding a spelling is exactly the change this table should not have to be edited for, and a stated "four" survived the commit that made it five |
 
-Every other oracle in A1 and A2 names a test that exists and runs.
+Every other oracle in A1 and A2 names a test that exists and runs. A7.1 adds the
+shipped `tools/submodule_no_child.py` composition, its
+`docs/acceptance/rp2.5.0-submodule-differential.py` corpus, and
+`docs/acceptance/RP2.5.0-submodule-proof.md`. The corpus measures 208 byte-exact
+rows and 12 deliberate controls; the proof limits that claim to its composition
+grammar rather than treating it as a blanket submodule equivalence claim.
 
 ## What the implementation changed, and what was measured about it
 
@@ -181,6 +188,14 @@ The boundary is `tools/sterile.py`, and `tools/gitread.py` is its only caller.
 `tools/release_delta.py` was the last module reaching Git around it and now goes
 through it; the only remaining subprocess callers in `tools/` run `pytest` and
 `ps`, so `gitread` is the toolbelt's single path to Git.
+
+Two exceptions to the behavioural floor are adjudicated, not hidden. First, the
+submodule composition is byte-exact only for the corpus grammar above; outside it,
+the local read reports committed gitlink state with recursive dirty detail
+suppressed rather than permitting a child. Second, `verify-pack` is refused: frozen
+2.4.0 answers it, but its child `index-pack --verify-stat` conflicts with the
+local no-child policy. Its 172 frozen-floor rows remain in the accounting below as
+an intentional capability reduction, not a repaired non-regression.
 
 Eight defects were found in the implementation while building it, each reproduced
 by a test before being repaired, and each recorded because a boundary nobody broke
@@ -199,9 +214,9 @@ is a claim:
 
 ## Mutation scoring
 
-Eleven well-formed mutants against a verified-green baseline of the oracles they
-name, each reversing one thing the design says is load-bearing. **Eleven killed,
-none survived, none malformed**, and the harness asserts the subject is
+Seventeen well-formed mutants against a verified-green baseline of the oracles
+they name, each reversing one thing the design says is load-bearing. **Seventeen
+killed, none survived, none malformed**, and the harness asserts the subject is
 byte-identical afterwards.
 
 The baseline population is **not stated here**. This record used to say
@@ -285,14 +300,14 @@ the full baseline is spelled out and the two design records are two invocations.
 |---|---|---|
 | release identity | `python3 tools/pack_pin.py . --version <VERSION> --sha <HEAD> --digest <manifest digest> --state IN_PROGRESS` | verified |
 | release delta | `python3 tools/release_delta.py . --baseline 9d906ce64bd69cb1a29594a7110829da7df5d996` | DELTA COMPLETE, nothing omitted |
-| design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A1-sterile-execution.md --repository .` then the same for `docs/RP2.5.0-DESIGN-A2-nested-and-ambient.md` | DESIGN FROZEN, both |
+| design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md --repository .` (and the A1/A2 history records by the same command) | DESIGN FROZEN; A7.1 is authoritative |
 | surface derivation | `python3 tools/surface_diff.py . 9d906ce64bd69cb1a29594a7110829da7df5d996 HEAD` | additions only over the NON-TEST modules; every removal and every signature change it reports is inside `tools/tests/`. No totals are quoted here — see *Why this release is not 2.4.2* for why |
 | full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
 | clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | every gate passed and the suite was green, with a tree reporting nothing changed |
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
-| frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 8,600 comparisons over 43 fixtures and 200 read forms; every residual row is classified in *The floor this release is measured against* below |
+| frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 43 fixtures × 200 read forms = 8,600 comparisons; every residual row is classified in *The floor this release is measured against* below |
 | hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
-| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | every mutant killed, none malformed, subject byte-identical afterwards |
+| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 17 killed, none survived or malformed, subject byte-identical afterwards |
 | consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
 
 The clean-room clone is the one that matters most for the design records: it
@@ -354,10 +369,10 @@ derivation rests on — `tools/sterile.py`. A manifest that contradicts its own 
 record is exactly the defect, and the machine-readable record is the one a
 consumer reads first.
 
-**The same staleness, found by following it.** `known_limitations[0]` still
-described this candidate as the one that "closes six defects an independent full
-behavioural audit reproduced in frozen 2.4.0" and pointed at `docs/RP2.4.1-GATE.md`.
-And six limitations — 9, 10, 14, 98, 99 and 100 — describe the pre-2.5.0 mechanism
+**The same staleness, found by following it.** `known_limitations[0]` is now the
+current candidate-state disclosure, rather than a copied 2.4.1 claim about six
+defects or a pointer at `docs/RP2.4.1-GATE.md`. And six limitations — 10, 11, 15,
+99, 100 and 101 — describe the pre-2.5.0 mechanism
 in the present tense, including one that says `-v`/`--verbose` "is refused as an
 argument now" and that the walk "enumerates directories containing `.git`",
 neither of which is how this release works.
@@ -503,7 +518,7 @@ surface another reader held — reproduced thirteen findings against them. The o
 that were true are repaired above and here; the ones that were not are said so.
 
 **A limitation described the deleted mechanism in the present tense, unmarked.**
-`known_limitations[64]` still said an unrecognised program-valued key "refuses"
+`known_limitations[65]` still said an unrecognised program-valued key "refuses"
 and that the inspection costs two extra Git processes per repository. Both are
 false here: nothing refuses on that list and the inspection that ran those
 processes is gone. Six entries like it were marked as historical when the
@@ -703,41 +718,30 @@ and on frozen 2.4.0, in separate interpreters, and compares raw bytes — answer
 It needs a 2.4.0 checkout, named by `FLOOR_FROZEN_ROOT`, because the floor is a *release*, not a
 file, and it writes its report outside the checkout so running it does not unpin the tree.
 
-**43 fixtures x 200 read forms = 8,600 comparisons.** It began at 25 x 153; the population was more
+**43 fixtures × 200 read forms = 8,600 comparisons.** It began at 25 × 153; the population was more
 than doubled deliberately, because a small corpus that finds nothing is weak evidence and this one
 had already proved that four capability regressions can hide from every other oracle. A further 221
 rows were added in which Git itself rejects the form on both sides; those are not differences and
 are not counted as such.
 
-Its first run found **339** differences, of which **175 were capability regressions and are
-repaired**: bare repositories (48), direct local-path `ls-remote` (125), a nested repository's
-`diff-index` (8), and sparse-checkout's long status (2).
+Its first run found **339** differences, of which **183 capability regressions were repaired**:
+bare repositories (48), direct local-path `ls-remote` (125), a nested repository's `diff-index`
+(8), and sparse-checkout's long status (2).
 
-At the widened population it reports **334**. Every row is accounted for:
+At the widened population it reports **406**. Every row is accounted for:
 
 | rows | what they are | status |
 |---:|---|---|
 | 172 | `config --list` in four spellings | the owned configuration root — declared, not a regression |
+| 172 | `verify-pack` | adjudicated capability reduction: frozen answers it, while the local no-child backend refuses it |
+| 45 | `core.worktree` redirection | **this release is right**: it reads the path the caller supplied, not the sibling the subject names |
 | 8 | source-less `config --get` family | the deliberate refusal directing callers to `config_with_origin` |
-| 90 | `rev-parse` path family | **a declared, unrepaired regression** — see the manifest's known limitations |
-| 46 | `core.worktree` redirection | **this release is right**: it reads the path the caller supplied, not the sibling the subject names. Already a declared limitation |
-| 10 | stat-staleness after a prior read | **this release is right**; see below |
-| 6 | `branch.upstream` / `branch.ab` missing from `status` | **a real regression**, repaired |
-| 1 | `.git`-as-a-file `status -uall` | **this release is right** — see the divergence below |
-| 1 | its NUL spelling | the same row |
-
-**The ten stat-staleness rows are worth stating carefully, because the corpus first misread them.**
-They were reported as a Unicode-normalisation defect in which this release invented a modification.
-It does not. Cold, on a fixture built from the corpus's own recipe, **this release, frozen 2.4.0 and
-real Git all report the same modification**. What differs is what a *previous* read did: frozen's
-`status` rewrites the subject's index, so its later `diff-index` sees a refreshed tree and answers
-clean, while this release never writes the subject and still sees the stale stat. The rows are an
-artifact of frozen answering about a subject it had just modified — the same shape as the
-`index.lock` divergence below. The repair is to refresh the harness's **own** index copy, never the
-subject's.
+| 7 | `rev-parse` path family | non-dangling path differences; `--git-dir` answers `.git`, exists, and is identical to frozen |
+| 2 | `.git`-as-a-file `index.lock` | **this release is right**: it does not report the lock frozen created while writing the subject |
 
 **An empty result would not have been evidence, and neither is this one on its own.** What makes the
-number meaningful is that every row above is repaired, declared, or named as an open regression.
+number meaningful is that every row above is repaired, declared, adjudicated, or the correct
+read-only answer.
 
 ### Where a governed answer deliberately differs from real Git, said out loud
 
@@ -791,15 +795,12 @@ below, this release bumped the ctime of every working-tree file it hard-linked i
 view, which is what Git's stat cache compares, and what made a later `diff-index` call a
 clean file modified.
 
-**That claim is bounded, and the bound was found by a blind reading of the repair rather
-than by the repair's own author.** `_copy_git_state` carries git-directory state with
-`shutil.copytree(..., symlinks=True)`, so a symlinked entry arrives in the constructed
-directory **still pointing where it pointed**. If a subject's `.git/index` is an absolute
-symlink, the refresh writes through it, and the write lands outside both the view and the
-subject at a path the subject chose. Reproduced here on this release, on `a02986c` before
-the repair, and on **frozen 2.4.0** — so it is a pre-existing defect this differential
-surfaced, not something the repair introduced, and 2.4.0 is exposed to it too. It is
-carried as a known limitation and is **not** repaired here.
+**A floor-only defect is closed here.** Frozen 2.4.0 follows an absolute subject
+`.git/index` symlink during index refresh. This release materialises carried git state
+with `symlinks=False`, so its constructed index is data and the subject target is not
+written. The permanent oracle is
+`test_a_carried_git_state_link_is_materialised_before_index_refresh`; the candidate is
+not affected and no shared-defect claim remains.
 
 ### The certification that returned READY, and the two things it still found
 
@@ -897,10 +898,9 @@ surprise.
 
 **`45d87fb` was adjudicated separately, on a different ground, and the difference
 matters.** The row 9 acceptance of the other three rests on their predating the
-discipline the rest of the line follows. **`45d87fb` does not predate it** — it is
-dated 2026-09-07, eighth from this record's own tip, and was made while the
-discipline was in force. That rationale is therefore not available for it and this
-record does not borrow it.
+discipline the rest of the line follows. **`45d87fb` does not predate it** — it was
+made while the discipline was in force. That rationale is therefore not available
+for it and this record does not borrow it.
 
 The founder extended the exact-candidate row 9 acceptance to it on 2026-09-08, on
 this ground instead: rewriting `45d87fb` would move `4e9386f` and `673d97f`, which

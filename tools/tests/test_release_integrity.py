@@ -909,9 +909,9 @@ def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_pr
 
     The gate record and the manifest both said the range reported **nine
     violations over three commits**. The checker reported **twelve over four**:
-    `45d87fb` had joined them, seven commits before this record's own tip, and
-    nothing noticed — the release-truth guards check what a release claims about
-    its *records*, and this is a claim about its *history*.
+    `45d87fb` had joined the range after the discipline began, and nothing
+    noticed — the release-truth guards check what a release claims about its
+    *records*, and this is a claim about its *history*.
 
     So the figures are derived here and the prose is checked against them, in
     both places that state them. The raw result stays raw: this guard asserts
@@ -1791,6 +1791,72 @@ def test_the_gate_record_qualification_figures_are_measured(manifest):
         "a literal delta reappeared in the gate record"
     )
     subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(ROOT), capture_output=True, check=True)
+
+
+def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpus():
+    """Bind the cheap parts of the frozen-floor record to its shipped corpus.
+
+    This deliberately does not run the 45-minute differential.  It reads the
+    corpus's fixture list and literal form catalogue, then checks the gate's
+    stated population and residual-class arithmetic.  Reverting this guard
+    makes ``43 × 200 = 8,600`` and ``406`` editable prose again: a change to
+    the corpus or to one class total could ship without a cheap, derived check.
+    """
+    import ast
+
+    corpus = ROOT / "docs/acceptance/rp2.5.0-floor-differential.py"
+    source = ast.parse(corpus.read_text(encoding="utf-8"), filename=str(corpus))
+
+    main = next(
+        node for node in source.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    fixture_assignment = next(
+        node for node in main.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "fixture_names"
+    )
+    fixtures = ast.literal_eval(fixture_assignment.value)
+
+    forms = next(
+        node for node in source.body
+        if isinstance(node, ast.FunctionDef) and node.name == "forms"
+    )
+    returned_forms = next(
+        node.value for node in forms.body
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.List)
+    )
+    form_count = len(returned_forms.elts)
+    fixture_count = len(fixtures)
+    comparisons = fixture_count * form_count
+    assert (fixture_count, form_count, comparisons) == (43, 200, 8600), (
+        f"the corpus now derives {fixture_count} fixtures × {form_count} forms = "
+        f"{comparisons} comparisons"
+    )
+
+    gate = _current_gate_record().read_text(encoding="utf-8")
+    population = re.search(
+        r"\*\*(\d+) fixtures × (\d+) read forms = ([\d,]+) comparisons\.\*\*", gate
+    )
+    assert population, "the gate record states no derived frozen-floor population"
+    assert tuple(int(item.replace(",", "")) for item in population.groups()) == (
+        fixture_count, form_count, comparisons,
+    )
+
+    accounting = re.search(
+        r"At the widened population it reports \*\*(\d+)\*\*\. Every row is accounted for:\n\n"
+        r"\| rows \| what they are \| status \|\n"
+        r"\|---:\|---\|---\|\n(?P<rows>(?:\| \d+ \|.*\n)+)",
+        gate,
+    )
+    assert accounting, "the gate record has no parseable residual-accounting table"
+    stated_total = int(accounting.group(1))
+    class_totals = [int(value) for value in re.findall(r"^\| (\d+) \|", accounting.group("rows"), re.MULTILINE)]
+    assert sum(class_totals) == stated_total == 406, (
+        f"residual classes sum to {sum(class_totals)}, while the record states {stated_total}"
+    )
 
 
 def test_the_release_packet_and_the_manifest_agree_on_the_prose_breach():

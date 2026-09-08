@@ -1894,6 +1894,67 @@ def _isolated_committed_repo(tmp_path, name):
     return repo
 
 
+@pytest.mark.parametrize(
+    "shape, spelling",
+    (
+        ("quoted", '"quoted value"'),
+        ("unquoted", "unquoted value"),
+        ("embedded-hash", '"left#right"'),
+        ("embedded-semicolon", '"left;right"'),
+        ("embedded-quote", r'"said \"hello\""'),
+        ("backslash-escapes", r'"quote \" slash \\ newline \n tab \t backspace \b"'),
+        ("trailing-hash-comment", "plain value # ignored"),
+        ("trailing-semicolon-comment", "plain value ; ignored"),
+        ("mixed-quoted-unquoted", 'a"b c"d'),
+        ("quoted-leading-trailing-space", '   "  kept at both edges  "   '),
+    ),
+)
+def test_config_as_data_value_syntax_matches_real_git_byte_for_byte(tmp_path, shape, spelling):
+    """Every listed VALUE spelling agrees with ``git config --get`` byte for byte.
+
+    The repository config is written with the spelling under test and real Git
+    is the oracle. Reverting the value decoder to the previous ``value.strip``
+    implementation makes every quoted, escaped, mixed, or quoted-comment case
+    fail; unquoted values and outside-comment controls remain passing controls.
+    """
+    repo = tmp_path / f"value-{shape}"
+    repo.mkdir()
+    _isolated_git(repo, "init", "-q", "-b", "main")
+    config = repo / ".git" / "config"
+    config.write_text(f"[oracle]\n\tvalue = {spelling}\n", encoding="utf-8")
+
+    oracle = subprocess.run(
+        ["git", "config", "--null", "--get", "oracle.value"], cwd=str(repo),
+        capture_output=True, check=False, env=_fixture_environment(),
+    )
+    assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
+    assert oracle.stdout.endswith(b"\0")
+    actual = _sterile.config_as_data(config)["oracle.value"].encode("utf-8", "surrogateescape")
+    assert actual == oracle.stdout[:-1], shape
+
+
+def test_ls_remote_remote_name_with_a_quoted_hash_url_matches_real_git(tmp_path):
+    """A remote URL Git quoted for ``#`` reaches the same remote as real Git.
+
+    Reverting the value decoder leaves the opening quote in the address and
+    truncates it at ``#``; the governed ``ls-remote origin`` then raises its
+    invocation refusal instead of producing this byte-identical answer.
+    """
+    remote = _isolated_committed_repo(tmp_path, "remote#hash")
+    reader = _isolated_committed_repo(tmp_path, "reader")
+    _isolated_git(reader, "remote", "add", "origin", str(remote))
+    config = reader / ".git" / "config"
+    assert f'url = "{remote}"' in config.read_text(encoding="utf-8")
+
+    oracle = subprocess.run(
+        ["git", "ls-remote", "origin"], cwd=str(reader), capture_output=True,
+        check=False, env=_fixture_environment(),
+    )
+    assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
+    actual = gitread._run(reader, "ls-remote", "origin")
+    assert actual.encode("utf-8", "surrogateescape") == oracle.stdout
+
+
 def test_the_reflog_is_carried_for_log_g(tmp_path):
     """A previous short list omitted `logs/`, making `log -g` answer empty."""
     repo = _isolated_committed_repo(tmp_path, "reflog")
@@ -2849,6 +2910,33 @@ def test_constructed_path_output_is_rebased_before_scratch_is_discarded(tmp_path
         assert gitread._restore_subject_paths(top, read, repo) == str(repo) + "\n"
     finally:
         read.discard()
+
+
+def test_public_run_restores_constructed_gitdir_before_discard(tmp_path, monkeypatch):
+    """The public entry point returns a usable subject path, not its scratch path.
+
+    The direct helper test above establishes the substitution relation, but it
+    does not establish that ``_run`` uses it.  This test replaces only the
+    host-specific no-child launcher: it still builds the sterile read, invokes
+    Git through the public entry point, discards the construction, then checks
+    the returned answer.  Replacing the public return with ``result.stdout``
+    returns the discarded scratch gitdir and fails both assertions below.
+    """
+    repo = _isolated_committed_repo(tmp_path, "public-path-rebasing")
+
+    def launch(command, *, read, subject, timeout, text, input_value, barrier,
+               trace, decoding, caller_arguments):
+        return subprocess.run(
+            command, cwd=read.cwd, env=read.environment, capture_output=True,
+            check=False, timeout=timeout, text=text, input=input_value, **decoding,
+        )
+
+    monkeypatch.setattr(gitread, "_launch_local", launch)
+    answer = gitread._run(repo, "rev-parse", "--git-dir")
+    assert answer == ".git\n"
+    returned = (repo / answer.strip()).resolve()
+    assert returned == (repo / ".git").resolve()
+    assert returned.is_dir(), "the public entry point returned a discarded scratch path"
 
 
 # O-A71-3 — a local read has a proof-bearing no-child barrier -----------------
