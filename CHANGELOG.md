@@ -194,6 +194,18 @@ and now goes through it, so `gitread` is the toolbelt's only path to Git.
 - `docs/acceptance/rp2.5.0-mutation.py` — the mutation harness, which verifies a
   green baseline first, refuses to count a malformed mutant, and asserts the
   subject is byte-identical afterwards.
+- `tools/submodule_no_child.py` — the composition itself, as a module rather than
+  a prototype: it answers a submodule-sensitive read from structural Git
+  observations made above the boundary, so the answer is assembled without any
+  read recursing into a child's working tree. Gitlink identity comes from the
+  index and the recorded tree, never from `.gitmodules` or configuration.
+- `docs/acceptance/rp2.5.0-submodule-differential.py` — the corpus that scores it:
+  208 byte-exact rows against frozen 2.4.0 with 12 deliberate positive controls,
+  including a control that detects a trace which was written by an earlier call
+  rather than by the read being counted.
+- `docs/acceptance/RP2.5.0-submodule-proof.md` — what that corpus establishes and
+  what it does not, written beside it so a reader is not left to infer the scope
+  of a passing run from the fact that it passed.
 - `docs/acceptance/rp2.5.0-floor-differential.py` — the frozen-floor differential:
   the same public entry point called on this release and on 2.4.0 in separate
   interpreters, compared as raw bytes, refusals included, over 25 fixtures and 153

@@ -888,8 +888,8 @@ raw non-zero checker result is never rewritten as a pass.** A reader who runs th
 command sees the same twelve violations this record admits to.
 
 Run with `--default-terms .` — the vocabulary a consuming PROJECT declares rather
-than the one this pack self-applies — the same command reports TWELVE
-non-conforming commits and TWENTY-TWO violations, because eight further commits use
+than the one this pack self-applies — the same command reports THIRTEEN
+non-conforming commits and TWENTY-THREE violations, because nine further commits use
 a word that vocabulary makes private. Four is the number under `NO_PRIVATE_TERMS`,
 which is the contract this pack's own `validate_range` tests use and therefore the
 one its own history is judged by. Both numbers are recorded so neither is a

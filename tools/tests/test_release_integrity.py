@@ -852,8 +852,23 @@ _NUMBER_WORDS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
     "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
     "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20, "twenty-one": 21, "twenty-two": 22,
+    "nineteen": 19, "twenty": 20,
 }
+# The tens are spelled out to forty because a range that grows a commit at a time
+# will walk through them, and a KeyError here reads as a record defect rather than
+# as this map running out — which is exactly what it did at twenty-three.
+_NUMBER_WORDS.update({
+    f"twenty-{unit}": 20 + value
+    for unit, value in list(_NUMBER_WORDS.items())[:9]
+    for unit, value in [(unit, value)]
+    if 1 <= value <= 9
+})
+_NUMBER_WORDS.update({"thirty": 30, "forty": 40})
+_NUMBER_WORDS.update({
+    f"thirty-{unit}": 30 + value
+    for unit, value in list(_NUMBER_WORDS.items())
+    if isinstance(value, int) and 1 <= value <= 9 and "-" not in unit
+})
 
 
 def _non_conforming_range(term_set):
