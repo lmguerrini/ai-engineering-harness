@@ -1386,10 +1386,15 @@ def test_no_tool_reaches_a_module_by_name_at_runtime():
     assert not offenders, "dynamic imports route around D3: " + "; ".join(offenders)
 
 
-def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
-    """`nul_paths` claims to cover **every** path enumeration in the toolbelt.
-    It did not — `objects_in_outgoing_range` still split on lines, found by an
-    independent audit. A universal claim needs a universal check.
+def _git_path_enumeration_offenders(toolbelt: Path) -> list[str]:
+    """Return path-producing Git reads that lack a structural NUL source.
+
+    A short-option cluster is structural syntax: ``-rz`` and ``-zr`` each
+    request ``-z``.  A rendered, non-NUL view is also legitimate when its
+    enclosing function makes the NUL-separated form of *that same command*.
+    That permits Git's own rendering to accompany a structural read, but never
+    to replace one.  The function boundary is deliberate: a NUL read elsewhere
+    in a module says nothing about this caller's rendered bytes.
     """
     import ast
 
@@ -1428,9 +1433,36 @@ def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
                 found.extend(splatted.get(argument.value.id, []))
         return found
 
+    def has_short_nul_cluster(literals: list[str]) -> bool:
+        """Whether a short-option cluster asks Git for NUL separation.
+
+        Long options and arguments are not clusters.  Looking at the members of
+        the short cluster, rather than comparing a token to ``"-z"``, accepts
+        every ordering of independently valid short flags.
+        """
+        return any(
+            token.startswith("-") and not token.startswith("--")
+            and token[1:].isalpha() and "z" in token[1:]
+            for token in literals
+        )
+
+    def enclosing_function(node, parents):
+        """The innermost function containing ``node``, if it has one."""
+        current = node
+        while current in parents:
+            current = parents[current]
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                return current
+        return None
+
     offenders = []
-    for path in sorted((ROOT / "tools").glob("*.py")):
+    for path in sorted(toolbelt.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        parents = {
+            child: node
+            for node in ast.walk(tree)
+            for child in ast.iter_child_nodes(node)
+        }
         # Every list assigned to a plain name, so a splat can be resolved back to
         # the literals it carries.
         splatted: dict[str, list[str]] = {}
@@ -1448,6 +1480,7 @@ def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
                         element.value for element in node.value.elts
                         if isinstance(element, ast.Constant) and isinstance(element.value, str)
                     )
+        enumerations = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -1472,12 +1505,81 @@ def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
                 token in literals for token in ("--name-only", "--objects", "--cached",
                                                 "--others", "--stage")
             ) or command in ("ls-files", "ls-tree")
-            if emits_paths and "-z" not in literals:
+            if emits_paths:
+                enumerations.append((node, command, literals, enclosing_function(node, parents)))
+
+        for node, command, literals, function in enumerations:
+            if has_short_nul_cluster(literals):
+                continue
+            paired_structural_read = function is not None and any(
+                other_command == command and other_function is function
+                and has_short_nul_cluster(other_literals)
+                for _, other_command, other_literals, other_function in enumerations
+            )
+            if not paired_structural_read:
                 offenders.append(f"{path.name}:{node.lineno}: `git {command}` without -z")
+    return offenders
+
+
+def test_every_git_path_enumeration_in_the_toolbelt_asks_for_nul_separation():
+    """`nul_paths` claims to cover **every** path enumeration in the toolbelt.
+    It did not — `objects_in_outgoing_range` still split on lines, found by an
+    independent audit. A universal claim needs a universal check.
+    """
+    offenders = _git_path_enumeration_offenders(ROOT / "tools")
     assert not offenders, (
         "these enumerate paths without NUL separation, so a path git C-quotes reaches a "
         "checker as an escaped literal: " + "; ".join(offenders)
     )
+
+
+def test_nul_enumeration_guard_distinguishes_clusters_and_rendered_pairs(tmp_path):
+    """The AST guard accepts the two honest forms and rejects each missing ``z``.
+
+    The accepted probe has a ``-rz``/``-zr`` short cluster and a rendered
+    ``ls-files`` read beside its same-function structural sibling.  The first
+    rejected probe has no such sibling; the second is the same short cluster
+    after its ``z`` is removed.  Reverting either repair makes the accepted
+    probe a false positive; weakening either rule lets its corresponding broken
+    probe pass.
+    """
+    def write_probe(name: str, source: str) -> Path:
+        toolbelt = tmp_path / name
+        toolbelt.mkdir()
+        (toolbelt / "probe.py").write_text(source, encoding="utf-8")
+        return toolbelt
+
+    clustered_rz_source = """def clustered_rz():
+    observe(\"ls-tree\", \"-rz\", \"HEAD\")
+"""
+    accepted = write_probe(
+        "accepted",
+        """def rendered_pair():
+    observe(\"ls-files\", \"--stage\", \"-z\")
+    observe(\"ls-files\", \"--stage\")
+
+""" + clustered_rz_source + """
+
+def clustered_zr():
+    observe(\"ls-tree\", \"-zr\", \"HEAD\")
+""",
+    )
+    rendered_without_structural_source = """def rendered_without_structural_source():
+    observe(\"ls-files\", \"--stage\")
+"""
+    unpaired = write_probe("unpaired", rendered_without_structural_source)
+    cluster_without_z = write_probe(
+        "cluster-without-z",
+        clustered_rz_source.replace('\"-rz\"', '\"-r\"'),
+    )
+
+    assert _git_path_enumeration_offenders(accepted) == []
+    assert _git_path_enumeration_offenders(unpaired) == [
+        "probe.py:2: `git ls-files` without -z"
+    ]
+    assert _git_path_enumeration_offenders(cluster_without_z) == [
+        "probe.py:2: `git ls-tree` without -z"
+    ]
 
 
 def _pathmatch_divergence_pattern():

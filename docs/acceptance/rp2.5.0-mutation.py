@@ -44,8 +44,20 @@ NESTED_AFTER = (
     '            source = here / name\n'
     '            if source.is_symlink():'
 )
+DOT_GIT_NAME_BEFORE = (
+    '    probe = here / DOT_GIT\n'
+    '    if not os.path.lexists(probe):\n'
+    '        return None'
+)
+DOT_GIT_NAME_AFTER = (
+    '    probe = here / DOT_GIT\n'
+    '    if not probe.is_dir() or probe.is_symlink():\n'
+    '        return None'
+)
 SPELLING_ORACLE = ("tools/tests/test_gitread.py::"
                    "test_no_spelling_of_a_nested_git_executes_the_subjects_program")
+KIND_ORACLE = ("tools/tests/test_gitread.py::"
+               "test_a_nested_git_symlink_is_rebuilt_as_harness_state")
 
 #: (why it matters, file, the exact text to replace, what to replace it with, the oracle)
 #:
@@ -60,11 +72,8 @@ MUTANTS = [
     ("the symlink branch consumes .git before the name check sees it",
      "tools/sterile.py", NESTED_BEFORE, NESTED_AFTER, SPELLING_ORACLE),
     ("the name check asks the KIND of .git instead of the name", "tools/sterile.py",
-     '        if relative != Path(".") and entry is not None:\n'
-     '            nested.append(relative)',
-     '        if relative != Path(".") and (here / ".git").is_dir() '
-     'and not (here / ".git").is_symlink():\n            nested.append(relative)',
-     SPELLING_ORACLE),
+     DOT_GIT_NAME_BEFORE, DOT_GIT_NAME_AFTER,
+     KIND_ORACLE),
     ("the view post-condition is never called", "tools/sterile.py",
      "    _every_git_in_the_view_is_ours(view, built)\n", "    pass\n",
      "tools/tests/test_gitread.py::test_the_view_builder_actually_runs_its_own_post_condition"),
@@ -82,7 +91,8 @@ MUTANTS = [
      "    if not reproducible:", "    if False:",
      "tools/tests/test_gitread.py::test_a_ref_store_the_build_cannot_import_is_refused_not_answered"),
     ("the subject's own git directory is used again", "tools/sterile.py",
-     '        "GIT_DIR": str(gitdir),', '        "RP_MUTANT_GIT_DIR": str(gitdir),',
+     '        "GIT_DIR": os.path.relpath(gitdir, cwd),',
+     '        "RP_MUTANT_GIT_DIR": os.path.relpath(gitdir, cwd),',
      "tools/tests/test_gitread.py::"
      "test_every_configuration_source_git_reports_is_one_the_harness_wrote"),
     ("content-encoding descriptors are dropped", "tools/sterile.py",
@@ -95,16 +105,45 @@ MUTANTS = [
      "tools/tests/test_gitread.py::"
      "test_a_configuration_read_reports_the_subjects_settings_not_the_harnesss"),
     ("the standing transport refusal is dropped", "tools/gitread.py",
-     '    transport_config: dict[str, str] = {"protocol.allow": "never"}',
-     "    transport_config: dict[str, str] = {}",
-     "tools/tests/test_publication_gate.py::test_every_ordinary_read_still_refuses_every_protocol"),
+     '        "protocol.allow": "never",\n', "",
+     "tools/tests/test_gitread.py::test_the_standing_transport_refusal_reaches_the_read"),
     ("repository location is asked of the read again", "tools/gitread.py",
      "    return sterile.where_is(_repository(repository))",
      '    return {"gitdir": _run(repository, "rev-parse", "--git-dir").strip(),\n'
      '            "common": _run(repository, "rev-parse", "--git-common-dir").strip(),\n'
      '            "toplevel": _run(repository, "rev-parse", "--show-toplevel").strip(),\n'
      '            "linked_worktree": False, "bare": False}',
-     "tools/tests/test_activity.py::test_one_repository_registered_twice_is_counted_once"),
+     "tools/tests/test_gitread.py::test_repository_location_is_taken_from_subject_files"),
+#: A7.1 added a second backend and a composition above the boundary, so five
+#: more things became load-bearing. They are APPENDED rather than substituted:
+#: the implementation pass replaced this file with its own five and dropped the
+#: eleven below, along with the assertion that the subject is restored — which is
+#: the assertion that makes a harness editing real source safe to ship.
+    ("the local child denial is removed",
+     "tools/gitread.py",
+     'return profile + "(deny process-fork)\\n" + f"(deny file-write* {denied})\\n"',
+     'return profile + f"(deny file-write* {denied})\\n"',
+     "tools/tests/test_gitread.py::test_a_local_read_creates_no_child"),
+    ("the local backend is applied to a caller-named transport",
+     "tools/gitread.py",
+     "local_backend = _uses_local_backend(verb, allow_transports)",
+     "local_backend = True",
+     "tools/tests/test_publication_gate.py::test_a_file_remote_still_verifies_after_the_change"),
+    ("the composition invents a submodule status field",
+     "tools/submodule_no_child.py",
+     'return b"S" + (b"C" if self.commit_changed else b".") + (',
+     'return b"X" + (b"C" if self.commit_changed else b".") + (',
+     "docs/acceptance/rp2.5.0-submodule-differential.py"),
+    ("a gitlink identity is taken from .gitmodules rather than the index",
+     "tools/submodule_no_child.py",
+     'runner, repository, "ls-files", "--stage", "-z", env_overlay=env_overlay,',
+     'runner, repository, "config", "--file", str(repository / ".gitmodules"), "--get-regexp", "path", env_overlay=env_overlay,',
+     "tools/tests/test_gitread.py::test_routing_does_not_consult_the_subject"),
+    ("zero child starts is accepted without a Git-written trace",
+     "tools/gitread.py",
+     'if not any(event.get("event") == "version" for event in events):',
+     "if False:",
+     "tools/tests/test_gitread.py::test_a_local_read_creates_no_child"),
 ]
 
 
@@ -138,8 +177,18 @@ def run(selector, timeout=900):
         shutil.rmtree(cache, ignore_errors=True)
     environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     started = time.time()
+    # An oracle may be a shipped acceptance SCRIPT rather than a pytest selector.
+    # Running a script through pytest imports it as a test module, which fails at
+    # import for anything that reads its configuration from the environment — and
+    # reads as a red baseline rather than as the harness calling it wrongly.
+    command = (
+        [sys.executable, selector]
+        if selector.endswith(".py")
+        else [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+              "--no-header", selector]
+    )
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--no-header", selector],
+        command,
         cwd=str(ROOT), capture_output=True, text=True, timeout=timeout, env=environment)
     summary = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
     return proc.returncode, summary, time.time() - started

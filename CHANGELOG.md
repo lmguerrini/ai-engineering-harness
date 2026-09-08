@@ -2,9 +2,20 @@
 
 ## 2.5.0 — the boundary stops describing Git and starts constructing the repository
 
-A **MINOR** release (`DECISIONS.md` D11): a new tool ships, and the authority
-mechanism behind every governed read is replaced. Derived rather than assumed —
-`tools/surface_diff.py` over `9d906ce..HEAD` is the check, not this paragraph.
+A **MINOR** release (`DECISIONS.md` D11 and D28): a new tool ships, and the
+authority mechanism behind every governed read is replaced. Derived rather than
+assumed — `tools/surface_diff.py` over `9d906ce..HEAD` is the check for the API
+surface, and `docs/acceptance/rp2.5.0-floor-differential.py` is the check for the
+answers, because a release can be signature-compatible and answer-incompatible
+and this one is.
+
+**The grade rests on a stated ground, not on the absence of a signature change.**
+This release changes what callers are TOLD in the five ways listed under *What a
+consumer will notice*. D11 grades an incompatible contract change MAJOR, so the
+reason 2.5.0 stands is that its `state` is `IN_PROGRESS`, **no project pins it**,
+and 2.4.0 remains the release projects pin — a contract nothing has adopted
+cannot be broken by changing it. D28 records that argument and the founder
+authority for it, so a reader does not have to reconstruct either.
 **State `IN_PROGRESS`** — a candidate. **No project may pin it.** The transition
 to `QUALIFIED_AND_FROZEN` is `policy/hitl-matrix.md` row 2 and has not been
 taken. **2.4.0 is untouched**: same revision, same digest, same state, and it
@@ -90,6 +101,28 @@ anything missed makes a read fail loudly instead of running a program.
   argument can steer. What 2.4.0 left open and this release closes is the
   program: `--upload-pack` is injected for every transport verb, so
   `remote.<name>.uploadpack` no longer names something that runs.
+- On a populated submodule, local forms outside the measured composition report
+  the committed gitlink state and suppress the submodule's dirty detail.
+- **`verify-pack` is refused, and it is the one read this release takes away.**
+  Frozen 2.4.0 answers it; this release does not, because `git verify-pack`
+  spawns `git index-pack --verify-stat` and a local governed read creates no
+  child process. The refusal is explicit and names its cause. Nothing in this
+  toolbelt calls `verify-pack`, and this release already declines to index a
+  pack elsewhere for the same reason.
+
+  **This release is therefore not free of behavioural reductions, and does not
+  claim to be.** It is a strict security and governance improvement in spite of
+  that one, because what it removes is an unused read at the edge of the
+  declared surface and what it adds is structural: every configuration source
+  Git consults is a file this harness wrote; a local read creates no child
+  process at all, so no repository can name a program that runs; the boundary no
+  longer decides anything from a list of verbs, options, helpers or spellings,
+  which is the mechanism that failed in six previous generations; and the answers
+  are measured against the previous release over 8,600 comparisons rather than
+  asserted. A capability that no caller uses is a smaller thing to lose than
+  those are to gain, and the trade is stated here rather than left for a reader
+  to discover.
+
 - A working tree containing a directory named `.Git` or `.GIT` is **read** on a
   case-insensitive volume, where a second qualification pass found it crashing a
   tool with an unhandled `FileExistsError`. Which entry Git will open as `.git`

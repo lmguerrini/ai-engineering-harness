@@ -4,6 +4,7 @@ No mocking: every function under test shells out to a real `git`, so the
 throwaway repo is the fixture.
 """
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import gitread
+from submodule_no_child import has_gitlinks as _has_gitlinks
 from errors import GitRefusal
 
 
@@ -374,6 +376,110 @@ def test_git_bundle_may_read_and_may_not_write(tmp_path):
     answer = gitread.probe(directory, "bundle", "list-heads", "/private/tmp/absent.bundle",
                            negative_statuses=())
     assert answer.answered, "the read subcommand must still be reachable"
+
+
+def test_a_caller_named_bundle_is_read_byte_for_byte(tmp_path):
+    """A caller-named path is readable even when it is outside the repository.
+
+    Reverting the caller-operand repair makes both governed bundle reads fail
+    at the Seatbelt boundary before Git can open this sibling file.  The
+    comparison is against real Git's bytes for both read forms, not merely
+    against a successful exit status.
+    """
+    repo = _isolated_committed_repo(tmp_path, "bundle-capability")
+    bundle = tmp_path / "outside.bundle"
+    _isolated_git(repo, "bundle", "create", str(bundle), "HEAD")
+    read = _sterile.build(repo)
+    try:
+        profile = gitread._local_profile(read, repo, tmp_path, (
+            "bundle", "list-heads", str(bundle),
+        ))
+    finally:
+        read.discard()
+    assert str(bundle.resolve()) in profile, "the caller-named bundle is not a readable root"
+    assert (
+        f'(deny file-write* (subpath "{repo.resolve()}") '
+        f'(subpath "{(repo / ".git").resolve()}"))'
+    ) in profile, "the caller-readable root changed the subject write deny"
+
+    for subcommand in ("list-heads", "verify"):
+        expected = subprocess.run(
+            ["git", "bundle", subcommand, str(bundle)], cwd=str(repo),
+            capture_output=True, check=True,
+        ).stdout
+        try:
+            actual = gitread._run(repo, "bundle", subcommand, str(bundle), text=False)
+        except GitRefusal as refusal:
+            if "local no-child barrier" in str(refusal.cause):
+                pytest.skip("the host cannot execute the local Seatbelt barrier")
+            raise
+        assert actual == expected, f"governed bundle {subcommand} differs from real Git"
+
+
+def test_a_subject_supplied_path_cannot_widen_the_local_read(tmp_path, monkeypatch):
+    """A repository-controlled remote path is not a caller permission.
+
+    Reverting the caller-operand repair makes the subject's ``remote.origin.url``
+    become an allowed read root after alias resolution, and this invocation
+    then returns the sibling repository's refs instead of refusing.  The raw
+    caller operand is only ``origin``, so the subject-controlled path must stay
+    outside the profile's private read carve-out.
+    """
+    repo = _isolated_committed_repo(tmp_path, "subject-path")
+    remote = _isolated_committed_repo(tmp_path, "subject-controlled-remote")
+    _isolated_git(repo, "remote", "add", "origin", str(remote))
+    read = _sterile.build(repo)
+    try:
+        profile = gitread._local_profile(read, repo, tmp_path, ("ls-remote", "origin"))
+    finally:
+        read.discard()
+    assert str(remote.resolve()) not in profile, "a subject-controlled path widened the read roots"
+
+    # AND END TO END, THROUGH A LOCAL READ. The direct call above proves the
+    # profile does not carry the subject's path; this proves the same thing on
+    # the route a real caller takes. It deliberately uses a LOCAL verb: an
+    # earlier form drove `ls-remote` and expected the local barrier to refuse,
+    # which stopped being true once the transport verb correctly began taking
+    # the transport backend. A test that can only fail while a defect exists is
+    # not a test of the property.
+    profiles = []
+    real_profile = gitread._local_profile
+
+    def capture_profile(*arguments, **kwargs):
+        captured = real_profile(*arguments, **kwargs)
+        profiles.append(captured)
+        return captured
+
+    monkeypatch.setattr(gitread, "_local_profile", capture_profile)
+    gitread._run(repo, "status", "--porcelain")
+    assert profiles, "a local read rendered no profile"
+    assert str(remote.resolve()) not in profiles[-1], (
+        "a subject-controlled path reached the read roots of a local governed read"
+    )
+
+    # WHAT THIS TEST DOES NOT PROVE, said here rather than implied by silence.
+    #
+    # `_run` snapshots the caller's arguments BEFORE resolving anything the
+    # subject controls, and builds the profile from that snapshot. That ordering
+    # currently has **no live route to exercise**: the only step that rewrites an
+    # argument from subject data is remote-alias resolution, and that happens
+    # only for transport verbs, which no longer render a local profile at all.
+    # Moving the snapshot past resolution therefore changes no observable
+    # behaviour, and a test claiming to catch it would pass either way.
+    #
+    # Two attempts were made and both were discarded rather than kept green: one
+    # drove `ls-remote` and stopped meaning anything once the transport verb
+    # correctly took the transport backend; one used a gitlink subject expecting
+    # the recursion-suppression rewrite to show through, which the composition
+    # path never reaches. **A test that cannot fail is worse than an absent one,
+    # because it is counted.**
+    #
+    # The ordering is defence in depth for a route that may exist again. What
+    # keeps it safe today is structural and IS pinned, in
+    # `test_routing_does_not_consult_the_subject`: every transport verb takes the
+    # transport backend, so no subject-resolved address can reach a local read's
+    # profile. If that ever changes, this ordering becomes load-bearing and will
+    # need an oracle that can actually fail.
 
 
 def test_a_transport_may_only_be_enabled_for_the_verb_the_exception_is_scoped_to(tmp_path):
@@ -1528,6 +1634,41 @@ def test_no_spelling_of_a_nested_git_executes_the_subjects_program(tmp_path, spe
     )
 
 
+def test_a_nested_git_symlink_is_rebuilt_as_harness_state(tmp_path):
+    """A nested `.git` is recognised by its NAME before either walk uses its kind.
+
+    This is the direct, helper-free form of the nested-git guarantee.  A
+    gitlink's `.git` is deliberately replaced by a symlink to its own git
+    directory, then the sterile builder must replace that spelling in the view
+    with a directory it made.  Reverting the repair to ask ``Path.is_dir()``
+    and reject symlinks makes the detector miss this entry; no view is built and
+    the final ownership assertion fails against the subject's git directory.
+    """
+    inner = _isolated_committed_repo(tmp_path, "inner")
+    superproject = _isolated_committed_repo(tmp_path, "superproject")
+    _isolated_git(
+        superproject, "-c", "protocol.file.allow=always", "submodule", "add", "-q",
+        str(inner), "module",
+    )
+    _isolated_git(superproject, "commit", "-q", "-m", "add module")
+    subject_gitdir = superproject / ".git" / "modules" / "module"
+    entry = superproject / "module" / ".git"
+    entry.unlink()
+    os.symlink(subject_gitdir, entry)
+
+    read = _sterile.build(superproject)
+    try:
+        assert read.worktree is not None
+        rebuilt = read.worktree / "module" / ".git"
+        assert os.path.lexists(rebuilt), "the constructed view omitted the nested repository"
+        assert rebuilt.is_symlink(), "the rebuilt nested repository is not installed as a gitdir link"
+        assert rebuilt.resolve().is_relative_to(read.scratch.resolve()), (
+            f"the constructed view points at the subject git directory: {rebuilt.resolve()}"
+        )
+    finally:
+        read.discard()
+
+
 @pytest.mark.parametrize("kind", ["dangling symlink", "empty file", "fifo"])
 def test_a_nested_repository_that_cannot_be_rebuilt_refuses_the_read(tmp_path, kind):
     """Fail-closed, by name. What cannot be rebuilt sterile is not read past: the
@@ -1636,15 +1777,12 @@ def test_an_unrelated_ignored_checkout_leaves_the_project_readable(tmp_path):
 def test_every_configuration_source_git_reports_is_one_the_harness_wrote(tmp_path):
     """**The invariant itself**, and it is checked by asking Git which files it
     read rather than by predicting which it would. A source outside the build
-    fails this without anybody having to have thought of it."""
-    script, _marker = _marker_script(tmp_path)
-    repo = tmp_path / "subject"
-    repo.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _hostile(repo, script)
-    (repo / ".git" / "extra").write_text(f'[diff "evil"]\n\ttextconv = {script}\n')
+    fails this without anybody having to have thought of it. Reverting the
+    `GIT_DIR` repair makes Git rediscover the subject from its working directory,
+    so this test reports the subject's `config` as an origin and fails."""
+    repo = _isolated_committed_repo(tmp_path, "subject")
+    (repo / ".git" / "extra").write_text("[subject]\n\tsentinel = outside\n")
     _git(repo, "config", "include.path", "extra")
-    _commit_all(repo)
 
     read = _sterile.build(repo)
     try:
@@ -2074,7 +2212,9 @@ def test_an_operators_home_does_not_shape_a_governed_answer(tmp_path, monkeypatc
     operator's `~/.config/git/ignore` was still read and a governed `status`
     silently dropped an untracked file. Found by an independent design reading.
     `git config --show-scope` never lists that file, so the invariant's own check
-    could not see it: the directory is empty instead."""
+    could not see it: the directory is empty instead. Reverting the `HOME` and
+    `XDG_CONFIG_HOME` repair inherits this test's operator home and makes the
+    untracked file disappear from the constructed `status` output."""
     home = tmp_path / "operator-home"
     (home / "git").mkdir(parents=True)
     (home / "git" / "ignore").write_text("secret-untracked.txt\n")
@@ -2087,9 +2227,16 @@ def test_an_operators_home_does_not_shape_a_governed_answer(tmp_path, monkeypatc
     _commit_all(repo)
     (repo / "secret-untracked.txt").write_text("this must still be reported\n")
 
-    answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-    assert answer.answered, answer.cause
-    assert "secret-untracked.txt" in answer.value, (
+    read = _sterile.build(repo)
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=read.cwd, env=read.environment,
+            capture_output=True, text=True,
+        )
+    finally:
+        read.discard()
+    assert status.returncode == 0, status.stderr
+    assert "secret-untracked.txt" in status.stdout, (
         "the operator's global ignore file suppressed a file from a governed answer"
     )
 
@@ -2285,8 +2432,11 @@ def test_a_carried_git_state_link_is_materialised_before_index_refresh(tmp_path)
 
     Reverting materialisation preserves the scratch ``index`` symlink; the
     forced refresh then writes its ``real-index`` target and this inode check
-    fails.  The assertion is about the general copy mechanism, not an
-    index-specific exception.
+    fails.  It invokes the governed boundary rather than the builder directly:
+    a local barrier may fail closed on a host that cannot load it, but the
+    construction and its refresh have still happened before that refusal.  The
+    assertion is about the general copy mechanism, not an index-specific
+    exception.
     """
     root = _isolated_committed_repo(tmp_path, "linked-state")
     nested = root / "nested"
@@ -2298,12 +2448,12 @@ def test_a_carried_git_state_link_is_materialised_before_index_refresh(tmp_path)
     index.symlink_to(target)
     before = target.stat()
 
-    read = _sterile.build(root)
     try:
-        assert not read.gitdir.joinpath("index").is_symlink()
-        assert read.gitdir.joinpath("index").is_file()
-    finally:
-        read.discard()
+        gitread._run(root, "status", "--porcelain")
+    except _GitRefusal as refusal:
+        # An unavailable Seatbelt profile is a named fail-closed local result,
+        # not a reason to skip the write-through oracle.
+        assert "local no-child barrier" in str(refusal.cause), refusal.render()
 
     after = target.stat()
     assert (after.st_ctime_ns, after.st_mtime_ns, after.st_size) == (
@@ -2604,6 +2754,197 @@ def test_a_git_file_status_does_not_report_its_own_transient_index_lock(tmp_path
     assert not (actual / "index.lock").exists()
 
 
+# R1/R2/R3 — repairs that preserve the frozen floor ---------------------------------
+
+def test_the_constructed_index_refreshes_even_without_a_view(tmp_path, monkeypatch):
+    """A copied index has copied stat data even when its tree is the subject.
+
+    The old `constructed_view` guard made this test pass only when a nested
+    directory happened to force a view.  This ordinary subject proves the
+    owned index is refreshed in both layouts and that `diff-index` sees clean.
+    """
+    repo = _isolated_committed_repo(tmp_path, "refresh-without-view")
+    calls = []
+    original = _sterile._refresh_constructed_index
+
+    def recording(*arguments):
+        calls.append(arguments)
+        return original(*arguments)
+
+    monkeypatch.setattr(_sterile, "_refresh_constructed_index", recording)
+    read = _sterile.build(repo)
+    try:
+        result = subprocess.run(
+            ["git", "diff-index", "HEAD"], cwd=read.cwd, env=read.environment,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+    finally:
+        read.discard()
+    assert calls, "the ordinary subject bypassed the constructed-index refresh"
+
+
+def test_branch_tracking_is_carried_into_a_constructed_status_answer(tmp_path):
+    """The v2 branch fields come from branch.<name>.remote and .merge."""
+    repo = _isolated_committed_repo(tmp_path, "branch-tracking")
+    head = _isolated_git(repo, "rev-parse", "HEAD").strip()
+    _isolated_git(repo, "remote", "add", "origin", str(repo))
+    _isolated_git(repo, "update-ref", "refs/remotes/origin/main", head)
+    _isolated_git(repo, "config", "branch.main.remote", "origin")
+    _isolated_git(repo, "config", "branch.main.merge", "refs/heads/main")
+    expected = _isolated_real_git(repo, "status", "--porcelain=v2", "--branch")
+    assert "# branch.upstream origin/main" in expected.stdout, expected.stdout
+    assert "# branch.ab +0 -0" in expected.stdout, expected.stdout
+
+    read = _sterile.build(repo)
+    try:
+        actual = subprocess.run(
+            ["git", "status", "--porcelain=v2", "--branch"], cwd=read.cwd,
+            env=read.environment, capture_output=True, text=True,
+        )
+        assert actual.returncode == 0, actual.stderr
+        assert actual.stdout == expected.stdout
+    finally:
+        read.discard()
+
+
+def test_constructed_path_output_is_rebased_before_scratch_is_discarded(tmp_path):
+    """One path relation covers Git's relative and absolute path answers."""
+    repo = _isolated_committed_repo(tmp_path, "path-rebasing")
+    read = _sterile.build(repo)
+    try:
+        relative = subprocess.run(
+            ["git", "rev-parse", "--git-dir"], cwd=read.cwd, env=read.environment,
+            capture_output=True, text=True, check=True,
+        ).stdout
+        common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"], cwd=read.cwd, env=read.environment,
+            capture_output=True, text=True, check=True,
+        ).stdout
+        absolute = subprocess.run(
+            ["git", "rev-parse", "--absolute-git-dir"], cwd=read.cwd, env=read.environment,
+            capture_output=True, text=True, check=True,
+        ).stdout
+        git_path = subprocess.run(
+            ["git", "rev-parse", "--git-path", "index"], cwd=read.cwd, env=read.environment,
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert gitread._restore_subject_paths(relative, read, repo) == ".git\n"
+        assert gitread._restore_subject_paths(common, read, repo) == ".git\n"
+        assert gitread._restore_subject_paths(absolute, read, repo) == str(repo / ".git") + "\n"
+        assert gitread._restore_subject_paths(git_path, read, repo) == ".git/index\n"
+    finally:
+        read.discard()
+
+    nested = repo / "nested"
+    nested.mkdir()
+    _isolated_git(nested, "init", "-q", "-b", "main")
+    read = _sterile.build(repo)
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], cwd=read.cwd, env=read.environment,
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert gitread._restore_subject_paths(top, read, repo) == str(repo) + "\n"
+    finally:
+        read.discard()
+
+
+# O-A71-3 — a local read has a proof-bearing no-child barrier -----------------
+
+def test_a_local_read_creates_no_child(tmp_path):
+    """A usable host yields Git's Trace2 evidence; an unusable one fails closed.
+
+    The profile assertion makes removing the child denial a discriminating
+    mutation even on an executor that is itself not allowed to load Seatbelt.
+    Where the host can load it, the same test asks Git to write the Trace2
+    witness and counts its child-start events rather than trusting zero from an
+    absent file.
+    """
+    repo = _isolated_committed_repo(tmp_path, "no-child")
+    read = _sterile.build(repo)
+    try:
+        profile = gitread._local_profile(read, repo, tmp_path)
+    finally:
+        read.discard()
+    assert "(deny process-fork)" in profile
+
+    unwitnessed = tmp_path / "unwitnessed.trace2.json"
+    unwitnessed.write_text('{"event":"start"}\n', encoding="utf-8")
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._trace_has_no_children(unwitnessed)
+    assert "lacks Git's version event" in str(raised.value.cause)
+
+    trace = tmp_path / "local.trace2.json"
+    try:
+        assert gitread._run(
+            repo, "status", "--porcelain", env_overlay={"GIT_TRACE2_EVENT": str(trace)},
+        ) == ""
+    except _GitRefusal as refusal:
+        # This executor nests a Seatbelt sandbox, which macOS rejects before
+        # Git starts.  A named refusal is the required result on that host.
+        assert "local no-child barrier" in str(refusal.cause), refusal.render()
+        return
+
+    events = [json.loads(line) for line in trace.read_text().splitlines() if line]
+    assert any(event.get("event") == "version" for event in events)
+    assert not [event for event in events if event.get("event") == "child_start"]
+
+
+# O-A71-8 — routing and gitlink identity do not read subject declarations ----
+
+def test_routing_does_not_consult_the_subject(tmp_path):
+    """Backend choice and a gitlink's identity are both structural facts.
+
+    The `.gitmodules` file deliberately disagrees with the stage-zero index.
+    The runner supplies only the two structural Git reads; a mutant which asks
+    configuration or `.gitmodules` for an identity has no response and fails.
+    """
+    # THE VERB IS THE CAPABILITY, and these hold it in both directions. An
+    # earlier form asserted that `ls-remote` without `allow_transports` takes the
+    # LOCAL backend, which is the defect rather than the property: the local
+    # backend then saw `git-upload-pack` — the child a transport legitimately
+    # starts — and refused a read the frozen floor answers. `allow_transports`
+    # widens WHICH transports are permitted; it never decides which backend
+    # serves the verb, because that would put a capability behind an argument.
+    assert gitread._uses_local_backend("status", ())
+    assert gitread._uses_local_backend("status", ("file",))
+    assert not gitread._uses_local_backend("ls-remote", ())
+    assert not gitread._uses_local_backend("ls-remote", ("file",))
+    assert gitread._with_recursion_suppressed(("status", "--porcelain")) == (
+        "status", "--porcelain", "--ignore-submodules=dirty",
+    )
+    assert gitread._with_recursion_suppressed(("diff", "--", "-path")) == (
+        "diff", "--ignore-submodules=dirty", "--", "-path",
+    )
+
+    repo = tmp_path / "structural-gitlink"
+    repo.mkdir()
+    (repo / ".gitmodules").write_text(
+        '[submodule "misleading"]\n\tpath = another-place\n\turl = nowhere\n', encoding="utf-8",
+    )
+    oid = b"1" * 40
+    calls = []
+
+    def structural_runner(_repository, *arguments, text=False, env_overlay=None):
+        calls.append(arguments)
+        if arguments == ("ls-files", "--stage", "-z"):
+            return b"160000 " + oid + b" 0\tsub\0"
+        if arguments == ("ls-files", "--stage"):
+            return b"160000 " + oid + b" 0\tsub\n"
+        if arguments == ("ls-tree", "-rz", "HEAD"):
+            return b"160000 commit " + oid + b"\tsub\0"
+        raise AssertionError(f"subject declaration was consulted: {arguments!r}")
+
+    assert _has_gitlinks(repo, runner=structural_runner)
+    assert calls == [
+        ("ls-files", "--stage", "-z"),
+        ("ls-files", "--stage"),
+        ("ls-tree", "-rz", "HEAD"),
+    ]
+
+
 # preserved: the guarantees the removed tests carried ---------------------------------
 
 def test_a_configuration_read_reports_the_subjects_settings_not_the_harnesss(tmp_path):
@@ -2619,6 +2960,79 @@ def test_a_configuration_read_reports_the_subjects_settings_not_the_harnesss(tmp
     assert any(entry["key"] == "notes.rewriteref" for entry in entries), entries
     answer = gitread.probe(repo, "config", "--get", "notes.rewriteref", negative_statuses=(1,))
     assert answer.answered and answer.value.strip() == "refs/notes/commits"
+
+
+def test_the_standing_transport_refusal_reaches_the_read(tmp_path, monkeypatch):
+    """An ordinary transport read receives the standing `protocol.allow = never`.
+
+    The external launch is replaced only after the real sterile construction, so
+    this test neither contacts nor resolves the sample address.  It asks a
+    second real constructed Git environment for the setting the first one was
+    handed.  Reverting the `protocol.allow` repair removes that setting from the
+    captured construction and the final `git config --get` assertion fails.
+    """
+    repo = _isolated_committed_repo(tmp_path, "ordinary-transport")
+    captured = {}
+    real_build = _sterile.build
+    real_launch = gitread.instrument.launch
+
+    def watch_build(repository, *, needs_working_tree=True, overlay=None, extra_config=None,
+                    timeout=30.0):
+        captured.update(extra_config or {})
+        return real_build(
+            repository, needs_working_tree=needs_working_tree, overlay=overlay,
+            extra_config=extra_config, timeout=timeout,
+        )
+
+    def stop_before_transport(command, **kwargs):
+        if command[:2] == ("git", "ls-remote"):
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return real_launch(command, **kwargs)
+
+    monkeypatch.setattr(gitread.sterile, "build", watch_build)
+    monkeypatch.setattr(gitread, "_uses_local_backend", lambda _verb, _allowed: False)
+    monkeypatch.setattr(gitread.instrument, "launch", stop_before_transport)
+    assert gitread._run(repo, "ls-remote", "ssh://not-contacted.invalid/example.git") == ""
+
+    read = real_build(repo, extra_config=captured)
+    try:
+        setting = subprocess.run(
+            ["git", "config", "--get", "protocol.allow"], cwd=read.cwd,
+            env=read.environment, capture_output=True, text=True,
+        )
+    finally:
+        read.discard()
+    assert setting.returncode == 0, setting.stderr
+    assert setting.stdout == "never\n"
+
+
+def test_repository_location_is_taken_from_subject_files(tmp_path, monkeypatch):
+    """Repository location comes from subject files, never from a governed read.
+
+    The stand-in deliberately returns three distinct disposable locations a
+    governed `rev-parse` could report.  Reverting the `sterile.where_is` repair
+    makes `repository_location` return those constructed paths and this test
+    fails before any answer can be mistaken for a subject location.
+    """
+    repo = _isolated_committed_repo(tmp_path, "location")
+    constructed = tmp_path / "discarded-construction"
+    calls = []
+
+    def reads_the_construction(_repository, *arguments, **_kwargs):
+        calls.append(arguments)
+        return str(constructed / arguments[-1]) + "\n"
+
+    monkeypatch.setattr(gitread, "_run", reads_the_construction)
+    location = gitread.repository_location(repo)
+
+    assert location == {
+        "gitdir": str(repo / ".git"),
+        "common": str(repo / ".git"),
+        "toplevel": str(repo.resolve()),
+        "linked_worktree": False,
+        "bare": False,
+    }
+    assert calls == [], "repository location was asked of a governed Git read"
 
 
 def test_a_repository_that_breaks_its_own_configuration_is_refused_not_read_as_empty(tmp_path):

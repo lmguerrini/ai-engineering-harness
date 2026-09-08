@@ -74,6 +74,19 @@ STORAGE_KEYS = frozenset({
     "core.sparsecheckoutcone",
 })
 
+#: Branch tracking is data about the subject's ref relationship, not a choice of
+#: program or transport.  `status --porcelain=v2 --branch` asks Git to render it,
+#: so replacing configuration without carrying these two values made the
+#: constructed answer silently lose `branch.upstream` and `branch.ab`.  As with
+#: STORAGE_KEYS, a missing entry can only make a read differ; it cannot execute.
+BRANCH_TRACKING_KEYS = frozenset({"remote", "merge"})
+
+#: A branch's remote name is resolved to its tracking ref through this mapping.
+#: `remote.<name>.fetch` is refspec data, not an address or a program setting;
+#: retaining just it lets porcelain render branch.upstream without handing Git a
+#: URL, helper, or any other remote behaviour.
+REMOTE_TRACKING_KEYS = frozenset({"fetch"})
+
 #: These are configuration ROOTS, rather than ordinary git-directory state.
 #:
 #: Git only opens `config.worktree` after `extensions.worktreeConfig` in `config`
@@ -315,6 +328,26 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     if extensions:
         lines.append("[extensions]\n")
         lines += [f"\t{key} = {value}\n" for key, value in sorted(extensions.items())]
+    branch_tracking: dict[str, dict[str, str]] = {}
+    for name, value in declared.items():
+        if not name.startswith("branch."):
+            continue
+        branch, separator, setting = name[len("branch."):].rpartition(".")
+        if separator and setting in BRANCH_TRACKING_KEYS:
+            branch_tracking.setdefault(branch, {})[setting] = value
+    for branch, settings in sorted(branch_tracking.items()):
+        lines.append(f'[branch "{branch}"]\n')
+        lines += [f"\t{key} = {value}\n" for key, value in sorted(settings.items())]
+    remote_tracking: dict[str, dict[str, str]] = {}
+    for name, value in declared.items():
+        if not name.startswith("remote."):
+            continue
+        remote, separator, setting = name[len("remote."):].rpartition(".")
+        if separator and setting in REMOTE_TRACKING_KEYS:
+            remote_tracking.setdefault(remote, {})[setting] = value
+    for remote, settings in sorted(remote_tracking.items()):
+        lines.append(f'[remote "{remote}"]\n')
+        lines += [f"\t{key} = {value}\n" for key, value in sorted(settings.items())]
     (into / "config").write_text("".join(lines), encoding="utf-8")
 
 
@@ -636,7 +669,7 @@ class SterileRead:
         shutil.rmtree(self.scratch, ignore_errors=True)
 
 
-def _environment(scratch: Path, gitdir: Path, worktree: Path | None, overlay: dict | None,
+def _environment(scratch: Path, gitdir: Path, worktree: Path | None, cwd: Path, overlay: dict | None,
                  extra_config: dict | None) -> dict:
     empty_config = scratch / "empty-config"
     empty_config.write_text("", encoding="utf-8")
@@ -662,7 +695,11 @@ def _environment(scratch: Path, gitdir: Path, worktree: Path | None, overlay: di
         "GIT_ATTR_NOSYSTEM": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_TERMINAL_PROMPT": "0",
-        "GIT_DIR": str(gitdir),
+        # Git preserves the spelling it was handed for `--git-dir`, while
+        # `--absolute-git-dir` resolves it.  A relative scratch spelling gives
+        # `_run` one general pathname-rebasing rule for both answers instead of
+        # a growing list of rev-parse option spellings.
+        "GIT_DIR": os.path.relpath(gitdir, cwd),
         "GIT_INDEX_FILE": str(gitdir / "index"),
     })
     if worktree is not None:
@@ -702,8 +739,20 @@ def build(repository, *, needs_working_tree: bool = True, overlay: dict | None =
             else:
                 worktree = source_worktree
                 cwd = source_worktree
-        environment = _environment(scratch, gitdir, worktree, overlay, extra_config)
-        if constructed_view:
+        environment = _environment(scratch, gitdir, worktree, cwd, overlay, extra_config)
+        # The scratch index is a copy even when the working tree is the subject.
+        # Its cached stat data is therefore stale in both layouts.  Refreshing
+        # only when a view existed left `diff-index` calling clean files modified;
+        # refreshing this owned copy is the one rule that fixes ordinary, nested,
+        # and linked-worktree reads without touching the subject.
+        #
+        # A BARE SUBJECT HAS NO WORKING TREE TO REFRESH AGAINST, and asking Git
+        # to do it there is not a stale-stat problem but a category error: Git
+        # reports a real failure, which this build correctly treats as a refusal,
+        # and an ordinary history read of a bare repository refused. The rule is
+        # about aligning an index with the tree it describes, so where there is
+        # no tree there is nothing to align.
+        if worktree is not None:
             _refresh_constructed_index(subject, gitdir, environment, cwd, timeout)
         _confirm_head(subject, gitdir, environment, cwd, head, reproducible, timeout)
         return SterileRead(scratch=scratch, gitdir=gitdir, worktree=worktree, cwd=cwd,
@@ -795,11 +844,29 @@ def _refresh_constructed_index(subject: Path, gitdir: Path, environment: dict, c
             "the constructed index could not be refreshed against its constructed working tree",
             repository=str(subject), git_directory=str(gitdir), error=str(exc),
         ) from exc
-    if refreshed.returncode != 0:
+    # `update-index --refresh` EXITS NON-ZERO WHEN ENTRIES DIFFER, and that is
+    # information rather than failure: it is how Git says "these paths need
+    # updating", which is the ordinary state of any repository with a modified
+    # file. A first version treated the exit status as a refusal, and because
+    # this refresh now runs for every constructed read, **every governed read of
+    # an ordinary dirty repository refused** — 39 suite failures, including the
+    # pin's own machinery, from one over-refusal.
+    #
+    # `fail-closed is the correct polarity and it is not a licence to
+    # over-refuse` is already this record's own conclusion from the split-index
+    # repair. So a real failure is distinguished from a report: Git writes
+    # `fatal:` or `error:` to stderr when it could not do the work, and says
+    # nothing there when it merely has paths to report.
+    #
+    # Failing to align the stat cache is not a correctness problem either way.
+    # Git still compares content when the stat data disagrees, so an unrefreshed
+    # index costs a comparison, never an answer.
+    trouble = (refreshed.stderr or "")
+    if refreshed.returncode != 0 and ("fatal:" in trouble or "error:" in trouble):
         raise GitRefusal(
             "the constructed index could not be refreshed against its constructed working tree",
             repository=str(subject), git_directory=str(gitdir), returncode=refreshed.returncode,
-            stderr=refreshed.stderr or "", stdout=refreshed.stdout or "",
+            stderr=trouble, stdout=refreshed.stdout or "",
         )
 
 

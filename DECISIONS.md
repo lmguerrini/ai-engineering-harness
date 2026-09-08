@@ -846,3 +846,49 @@ easier.
 **Reverses on:** an adopting project finding that declaring the waiter is so
 much friction that coordinators route around it, which would mean the
 declaration is in the wrong place rather than that the rule is wrong.
+
+---
+
+## D28 — a version bump is derived from the ANSWER contract, not only from the API surface (RP2.5.0)
+
+**Question the evidence put:** `CHANGELOG.md` derives this release's MINOR from
+`tools/surface_diff.py` over the baseline — *"derived rather than assumed"*. But
+`surface_diff` compares public names, signatures and star exports. **It cannot
+see answers.** So what does a release do when its signatures are compatible and
+its answers are not?
+
+**Answered by this release's own record.** Under *What a consumer will notice*
+it already lists four behavioural changes that break no signature:
+`config_with_origin` no longer reports the operator's configuration; `probe` on a
+directory that is not a repository reports *cannot ask* rather than *Git looked
+and said no*, so a caller branching on `answer.failed` takes the other path;
+`url.<base>.insteadOf` no longer applies; and founder ruling 13 adds a fifth — on
+a repository with a populated submodule a local read reports the gitlink's
+committed state rather than the child's dirtiness, except where the composition
+is proven byte-exact. Each changes what a caller is TOLD without changing what it
+may CALL. D11 grades MAJOR as *"an incompatible authority, contract or migration
+change"*, and a derivation that looks only at signatures cannot reach that
+question at all.
+
+**Decided.**
+
+*   **The bump is derived from both surfaces.** The API surface answers whether a
+    caller can still CALL what it called; the frozen-floor differential answers
+    whether it is still TOLD the same thing. A release states which instrument
+    produced its bump, and a release that changes answers says so beside the
+    grade rather than leaving it to a reader to notice.
+*   **This release remains 2.5.0, and the ground is stated rather than assumed.**
+    Its `state` is `IN_PROGRESS`, **no project pins it**, and 2.4.0 remains the
+    release projects pin. A contract nothing has adopted cannot be broken by
+    changing it. That is the argument; without it the grade would not stand on
+    D11's words, and it is recorded so a reader does not have to reconstruct it.
+*   **The instrument already exists.** `docs/acceptance/rp2.5.0-floor-differential.py`
+    compares answers against the previous release over 8,600 comparisons. Nothing
+    new is built for this; what changes is that the grade must consult it.
+
+**Founder authority.** Taken at HITL on 2026-09-08, on a batched question raised
+BEFORE certification rather than at the freeze, because certification runs on one
+immutable revision and a version change discovered afterwards invalidates it.
+
+**Reverses on:** a consumer pinning this release before it is frozen, which
+`state: IN_PROGRESS` exists to prevent.

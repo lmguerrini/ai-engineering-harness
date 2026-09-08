@@ -16,14 +16,20 @@ defining property is that it cannot.
 
 from __future__ import annotations
 
+import json
 import math
 import os
+import shutil
 import subprocess
+import tempfile
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
+import confine
 import instrument
 import sterile
+from submodule_no_child import UnsupportedFrozenForm, compose, has_gitlinks
 from errors import GitRefusal, IntegrityError
 from instrument import BlastRadius
 
@@ -53,6 +59,12 @@ __all__ = [
 ]
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# Composition calls the governing interface again for each top-level submodule
+# observation.  A ContextVar, rather than module-global state, keeps concurrent
+# callers independent while making those primitive calls stop at the boundary
+# instead of trying to decompose themselves again.
+_COMPOSING_SUBMODULE_READ: ContextVar[bool] = ContextVar("composing_submodule_read", default=False)
 
 # The wording is intentionally duplicated in the implementation, rather than
 # left only to an architecture document, so future callers see the constraint
@@ -84,6 +96,40 @@ def _transport_repository_operand(arguments: tuple[str, ...]) -> int | None:
             continue
         return index
     return None
+
+
+def _caller_path_operands(arguments: tuple[str, ...], cwd: Path) -> tuple[Path, ...]:
+    """Resolve caller-spelled operands without interpreting a Git verb.
+
+    This deliberately follows the same structural rule as
+    ``_transport_repository_operand``: options remain options, ``--`` ends
+    option parsing, and every positional value is a caller decision.  The
+    value after an option's ``=`` is included as well, without a table of
+    option spellings.  The caller's raw arguments must be supplied before
+    this module replaces a subject-configured alias with its value.
+
+    Treating every positional value as a possible path is conservative for
+    availability and harmless for confinement: refs and subcommands resolve
+    under ``cwd``, while a caller-named absolute path is the only new root
+    that can reach outside the already-readable roots.
+    """
+    operands: list[Path] = []
+    options = True
+    for argument in arguments:
+        if options and argument == "--":
+            options = False
+            continue
+        candidate = argument
+        if options and argument.startswith("-"):
+            _, separator, value = argument.partition("=")
+            if not separator or not value:
+                continue
+            candidate = value
+        path = Path(candidate)
+        if not path.is_absolute():
+            path = cwd / path
+        operands.append(path.resolve())
+    return tuple(operands)
 
 
 #: Every Git command this module may run, and nothing else.
@@ -241,6 +287,152 @@ BLAST_RADIUS = BlastRadius(
 )
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _uses_local_backend(verb: str, allow_transports: tuple[str, ...]) -> bool:
+    """Choose a backend from the caller's requested capability alone.
+
+    **The VERB is the capability, not the options beside it.** A first version
+    read `verb in TRANSPORT_VERBS and bool(allow_transports)`, so a transport
+    verb whose caller had not also named a transport fell to the LOCAL backend —
+    which then saw `git-upload-pack`, the child a transport legitimately starts,
+    and refused the read. `ls-remote <path>` and `ls-remote origin` both answer
+    at the frozen floor with no `allow_transports` at all, so that lost a
+    qualified capability and broke three of this release's own oracles,
+    including the one holding the transport policy constant.
+
+    `allow_transports` widens WHICH transports are permitted. It does not decide
+    which backend serves the verb, and making it do so put a capability behind an
+    argument again — the shape founder ruling 14 exists to keep out.
+    """
+    return verb not in TRANSPORT_VERBS
+
+
+def _with_recursion_suppressed(arguments: tuple[str, ...]) -> tuple[str, ...]:
+    """Add Git's uniform no-recursion spelling before an optional path sentinel.
+
+    ``--`` belongs to Git's general command-line grammar, not to any one read
+    form.  Inserting before it keeps the recursion policy an option even when a
+    caller's path happens to begin with a dash; appending after it would turn the
+    policy into a subject-selected pathname.
+    """
+    try:
+        sentinel = arguments.index("--")
+    except ValueError:
+        return (*arguments, "--ignore-submodules=dirty")
+    return (*arguments[:sentinel], "--ignore-submodules=dirty", *arguments[sentinel:])
+
+
+def _local_profile(
+    read: sterile.SterileRead, subject: Path, trace_directory: Path,
+    caller_arguments: tuple[str, ...] = (),
+) -> str:
+    """The no-child profile for a local read, rendered from resolved roots.
+
+    `seatbelt_profile` gives scratch and Trace2 exactly the write access they
+    need, then this profile removes process creation and explicitly closes the
+    two subject-owned write roots.  Only the caller's raw operands may add read
+    roots; no verb, helper, or subject-derived value participates in that grant.
+    """
+    location = sterile.where_is(subject)
+    gitdir = Path(str(location["gitdir"])).resolve()
+    common = Path(str(location["common"])).resolve()
+    caller_paths = _caller_path_operands(caller_arguments[1:], read.cwd)
+    readable = (subject, gitdir, common, read.scratch, read.cwd, trace_directory, *caller_paths)
+    profile = confine.seatbelt_profile(
+        writable_roots=(read.scratch, trace_directory),
+        private_read_root=subject.parent.resolve(),
+        allowed_read_roots=readable,
+    )
+    denied = " ".join(confine._seatbelt_subpath(path) for path in (subject, gitdir))
+    return profile + "(deny process-fork)\n" + f"(deny file-write* {denied})\n"
+
+
+def _prove_local_barrier(profile: str, canary: Path, timeout: float) -> None:
+    """Establish the profile by attempting a denied harness-owned write.
+
+    The old canary wrote inside the subject, mutating the very thing the check
+    existed to protect.  This target is fresh harness scratch and deliberately
+    outside the profile's writable roots instead.
+    """
+    sandbox = shutil.which("sandbox-exec")
+    if not sandbox:
+        raise GitRefusal("the local no-child barrier is unavailable, so the read is refused")
+    try:
+        attempt = subprocess.run(
+            (sandbox, "-p", profile, "/usr/bin/touch", str(canary)),
+            capture_output=True, text=True, check=False, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitRefusal("the local no-child barrier could not be established before its deadline") from exc
+    except OSError as exc:
+        raise GitRefusal("the local no-child barrier could not be established", error=str(exc)) from exc
+    if (attempt.stderr or "").startswith("sandbox-exec:"):
+        raise GitRefusal(
+            "the local no-child barrier could not be established, so the read is refused",
+            stderr=attempt.stderr,
+        )
+    if attempt.returncode == 0 or canary.exists():
+        raise GitRefusal(
+            "the local no-child barrier permitted its denied proof write, so the read is refused",
+            stderr=attempt.stderr or "",
+        )
+
+
+def _trace_has_no_children(trace: Path) -> None:
+    """Reject an unwritten Trace2 stream and every attempted child launch."""
+    try:
+        events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines() if line]
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GitRefusal(
+            "the local no-child trace was not written as Git evidence, so the read is refused",
+            trace=str(trace), because=f"{type(exc).__name__}: {exc}",
+        ) from exc
+    if not any(event.get("event") == "version" for event in events):
+        raise GitRefusal(
+            "the local no-child trace lacks Git's version event, so zero children is not evidence",
+            trace=str(trace),
+        )
+    children = sum(event.get("event") == "child_start" for event in events)
+    if children:
+        raise GitRefusal(
+            "the local no-child barrier observed a child-process attempt, so the read is refused",
+            trace=str(trace), children=children,
+        )
+
+
+def _launch_local(
+    command: tuple[str, ...], *, read: sterile.SterileRead, subject: Path, timeout: float,
+    text: bool, input_value: str | bytes | None, barrier: Path, trace: Path,
+    decoding: dict[str, str], caller_arguments: tuple[str, ...],
+) -> subprocess.CompletedProcess:
+    """Run Git only after a no-child profile has been established."""
+    profile = _local_profile(read, subject, trace.parent, caller_arguments)
+    _prove_local_barrier(profile, barrier / "proof-write-must-fail", timeout)
+    sandbox = shutil.which("sandbox-exec")
+    assert sandbox is not None  # established above; keeps the launch tuple total for typing.
+    try:
+        result = subprocess.run(
+            (sandbox, "-p", profile, *command), cwd=str(read.cwd), capture_output=True,
+            check=False, timeout=timeout, text=text, input=input_value, env=read.environment, **decoding,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitRefusal(
+            "git invocation timed out", command=" ".join(command), timeout=timeout,
+            stderr=_decode(exc.stderr),
+        ) from exc
+    except OSError as exc:
+        raise GitRefusal("git invocation could not be started", command=" ".join(command), error=str(exc)) from exc
+    _trace_has_no_children(trace)
+    return result
+
+
 def _run(
     repository: str | Path,
     *arguments: str,
@@ -259,6 +451,15 @@ def _run(
         # refusal nor recognisable as one.
         raise GitRefusal("git timeout must be a finite number of seconds", timeout=repr(timeout))
     verb = arguments[0] if arguments else ""
+    # Keep the caller's spelling separate from arguments later resolved from
+    # the subject's configuration.  Only this snapshot may widen the read
+    # roots for the invocation.
+    caller_arguments = tuple(str(argument) for argument in arguments)
+    # This decision is intentionally made from call-site data before this
+    # boundary looks at a configuration file, a git directory, or a work tree.
+    # The qualified transport capability is a caller-named transport for the
+    # one transport verb; every other requested operation is a local read.
+    local_backend = _uses_local_backend(verb, allow_transports)
     transport_operand = (
         _transport_repository_operand(tuple(str(argument) for argument in arguments[1:]))
         if verb in TRANSPORT_VERBS else None
@@ -439,6 +640,56 @@ def _run(
         # program does not run, without it it does.
         arguments = (arguments[0], "--upload-pack=git-upload-pack", *arguments[1:])
     command = ("git", *arguments)
+    if local_backend and not _COMPOSING_SUBMODULE_READ.get():
+        # The composition is orchestration *above* the single launch boundary:
+        # each primitive below re-enters `_run` with the ContextVar set and is
+        # therefore a separately barriered, top-level local read.  A form the
+        # measured grammar does not cover falls through to the uniform local
+        # backend instead of being lost.
+        token = _COMPOSING_SUBMODULE_READ.set(True)
+        runner = lambda nested, *nested_arguments, text=False, env_overlay=None: _run(
+            nested, *nested_arguments, timeout=timeout, text=text, env_overlay=env_overlay,
+        )
+        populated = False
+        try:
+            populated = has_gitlinks(repository, runner=runner, env_overlay=env_overlay)
+            if populated:
+                composed = compose(repository, *arguments, runner=runner, env_overlay=env_overlay)
+                return composed.value.decode("utf-8", "surrogateescape") if text else composed.value
+        except (UnsupportedFrozenForm, ValueError):
+            # TWO WAYS OF SAYING "THE COMPOSITION DOES NOT COVER THIS FORM", and
+            # they take the same road because they mean the same thing.
+            #
+            # `UnsupportedFrozenForm` reproduced 2.4.0's pre-invocation refusal of
+            # `--submodule=diff`. The prototype modelled the FLOOR, and the floor
+            # is not this release: `CHANGELOG.md` says a repository that merely
+            # declares a filter, textconv driver, hook or transport is now READ,
+            # not refused, because prevention made that proxy unnecessary.
+            # Productionising the refusal re-imposed it and turned a read that
+            # answers into an `IntegrityError` that escapes `probe` — caught by
+            # five nested-`.git` spellings the moment the oracle ran.
+            #
+            # The fallback is the founder's amended semantics: ask Git for the
+            # committed gitlink state with recursive dirty inspection suppressed.
+            # One rule, not a table of caller forms. A command that does not
+            # understand that generic option is retried unchanged under the same
+            # no-child barrier, having had no recursive state to suppress.
+            if not populated:
+                raise
+            try:
+                return _run(
+                    repository, *_with_recursion_suppressed(arguments), timeout=timeout,
+                    text=text, input_value=input_value, env_overlay=env_overlay,
+                    allow_transports=allow_transports,
+                )
+            except GitRefusal:
+                return _run(
+                    repository, *arguments, timeout=timeout, text=text,
+                    input_value=input_value, env_overlay=env_overlay,
+                    allow_transports=allow_transports,
+                )
+        finally:
+            _COMPOSING_SUBMODULE_READ.reset(token)
     # THE ONE BOUNDARY. Every read in this toolbelt reaches Git through here, and
     # every one of them runs in a directory this harness constructed.
     #
@@ -448,18 +699,58 @@ def _run(
     # other repository the subject's own tree is used and no copy is made.
     # `sterile.build` decides from the tree, and refuses — rather than answering —
     # when it cannot reproduce the subject.
-    read = sterile.build(
-        repository, overlay=env_overlay,
-        extra_config=transport_config or None, timeout=timeout,
-    )
-    environment = read.environment
+    temporary: tempfile.TemporaryDirectory[str] | None = None
+    barrier: Path | None = None
+    trace: Path | None = None
+    build_overlay = env_overlay
+    subject = Path(_repository(repository)).resolve()
+    if local_backend:
+        # Trace2 is part of the constructed environment's overlay, rather than
+        # an ambient variable we add after construction.  An outside caller may
+        # supply the destination, but cannot put it in either subject-owned root.
+        temporary = tempfile.TemporaryDirectory(prefix="rp-gitread-barrier-")
+        barrier = Path(temporary.name)
+        trace_directory = barrier / "trace"
+        trace_directory.mkdir()
+        build_overlay = dict(env_overlay or {})
+        requested = build_overlay.get("GIT_TRACE2_EVENT")
+        trace = Path(requested).resolve() if requested else trace_directory / "git.trace2.json"
+        location = sterile.where_is(subject)
+        gitdir = Path(str(location["gitdir"])).resolve()
+        if not trace.parent.is_dir() or _is_within(trace, subject) or _is_within(trace, gitdir):
+            temporary.cleanup()
+            raise GitRefusal(
+                "the local no-child trace destination is not a writable harness path",
+                trace=str(trace), repository=str(subject),
+            )
+        build_overlay["GIT_TRACE2_EVENT"] = str(trace)
+    try:
+        read = sterile.build(
+            repository, overlay=build_overlay,
+            extra_config=transport_config or None, timeout=timeout,
+        )
+    except BaseException:
+        if temporary is not None:
+            temporary.cleanup()
+        raise
     decoding = {"errors": "surrogateescape"} if text else {}
     try:
-        result = instrument.launch(
-            command, radius=BLAST_RADIUS,
-            cwd=str(read.cwd), capture_output=True, check=False,
-            timeout=timeout, text=text, input=input_value, env=environment, **decoding,
-        )
+        if local_backend:
+            assert barrier is not None and trace is not None
+            result = _launch_local(
+                command, read=read, subject=subject, timeout=timeout,
+                text=text, input_value=input_value, barrier=barrier, trace=trace,
+                decoding=decoding, caller_arguments=caller_arguments,
+            )
+        else:
+            # Transport is the separately qualified capability.  Its mechanism
+            # remains the pre-existing launch path, including the constant
+            # `protocol.file.allow=always` policy above.
+            result = instrument.launch(
+                command, radius=BLAST_RADIUS,
+                cwd=str(read.cwd), capture_output=True, check=False,
+                timeout=timeout, text=text, input=input_value, env=read.environment, **decoding,
+            )
     except subprocess.TimeoutExpired as exc:
         raise GitRefusal(
             "git invocation timed out", command=" ".join(command), timeout=timeout,
@@ -472,6 +763,8 @@ def _run(
         # so that a suite of thousands of reads leaves nothing behind. Phase 11
         # asks for zero residual scratch and this is where that is kept true.
         read.discard()
+        if temporary is not None:
+            temporary.cleanup()
     if result.returncode != 0:
         # Some Git commands report their finding on stdout and signal it with a
         # non-zero exit — `diff --check` is the one that matters here. A refusal
@@ -481,7 +774,7 @@ def _run(
             "git invocation failed", command=" ".join(command), returncode=result.returncode,
             stderr=_decode(result.stderr), stdout=_decode(result.stdout)[:4000],
         )
-    return result.stdout
+    return _restore_subject_paths(result.stdout, read, repository)
 
 
 def nul_paths(raw: bytes) -> list[str]:
@@ -511,6 +804,66 @@ def _decode(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", "surrogateescape")
     return value or ""
+
+
+def _subject_gitdir_spelling(subject: Path, gitdir: Path) -> str:
+    """The spelling Git uses for the subject's own git directory.
+
+    The sterile directory is deliberately disposable.  Returning one of its
+    pathnames merely because Git printed it before `_run` discarded it hands a
+    caller a guaranteed dangling answer.  This is pathname rebasing, not a
+    rev-parse option policy: every occurrence of a constructed pathname is
+    restored to the corresponding subject pathname.
+    """
+    dotgit = subject / ".git"
+    if dotgit.is_dir():
+        return ".git"
+    if dotgit.is_file():
+        raw = dotgit.read_text(encoding="utf-8", errors="surrogateescape")
+        _head, _separator, target = raw.partition(":")
+        target = target.strip()
+        if target:
+            return target
+    if gitdir == subject:
+        return "."
+    return str(gitdir)
+
+
+def _restore_subject_paths(value: str | bytes, read: sterile.SterileRead, repository: str | Path) -> str | bytes:
+    """Replace disposable constructed paths in answer bytes with subject paths.
+
+    The relative spelling passed in ``GIT_DIR`` and its resolved counterpart
+    are both replaced.  That one relation covers present and future Git path
+    reporting forms without naming their verbs or options; it also preserves
+    the distinction between a relative ``--git-dir`` answer and an absolute
+    path answer.
+    """
+    subject = Path(_repository(repository)).resolve()
+    location = sterile.where_is(subject)
+    subject_gitdir = Path(str(location["gitdir"])).resolve()
+    display_gitdir = _subject_gitdir_spelling(subject, subject_gitdir)
+    source_worktree = sterile._declared_worktree(subject) or subject
+    substitutions = {
+        str(read.gitdir) + os.sep: display_gitdir + "/",
+        str(read.gitdir.resolve()) + os.sep: display_gitdir + "/",
+        str(read.gitdir): str(subject_gitdir),
+        str(read.gitdir.resolve()): str(subject_gitdir),
+        str(read.environment.get("GIT_DIR", "")): display_gitdir,
+    }
+    if read.worktree is not None and read.worktree.resolve().is_relative_to(read.scratch.resolve()):
+        substitutions[str(read.worktree.resolve())] = str(source_worktree.resolve())
+    if isinstance(value, bytes):
+        for constructed, restored in sorted(substitutions.items(), key=lambda item: len(item[0]), reverse=True):
+            if constructed:
+                value = value.replace(
+                    constructed.encode("utf-8", "surrogateescape"),
+                    restored.encode("utf-8", "surrogateescape"),
+                )
+        return value
+    for constructed, restored in sorted(substitutions.items(), key=lambda item: len(item[0]), reverse=True):
+        if constructed:
+            value = value.replace(constructed, restored)
+    return value
 
 
 def _line(
