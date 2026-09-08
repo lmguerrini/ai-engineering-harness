@@ -581,9 +581,15 @@ def _run(
     # is the one written in the file and visible to the caller, not one the
     # repository rewrote on the way out.
     if verb in TRANSPORT_VERBS and transport_operand is not None:
-        declared = sterile.config_as_data(_config_file_of(repository))
+        # THE FIRST URL, NOT THE LAST. Git keeps every `remote.<name>.url` and
+        # fetches from the FIRST; the extra ones are push destinations. Reading
+        # this through a single-valued answer took the last, so a subject with
+        # two URLs made `ls-remote origin` report a DIFFERENT repository's HEAD
+        # at exit 0 — a wrong answer, not a refusal, and a floor regression.
+        declared = sterile.config_values_as_data(_config_file_of(repository))
         index = transport_operand + 1
-        url = declared.get(f"remote.{arguments[index]}.url")
+        found = declared.get(f"remote.{arguments[index]}.url") or []
+        url = found[0] if found else None
         if url:
             resolved = list(arguments)
             resolved[index] = url

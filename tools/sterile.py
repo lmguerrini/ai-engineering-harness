@@ -280,6 +280,23 @@ def config_as_data(path: Path) -> dict:
     own settings — a remote's URL, say — without Git resolving them.  Values use
     Git's quoting, escaping and comment rules so these answer-bearing reads agree
     with ``git config --get`` rather than with an approximation of it.
+
+    A repeated key collapses to its LAST value, which is what Git resolves for a
+    single-valued setting.  A MULTI-valued key is a different question and this
+    answer cannot carry it: use `config_values_as_data`.  A certification found
+    `ls-remote origin` reporting the wrong repository's HEAD at exit 0 because
+    the first of two `remote.origin.url` values was lost here.
+    """
+    return {name: found[-1] for name, found in config_values_as_data(path).items()}
+
+
+def config_values_as_data(path: Path) -> dict:
+    """Every value of every key, in file order, under the same value syntax.
+
+    Git keeps repeated keys rather than overwriting them, and which one it
+    resolves depends on the key: the LAST for a single-valued setting, the FIRST
+    of `remote.<name>.url` for the address a fetch contacts.  Deciding that is
+    the caller's business, so this reports all of them and decides nothing.
     """
     values: dict = {}
     section = ""
@@ -304,7 +321,8 @@ def config_as_data(path: Path) -> dict:
             continue
         key, sep, value = line.partition("=")
         name = f"{section}.{key.strip().lower()}" if section else key.strip().lower()
-        values[name] = _config_value_as_data(value) if sep else "true"
+        values.setdefault(name, []).append(
+            _config_value_as_data(value) if sep else "true")
     return values
 
 

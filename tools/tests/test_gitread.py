@@ -3552,3 +3552,47 @@ def test_the_constructed_configuration_points_hooks_at_an_empty_harness_director
         )
     finally:
         read.discard()
+
+
+def test_a_remote_with_two_urls_is_fetched_from_the_first_like_real_git(tmp_path):
+    """Git keeps every `remote.<name>.url` and fetches from the FIRST of them.
+
+    Reading the URL through a single-valued answer took the LAST, so a subject
+    declaring two URLs made `ls-remote origin` report a DIFFERENT repository's
+    HEAD at exit 0 — a wrong answer rather than a refusal, and a regression
+    against frozen 2.4.0, which agrees with Git here.
+
+    Reverting `config_values_as_data` to a single-valued read, or taking
+    `found[-1]` instead of `found[0]`, makes this test report the second
+    repository's HEAD where Git reports the first.
+    """
+    one, two = tmp_path / "one.git", tmp_path / "two.git"
+    for bare in (one, two):
+        _git(tmp_path, "init", "-q", "--bare", str(bare))
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    _git(seed, "init", "-q", "-b", "main")
+    _git(seed, "config", "user.email", "t@e.invalid")
+    _git(seed, "config", "user.name", "T")
+    (seed / "f.txt").write_text("one\n")
+    _git(seed, "add", "-A")
+    _git(seed, "commit", "-q", "-m", "one")
+    _git(seed, "push", "-q", str(one), "HEAD:refs/heads/main")
+    (seed / "f.txt").write_text("two\n")
+    _git(seed, "commit", "-q", "-am", "two")
+    _git(seed, "push", "-q", str(two), "HEAD:refs/heads/main")
+
+    subject = tmp_path / "subject"
+    subject.mkdir()
+    _git(subject, "init", "-q", "-b", "main")
+    _git(subject, "remote", "add", "origin", f"file://{one}")
+    _git(subject, "remote", "set-url", "--add", "origin", f"file://{two}")
+
+    real = subprocess.run(["git", "ls-remote", "origin", "HEAD"], cwd=subject,
+                          capture_output=True)
+    governed = gitread._run(subject, "ls-remote", "origin", "HEAD", text=False)
+
+    assert real.returncode == 0 and real.stdout, "the control did not answer"
+    assert governed == real.stdout, (
+        "the governed answer names a different remote from the one Git fetches"
+    )

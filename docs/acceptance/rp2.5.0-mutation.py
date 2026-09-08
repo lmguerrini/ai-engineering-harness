@@ -174,7 +174,12 @@ MUTANTS = [
      "    if False:\n",
      "tools/tests/test_gitread.py::"
      "test_a_linked_worktrees_common_directory_matches_real_git_byte_for_byte"),
-]
+    ("a remote's last url is fetched from instead of its first",
+     "tools/gitread.py",
+     "        url = found[0] if found else None",
+     "        url = found[-1] if found else None",
+     "tools/tests/test_gitread.py::"
+     "test_a_remote_with_two_urls_is_fetched_from_the_first_like_real_git"),]
 
 
 def collect(selectors, timeout=900):
