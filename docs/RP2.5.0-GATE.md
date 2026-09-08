@@ -772,12 +772,22 @@ answer would mean writing into the subject in order to describe the write, which
 opposite of what this release is for. **The candidate's answer is the correct read-only
 one**, and the divergence is stated rather than repaired.
 
-Measured beside it, and the reason this matters more than one record: after one
-`status --porcelain`, this release now leaves the subject **byte-identical and
-stat-identical** — zero files created, removed, or changed in mtime, size or **ctime**.
-Frozen 2.4.0 rewrites `.git/index`. Until the repair below, this release bumped the ctime
-of every working-tree file it hard-linked into its view, which is what Git's stat cache
-compares, and what made a later `diff-index` call a clean file modified.
+Measured beside it: after one `status --porcelain` against an **ordinary** subject, this
+release now leaves it byte-identical and stat-identical — zero files created, removed, or
+changed in mtime, size or **ctime**. Frozen 2.4.0 rewrites `.git/index`. Until the repair
+below, this release bumped the ctime of every working-tree file it hard-linked into its
+view, which is what Git's stat cache compares, and what made a later `diff-index` call a
+clean file modified.
+
+**That claim is bounded, and the bound was found by a blind reading of the repair rather
+than by the repair's own author.** `_copy_git_state` carries git-directory state with
+`shutil.copytree(..., symlinks=True)`, so a symlinked entry arrives in the constructed
+directory **still pointing where it pointed**. If a subject's `.git/index` is an absolute
+symlink, the refresh writes through it, and the write lands outside both the view and the
+subject at a path the subject chose. Reproduced here on this release, on `a02986c` before
+the repair, and on **frozen 2.4.0** — so it is a pre-existing defect this differential
+surfaced, not something the repair introduced, and 2.4.0 is exposed to it too. It is
+carried as a known limitation and is **not** repaired here.
 
 ### The certification that returned READY, and the two things it still found
 
@@ -873,18 +883,21 @@ which is the contract this pack's own `validate_range` tests use and therefore t
 one its own history is judged by. Both numbers are recorded so neither is a
 surprise.
 
-**`45d87fb` is not covered by the founder's row 9 adjudication, and this record does
-not pretend it is.** That adjudication was taken over three commits dated
-2026-09-06, on the ground that they predate the discipline the rest of the line
-follows. `45d87fb` is dated 2026-09-07 and sits eighth from this record's own tip;
-it fails the same three structural rules, and it was made *after* the discipline
-was in force. Its rewrite would still move `4e9386f` and `673d97f`, which
+**`45d87fb` was adjudicated separately, on a different ground, and the difference
+matters.** The row 9 acceptance of the other three rests on their predating the
+discipline the rest of the line follows. **`45d87fb` does not predate it** — it is
+dated 2026-09-07, eighth from this record's own tip, and was made while the
+discipline was in force. That rationale is therefore not available for it and this
+record does not borrow it.
+
+The founder extended the exact-candidate row 9 acceptance to it on 2026-09-08, on
+this ground instead: rewriting `45d87fb` would move `4e9386f` and `673d97f`, which
 `docs/RP2.5.0-DESIGN-A7-qualified-semantics-hardened.md` and
-`docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md` name as their base
-revisions, so the trade the founder weighed is the same trade — but the premise
-that made it easy is not, and extending an adjudication is the founder's to do,
-not this record's. **It is carried to the founder as an open decision**, and until
-it is taken the raw twelve stands.
+`docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md` name as their **base
+revisions**, so the rewrite would dangle frozen design provenance that the
+clean-room history already relies on — while the defect itself is confined to a
+historical commit message and reaches nothing a consumer runs. The history stands,
+the raw twelve stands, and the checker is not touched.
 
 Both figures above are derived, not transcribed. `test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_produces`
 recomputes them from the range and fails if this paragraph drifts from the checker

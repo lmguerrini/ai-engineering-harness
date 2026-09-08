@@ -2086,6 +2086,13 @@ def test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata
     Content was never at risk, which is why every byte-comparing oracle stayed
     green through it. This one compares the subject's inode metadata across a
     read instead, because that is where the damage was.
+
+    Bounded deliberately: this asserts the property for an ORDINARY subject. A
+    subject whose `.git/index` is an absolute symlink still gets written through,
+    because git-directory state is carried with `symlinks=True` and the link
+    arrives in the constructed directory still pointing outside it. That is a
+    pre-existing defect frozen 2.4.0 shares, it is recorded in the manifest's
+    known limitations, and it is not what this test is for.
     """
     root = _repo(tmp_path, "untouched")
     (root / "a.txt").write_text("a\n")
