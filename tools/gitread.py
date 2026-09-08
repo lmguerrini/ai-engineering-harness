@@ -68,21 +68,22 @@ def _repository(repository: str | Path) -> str:
     return str(Path(repository))
 
 
-def _caller_named_local_path(arguments: tuple[str, ...]) -> bool:
-    """Whether a caller explicitly supplied a local filesystem address.
+def _transport_repository_operand(arguments: tuple[str, ...]) -> int | None:
+    """The first non-option positional is a transport verb's repository.
 
-    A direct absolute or dot-relative path is unambiguously local before Git
-    looks at any repository configuration.  A bare name is deliberately not
-    treated as local: it can be a remote alias, whose address the subject
-    controls.  ``file://`` similarly remains a caller-opened transport.  This
-    keeps the policy decision in the harness while restoring ordinary direct
-    local-path reads.
+    This is structural rather than a catalogue of option spellings: any option
+    remains an option, and the first positional address is the one Git will use
+    as its repository operand.  ``--`` ends option parsing in the usual way.
     """
-    return any(
-        Path(str(argument)).is_absolute()
-        or str(argument).startswith(("./", "../"))
-        for argument in arguments
-    )
+    options = True
+    for index, argument in enumerate(arguments):
+        if options and argument == "--":
+            options = False
+            continue
+        if options and argument.startswith("-"):
+            continue
+        return index
+    return None
 
 
 #: Every Git command this module may run, and nothing else.
@@ -258,8 +259,9 @@ def _run(
         # refusal nor recognisable as one.
         raise GitRefusal("git timeout must be a finite number of seconds", timeout=repr(timeout))
     verb = arguments[0] if arguments else ""
-    caller_named_local_path = _caller_named_local_path(
-        tuple(str(argument) for argument in arguments[1:])
+    transport_operand = (
+        _transport_repository_operand(tuple(str(argument) for argument in arguments[1:]))
+        if verb in TRANSPORT_VERBS else None
     )
     # Raised as an IntegrityError rather than a GitRefusal, deliberately.
     # `probe` converts a GitRefusal into an answer-shaped result — that is its
@@ -377,14 +379,14 @@ def _run(
     # `url.<base>.insteadOf` rewriting is not applied, so the address contacted
     # is the one written in the file and visible to the caller, not one the
     # repository rewrote on the way out.
-    if verb in TRANSPORT_VERBS:
-        resolved: list[str] = []
+    if verb in TRANSPORT_VERBS and transport_operand is not None:
         declared = sterile.config_as_data(_config_file_of(repository))
-        for argument in arguments[1:]:
-            url = declared.get(f"remote.{argument}.url")
-            resolved.append(url if url else str(argument))
-        if resolved != [str(one) for one in arguments[1:]]:
-            arguments = (arguments[0], *resolved)
+        index = transport_operand + 1
+        url = declared.get(f"remote.{arguments[index]}.url")
+        if url:
+            resolved = list(arguments)
+            resolved[index] = url
+            arguments = tuple(resolved)
     # STANDING, NOT ONLY WHEN A TRANSPORT IS ENABLED. Pinning `protocol.allow`
     # only for invocations that already named a transport left every other read
     # on Git's defaults, which permit ssh, http and git:// — so the posture this
@@ -395,14 +397,23 @@ def _run(
     # anything: the subject's `protocol.<name>.allow` is not read at all, so the
     # key that once let a repository re-enable `ext::` and run its own helper is
     # not in the picture.
-    transport_config: dict[str, str] = {"protocol.allow": "never"}
-    # A direct filesystem address is a local read, not a transport policy the
-    # subject can select through its configuration.  Git implements that read
-    # through the file transport, so the harness enables that one mechanism for
-    # caller-spelled local paths only.  No remote alias or URL from the subject
-    # participates in this decision.
-    if caller_named_local_path:
-        transport_config["protocol.file.allow"] = "always"
+    transport_config: dict[str, str] = {
+        "protocol.allow": "never",
+        # CONSTANT, exactly as the qualified 2.4.0 release sets it, and constant
+        # is the point. A first repair enabled `file` only when the caller's
+        # operand looked like a path, and a policy that VARIES is a policy an
+        # argument can steer: an unrelated absolute argument beside a remote name
+        # turned it on, and Git then resolved that name from the SUBJECT's
+        # `remote.<name>.url`. A blind reader walked straight through it. A
+        # decision that depends on nothing cannot be steered by anything, which
+        # is what founder ruling 10 asks of this layer.
+        #
+        # This does not reopen the fifth execution route below: with a local
+        # remote the far side is this machine, but `--upload-pack` is injected
+        # for every transport verb and overrides `remote.<name>.uploadpack`, so
+        # the subject still names no program that runs.
+        "protocol.file.allow": "always",
+    }
     if allow_transports:
         for transport in allow_transports:
             if transport not in ALLOWABLE_TRANSPORTS:

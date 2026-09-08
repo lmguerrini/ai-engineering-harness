@@ -83,6 +83,13 @@ anything missed makes a read fail loudly instead of running a program.
 - A remote **name** is resolved to its URL from the repository's configuration
   read as data, so `url.<base>.insteadOf` rewriting no longer applies. The
   address contacted is the one written in the file and visible to the caller.
+- The **file transport stays enabled**, as it is in 2.4.0, so an `ls-remote`
+  against a local path reads whether the caller spells the path or the
+  repository's own `remote.<name>.url` does. The permission is constant rather
+  than derived from the arguments, because a permission that varies is one an
+  argument can steer. What 2.4.0 left open and this release closes is the
+  program: `--upload-pack` is injected for every transport verb, so
+  `remote.<name>.uploadpack` no longer names something that runs.
 - A working tree containing a directory named `.Git` or `.GIT` is **read** on a
   case-insensitive volume, where a second qualification pass found it crashing a
   tool with an unhandled `FileExistsError`. Which entry Git will open as `.git`

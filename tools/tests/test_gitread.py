@@ -404,24 +404,63 @@ def test_a_callers_explicit_local_path_remains_a_readable_ls_remote_target(tmp_p
     accidentally denied the ordinary ``ls-remote /path/to/repository`` form as
     well, despite the path being supplied by the caller.  Compare the complete
     answer with real Git so options and ref formatting stay Git's semantics.
+    Reverting the repository-operand exception makes both direct calls refuse
+    the file transport instead of returning these byte-identical answers.
     """
-    remote = _committed(tmp_path, "remote")
-    reader = _committed(tmp_path, "reader")
-    expected = _real_git(reader, "ls-remote", str(remote))
+    remote = _isolated_committed_repo(tmp_path, "remote")
+    reader = _isolated_committed_repo(tmp_path, "reader")
 
-    assert expected.returncode == 0, expected.stderr
-    assert gitread._run(reader, "ls-remote", str(remote)) == expected.stdout
+    for address in (str(remote), os.path.relpath(remote, reader)):
+        expected = _isolated_real_git(reader, "ls-remote", address)
+        assert expected.returncode == 0, expected.stderr
+        assert gitread._run(reader, "ls-remote", address) == expected.stdout
 
 
-def test_a_subjects_remote_alias_cannot_choose_local_transport_policy(tmp_path):
-    """A local address in subject configuration is not a caller-opened path."""
-    remote = _committed(tmp_path, "remote")
-    reader = _committed(tmp_path, "reader")
-    _git(reader, "remote", "add", "origin", str(remote))
+def test_no_argument_can_change_whether_a_transport_is_permitted(tmp_path):
+    """The transport permission is CONSTANT, and constant is the whole point.
 
-    answer = gitread.probe(reader, "ls-remote", "origin", negative_statuses=())
+    A repair once enabled the file transport only when the caller's operand
+    looked like a local path. A policy that varies is a policy an argument can
+    steer: an unrelated absolute argument standing beside a remote NAME turned it
+    on, and Git then resolved that name from the SUBJECT's `remote.<name>.url`.
+    The control call refused with `transport 'file' not allowed`; the same call
+    with one extra argument answered. A blind reader walked through it in an hour.
+
+    So this does not assert an outcome, it asserts INVARIANCE: the same operand
+    must get the same permission however many incidental arguments follow it.
+    Under the varying policy the two answers differ and this fails.
+    """
+    remote = _isolated_committed_repo(tmp_path, "remote")
+    reader = _isolated_committed_repo(tmp_path, "reader")
+    _isolated_git(reader, "remote", "add", "origin", str(remote))
+
+    bare = gitread.probe(reader, "ls-remote", "origin", negative_statuses=())
+    padded = gitread.probe(
+        reader, "ls-remote", "origin", str(remote / "not-a-ref"), negative_statuses=(),
+    )
+    assert bare.ok == padded.ok, (
+        "an incidental argument changed the transport permission: "
+        f"bare ok={bare.ok}, padded ok={padded.ok}"
+    )
+    # And the constant this release ships is 2.4.0's: the file transport is open,
+    # so a local address reads whoever spelled it. What 2.4.0 left open and this
+    # release closes is the PROGRAM, guarded separately by the `--upload-pack`
+    # injection, not the protocol.
+    assert bare.ok, "the file transport is meant to be enabled, as it is in 2.4.0"
+
+
+def test_a_transport_the_caller_did_not_open_is_still_refused(tmp_path):
+    """`protocol.allow = never` still holds for everything but the constant.
+
+    The file transport being constant must not be read as the transport gate
+    being gone. Nothing else opens without the caller asking for it.
+    """
+    reader = _isolated_committed_repo(tmp_path, "reader")
+    _isolated_git(reader, "remote", "add", "upstream", "ssh://git@no-such-host.invalid/x.git")
+
+    answer = gitread.probe(reader, "ls-remote", "upstream", negative_statuses=())
     assert not answer.ok
-    assert "transport 'file' not allowed" in answer.detail
+    assert "not allowed" in answer.detail
 
 
 # --- the verb is not the unit of read-onlyness -----------------------------------
@@ -1674,13 +1713,34 @@ def test_replacing_the_configuration_root_excludes_every_subject_config_route(tm
         read.discard()
 
 
-def _isolated_git(repo, *args):
-    """Construct state without this machine's global configuration changing it."""
-    return _git(repo, *args, env={
+def _fixture_environment(extra=None):
+    """The pinned, configuration-free environment for independent fixtures."""
+    environment = {
         **os.environ,
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_SYSTEM": "/dev/null",
-    })
+        "GIT_AUTHOR_NAME": "Fixture Author",
+        "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+        "GIT_COMMITTER_NAME": "Fixture Committer",
+        "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+        "GIT_AUTHOR_DATE": "2001-01-01T00:00:00+0000",
+        "GIT_COMMITTER_DATE": "2001-01-01T00:00:00+0000",
+    }
+    environment.update(extra or {})
+    return environment
+
+
+def _isolated_git(repo, *args):
+    """Construct state without ambient configuration or timestamp variance."""
+    return _git(repo, *args, env=_fixture_environment())
+
+
+def _isolated_real_git(repo, *args):
+    """Run the real-Git side under the same pinned fixture environment."""
+    return subprocess.run(
+        ["git", *args], cwd=str(repo), capture_output=True, text=True,
+        env=_fixture_environment(),
+    )
 
 
 def _isolated_committed_repo(tmp_path, name):
@@ -1759,6 +1819,79 @@ def test_a_bare_subject_is_rebuilt_as_bare_and_preserves_read_capabilities(tmp_p
                       ("ls-files", "--others", "--exclude-standard")):
         with pytest.raises(GitRefusal):
             gitread._run(bare, *arguments)
+
+
+def test_a_bare_shaped_git_directory_with_a_declared_worktree_is_not_bare(tmp_path):
+    """A bare-shaped git directory can legitimately describe another worktree.
+
+    Reverting to the structural bare predicate sets the constructed config bare
+    and refuses this ordinary status.  The source repository and the bare
+    subject are built independently so the comparison is not self-fulfilling.
+    """
+    source = _isolated_committed_repo(tmp_path, "hybrid-source")
+    subject = tmp_path / "hybrid.git"
+    copied = subprocess.run(
+        ["git", "clone", "--bare", str(source), str(subject)], capture_output=True, text=True,
+        env=_fixture_environment(),
+    )
+    assert copied.returncode == 0, copied.stderr
+    worktree = tmp_path / "hybrid-worktree"
+    worktree.mkdir()
+    _isolated_git(subject, "config", "core.bare", "false")
+    _isolated_git(subject, "config", "core.worktree", str(worktree))
+    checked_out = subprocess.run(
+        ["git", "checkout", "-q", "-f", "main"], cwd=str(subject), capture_output=True, text=True,
+        env=_fixture_environment({"GIT_DIR": str(subject), "GIT_WORK_TREE": str(worktree)}),
+    )
+    assert checked_out.returncode == 0, checked_out.stderr
+    (worktree / "f.txt").write_text("changed\n")
+
+    expected = _isolated_real_git(subject, "status", "--porcelain")
+    assert expected.returncode == 0 and expected.stdout == " M f.txt\n", expected.stderr
+    assert not _sterile._is_bare(subject)
+    assert gitread._run(subject, "status", "--porcelain") == expected.stdout
+
+
+def test_a_dangling_dot_git_link_does_not_make_a_directory_look_bare(tmp_path):
+    """A dangling `.git` entry is not an absent `.git` entry.
+
+    Reverting to ``Path.exists()`` makes this bare-shaped directory classify as
+    bare and answer ``HEAD``; the repaired classification refuses the broken
+    git-directory entry by name.
+    """
+    subject = tmp_path / "dangling-dot-git"
+    subject.mkdir()
+    _isolated_git(subject, "init", "-q", "--bare")
+    (subject / ".git").symlink_to("missing-git-directory")
+
+    assert not _sterile._is_bare(subject)
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(subject, "rev-parse", "HEAD")
+    assert ".git entry" in str(raised.value.cause), raised.value.cause
+
+
+def test_a_symlinked_head_is_materialised_without_detaching_it(tmp_path):
+    """A symlinked HEAD becomes a plain symbolic-ref file in the build.
+
+    Reverting symbolic-ref materialisation copies the target hash into HEAD,
+    which makes this branch look detached and changes each branch-aware status
+    form despite leaving no symlink in the constructed directory.
+    """
+    repo = _isolated_committed_repo(tmp_path, "head-link")
+    head = repo / ".git" / "HEAD"
+    head.unlink()
+    head.symlink_to("refs/heads/main")
+    expected = _isolated_real_git(repo, "status", "--porcelain=v2", "--branch")
+    assert expected.returncode == 0 and "# branch.head main" in expected.stdout, expected.stderr
+
+    read = _sterile.build(repo)
+    try:
+        rebuilt_head = read.gitdir / "HEAD"
+        assert not rebuilt_head.is_symlink()
+        assert rebuilt_head.read_text(encoding="utf-8") == "ref: refs/heads/main\n"
+    finally:
+        read.discard()
+    assert gitread._run(repo, "status", "--porcelain=v2", "--branch") == expected.stdout
 
 
 # O5 — a store this build cannot import refuses rather than answering -----------------
@@ -2025,8 +2158,14 @@ def test_the_construction_refuses_by_name_rather_than_raising_whatever_it_hit(tm
     assert "FileExistsError" in raised.value.render(), raised.value.render()
 
 
-def test_a_copied_view_keeps_every_mode(tmp_path):
-    """Copying a view preserves modes without changing source-file ctimes."""
+def test_a_copied_view_keeps_every_mode(tmp_path, monkeypatch):
+    """Copying a view preserves modes without changing source-file ctimes.
+
+    This forces the historical cross-device path without requiring a second
+    filesystem.  Reverting to the hard-link implementation with its old
+    content-only fallback makes ``program.sh`` arrive as mode 644 and this
+    comparison fails with a spurious modification.
+    """
     root = _repo(tmp_path, "xdev")
     program = root / "program.sh"
     program.write_text("#!/bin/sh\ntrue\n")
@@ -2036,6 +2175,11 @@ def test_a_copied_view_keeps_every_mode(tmp_path):
     # a nested repository is what makes the build construct a view at all
     (root / "nest").mkdir()
     _git(root / "nest", "init", "-q", "-b", "main")
+
+    def no_hardlinks(*_args, **_kwargs):
+        raise OSError(18, "Cross-device link")
+
+    monkeypatch.setattr(_sterile.os, "link", no_hardlinks)
 
     expected, got = _exactly_as_real_git(root, "status", "--porcelain")
     assert expected is not None, "real git refused the fixture, so this proves nothing"
@@ -2134,6 +2278,57 @@ def test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata
         "a governed read changed the subject's inode metadata, which it must never do — "
         f"(ctime, mtime, size, nlink) moved for: {changed}"
     )
+
+
+def test_a_carried_git_state_link_is_materialised_before_index_refresh(tmp_path):
+    """Carried git-directory state must be data, never a link back to the subject.
+
+    Reverting materialisation preserves the scratch ``index`` symlink; the
+    forced refresh then writes its ``real-index`` target and this inode check
+    fails.  The assertion is about the general copy mechanism, not an
+    index-specific exception.
+    """
+    root = _isolated_committed_repo(tmp_path, "linked-state")
+    nested = root / "nested"
+    nested.mkdir()
+    _isolated_git(nested, "init", "-q", "-b", "main")
+    index = root / ".git" / "index"
+    target = root / ".git" / "real-index"
+    index.rename(target)
+    index.symlink_to(target)
+    before = target.stat()
+
+    read = _sterile.build(root)
+    try:
+        assert not read.gitdir.joinpath("index").is_symlink()
+        assert read.gitdir.joinpath("index").is_file()
+    finally:
+        read.discard()
+
+    after = target.stat()
+    assert (after.st_ctime_ns, after.st_mtime_ns, after.st_size) == (
+        before.st_ctime_ns, before.st_mtime_ns, before.st_size,
+    ), "refresh followed a constructed path back to the subject"
+
+
+def test_a_dangling_carried_git_state_link_refuses_by_name(tmp_path):
+    """A carried link that cannot be materialised is a named refusal.
+
+    Reverting to preserved links lets construction continue with the dangling
+    scratch ``index`` link, so this read reaches Git rather than refusing at the
+    materialisation boundary.
+    """
+    root = _isolated_committed_repo(tmp_path, "dangling-state")
+    index = root / ".git" / "index"
+    missing = root / ".git" / "missing-index"
+    index.unlink()
+    index.symlink_to(missing)
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(root, "rev-parse", "HEAD")
+    assert "materialised" in str(raised.value.cause), raised.value.cause
+    assert "symbolic link" in str(raised.value.cause), raised.value.cause
+    assert not missing.exists(), "a failed construction must not create the link target"
 
 
 def test_a_committed_symlink_is_a_symlink_in_the_constructed_view(tmp_path):
@@ -2332,14 +2527,79 @@ def test_sparse_checkout_storage_from_config_worktree_reaches_long_status(tmp_pa
     assert gitread._run(repo, "status") == expected.stdout
 
 
-def test_a_git_file_status_does_not_report_its_own_transient_index_lock(tmp_path):
-    """A governed read's scratch index cannot become a subject untracked file."""
+def test_object_format_is_taken_only_from_the_common_configuration(tmp_path):
+    """A worktree config cannot declare the common object store's hash format.
+
+    Reverting to the merged declaration carries ``sha256`` from
+    ``config.worktree`` into a SHA-1 constructed store, so the HEAD confirmation
+    refuses instead of returning this real-Git object name.
+    """
+    repo = _isolated_committed_repo(tmp_path, "worktree-object-format")
+    _isolated_git(repo, "config", "extensions.worktreeConfig", "true")
+    (repo / ".git" / "config.worktree").write_text(
+        "[extensions]\n\tobjectFormat = sha256\n", encoding="utf-8",
+    )
+
+    expected = _isolated_real_git(repo, "rev-parse", "HEAD")
+    assert expected.returncode == 0, expected.stderr
+    assert gitread._run(repo, "rev-parse", "HEAD") == expected.stdout
+
+
+def test_an_include_in_active_config_worktree_refuses_instead_of_omitting_it(tmp_path):
+    """An active worktree include is not a partial source of storage settings.
+
+    Reverting the include refusal silently omits the included sparse-checkout
+    descriptors, so this governed status answers without the long-status sparse
+    checkout sentence that real Git emits.
+    """
+    repo = _isolated_committed_repo(tmp_path, "worktree-include")
+    (repo / "dir").mkdir()
+    (repo / "dir" / "tracked.txt").write_text("tracked\n")
+    _isolated_git(repo, "add", "dir/tracked.txt")
+    _isolated_git(repo, "commit", "-q", "-m", "add directory")
+    _isolated_git(repo, "config", "extensions.worktreeConfig", "true")
+    (repo / ".git" / "config.worktree").write_text(
+        "[include]\n\tpath = wt-included\n", encoding="utf-8",
+    )
+    (repo / ".git" / "wt-included").write_text(
+        "[core]\n\tsparseCheckout = true\n\tsparseCheckoutCone = true\n", encoding="utf-8",
+    )
+    (repo / ".git" / "info" / "sparse-checkout").write_text("d/\n", encoding="utf-8")
+
+    expected = _isolated_real_git(repo, "status")
+    assert expected.returncode == 0 and "sparse checkout" in expected.stdout, expected.stderr
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(repo, "status")
+    assert "config.worktree includes" in str(raised.value.cause), raised.value.cause
+
+
+def test_a_git_file_status_does_not_report_its_own_transient_index_lock(tmp_path, monkeypatch):
+    """A governed read's scratch index cannot become a subject untracked file.
+
+    The nested repository forces a constructed working-tree view, so the copied
+    index must be refreshed.  Reverting that refresh leaves ``calls`` empty;
+    the earlier no-nested fixture passed even though it never reached this path.
+    """
     repo = _isolated_committed_repo(tmp_path, "git-file")
     actual = repo / "actual-gitdir"
     (repo / ".git").rename(actual)
     (repo / ".git").write_text("gitdir: actual-gitdir\n")
+    nested = repo / "nested"
+    nested.mkdir()
+    _isolated_git(nested, "init", "-q", "-b", "main")
+
+    calls = []
+    original = _sterile._refresh_constructed_index
+
+    def recording(subject, gitdir, environment, cwd, timeout):
+        calls.append((subject, gitdir, cwd))
+        return original(subject, gitdir, environment, cwd, timeout)
+
+    monkeypatch.setattr(_sterile, "_refresh_constructed_index", recording)
 
     output = gitread._run(repo, "status", "--porcelain", "-uall")
+    assert calls, "the fixture did not reach the constructed-index refresh"
+    assert calls[0][2] != repo, "the refresh did not run against a constructed view"
     assert "actual-gitdir/index.lock" not in output
     assert not (actual / "index.lock").exists()
 

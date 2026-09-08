@@ -105,16 +105,24 @@ BLAST_RADIUS = BlastRadius(
 def _git_directory(subject: Path) -> Path:
     """Where Git keeps this repository's own state, whatever shape `.git` is in."""
     dot = subject / ".git"
-    if dot.is_file():
-        # A linked worktree and a submodule both spell it this way.
-        raw = dot.read_text(encoding="utf-8", errors="surrogateescape")
-        _, _, target = raw.partition(":")
-        target = target.strip()
-        if not target:
-            raise GitRefusal("the .git file names no git directory", repository=str(subject))
-        return Path(target) if os.path.isabs(target) else (subject / target).resolve()
-    if dot.is_dir():
-        return dot
+    if os.path.lexists(dot):
+        if dot.is_file():
+            # A linked worktree and a submodule both spell it this way.
+            raw = dot.read_text(encoding="utf-8", errors="surrogateescape")
+            _, _, target = raw.partition(":")
+            target = target.strip()
+            if not target:
+                raise GitRefusal("the .git file names no git directory", repository=str(subject))
+            return Path(target) if os.path.isabs(target) else (subject / target).resolve()
+        if dot.is_dir():
+            return dot
+        # `Path.exists()` is false for a dangling symlink.  Treating that as an
+        # absent `.git` made a directory that happened also to have `HEAD` and
+        # `objects/` look bare, even though Git will first open the broken entry.
+        raise GitRefusal(
+            "the .git entry does not resolve to a git directory",
+            repository=str(subject), entry=str(dot),
+        )
     if (subject / "HEAD").is_file() and (subject / "objects").is_dir():
         return subject                       # a bare repository is its own git directory
     raise GitRefusal("that directory is not a git repository", repository=str(subject))
@@ -266,9 +274,21 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     Carry those safe descriptors in the same order while leaving every other
     setting outside the constructed configuration.
     """
-    declared = config_as_data(common / "config")
-    if _enabled(declared.get("extensions.worktreeconfig")):
-        declared.update(config_as_data(gitdir / "config.worktree"))
+    common_declared = config_as_data(common / "config")
+    declared = dict(common_declared)
+    if _enabled(common_declared.get("extensions.worktreeconfig")):
+        worktree_declared = config_as_data(gitdir / "config.worktree")
+        if any(
+            name == "include.path"
+            or (name.startswith("includeif.") and name.endswith(".path"))
+            for name in worktree_declared
+        ):
+            raise GitRefusal(
+                "the active config.worktree includes another configuration file, so its "
+                "storage descriptors cannot be copied as a partial configuration",
+                configuration=str(gitdir / "config.worktree"),
+            )
+        declared.update(worktree_declared)
     core = {
         name[len("core."):]: value
         for name, value in declared.items()
@@ -280,14 +300,16 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     # working tree, refusing history reads and inventing untracked internals.
     core["bare"] = "true" if bare else "false"
     lines = ["[core]\n"] + [f"\t{key} = {value}\n" for key, value in sorted(core.items())]
-    # `objectFormat` describes the object store's encoding, so it belongs with
-    # the carried storage descriptors.  `worktreeConfig` does NOT: it declares a
-    # second configuration root.  Carrying it would make our generated `config`
-    # ask Git to read the subject's `config.worktree`, defeating replacement of
-    # the root before an include or key-level check could help.
+    # `objectFormat` describes the common object store's encoding.  It is read
+    # from `config`, not `config.worktree`, so only the common declaration may
+    # describe the alternates attached below.  `worktreeConfig` does NOT belong
+    # here: it declares a second configuration root.  Carrying it would make our
+    # generated `config` ask Git to read the subject's `config.worktree`,
+    # defeating replacement of the root before an include or key-level check
+    # could help.
     extensions = {
         name[len("extensions."):]: value
-        for name, value in declared.items()
+        for name, value in common_declared.items()
         if name == "extensions.objectformat"
     }
     if extensions:
@@ -307,17 +329,60 @@ def _copy_git_state(source: Path, into: Path) -> None:
     """
     if not source.is_dir():
         return
-    shutil.copytree(
-        source,
-        into,
-        dirs_exist_ok=True,
-        symlinks=True,
-        ignore=shutil.ignore_patterns(
-            *CONFIGURATION_ROOTS,
-            *_LAYOUT_MARKERS,
-            "objects",
-        ),
-    )
+    try:
+        # State is copied as data, not as topology.  In particular an index
+        # symlink would otherwise remain a route from the scratch pathname to
+        # a subject-owned target when the constructed index is refreshed.
+        # `symlinks=False` follows every carried link and writes a regular file
+        # or directory in `into`; a dangling or unreadable target makes
+        # copytree fail instead of being silently omitted.
+        shutil.copytree(
+            source,
+            into,
+            dirs_exist_ok=True,
+            symlinks=False,
+            ignore=shutil.ignore_patterns(
+                *CONFIGURATION_ROOTS,
+                *_LAYOUT_MARKERS,
+                "objects",
+            ),
+        )
+        _materialise_symbolic_refs(source, into)
+    except (OSError, shutil.Error) as exc:
+        raise GitRefusal(
+            "the git-directory state could not be materialised as plain files; a dangling "
+            "or unreadable symbolic link is refused rather than skipped",
+            source=str(source), because=f"{type(exc).__name__}: {exc}",
+        ) from exc
+
+
+def _materialise_symbolic_refs(source: Path, into: Path) -> None:
+    """Preserve a symlinked symbolic ref without preserving the symlink.
+
+    A symlinked ``HEAD`` or loose ref is a symbolic reference in Git's state,
+    not merely an alternate spelling for the target file's bytes.  Dereferencing
+    it into a hash makes a branch look detached.  Its ordinary-file equivalent
+    is ``ref: <target>``, which carries the same reference relationship while
+    keeping every entry in the constructed directory materialised.
+    """
+    source_root = source.resolve()
+    for root, directories, files in os.walk(source, followlinks=False):
+        for name in [*directories, *files]:
+            original = Path(root) / name
+            if not original.is_symlink():
+                continue
+            relative = original.relative_to(source)
+            if relative != Path("HEAD") and relative.parts[:1] != ("refs",):
+                continue
+            try:
+                target = original.resolve(strict=True)
+                reference = target.relative_to(source_root)
+            except (OSError, ValueError):
+                continue
+            if target.is_file():
+                (into / relative).write_text(
+                    f"ref: {reference.as_posix()}\n", encoding="utf-8",
+                )
 
 
 def build_git_directory(subject: Path, into: Path) -> tuple:
@@ -624,18 +689,21 @@ def build(repository, *, needs_working_tree: bool = True, overlay: dict | None =
         gitdir, head, reproducible = build_git_directory(subject, scratch / "sterile.git")
         worktree: Path | None = None
         cwd = subject
+        constructed_view = False
         if needs_working_tree and not _is_bare(subject):
+            source_worktree = _declared_worktree(subject) or subject
             # The view exists for one reason: Git opens a repository it finds in
             # the working tree. Where there is none to find, the subject's own
             # tree is used and the view costs nothing.
-            if nested_repository_paths(subject):
-                worktree = _build_view(subject, scratch)
+            if nested_repository_paths(source_worktree):
+                worktree = _build_view(source_worktree, scratch)
                 cwd = worktree
+                constructed_view = True
             else:
-                worktree = subject
-                cwd = subject
+                worktree = source_worktree
+                cwd = source_worktree
         environment = _environment(scratch, gitdir, worktree, overlay, extra_config)
-        if worktree is not None and worktree != subject:
+        if constructed_view:
             _refresh_constructed_index(subject, gitdir, environment, cwd, timeout)
         _confirm_head(subject, gitdir, environment, cwd, head, reproducible, timeout)
         return SterileRead(scratch=scratch, gitdir=gitdir, worktree=worktree, cwd=cwd,
@@ -667,8 +735,37 @@ def build(repository, *, needs_working_tree: bool = True, overlay: dict | None =
 
 
 def _is_bare(subject: Path) -> bool:
+    subject = Path(subject).resolve()
     dot = subject / ".git"
-    return not dot.exists() and (subject / "HEAD").is_file() and (subject / "objects").is_dir()
+    return (
+        not os.path.lexists(dot)
+        and (subject / "HEAD").is_file()
+        and (subject / "objects").is_dir()
+        and _declared_worktree(subject) is None
+    )
+
+
+def _declared_worktree(subject: Path) -> Path | None:
+    """The worktree of a bare-shaped git directory that explicitly has one.
+
+    A conventional bare repository is identified by its own ``HEAD`` and
+    ``objects/`` entries.  Git also supports that shape as a git directory for
+    a separate worktree: it declares both ``core.bare = false`` and
+    ``core.worktree`` in the common configuration.  The latter is layout data,
+    not a setting copied into the constructed configuration; the harness uses
+    it only to select the tree whose contents it mirrors.
+    """
+    subject = Path(subject).resolve()
+    dot = subject / ".git"
+    if os.path.lexists(dot) or not (subject / "HEAD").is_file() or not (subject / "objects").is_dir():
+        return None
+    declared = config_as_data(subject / "config")
+    bare = (declared.get("core.bare") or "").strip().lower()
+    raw = (declared.get("core.worktree") or "").strip()
+    if bare not in {"false", "no", "off", "0"} or not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_absolute() else (subject / path).resolve()
 
 
 def _refresh_constructed_index(subject: Path, gitdir: Path, environment: dict, cwd: Path,
