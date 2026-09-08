@@ -397,6 +397,33 @@ def test_the_transport_verbs_are_exactly_the_one_the_postcondition_needs():
     assert gitread.TRANSPORT_VERBS == frozenset({"ls-remote"})
 
 
+def test_a_callers_explicit_local_path_remains_a_readable_ls_remote_target(tmp_path):
+    """Direct local paths need Git's file implementation, but no subject policy.
+
+    The sterile configuration correctly denies transports by default.  That
+    accidentally denied the ordinary ``ls-remote /path/to/repository`` form as
+    well, despite the path being supplied by the caller.  Compare the complete
+    answer with real Git so options and ref formatting stay Git's semantics.
+    """
+    remote = _committed(tmp_path, "remote")
+    reader = _committed(tmp_path, "reader")
+    expected = _real_git(reader, "ls-remote", str(remote))
+
+    assert expected.returncode == 0, expected.stderr
+    assert gitread._run(reader, "ls-remote", str(remote)) == expected.stdout
+
+
+def test_a_subjects_remote_alias_cannot_choose_local_transport_policy(tmp_path):
+    """A local address in subject configuration is not a caller-opened path."""
+    remote = _committed(tmp_path, "remote")
+    reader = _committed(tmp_path, "reader")
+    _git(reader, "remote", "add", "origin", str(remote))
+
+    answer = gitread.probe(reader, "ls-remote", "origin", negative_statuses=())
+    assert not answer.ok
+    assert "transport 'file' not allowed" in answer.detail
+
+
 # --- the verb is not the unit of read-onlyness -----------------------------------
 #
 # The first allowlist admitted `config`, under a comment asserting that "a write
@@ -1622,9 +1649,9 @@ def test_replacing_the_configuration_root_excludes_every_subject_config_route(tm
             handle.write(f"\n[subject]\n\tconfig = {value}\n")
     elif route == "config.worktree":
         _git(repo, "config", "extensions.worktreeConfig", "true")
-        key, value = "core.bigfilethreshold", "123"
+        key, value = "subject.worktreeconfig", "entered-through-config.worktree"
         (repo / ".git" / "config.worktree").write_text(
-            f"[core]\n\tbigFileThreshold = {value}\n", encoding="utf-8")
+            f"[subject]\n\tworktreeconfig = {value}\n", encoding="utf-8")
     elif route == "include.path":
         (repo / ".git" / "included").write_text(
             f"[subject]\n\tincludepath = {value}\n", encoding="utf-8")
@@ -1703,6 +1730,35 @@ def test_info_grafts_is_carried_for_history_walks(tmp_path):
     head = _isolated_git(repo, "rev-parse", "HEAD").strip()
     (repo / ".git" / "info" / "grafts").write_text(head + "\n", encoding="utf-8")
     assert gitread._run(repo, "rev-list", "--count", "HEAD") == "1\n"
+
+
+def test_a_bare_subject_is_rebuilt_as_bare_and_preserves_read_capabilities(tmp_path):
+    """A bare git directory is not a working tree containing Git internals."""
+    source = _isolated_committed_repo(tmp_path, "source")
+    (source / "f.txt").write_text("two\n")
+    _isolated_git(source, "add", "f.txt")
+    _isolated_git(source, "commit", "-q", "-m", "second")
+    bare = tmp_path / "subject.git"
+    bare.mkdir()
+    _isolated_git(bare, "init", "-q", "--bare")
+    _isolated_git(bare, "fetch", "-q", str(source), "main:refs/heads/main")
+    _isolated_git(bare, "symbolic-ref", "HEAD", "refs/heads/main")
+
+    for arguments in (
+        ("rev-list", "HEAD"),
+        ("show", "--format=raw", "HEAD"),
+        ("diff-tree", "-r", "HEAD"),
+        ("diff-index", "--cached", "HEAD"),
+    ):
+        expected = _real_git(bare, *arguments)
+        assert expected.returncode == 0, (arguments, expected.stderr)
+        assert gitread._run(bare, *arguments) == expected.stdout
+
+    for arguments in (("status",), ("ls-files", "--deleted"),
+                      ("ls-files", "--modified"),
+                      ("ls-files", "--others", "--exclude-standard")):
+        with pytest.raises(GitRefusal):
+            gitread._run(bare, *arguments)
 
 
 # O5 — a store this build cannot import refuses rather than answering -----------------
@@ -1969,19 +2025,8 @@ def test_the_construction_refuses_by_name_rather_than_raising_whatever_it_hit(tm
     assert "FileExistsError" in raised.value.render(), raised.value.render()
 
 
-def test_a_view_built_across_a_filesystem_boundary_keeps_every_mode(tmp_path, monkeypatch):
-    """The subject does not have to be on the same filesystem as the scratch
-    directory, and when it is not, `os.link` fails with EXDEV and the copy fallback
-    runs. That fallback copied CONTENT ONLY: an executable arrived in the view as
-    644, Git compared it with 100755 in the index, and a governed `status` reported
-    a file MODIFIED that real Git said nothing about — a wrong answer at exit 0,
-    from a subject nobody had to make hostile.
-
-    Reproduced first on a real case-sensitive disk image, where the subject and the
-    system temp directory genuinely are different devices. It is pinned here by
-    making `os.link` fail instead, so the fallback is exercised on one filesystem
-    and the oracle does not need two.
-    """
+def test_a_copied_view_keeps_every_mode(tmp_path):
+    """Copying a view preserves modes without changing source-file ctimes."""
     root = _repo(tmp_path, "xdev")
     program = root / "program.sh"
     program.write_text("#!/bin/sh\ntrue\n")
@@ -1992,11 +2037,6 @@ def test_a_view_built_across_a_filesystem_boundary_keeps_every_mode(tmp_path, mo
     (root / "nest").mkdir()
     _git(root / "nest", "init", "-q", "-b", "main")
 
-    def no_hardlinks(*_args, **_kwargs):
-        raise OSError(18, "Cross-device link")
-
-    monkeypatch.setattr(_sterile.os, "link", no_hardlinks)
-
     expected, got = _exactly_as_real_git(root, "status", "--porcelain")
     assert expected is not None, "real git refused the fixture, so this proves nothing"
     assert got == expected, (
@@ -2005,6 +2045,87 @@ def test_a_view_built_across_a_filesystem_boundary_keeps_every_mode(tmp_path, mo
     )
     assert "program.sh" not in got, (
         "the executable arrived in the view without its mode, so the read called it modified"
+    )
+
+
+def test_a_constructed_view_does_not_make_nested_outer_paths_look_modified(tmp_path):
+    """A prior governed read must not alter the next diff-index answer.
+
+    Real Git reports this legacy outer-tracked file clean.  A hard-linked view
+    changed the source ctime; the next view then made Git inspect beneath the
+    nested repository and emit a false modification.
+    """
+    root = _repo(tmp_path, "nested-diff-index")
+    nested = root / "inner"
+    nested.mkdir()
+    (nested / "data.txt").write_text("outer tracked data\n")
+    _git(root, "add", "inner/data.txt")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "outer")
+    _git(nested, "init", "-q", "-b", "main")
+    (nested / "inner.txt").write_text("inner\n")
+    _git(nested, "add", "inner.txt")
+    _git(nested, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "inner")
+
+    expected = _real_git(root, "diff-index", "HEAD")
+    assert expected.returncode == 0 and expected.stdout == ""
+    gitread._run(root, "rev-parse", "HEAD")
+    assert gitread._run(root, "diff-index", "HEAD") == expected.stdout
+    assert _real_git(root, "diff-index", "HEAD").stdout == expected.stdout
+
+
+def test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata(tmp_path):
+    """The central promise of the constructed view, bound rather than described.
+
+    "The index copied so a refresh never touches the subject" was true of the
+    index and false of the working tree: the view hard-linked every regular
+    file, and creating a hard link changes the SOURCE file's ctime. `st_nlink`
+    is back to 1 once the view is discarded, so nothing on disk records that it
+    happened — and ctime is exactly what Git's stat cache compares, which is how
+    a later `diff-index` came to call a clean file modified.
+
+    Content was never at risk, which is why every byte-comparing oracle stayed
+    green through it. This one compares the subject's inode metadata across a
+    read instead, because that is where the damage was.
+    """
+    root = _repo(tmp_path, "untouched")
+    (root / "a.txt").write_text("a\n")
+    (root / "dir").mkdir()
+    (root / "dir" / "b.txt").write_text("b\n")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c")
+    # A nested repository is what makes the boundary construct a working-tree view
+    # at all. Without one there is nothing to link and this test passes against the
+    # very defect it exists to catch — which it did, on its first version.
+    nested = root / "inner"
+    nested.mkdir()
+    _git(nested, "init", "-q", "-b", "main")
+    (nested / "inner.txt").write_text("inner\n")
+    _git(nested, "add", "inner.txt")
+    _git(nested, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "inner")
+
+    def metadata():
+        seen = {}
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and not path.is_symlink():
+                stat = path.lstat()
+                seen[str(path.relative_to(root))] = (
+                    stat.st_ctime_ns, stat.st_mtime_ns, stat.st_size, stat.st_nlink,
+                )
+        return seen
+
+    before = metadata()
+    assert before, "the fixture produced no files to compare"
+    gitread._run(root, "status", "--porcelain")
+    after = metadata()
+
+    assert set(after) == set(before), (
+        "a governed read created or removed files in the subject: "
+        f"created {sorted(set(after) - set(before))}, removed {sorted(set(before) - set(after))}"
+    )
+    changed = {name: (before[name], after[name]) for name in before if before[name] != after[name]}
+    assert not changed, (
+        "a governed read changed the subject's inode metadata, which it must never do — "
+        f"(ctime, mtime, size, nlink) moved for: {changed}"
     )
 
 
@@ -2186,6 +2307,34 @@ def test_the_sterile_answer_equals_real_gits_answer(tmp_path, shape):
             f"{shape}: `git {' '.join(arguments)}` answered differently from real git"
         )
     assert compared, f"{shape}: real git answered nothing, so this row compared nothing"
+
+
+def test_sparse_checkout_storage_from_config_worktree_reaches_long_status(tmp_path):
+    """The sparse-checkout marker is controlled by a safe worktree descriptor."""
+    repo = _isolated_committed_repo(tmp_path, "sparse")
+    (repo / "dir").mkdir()
+    (repo / "dir" / "tracked.txt").write_text("tracked\n")
+    _isolated_git(repo, "add", "dir/tracked.txt")
+    _isolated_git(repo, "commit", "-q", "-m", "add directory")
+    _isolated_git(repo, "sparse-checkout", "init", "--cone")
+    _isolated_git(repo, "sparse-checkout", "set", "dir")
+
+    expected = _real_git(repo, "status")
+    assert expected.returncode == 0, expected.stderr
+    assert "sparse checkout" in expected.stdout
+    assert gitread._run(repo, "status") == expected.stdout
+
+
+def test_a_git_file_status_does_not_report_its_own_transient_index_lock(tmp_path):
+    """A governed read's scratch index cannot become a subject untracked file."""
+    repo = _isolated_committed_repo(tmp_path, "git-file")
+    actual = repo / "actual-gitdir"
+    (repo / ".git").rename(actual)
+    (repo / ".git").write_text("gitdir: actual-gitdir\n")
+
+    output = gitread._run(repo, "status", "--porcelain", "-uall")
+    assert "actual-gitdir/index.lock" not in output
+    assert not (actual / "index.lock").exists()
 
 
 # preserved: the guarantees the removed tests carried ---------------------------------

@@ -252,16 +252,33 @@ def _ref_store_is_reproducible(gitdir: Path, common: Path) -> bool:
     return declared is None or declared.strip().lower() == REPRODUCIBLE_REF_STORAGE
 
 
-def _write_config(into: Path, common: Path) -> None:
-    """The only configuration Git will read, written from a blank slate."""
+def _enabled(value: str | None) -> bool:
+    """The Git boolean spellings relevant to configuration-root selection."""
+    return (value or "").strip().lower() in {"true", "yes", "on", "1"}
+
+
+def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None:
+    """The only configuration Git will read, written from a blank slate.
+
+    ``config.worktree`` is a configuration root, not a file to copy.  Its
+    storage descriptors nevertheless describe the subject's working tree, and
+    Git layers them after the common configuration when that root is enabled.
+    Carry those safe descriptors in the same order while leaving every other
+    setting outside the constructed configuration.
+    """
     declared = config_as_data(common / "config")
+    if _enabled(declared.get("extensions.worktreeconfig")):
+        declared.update(config_as_data(gitdir / "config.worktree"))
     core = {
         name[len("core."):]: value
         for name, value in declared.items()
         if name in STORAGE_KEYS and name.startswith("core.")
     }
     core.setdefault("repositoryformatversion", "0")
-    core["bare"] = "false"
+    # A bare subject has no working tree.  Giving its constructed git directory
+    # ``core.bare = false`` makes Git reinterpret the subject's metadata as a
+    # working tree, refusing history reads and inventing untracked internals.
+    core["bare"] = "true" if bare else "false"
     lines = ["[core]\n"] + [f"\t{key} = {value}\n" for key, value in sorted(core.items())]
     # `objectFormat` describes the object store's encoding, so it belongs with
     # the carried storage descriptors.  `worktreeConfig` does NOT: it declares a
@@ -317,7 +334,7 @@ def build_git_directory(subject: Path, into: Path) -> tuple:
     _copy_git_state(common, into)
     if gitdir.resolve() != common.resolve():
         _copy_git_state(gitdir, into)
-    _write_config(into, common)
+    _write_config(into, common, gitdir, bare=_is_bare(subject))
     # Objects are ATTACHED, never copied: a release-sized repository would
     # otherwise pay its whole size on every read.
     alternates = [str(common / "objects")]
@@ -470,23 +487,14 @@ def _build_view(subject: Path, scratch: Path) -> Path:
                 # check uses above, and for the same reason.
                 os.symlink(os.readlink(source), destination)
                 continue
-            try:
-                os.link(source, destination)          # a link, so no content is copied
-            except OSError:
-                    # THE FALLBACK MUST PRODUCE THE SAME FILE THE LINK WOULD HAVE.
-                    #
-                    # `os.link` fails with EXDEV whenever the subject and this
-                    # scratch directory are on different filesystems -- an external
-                    # disk, a network mount, a second volume, a container bind
-                    # mount. `shutil.copyfile` copies CONTENT ONLY, so every mode
-                    # was dropped: an executable file arrived in the view as 644,
-                    # Git compared it against 100755 in the index, and a governed
-                    # `status` reported it MODIFIED while real Git reported nothing.
-                    # A wrong answer at exit 0 is the worst thing this boundary can
-                    # produce, and it needed no hostility at all -- only a subject
-                    # that does not live on the same volume as the system temp dir.
-                    shutil.copyfile(source, destination, follow_symlinks=False)
-                    shutil.copystat(source, destination, follow_symlinks=False)
+            # A hard link changes the source file's ctime.  In a tree that also
+            # contains a nested repository, that makes a later Git read re-stat
+            # an outer-tracked path below the nested boundary and report it
+            # modified even though its bytes never changed.  The view must not
+            # perturb the subject it represents, so regular files are copied with
+            # their metadata rather than attached to it.
+            shutil.copyfile(source, destination, follow_symlinks=False)
+            shutil.copystat(source, destination, follow_symlinks=False)
     built: set = set()
     for index, relative in enumerate(dict.fromkeys(nested)):
         try:
@@ -627,6 +635,8 @@ def build(repository, *, needs_working_tree: bool = True, overlay: dict | None =
                 worktree = subject
                 cwd = subject
         environment = _environment(scratch, gitdir, worktree, overlay, extra_config)
+        if worktree is not None and worktree != subject:
+            _refresh_constructed_index(subject, gitdir, environment, cwd, timeout)
         _confirm_head(subject, gitdir, environment, cwd, head, reproducible, timeout)
         return SterileRead(scratch=scratch, gitdir=gitdir, worktree=worktree, cwd=cwd,
                            environment=environment, head=head)
@@ -659,6 +669,41 @@ def build(repository, *, needs_working_tree: bool = True, overlay: dict | None =
 def _is_bare(subject: Path) -> bool:
     dot = subject / ".git"
     return not dot.exists() and (subject / "HEAD").is_file() and (subject / "objects").is_dir()
+
+
+def _refresh_constructed_index(subject: Path, gitdir: Path, environment: dict, cwd: Path,
+                               timeout: float) -> None:
+    """Match the copied index's stat cache to the constructed working tree.
+
+    A copied file necessarily has a new ctime.  The copied index still names the
+    source ctime, so Git can report a clean file as modified before it compares
+    contents; paths below a nested repository are especially affected because
+    Git will not descend to establish equality.  Refresh only the scratch index
+    after the complete view exists.  Nothing in this invocation addresses the
+    subject's git directory, index, or working tree.
+    """
+    try:
+        refreshed = instrument.launch(
+            ("git", "update-index", "--refresh"), radius=BLAST_RADIUS, cwd=str(cwd),
+            env=environment, capture_output=True, text=True, check=False, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitRefusal(
+            "the constructed index timed out being refreshed against its constructed working "
+            "tree, so this read is refused rather than answered",
+            repository=str(subject), timeout=timeout,
+        ) from exc
+    except OSError as exc:
+        raise GitRefusal(
+            "the constructed index could not be refreshed against its constructed working tree",
+            repository=str(subject), git_directory=str(gitdir), error=str(exc),
+        ) from exc
+    if refreshed.returncode != 0:
+        raise GitRefusal(
+            "the constructed index could not be refreshed against its constructed working tree",
+            repository=str(subject), git_directory=str(gitdir), returncode=refreshed.returncode,
+            stderr=refreshed.stderr or "", stdout=refreshed.stdout or "",
+        )
 
 
 def _confirm_head(subject: Path, gitdir: Path, environment: dict, cwd: Path,

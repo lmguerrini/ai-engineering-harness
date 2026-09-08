@@ -154,8 +154,15 @@ and now goes through it, so `gitread` is the toolbelt's only path to Git.
 - `docs/acceptance/rp2.5.0-mutation.py` — the mutation harness, which verifies a
   green baseline first, refuses to count a malformed mutant, and asserts the
   subject is byte-identical afterwards.
+- `docs/acceptance/rp2.5.0-floor-differential.py` — the frozen-floor differential:
+  the same public entry point called on this release and on 2.4.0 in separate
+  interpreters, compared as raw bytes, refusals included, over 25 fixtures and 153
+  read forms. It needs a 2.4.0 checkout named by `FLOOR_FROZEN_ROOT`, because the
+  floor is a release and not a file, and it writes its report outside the checkout
+  so that running it does not unpin the tree. It found four capability regressions
+  that every byte-comparing oracle baselined on this release had passed over.
 
-Both were in the author's scratch directory when the gate record first cited
+All three were in the author's scratch directory when the gate record first cited
 their figures. An independent certification could reproduce the properties and
 not the numbers, which is exactly what this pack's rule about figures exists to
 prevent, so they ship.

@@ -68,6 +68,23 @@ def _repository(repository: str | Path) -> str:
     return str(Path(repository))
 
 
+def _caller_named_local_path(arguments: tuple[str, ...]) -> bool:
+    """Whether a caller explicitly supplied a local filesystem address.
+
+    A direct absolute or dot-relative path is unambiguously local before Git
+    looks at any repository configuration.  A bare name is deliberately not
+    treated as local: it can be a remote alias, whose address the subject
+    controls.  ``file://`` similarly remains a caller-opened transport.  This
+    keeps the policy decision in the harness while restoring ordinary direct
+    local-path reads.
+    """
+    return any(
+        Path(str(argument)).is_absolute()
+        or str(argument).startswith(("./", "../"))
+        for argument in arguments
+    )
+
+
 #: Every Git command this module may run, and nothing else.
 #:
 #: `DECISIONS.md` D2 extracted this module precisely to leave the write verbs
@@ -241,6 +258,9 @@ def _run(
         # refusal nor recognisable as one.
         raise GitRefusal("git timeout must be a finite number of seconds", timeout=repr(timeout))
     verb = arguments[0] if arguments else ""
+    caller_named_local_path = _caller_named_local_path(
+        tuple(str(argument) for argument in arguments[1:])
+    )
     # Raised as an IntegrityError rather than a GitRefusal, deliberately.
     # `probe` converts a GitRefusal into an answer-shaped result — that is its
     # whole job — so raising one here would turn "this module will not run a
@@ -376,6 +396,13 @@ def _run(
     # key that once let a repository re-enable `ext::` and run its own helper is
     # not in the picture.
     transport_config: dict[str, str] = {"protocol.allow": "never"}
+    # A direct filesystem address is a local read, not a transport policy the
+    # subject can select through its configuration.  Git implements that read
+    # through the file transport, so the harness enables that one mechanism for
+    # caller-spelled local paths only.  No remote alias or URL from the subject
+    # participates in this decision.
+    if caller_named_local_path:
+        transport_config["protocol.file.allow"] = "always"
     if allow_transports:
         for transport in allow_transports:
             if transport not in ALLOWABLE_TRANSPORTS:
