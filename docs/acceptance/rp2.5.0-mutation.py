@@ -146,7 +146,7 @@ MUTANTS = [
      "tools/tests/test_gitread.py::test_a_local_read_creates_no_child"),
     ("the public path-restoration call is bypassed",
      "tools/gitread.py",
-     "    return _restore_subject_paths(result.stdout, read, repository)",
+     "    return _restore_subject_paths(result.stdout, read, repository, arguments=tuple(arguments))",
      "    return result.stdout",
      "tools/tests/test_gitread.py::"
      "test_public_run_restores_constructed_gitdir_before_discard"),
