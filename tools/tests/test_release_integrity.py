@@ -1846,7 +1846,7 @@ def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpu
     )
 
     accounting = re.search(
-        r"At the widened population it reports \*\*(\d+)\*\*\. Every row is accounted for:\n\n"
+        r"At the widened population it (?:now )?reports \*\*(\d+)\*\*\. Every row is accounted for:\n\n"
         r"\| rows \| what they are \| status \|\n"
         r"\|---:\|---\|---\|\n(?P<rows>(?:\| \d+ \|.*\n)+)",
         gate,
@@ -1854,7 +1854,7 @@ def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpu
     assert accounting, "the gate record has no parseable residual-accounting table"
     stated_total = int(accounting.group(1))
     class_totals = [int(value) for value in re.findall(r"^\| (\d+) \|", accounting.group("rows"), re.MULTILINE)]
-    assert sum(class_totals) == stated_total == 406, (
+    assert sum(class_totals) == stated_total == 403, (
         f"residual classes sum to {sum(class_totals)}, while the record states {stated_total}"
     )
 

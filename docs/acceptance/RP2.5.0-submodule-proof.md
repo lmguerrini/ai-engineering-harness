@@ -6,7 +6,10 @@ The repaired composition passes **183 byte-exact answer rows** and reproduces
 **25 frozen refusals** exactly: **208/208 corpus rows**. Every composed answer
 recorded zero Git Trace2 `child_start` events. Every governed primitive has a
 fresh, bound Trace2 witness: `version`, `start.argv`, and terminal `exit`
-share one session id. All 12 positive controls are detected.
+share one session id. All 12 positive controls are detected. Each primitive is
+run through frozen 2.4.0's `gitread` boundary, so these 208 rows and 12 controls
+establish the production `compose()` differential, not this candidate's `_run()`
+integration.
 
 The production composition is [submodule_no_child.py](../../tools/submodule_no_child.py);
 the fixture builder, differential oracle, and Trace2 binder are

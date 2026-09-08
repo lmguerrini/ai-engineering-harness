@@ -5,13 +5,16 @@ throwaway repo is the fixture.
 """
 
 import json
+import inspect
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
 import gitread
+from submodule_no_child import compose as _compose
 from submodule_no_child import has_gitlinks as _has_gitlinks
 from errors import GitRefusal
 
@@ -1007,6 +1010,30 @@ def test_a_standalone_repository_and_a_linked_worktree_still_read(tmp_path):
     assert gitread._run(linked, "ls-files", timeout=30).strip()
 
 
+def test_a_linked_worktrees_common_directory_matches_real_git_byte_for_byte(tmp_path):
+    """`--git-common-dir` names shared state, not this worktree's private state.
+
+    The constructed directory has no worktree split, so generic scratch-path
+    restoration once returned the linked worktree's private directory at exit
+    zero.  This builds a real linked worktree and holds the public governed
+    answer against real Git's bytes rather than a hand-written pathname.
+    """
+    main = _committed(tmp_path, "common-main")
+    linked = tmp_path / "common-linked"
+    _git(main, "worktree", "add", "-q", "--detach", str(linked))
+
+    real = _real_git(linked, "rev-parse", "--git-common-dir")
+    assert real.returncode == 0, real.stderr
+    governed = gitread._run(linked, "rev-parse", "--git-common-dir")
+    assert governed == real.stdout
+    assert governed == str(main / ".git") + "\n"
+
+
+def test_the_public_composition_signature_has_no_acceptance_fault_switch():
+    """Positive-control wiring is private to the acceptance corpus."""
+    assert "fault" not in inspect.signature(_compose).parameters
+
+
 # --- RP2.4.1: every configuration source Git applies, and every verb bound -----
 
 def _worktree_config_repo(tmp_path, name, program):
@@ -1806,6 +1833,29 @@ def test_every_configuration_source_git_reports_is_one_the_harness_wrote(tmp_pat
         read.discard()
 
 
+def test_a_public_overlay_cannot_add_an_unowned_configuration_source(tmp_path):
+    """An unowned configuration source is refused at the public boundary.
+
+    Reverting the overlay guard makes Git read this caller-named system file,
+    suppress the ordinary untracked answer, and fail the refusal assertion.
+    """
+    repo = _isolated_committed_repo(tmp_path, "unowned-configuration")
+    (repo / "ordinary-untracked.txt").write_text("ordinary\n")
+    outside = tmp_path / "unowned-system.gitconfig"
+    outside.write_text("[status]\n\tshowUntrackedFiles = no\n")
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(
+            repo, "status", "--porcelain", env_overlay={
+                "GIT_CONFIG_NOSYSTEM": "0",
+                "GIT_CONFIG_SYSTEM": str(outside),
+            },
+        )
+    rendered = raised.value.render()
+    assert "GIT_CONFIG_NOSYSTEM" in rendered and "GIT_CONFIG_SYSTEM" in rendered
+    assert gitread._run(repo, "status", "--porcelain") == "?? ordinary-untracked.txt\n"
+
+
 @pytest.mark.parametrize("route", ("config", "config.worktree", "include.path", "includeIf"))
 def test_replacing_the_configuration_root_excludes_every_subject_config_route(tmp_path, route):
     """The subject can only declare another configuration source from `config`.
@@ -2488,6 +2538,37 @@ def test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata
     )
 
 
+def test_a_public_overlay_cannot_retarget_the_subjects_index(tmp_path):
+    """A caller cannot direct the construction refresh at the subject index.
+
+    Reverting the overlay guard permits the future-mtime refresh below to update
+    the subject's index before the local no-child barrier starts, so this
+    byte-and-stat snapshot fails.
+    """
+    repo = _isolated_committed_repo(tmp_path, "subject-index")
+    tracked = repo / "f.txt"
+    future = time.time_ns() + 60_000_000_000
+    os.utime(tracked, ns=(future, future))
+    index = repo / ".git" / "index"
+    before_bytes = index.read_bytes()
+    before_stat = index.stat()
+
+    refusal = None
+    try:
+        gitread._run(
+            repo, "status", "--porcelain", env_overlay={"GIT_INDEX_FILE": str(index)},
+        )
+    except _GitRefusal as caught:
+        refusal = caught
+
+    after_bytes = index.read_bytes()
+    after_stat = index.stat()
+    assert after_bytes == before_bytes, "the refused read changed the subject index bytes"
+    assert after_stat == before_stat, "the refused read changed the subject index stat"
+    assert refusal is not None, "the public overlay did not refuse GIT_INDEX_FILE"
+    assert "GIT_INDEX_FILE" in refusal.render()
+
+
 def test_a_carried_git_state_link_is_materialised_before_index_refresh(tmp_path):
     """Carried git-directory state must be data, never a link back to the subject.
 
@@ -2613,6 +2694,53 @@ def test_a_directory_the_walk_cannot_read_refuses_instead_of_answering(tmp_path)
     assert expected is not None and got == expected, (
         f"the same subject, readable, no longer answers as real git: {got!r} against {expected!r}"
     )
+
+
+def test_the_nested_repository_discovery_walk_refuses_its_own_walk_error(tmp_path, monkeypatch):
+    """The pre-view discovery walk must not turn an unreadable directory into none.
+
+    This calls `nested_repository_paths` directly, so its own `os.walk` call
+    site is pinned independently of the later view-copy walk.
+    """
+    root = tmp_path / "discovery-subject"
+    root.mkdir()
+    unreadable = root / "unreadable"
+
+    def walk(path, *, followlinks, onerror):
+        assert Path(path).resolve() == root.resolve()
+        assert followlinks is False
+        assert onerror is _sterile._refuse_unreadable
+        onerror(PermissionError(13, "Permission denied", str(unreadable)))
+        yield from ()
+
+    monkeypatch.setattr(_sterile.os, "walk", walk)
+    with _pytest.raises(_GitRefusal) as raised:
+        _sterile.nested_repository_paths(root)
+    assert "could not be read" in str(raised.value.cause), raised.value.cause
+
+
+def test_the_view_copy_walk_refuses_its_own_walk_error(tmp_path, monkeypatch):
+    """The view-copy walk independently refuses an unreadable directory.
+
+    The first test cannot reach this call site: discovery normally happens
+    first. Calling the builder directly makes deleting only its `onerror=`
+    handler fail this oracle.
+    """
+    root = tmp_path / "view-subject"
+    root.mkdir()
+    unreadable = root / "unreadable"
+
+    def walk(path, *, followlinks, onerror):
+        assert Path(path).resolve() == root.resolve()
+        assert followlinks is False
+        assert onerror is _sterile._refuse_unreadable
+        onerror(PermissionError(13, "Permission denied", str(unreadable)))
+        yield from ()
+
+    monkeypatch.setattr(_sterile.os, "walk", walk)
+    with _pytest.raises(_GitRefusal) as raised:
+        _sterile._build_view(root, tmp_path / "scratch")
+    assert "could not be read" in str(raised.value.cause), raised.value.cause
 
 
 def test_a_split_index_is_carried_rather_than_refused(tmp_path):
@@ -2980,6 +3108,30 @@ def test_a_local_read_creates_no_child(tmp_path):
     assert not [event for event in events if event.get("event") == "child_start"]
 
 
+def test_a_public_overlay_delegates_trace2_event(tmp_path):
+    """The public overlay retains the one delegated Git variable, Trace2.
+
+    Reverting the overlay guard leaves this delegated path working; this test
+    establishes the intentionally narrow exception rather than discriminating
+    the guard's rejection of every other Git name.
+    """
+    repo = _isolated_committed_repo(tmp_path, "delegated-trace2")
+    trace = tmp_path / "delegated-trace2.json"
+    try:
+        assert gitread._run(
+            repo, "status", "--porcelain", env_overlay={"GIT_TRACE2_EVENT": str(trace)},
+        ) == ""
+    except _GitRefusal as refusal:
+        # This executor nests a Seatbelt sandbox, which macOS rejects before
+        # Git starts.  It still proves the public overlay passed construction:
+        # a closed Git namespace would instead name GIT_TRACE2_EVENT here.
+        assert "local no-child barrier" in str(refusal.cause), refusal.render()
+        return
+
+    events = [json.loads(line) for line in trace.read_text().splitlines() if line]
+    assert any(event.get("event") == "version" for event in events)
+
+
 # O-A71-8 — routing and gitlink identity do not read subject declarations ----
 
 def test_routing_does_not_consult_the_subject(tmp_path):
@@ -3200,7 +3352,7 @@ def test_every_verb_answers_about_the_root_it_was_given(tmp_path, verb):
     assert not answer.answered or "outer-only.txt" not in answer.value
 
 
-def test_a_walk_that_cannot_look_refuses_rather_than_finding_nothing(tmp_path):
+def test_a_walk_that_cannot_look_refuses_rather_than_finding_nothing(tmp_path, monkeypatch):
     """A check that could not read its subject has not cleared it."""
     repo = tmp_path / "subject"
     repo.mkdir()
@@ -3209,16 +3361,18 @@ def test_a_walk_that_cannot_look_refuses_rather_than_finding_nothing(tmp_path):
     locked = repo / "locked"
     locked.mkdir()
     (locked / "inner.txt").write_text("x\n")
-    locked.chmod(0o000)
-    try:
-        answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-        # Either it refuses, or it answers exactly as real git does — what it must
-        # not do is report a clean tree it could not look at.
-        real = _real_git(repo, "status", "--porcelain")
-        if answer.answered:
-            assert answer.value == real.stdout.strip()
-    finally:
-        locked.chmod(0o755)
+    real_walk = _sterile.os.walk
+
+    def walk(path, *, followlinks=False, onerror=None):
+        if Path(path).resolve() == repo.resolve():
+            assert onerror is _sterile._refuse_unreadable
+            onerror(PermissionError(13, "Permission denied", str(locked)))
+        yield from real_walk(path, followlinks=followlinks, onerror=onerror)
+
+    monkeypatch.setattr(_sterile.os, "walk", walk)
+    answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
+    assert not answer.answered, "an unreadable walk was answered as though it found nothing"
+    assert "could not be read" in answer.cause, answer.cause
 
 
 def test_concurrent_governed_reads_do_not_share_state(tmp_path):
@@ -3288,5 +3442,113 @@ def test_the_view_builder_actually_runs_its_own_post_condition(tmp_path, monkeyp
         scratch = os.path.realpath(str(read.scratch))
         for made in built:
             assert os.path.realpath(str(made)).startswith(scratch), made
+    finally:
+        read.discard()
+
+
+def test_a_hook_the_subject_wrote_is_never_run_by_a_governed_read(tmp_path):
+    """The subject's own programs are not carried, so a governed read runs none.
+
+    `hooks/` holds executables the SUBJECT wrote.  Carrying them into the
+    constructed git directory made an ordinary read run one: refreshing the
+    constructed index fires `post-index-change`, and that refresh happens
+    before the local no-child barrier exists, so the hook ran unsandboxed with
+    the subject's working tree as its working directory.
+
+    Two independent repairs close this, so this test is the END-TO-END oracle
+    and fails only when BOTH are reverted — measured, not assumed: with just the
+    `_PROGRAM_ROOTS` omission reverted the programs are carried but
+    `core.hooksPath` still points away from them, and with just `core.hooksPath`
+    reverted there is no carried hook to find.  Each site is therefore pinned by
+    its own structural oracle as well:
+    `test_the_constructed_git_directory_carries_no_program_of_the_subjects` for
+    the omission, and
+    `test_the_constructed_configuration_points_hooks_at_an_empty_harness_directory`
+    for the configuration half.  Reverting both makes the witness file gain a
+    line, puts the hook's write inside the subject, and turns the answer into a
+    refusal, because the barrier then sees the child the hook started.  Frozen
+    2.4.0 runs nothing here and answers, so that state is a floor regression
+    rather than a new refusal.
+    """
+    repo = _isolated_committed_repo(tmp_path, "subject-hook")
+    (repo / "untracked.txt").write_text("ordinary\n")
+    witness = tmp_path / "hook-ran.txt"
+    hooks = repo / ".git" / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    hook = hooks / "post-index-change"
+    hook.write_text(
+        "#!/bin/sh\n"
+        f"echo ran >> {witness}\n"
+        'echo owned > "$PWD/HOOK-REACHED-THE-SUBJECT.txt"\n'
+    )
+    hook.chmod(0o755)
+    # A stale stat entry is what makes Git rewrite the index during construction,
+    # which is the event `post-index-change` fires on.
+    future = time.time_ns() + 60_000_000_000
+    os.utime(repo / "f.txt", ns=(future, future))
+
+    answer = gitread._run(repo, "status", "--porcelain", text=False)
+
+    assert not witness.exists(), "a governed read ran a program the subject wrote"
+    assert not (repo / "HOOK-REACHED-THE-SUBJECT.txt").exists(), (
+        "the subject's hook wrote into the subject during a governed read"
+    )
+    assert answer == b"?? untracked.txt\n", (
+        "the ordinary answer regressed; frozen 2.4.0 answers this repository"
+    )
+
+
+def test_the_constructed_git_directory_carries_no_program_of_the_subjects(tmp_path):
+    """`hooks/` is omitted at every level, including a carried submodule's.
+
+    `shutil.ignore_patterns` is applied per directory, so one pattern covers
+    `.git/hooks` and `modules/*/hooks` alike.  Reverting the omission puts the
+    subject's executables back inside the directory the harness owns, which is
+    what let Git find and run them.
+    """
+    repo = _isolated_committed_repo(tmp_path, "program-free")
+    for where in (repo / ".git" / "hooks", repo / ".git" / "modules" / "sub" / "hooks"):
+        where.mkdir(parents=True, exist_ok=True)
+        program = where / "post-index-change"
+        program.write_text("#!/bin/sh\nexit 0\n")
+        program.chmod(0o755)
+
+    read = _sterile.build(repo)
+    try:
+        carried = [str(path.relative_to(read.gitdir))
+                   for path in Path(read.gitdir).rglob("*")
+                   if path.is_file() and os.access(path, os.X_OK)]
+        assert not any("hooks" in entry for entry in carried), (
+            f"the constructed git directory carries the subject's programs: {carried}"
+        )
+        assert not (Path(read.gitdir) / "hooks").exists()
+    finally:
+        read.discard()
+
+
+def test_the_constructed_configuration_points_hooks_at_an_empty_harness_directory(tmp_path):
+    """The other half of the hook closure, pinned on its own.
+
+    Git looks for hooks in `core.hooksPath` and falls back to `$GIT_DIR/hooks`.
+    Omitting the subject's programs closes the fallback; this closes the
+    declared path, including one the subject declared for itself.  Removing the
+    `core.hooksPath` line from `_write_config` fails this test.
+    """
+    repo = _isolated_committed_repo(tmp_path, "hooks-path")
+    _isolated_git(repo, "config", "core.hooksPath", str(tmp_path / "subject-chosen"))
+    (tmp_path / "subject-chosen").mkdir()
+
+    read = _sterile.build(repo)
+    try:
+        declared = _sterile.config_as_data(Path(read.gitdir) / "config")
+        where = declared.get("core.hookspath")
+        assert where, "the constructed configuration declares no hooks path"
+        where = Path(where)
+        assert where.is_dir() and not any(where.iterdir()), (
+            f"the constructed hooks path is not an empty directory: {where}"
+        )
+        assert str(where).startswith(str(read.scratch)), (
+            f"the constructed hooks path is not one this build owns: {where}"
+        )
     finally:
         read.discard()

@@ -76,7 +76,21 @@ anything missed makes a read fail loudly instead of running a program.
 - A repository that merely *declares* a filter, textconv driver, hook or
   transport is now **read**, not refused. Refusal was a proxy for "this might
   execute something", and prevention makes the proxy unnecessary. Refusals get
-  strictly rarer.
+  strictly rarer. A repository carrying an **executable hook on disk** is read
+  too: the subject's own programs are not carried into the constructed git
+  directory, and the constructed configuration points `core.hooksPath` at an
+  empty directory this build owns. A certification found that an ordinary read
+  of such a repository ran the subject's `post-index-change` hook and then
+  refused; both halves of that are closed, and the hostile matrix now carries a
+  row that fails if either returns.
+- `rev-parse --git-common-dir` answers the **common** directory on a linked
+  worktree, as real Git and 2.4.0 do. It previously answered that worktree's
+  private git directory at exit 0 — a wrong answer rather than a refusal.
+- The environment overlay a caller may pass is **additive**. It can add an
+  ordinary variable; it can never replace one this build constructed, and every
+  `GIT_*` name is closed except the delegated Trace2 witness. An overlay that
+  tried could redirect Git's configuration sources or aim the construction-time
+  index refresh at the subject's own index.
 - A diff of content with a text conversion or external diff driver is now the
   **raw** diff, because no driver runs.
 - A repository whose ref store this build cannot import is refused **by name**

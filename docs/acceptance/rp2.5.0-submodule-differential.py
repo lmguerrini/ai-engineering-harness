@@ -28,7 +28,7 @@ from typing import Iterator
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
-from submodule_no_child import Composition, UnsupportedFrozenForm, compose
+from submodule_no_child import Composition, UnsupportedFrozenForm, _compose_for_control
 
 
 # The frozen release is selected exactly as the floor differential selects it.
@@ -319,8 +319,10 @@ class InvocationTracer:
 def _candidate_call(gitread: object, repo: Path, arguments: tuple[str, ...], trace: Path, fault: str | None = None) -> tuple[Composition | None, str | None, int, bool, str]:
     tracer = InvocationTracer(gitread, trace)
     try:
-        answer = compose(repo, *arguments, runner=tracer.run,
-                         env_overlay={"GIT_TRACE2_EVENT": str(trace)}, fault=fault)
+        answer = _compose_for_control(
+            repo, *arguments, runner=tracer.run,
+            env_overlay={"GIT_TRACE2_EVENT": str(trace)}, fault=fault,
+        )
         refusal = None
     except Exception as exc:
         answer = None
@@ -431,7 +433,10 @@ def main() -> int:
         print("FAILURES")
         print("\n".join(failures))
         return 1
-    print(f"PASS: {len(rows)} matrix rows and {len(control_rows)} positive controls")
+    print(
+        f"PASS: {len(rows)} composition matrix rows and {len(control_rows)} positive controls "
+        "through frozen 2.4.0 gitread primitives; this does not exercise the candidate _run integration"
+    )
     return 0
 
 

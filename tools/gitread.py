@@ -774,7 +774,7 @@ def _run(
             "git invocation failed", command=" ".join(command), returncode=result.returncode,
             stderr=_decode(result.stderr), stdout=_decode(result.stdout)[:4000],
         )
-    return _restore_subject_paths(result.stdout, read, repository)
+    return _restore_subject_paths(result.stdout, read, repository, arguments=tuple(arguments))
 
 
 def nul_paths(raw: bytes) -> list[str]:
@@ -829,7 +829,13 @@ def _subject_gitdir_spelling(subject: Path, gitdir: Path) -> str:
     return str(gitdir)
 
 
-def _restore_subject_paths(value: str | bytes, read: sterile.SterileRead, repository: str | Path) -> str | bytes:
+def _restore_subject_paths(
+    value: str | bytes,
+    read: sterile.SterileRead,
+    repository: str | Path,
+    *,
+    arguments: tuple[str, ...] = (),
+) -> str | bytes:
     """Replace disposable constructed paths in answer bytes with subject paths.
 
     The relative spelling passed in ``GIT_DIR`` and its resolved counterpart
@@ -840,6 +846,16 @@ def _restore_subject_paths(value: str | bytes, read: sterile.SterileRead, reposi
     """
     subject = Path(_repository(repository)).resolve()
     location = sterile.where_is(subject)
+    # The constructed directory deliberately has no linked-worktree split, so
+    # its ``--git-common-dir`` is also its private git directory. Rebinding
+    # that answer through the private directory is a plausible dangling-path
+    # repair and a wrong answer: the subject's common directory is a separate
+    # question, answered from the subject metadata that `where_is` already
+    # reads. Keep the narrow, one-output form separate from generic pathname
+    # substitution; combined `rev-parse` forms can contain both relations.
+    if arguments == ("rev-parse", "--git-common-dir") and location["linked_worktree"]:
+        common = str(location["common"]) + "\n"
+        return common.encode("utf-8", "surrogateescape") if isinstance(value, bytes) else common
     subject_gitdir = Path(str(location["gitdir"])).resolve()
     display_gitdir = _subject_gitdir_spelling(subject, subject_gitdir)
     source_worktree = sterile._declared_worktree(subject) or subject

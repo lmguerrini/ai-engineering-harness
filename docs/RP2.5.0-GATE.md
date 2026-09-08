@@ -44,6 +44,14 @@ over the non-test modules reports **additions only**:
 point of keeping the enumeration's names as projections: the mechanism behind them
 is gone and the surface a consumer imports is not.
 
+**The boundary claim is narrower than “no table decides anything.”** Routing and
+refusal never depend on SUBJECT-CONTROLLED CONTENT. The declared read surface is
+still described by `READ_ONLY_VERBS`, `READ_ONLY_ARGUMENT_FORMS`,
+`WRITING_OPTIONS`, `BUNDLE_SUBCOMMANDS` and `TRANSPORT_VERBS`; the last also
+classifies the local backend. `ALLOWABLE_TRANSPORTS` remains a caller-capability
+bound. These tables decide the declared caller surface, not what a subject can
+steer by its content.
+
 Over the WHOLE compared surface — test modules included — the same command also
 reports removals and signature changes, **and every one of them is inside
 `tools/tests/`**. That is not a compatibility event: `tools/tests/` is not a
@@ -174,20 +182,28 @@ is corrected afterwards is no longer evidence of what was decided beforehand:
 | Record | Oracle | Selector as frozen | The test that implements it |
 |---|---|---|---|
 | A1 | O2 | `test_a_nested_repositorys_configuration_never_executes` | `test_no_spelling_of_a_nested_git_executes_the_subjects_program`, parametrised over every spelling of a nested `.git` this release could build — A2 widened the property from *a* nested repository to *any spelling of one*, and the name followed. The count is not written here: adding a spelling is exactly the change this table should not have to be edited for, and a stated "four" survived the commit that made it five |
+| A7.1 | O-A71-1 | `test_no_local_read_regresses_the_floor` | **Unimplemented as frozen.** The shipped `rp2.5.0-floor-differential.py` is the current oracle, but its 406-row pre-repair result (403 after the three common-directory repairs below) means the frozen claim that *every* governed local read is byte-exact is not literally true. Its exact rows are governed by the adjudication in *The floor this release is measured against* below, rather than hidden by a selector that selects nothing. |
+| A7.1 | O-A71-6 | `test_a_missed_key_still_cannot_execute` | `test_the_subjects_own_config_cannot_make_a_read_run_a_program` carries the live execution property; `test_no_refusal_depends_on_a_projection` proves the retired key enumeration cannot be the mechanism. The current boundary removes the subject configuration source rather than trying to recognise a missed key. |
+| A7.1 | O-A71-7 | `test_the_subject_cannot_configure_the_checker` | `test_replacing_the_configuration_root_excludes_every_subject_config_route`, parametrised over `config`, `config.worktree`, `include.path` and `includeIf`. |
 
 Every other oracle in A1 and A2 names a test that exists and runs. A7.1 adds the
 shipped `tools/submodule_no_child.py` composition, its
 `docs/acceptance/rp2.5.0-submodule-differential.py` corpus, and
 `docs/acceptance/RP2.5.0-submodule-proof.md`. The corpus measures 208 byte-exact
 rows and 12 deliberate controls; the proof limits that claim to its composition
-grammar rather than treating it as a blanket submodule equivalence claim.
+grammar rather than treating it as a blanket submodule equivalence claim. Each
+composed primitive crosses frozen 2.4.0's `gitread` boundary, so these rows are
+strong evidence for `compose()` but do not exercise this candidate's `_run()`
+integration.
 
 ## What the implementation changed, and what was measured about it
 
 The boundary is `tools/sterile.py`, and `tools/gitread.py` is its only caller.
 `tools/release_delta.py` was the last module reaching Git around it and now goes
-through it; the only remaining subprocess callers in `tools/` run `pytest` and
-`ps`, so `gitread` is the toolbelt's single path to Git.
+through it. Other `tools/` subprocess callers include the declared executable
+checks in `adapter_pin.py` and `close_attestation.py`, as well as `pytest` and
+`ps`; none invokes Git directly, so `gitread` remains the toolbelt's single path
+to Git.
 
 Two exceptions to the behavioural floor are adjudicated, not hidden. First, the
 submodule composition is byte-exact only for the corpus grammar above; outside it,
@@ -214,8 +230,8 @@ is a claim:
 
 ## Mutation scoring
 
-Seventeen well-formed mutants against a verified-green baseline of the oracles
-they name, each reversing one thing the design says is load-bearing. **Seventeen
+Twenty-one well-formed mutants against a verified-green baseline of the oracles
+they name, each reversing one thing the design says is load-bearing. **Twenty-one
 killed, none survived, none malformed**, and the harness asserts the subject is
 byte-identical afterwards.
 
@@ -307,7 +323,7 @@ the full baseline is spelled out and the two design records are two invocations.
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
 | frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 43 fixtures × 200 read forms = 8,600 comparisons; every residual row is classified in *The floor this release is measured against* below |
 | hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
-| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 17 killed, none survived or malformed, subject byte-identical afterwards |
+| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 21 killed, none survived or malformed, subject byte-identical afterwards |
 | consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
 
 The clean-room clone is the one that matters most for the design records: it
@@ -402,10 +418,11 @@ what it actually records.
 
 What the certification could **not** break is worth as much as what it found: it
 established independently that deleting the environment layer weakened no
-guarantee — every property it carried is measured on the live path, and
-`protocol.file.allow=always` no longer standing is a tightening — and that the
-rewritten tests discriminate rather than merely passing, which mutation confirms
-by killing the mutant that drops the standing transport refusal.
+guarantee — every property it carried is measured on the live path. The file
+transport posture is **not** a tightening: `protocol.file.allow=always` is an
+unconditional constant on every governed read, as it was at the frozen floor.
+The rewritten tests discriminate rather than merely passing, which mutation
+confirms by killing the mutant that drops the standing transport refusal.
 
 Those six are **kept verbatim and marked**, not corrected and not deleted. They
 are the evidence `docs/RP2.5.0-RECURRENCE-MAP.md` argues from — the repairs whose
@@ -572,7 +589,10 @@ attributes while its selector constructs only the ignore file. The record is
 frozen and is not edited to match the code; the shortfall is stated here instead,
 and the attributes half is **unestablished**, not passing. Separately,
 `CLOSED_PROGRAM_KEYS`, `FLAG_BASED_CLOSURES`, `CONDITIONAL_CLOSURES` and
-`MAXIMUM_NESTED_DEPTH` are retained public names that nothing consults; O6's
+`MAXIMUM_NESTED_DEPTH` are retained public names that nothing consults. So are
+`VERB_ENABLING_OPTIONS`, `CODE_ENABLING_OPTIONS`, `_NO_EXTERNAL_PROGRAMS` and
+`EXTERNAL_PROGRAM_VERBS`: the last supplies values only to the inert
+`FLAG_BASED_CLOSURES` projection, and none controls a governed execution. O6's
 docstring, which justified one of them by a safety reason that is no longer true,
 now says so. Removing them would remove a public name 2.4.0 shipped, which is a
 SemVer decision this release does not take. Some private constants and a private
@@ -644,7 +664,7 @@ a nested repository too, since that is what makes the build construct a view at
 all, which is why every fixture on one filesystem agreed and this one did not.
 
 The fallback now copies the metadata as well as the bytes, so it produces the same
-file the link would have. `test_a_view_built_across_a_filesystem_boundary_keeps_every_mode`
+file the link would have. `test_a_copied_view_keeps_every_mode`
 pins it without requiring two filesystems: it makes `os.link` raise `EXDEV` so the
 fallback runs anywhere, and it fails when the metadata copy is removed. Verified on
 the real cross-device volume afterwards, where `status --porcelain`,
@@ -697,19 +717,14 @@ attacked what the previous one had not. That is what independent reading buys, a
 it is the argument for spending it again rather than for concluding that a clean
 verdict was ever near.
 
-### A disclosed over-acceptance, adjudicated rather than repaired
+### A withdrawn over-acceptance disclosure
 
-The same certification found that a directory whose `.git` contains only a `HEAD`
-file is **answered about** by this boundary where real Git refuses it as "not a git
-repository". The polarity is the opposite of the one already recorded above: this
-release refuses a corrupted ref store where Git limps on, and here it proceeds where
-Git stops. It is disclosed rather than repaired because repairing it means deciding
-what a repository *is* — Git's own answer is `HEAD` plus `objects/` plus `refs/` —
-and adding that triple is another enumeration of the kind this release exists to
-remove. Every consumer of this pack lands conservatively on such a subject (the pin
-fails, the workspace is not closable), so the exposure is a wrong answer to a
-question no shipped caller asks. **Unrepaired, stated, and the first thing a later
-release should take up.**
+The claimed `.git`-with-only-`HEAD` over-acceptance no longer reproduces. Retesting
+the three stated shapes found that `HEAD` alone and `HEAD` plus `objects/` both
+refuse before every governed verb can answer; with `refs/heads/main` added, real
+Git recognises a repository and both real Git and the governed `rev-parse
+--git-dir` answer `.git`. There is no exact reproducer to ship, so the disclosure
+is withdrawn rather than treated as a defect.
 
 ### The floor this release is measured against
 
@@ -728,7 +743,7 @@ Its first run found **339** differences, of which **183 capability regressions w
 bare repositories (48), direct local-path `ls-remote` (125), a nested repository's `diff-index`
 (8), and sparse-checkout's long status (2).
 
-At the widened population it reports **406**. Every row is accounted for:
+At the widened population it now reports **403**. Every row is accounted for:
 
 | rows | what they are | status |
 |---:|---|---|
@@ -736,7 +751,7 @@ At the widened population it reports **406**. Every row is accounted for:
 | 172 | `verify-pack` | adjudicated capability reduction: frozen answers it, while the local no-child backend refuses it |
 | 45 | `core.worktree` redirection | **this release is right**: it reads the path the caller supplied, not the sibling the subject names |
 | 8 | source-less `config --get` family | the deliberate refusal directing callers to `config_with_origin` |
-| 7 | `rev-parse` path family | non-dangling path differences; `--git-dir` answers `.git`, exists, and is identical to frozen |
+| 4 | `rev-parse` path family | the `linked-worktree`, `moved-main-worktree` and `worktree-config` `--git-common-dir` members were wrong exit-0 answers — each returned the private worktree git directory instead of the common directory — and are now repaired. The four remaining rows are non-dangling path differences. `--git-dir` answers `.git`, exists, and is identical to frozen **on an ordinary repository**; on the `.git`-as-a-file fixture the candidate returns `actual-gitdir` while frozen returns an absolute path. |
 | 2 | `.git`-as-a-file `index.lock` | **this release is right**: it does not report the lock frozen created while writing the subject |
 
 **An empty result would not have been evidence, and neither is this one on its own.** What makes the
@@ -766,7 +781,10 @@ replace ref is a local rewriting of what history says, and a governed read answe
 about the objects that are actually there is the more truthful of the two. It stops
 being defensible the moment it is undisclosed, because a caller cannot then tell
 which of the two answers it is holding. It is a **stated divergence** from here on.
-`info/grafts`, the deprecated ancestor of the same feature, is not carried either.
+`info/grafts`, the deprecated ancestor of the same feature, **is carried** into
+the constructed `info/` directory and is honoured: the governed grafted
+`rev-list --count HEAD` agrees with real Git. `test_info_grafts_is_carried_for_history_walks`
+holds that behaviour.
 
 **And one reported divergence that is not one.** `core.quotepath` was said to make
 the two disagree about a non-ASCII path. Measured in a clean environment they agree

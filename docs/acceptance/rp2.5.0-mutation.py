@@ -150,6 +150,30 @@ MUTANTS = [
      "    return result.stdout",
      "tools/tests/test_gitread.py::"
      "test_public_run_restores_constructed_gitdir_before_discard"),
+    ("the environment-overlay guard is removed",
+     "tools/sterile.py",
+     "    if replaced or undelegated_git:\n",
+     "    if False:\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_public_overlay_cannot_retarget_the_subjects_index"),
+    ("the subject's own programs are carried into the constructed directory",
+     "tools/sterile.py",
+     "                *_PROGRAM_ROOTS,",
+     "",
+     "tools/tests/test_gitread.py::"
+     "test_the_constructed_git_directory_carries_no_program_of_the_subjects"),
+    ("the constructed configuration stops pointing hooks at an empty directory",
+     "tools/sterile.py",
+     '    core["hookspath"] = str(empty_hooks)',
+     "",
+     "tools/tests/test_gitread.py::"
+     "test_the_constructed_configuration_points_hooks_at_an_empty_harness_directory"),
+    ("a linked worktree common directory is restored as its private git directory",
+     "tools/gitread.py",
+     '    if arguments == ("rev-parse", "--git-common-dir") and location["linked_worktree"]:\n',
+     "    if False:\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_linked_worktrees_common_directory_matches_real_git_byte_for_byte"),
 ]
 
 

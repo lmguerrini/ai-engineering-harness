@@ -556,13 +556,25 @@ def compose(
     *arguments: str,
     runner: Run,
     env_overlay: Overlay = None,
-    fault: str | None = None,
 ) -> Composition:
     """Return the frozen-form answer without allowing Git to recurse.
 
-    ``fault`` exists solely for the corpus's positive controls.  Production
-    code would not expose it.
+    This is the production composition interface. Deliberate broken variants
+    belong to the acceptance harness, not to callers of the governed toolbelt.
     """
+    return _compose_for_control(
+        repository, *arguments, runner=runner, env_overlay=env_overlay, fault=None,
+    )
+
+
+def _compose_for_control(
+    repository: str | Path,
+    *arguments: str,
+    runner: Run,
+    env_overlay: Overlay = None,
+    fault: str | None = None,
+) -> Composition:
+    """Acceptance-only composition entry point for the corpus's positive controls."""
     repo = Path(repository)
     observations: dict[bytes, bytes] = {}
     if arguments == ("diff", "--submodule=diff"):

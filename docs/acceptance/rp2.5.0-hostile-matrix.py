@@ -14,6 +14,7 @@ measurement here, never an inference.
 """
 import os
 import subprocess
+import time
 import sys
 import tempfile
 from pathlib import Path
@@ -148,6 +149,31 @@ row("every verbosity spelling", flat, *VERBOSITY)
 row("an explicitly requested driver", flat,
     ("diff", "--textconv", "--cached"), ("diff", "--ext-diff", "--cached"))
 row("history verbs", flat, ("log", "-p", "-1"), ("show", "HEAD"), ("diff", "--cached"))
+
+# AN EXECUTABLE THE SUBJECT WROTE IN ITS OWN HOOKS DIRECTORY.
+# This needs a fixture of its own rather than a line in `hostile()`, and the
+# reason is worth stating: `hostile()` sets `core.hooksPath`, which points Git
+# AWAY from `$GIT_DIR/hooks` and therefore MASKS this route. Adding the hook
+# there measured zero leaks whether or not the defect was present, which is a
+# fixture that carries a class without detecting it.
+# Two further details are load-bearing. A hook only runs when Git actually
+# REWRITES an index, so the tracked stat data is made stale below -- a freshly
+# built fixture has nothing to rewrite. And `.git` may be a FILE, so the hooks
+# directory is asked for rather than assumed.
+hooked = new_repo("subject-owned-hook")
+commit(hooked)
+_hooks = (hooked / git("rev-parse", "--git-path", "hooks", cwd=hooked).stdout.strip()).resolve()
+_hooks.mkdir(parents=True, exist_ok=True)
+for _name in ("post-index-change", "reference-transaction"):
+    _program = _hooks / _name
+    _program.write_text('#!/bin/sh\nexec "%s"\n' % EVIL)
+    _program.chmod(0o755)
+_stale = time.time() + 60_000
+for _tracked in git("ls-files", "-z", cwd=hooked).stdout.split("\0"):
+    if _tracked and (hooked / _tracked).is_file():
+        os.utime(hooked / _tracked, (_stale, _stale))
+row("an executable the subject wrote in its own hooks directory", hooked,
+    ("status", "--porcelain"), ("log", "--oneline", "-1"), ("rev-parse", "HEAD"))
 
 ignored = new_repo("ignored")
 (ignored / ".gitignore").write_text("cache/\n")

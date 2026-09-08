@@ -18,12 +18,20 @@ caller chooses `GIT_DIR`. So the harness builds the git directory: its own
 configuration root from a blank slate, the subject's objects attached rather
 than copied, and every other git-directory entry carried as plain data.
 
-**The only files this build omits by name are configuration roots.** Every
-route Git has for extending repository configuration is declared from the
-subject's own `config`, so replacing that root removes the whole graph. The
-complement is carried by enumerating the directory, not by guessing which state
-the next Git feature will need. 2.4.1's denylist and this module's former short
-state list both failed by growing one missed name at a time.
+**This build omits two categories by name: configuration roots, and the
+subject's own programs.** Every route Git has for extending repository
+configuration is declared from the subject's own `config`, so replacing that
+root removes the whole graph. The complement is carried by enumerating the
+directory, not by guessing which state the next Git feature will need. 2.4.1's
+denylist and this module's former short state list both failed by growing one
+missed name at a time.
+
+Enumerating the directory is the right rule for STATE and the wrong rule for
+PROGRAMS. `hooks/` holds executables the subject wrote, and carrying them made
+an ordinary governed read run one: refreshing the constructed index fired
+`post-index-change` outside the no-child barrier, with the subject's working
+tree as its working directory. A program is not state, and this is the whole
+of the exception — `_PROGRAM_ROOTS`.
 """
 
 from __future__ import annotations
@@ -97,6 +105,17 @@ REMOTE_TRACKING_KEYS = frozenset({"fetch"})
 #: list of include keys could never make that claim.  The names are ignored at
 #: every level because `modules/` and `worktrees/` contain the same Git layouts.
 CONFIGURATION_ROOTS = frozenset({"config", "config.worktree"})
+
+#: Executable programs the SUBJECT wrote, which are not state to reproduce.
+#: `hooks/` holds programs, and a program carried into the constructed git
+#: directory is a program Git will RUN — `post-index-change` fires when the
+#: constructed index is refreshed, before the local no-child barrier exists.
+#: Frozen 2.4.0 neutralised this with `core.hooksPath`; that closure was deleted
+#: with the environment layer and nothing replaced it.  Enumerating the
+#: directory is the right rule for STATE and the wrong rule for PROGRAMS.
+#: `shutil.ignore_patterns` is applied at every directory level, so this also
+#: covers `modules/*/hooks` for a subject carrying submodule git directories.
+_PROGRAM_ROOTS = frozenset({"hooks"})
 
 #: `commondir` is a layout pointer, not state to reproduce verbatim.  A linked
 #: worktree's common and private directories are merged into one sterile directory;
@@ -379,6 +398,15 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     # ``core.bare = false`` makes Git reinterpret the subject's metadata as a
     # working tree, refusing history reads and inventing untracked internals.
     core["bare"] = "true" if bare else "false"
+    # Git looks for hooks in `core.hooksPath`, falling back to `$GIT_DIR/hooks`.
+    # `_PROGRAM_ROOTS` keeps the subject's programs out of the constructed
+    # directory; this closes the other half, so a `hooksPath` the subject
+    # declared cannot reach outside it either.  An empty directory this build
+    # owns, rather than `/dev/null`, for the same reason the empty config file
+    # is a real file: the mechanism is then the same on a platform without it.
+    empty_hooks = into / "empty-hooks"
+    empty_hooks.mkdir(parents=True, exist_ok=True)
+    core["hookspath"] = str(empty_hooks)
     lines = ["[core]\n"] + [f"\t{key} = {value}\n" for key, value in sorted(core.items())]
     # `objectFormat` describes the common object store's encoding.  It is read
     # from `config`, not `config.worktree`, so only the common declaration may
@@ -443,6 +471,7 @@ def _copy_git_state(source: Path, into: Path) -> None:
             symlinks=False,
             ignore=shutil.ignore_patterns(
                 *CONFIGURATION_ROOTS,
+                *_PROGRAM_ROOTS,
                 *_LAYOUT_MARKERS,
                 "objects",
             ),
@@ -776,7 +805,33 @@ def _environment(scratch: Path, gitdir: Path, worktree: Path | None, cwd: Path, 
         for index, (key, value) in enumerate(sorted(extra_config.items())):
             environment[f"GIT_CONFIG_KEY_{index}"] = key
             environment[f"GIT_CONFIG_VALUE_{index}"] = value
-    environment.update(overlay or {})
+    # An overlay may ADD an ordinary environment variable, but it must never
+    # replace a value this build constructed.  Take the protected names from
+    # the finished mapping, rather than duplicating the environment above: a
+    # new harness-owned variable is protected as soon as it is added there.
+    #
+    # Git names are closed by default even when this build did not set one.
+    # Trace2 is the one deliberate exception: `_run` validates its path before
+    # supplying the no-child witness, and composed reads carry that same
+    # caller-requested witness through every primitive.
+    overlay = overlay or {}
+    replaced = sorted(name for name in overlay if name in environment)
+    undelegated_git = sorted(
+        name for name in overlay
+        if name.startswith("GIT_") and name != "GIT_TRACE2_EVENT"
+    )
+    if replaced or undelegated_git:
+        reasons = []
+        if replaced:
+            reasons.append("replaces harness-owned " + ", ".join(replaced))
+        if undelegated_git:
+            reasons.append("sets undelegated Git name " + ", ".join(undelegated_git))
+        raise GitRefusal(
+            "the environment overlay is refused: " + "; ".join(reasons),
+            replaced=", ".join(replaced) or "(none)",
+            undelegated_git=", ".join(undelegated_git) or "(none)",
+        )
+    environment.update(overlay)
     return environment
 
 
