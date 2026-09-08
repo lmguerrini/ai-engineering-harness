@@ -13,6 +13,16 @@ question:
     Every configuration source Git consults during a governed read is a file
     this harness created.
 
+ONE READ IS THE DELIBERATE EXCEPTION, AND IT IS THE POINT OF THAT READ. A
+`config` read's SUBJECT MATTER is the repository's own configuration: the
+boundary directs Git at the subject's `config` on purpose, `--show-origin`
+reports that file as the origin, and `config_with_origin` exists to say which
+file each setting came from. What the sentence above governs is the
+configuration that can change HOW GIT BEHAVES while answering, and no part of
+the subject's configuration reaches that. Two independent certifications read
+the sentence as universal and falsified it on this route, so the scope is
+written here rather than left to be re-derived from `tools/gitread.py`.
+
 `GIT_DIR` decides which files are local and worktree configuration, and the
 caller chooses `GIT_DIR`. So the harness builds the git directory: its own
 configuration root from a blank slate, the subject's objects attached rather

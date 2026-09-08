@@ -243,12 +243,20 @@ def test_the_headline_resolves_artifacts_where_the_record_was_loaded_from(tmp_pa
     work, elsewhere = tmp_path / "proj", tmp_path / "elsewhere"
     work.mkdir()
     elsewhere.mkdir()
-    (work / "result.md").write_text("done\n", encoding="utf-8")
     pid = _ended_producer()
     wait = Wait(job_id="j", kind=WaitKind.PATH_EXISTS, expects="a result",
                 path="result.md", pid=pid, not_beyond_seconds=99999,
                 declared_at=continuation.now(),
                 waiter=" ".join(progress.waiter_command("j", pid, sentinel="result.md")))
+    # THE ARTIFACT IS WRITTEN AFTER THE WAIT IS DECLARED, WHICH IS BOTH THE REAL
+    # ORDER AND THE ONLY DETERMINISTIC ONE -- the same rule the sibling test in
+    # test_background_governance.py states. `declared_at` is truncated to whole
+    # seconds while the artifact's mtime is fractional, so writing first compares
+    # as "written before the wait was declared" whenever the two straddle a
+    # second boundary, and this test failed intermittently under load. A blind
+    # certification caught it; the rule had been applied to the sibling and
+    # missed here.
+    (work / "result.md").write_text("done\n", encoding="utf-8")
     path = work / "CONTINUATION.json"
     continuation.save(ContinuationRecord(capability="C", updated_at=continuation.now(),
                                          waits=(wait,)), path)
