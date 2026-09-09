@@ -361,7 +361,21 @@ def _local_profile(
     gitdir = Path(str(location["gitdir"])).resolve()
     common = Path(str(location["common"])).resolve()
     caller_paths = _caller_path_operands(caller_arguments[1:], read.cwd)
-    readable = (subject, gitdir, common, read.scratch, read.cwd, trace_directory, *caller_paths)
+    alternates = Path(read.gitdir) / "objects" / "info" / "alternates"
+    object_roots = (
+        tuple(Path(line).resolve() for line in alternates.read_text(
+            encoding="utf-8", errors="surrogateescape",
+        ).splitlines() if line.strip())
+        if alternates.is_file() else ()
+    )
+    # `read.gitdir` is harness state.  Its alternates file is therefore the
+    # precise object-root list Git will open, including a relative SUBJECT
+    # alternate normalised by `build_git_directory`; grant those roots rather
+    # than treating a subject-parent sibling as an unrelated caller path.
+    readable = (
+        subject, gitdir, common, read.scratch, read.cwd, trace_directory,
+        *object_roots, *caller_paths,
+    )
     profile = confine.seatbelt_profile(
         writable_roots=(read.scratch, trace_directory),
         private_read_root=subject.parent.resolve(),

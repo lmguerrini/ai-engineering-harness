@@ -158,10 +158,10 @@ MUTANTS = [
      "test_a_public_overlay_cannot_retarget_the_subjects_index"),
     ("the subject's own programs are carried into the constructed directory",
      "tools/sterile.py",
-     "                *_PROGRAM_ROOTS,",
-     "",
+     '    excluded = CONFIGURATION_ROOTS | _PROGRAM_ROOTS | _LAYOUT_MARKERS | {"objects"}',
+     '    excluded = CONFIGURATION_ROOTS | _LAYOUT_MARKERS | {"objects"}',
      "tools/tests/test_gitread.py::"
-     "test_the_constructed_git_directory_carries_no_program_of_the_subjects"),
+     "test_the_constructed_git_directory_excludes_only_its_root_hooks"),
     ("the constructed configuration stops pointing hooks at an empty directory",
      "tools/sterile.py",
      '    core["hookspath"] = str(empty_hooks)',
@@ -345,12 +345,18 @@ MUTANTS = [
      "    return arguments",
      "tools/tests/test_gitread.py::"
      "test_ls_remote_origin_is_byte_identical_and_uses_a_positional_separator"),
-    ("a bare carriage return in a configuration value is accepted as data",
+    ("a bare carriage return at a value edge is kept rather than Git-trimmed",
      "tools/sterile.py",
-     '            if "\\r" in source_value:\n',
-     "            if False:\n",
+     '    while characters and not characters[0][1] and characters[0][0] in " \\t\\r":\n'
+     '        characters.pop(0)\n'
+     '    while characters and not characters[-1][1] and characters[-1][0] in " \\t\\r":\n'
+     '        characters.pop()\n',
+     '    while characters and not characters[0][1] and characters[0][0] in " \\t":\n'
+     '        characters.pop(0)\n'
+     '    while characters and not characters[-1][1] and characters[-1][0] in " \\t":\n'
+     '        characters.pop()\n',
      "tools/tests/test_gitread.py::"
-     "test_a_bare_carriage_return_in_a_value_is_refused_with_its_location"),
+     "test_a_bare_carriage_return_at_a_value_edge_matches_git_byte_for_byte"),
     ("whitespace before a continuation is given parser semantics again",
      "tools/sterile.py",
      "            if (len(value_parts[-1]) > 1\n"
@@ -362,6 +368,33 @@ MUTANTS = [
      "            pass",
      "tools/tests/test_gitread.py::"
      "test_config_records_as_data_exhaustively_agrees_or_refuses_value_bodies"),
+# THREEFIX keeps the preceding historical entry but reverses its CR polarity:
+# the floor answers these values, so trimming rather than refusing is now the
+# load-bearing behavior.  These three additions each target one 2.5.0 repair.
+    ("root-only exclusions are reapplied as basenames below refs",
+     "tools/sterile.py",
+     "            ignore=_ignore_git_directory_root_entries(source),\n",
+     "            ignore=shutil.ignore_patterns(\n"
+     "                *CONFIGURATION_ROOTS, *_PROGRAM_ROOTS, *_LAYOUT_MARKERS, \"objects\",\n"
+     "            ),\n",
+     "tools/tests/test_gitread.py::"
+     "test_loose_refs_named_like_excluded_roots_match_real_git_byte_for_byte"),
+    ("a bare carriage return is refused after Git would trim it",
+     "tools/sterile.py",
+     "        _refuse_unaccepted_value_backslashes(source_value_parts, path=path)\n",
+     "        if any(\"\\r\" in source_value for _source_line, source_value in source_value_parts):\n"
+     "            _refuse_config(\n"
+     "                path, number, \"a Git configuration value contains a bare carriage return\",\n"
+     "            )\n"
+     "        _refuse_unaccepted_value_backslashes(source_value_parts, path=path)\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_bare_carriage_return_at_a_value_edge_matches_git_byte_for_byte"),
+    ("a relative alternate is copied relative to the constructed object store",
+     "tools/sterile.py",
+     '            line if Path(line).is_absolute() else str((common / "objects" / line).resolve())',
+     "            line",
+     "tools/tests/test_gitread.py::"
+     "test_a_relative_alternate_reaches_the_same_history_as_real_git"),
 ]
 
 

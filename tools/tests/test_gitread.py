@@ -2383,21 +2383,22 @@ def test_config_records_as_data_exhaustively_agrees_or_refuses_value_bodies(tmp_
     assert number == expected_cases
 
 
-def test_a_bare_carriage_return_in_a_value_is_refused_with_its_location(tmp_path):
-    """Git trims this spelling; the bounded parser refuses it rather than owns it."""
+@pytest.mark.parametrize("contents", (
+    b"[core]\n\tv = \rab\n",
+    b"[core]\n\tv = ab\r",
+))
+def test_a_bare_carriage_return_at_a_value_edge_matches_git_byte_for_byte(tmp_path, contents):
+    """Git trims bare CR at either unquoted value edge, so the parser must too."""
     config = tmp_path / "bare-carriage-return.gitconfig"
-    config.write_bytes(b"[core]\n\tvalue = \ra\n")
+    config.write_bytes(contents)
 
     oracle = subprocess.run(
-        ["git", "config", "--file", str(config), "--get", "core.value"],
+        ["git", "config", "--file", str(config), "--list", "--null"],
         capture_output=True, check=False,
     )
     assert oracle.returncode == 0
-    assert oracle.stdout == b"a\n"
-    with _pytest.raises(_GitRefusal) as raised:
-        _sterile.config_records_as_data(config)
-    assert raised.value.detail == {"configuration": str(config), "line": 2}
-    assert "bare carriage return" in raised.value.render()
+    assert oracle.stdout == b"core.v\nab\0"
+    assert _config_records_as_git_list_bytes(config) == oracle.stdout
 
 
 def test_a_tab_separated_includeif_header_is_refused_not_reported_as_complete(tmp_path):
@@ -2488,12 +2489,10 @@ def test_an_escaped_quote_in_a_remote_subsection_reaches_the_same_address_as_git
 
 
 def test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value(tmp_path):
-    """FF remains data; a bare CR is visible and refused rather than translated.
+    """FF and an interior quoted CR remain data, as Git renders them.
 
-    The latter narrow refusal supersedes the old acceptance of a quoted CR.  It
-    keeps the byte-read invariant load-bearing: text-mode universal-newline
-    translation must not be allowed to conceal the spelling before this parser
-    refuses it by name.
+    Byte reads remain load-bearing: universal-newline translation cannot conceal
+    either spelling before the parser preserves Git's value semantics.
     """
     repo = _isolated_committed_repo(tmp_path, "form-feed")
     config = repo / ".git" / "config"
@@ -2511,9 +2510,12 @@ def test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value(tm
 
     with config.open("a", encoding="utf-8") as handle:
         handle.write('\tvalue = "a\fb\rc"\n')
-    with _pytest.raises(_GitRefusal) as raised:
-        _sterile.config_as_data(config)
-    assert "bare carriage return" in raised.value.render()
+    quoted = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=False,
+    )
+    assert quoted.returncode == 0
+    assert _config_records_as_git_list_bytes(config) == quoted.stdout
 
 
 def test_ls_remote_remote_name_with_a_quoted_hash_url_matches_real_git(tmp_path):
@@ -4015,7 +4017,7 @@ def test_a_hook_the_subject_wrote_is_never_run_by_a_governed_read(tmp_path):
     `core.hooksPath` still points away from them, and with just `core.hooksPath`
     reverted there is no carried hook to find.  Each site is therefore pinned by
     its own structural oracle as well:
-    `test_the_constructed_git_directory_carries_no_program_of_the_subjects` for
+    `test_the_constructed_git_directory_excludes_only_its_root_hooks` for
     the omission, and
     `test_the_constructed_configuration_points_hooks_at_an_empty_harness_directory`
     for the configuration half.  Reverting both makes the witness file gain a
@@ -4052,13 +4054,12 @@ def test_a_hook_the_subject_wrote_is_never_run_by_a_governed_read(tmp_path):
     )
 
 
-def test_the_constructed_git_directory_carries_no_program_of_the_subjects(tmp_path):
-    """`hooks/` is omitted at every level, including a carried submodule's.
+def test_the_constructed_git_directory_excludes_only_its_root_hooks(tmp_path):
+    """The hook search path is omitted by position, not by basename.
 
-    `shutil.ignore_patterns` is applied per directory, so one pattern covers
-    `.git/hooks` and `modules/*/hooks` alike.  Reverting the omission puts the
-    subject's executables back inside the directory the harness owns, which is
-    what let Git find and run them.
+    Git's root `hooks/` is not carried because it is executable program state.
+    A nested pathname is not that root and must remain ordinary carried state;
+    treating it as an exclusion would also lose legal loose refs named `hooks`.
     """
     repo = _isolated_committed_repo(tmp_path, "program-free")
     for where in (repo / ".git" / "hooks", repo / ".git" / "modules" / "sub" / "hooks"):
@@ -4069,15 +4070,72 @@ def test_the_constructed_git_directory_carries_no_program_of_the_subjects(tmp_pa
 
     read = _sterile.build(repo)
     try:
-        carried = [str(path.relative_to(read.gitdir))
-                   for path in Path(read.gitdir).rglob("*")
-                   if path.is_file() and os.access(path, os.X_OK)]
-        assert not any("hooks" in entry for entry in carried), (
-            f"the constructed git directory carries the subject's programs: {carried}"
-        )
         assert not (Path(read.gitdir) / "hooks").exists()
+        assert (Path(read.gitdir) / "modules" / "sub" / "hooks" / "post-index-change").is_file()
     finally:
         read.discard()
+
+
+def test_loose_refs_named_like_excluded_roots_match_real_git_byte_for_byte(tmp_path):
+    """Root exclusions do not discard legal refs whose basename happens to match.
+
+    The subject deliberately has `config`, `hooks`, and `objects` loose refs,
+    plus an entry below `refs/heads/objects/`.  HEAD stays on `config`, so a
+    basename-wide filter cannot pass construction by reproducing another ref.
+    """
+    repo = _isolated_committed_repo(tmp_path, "excluded-ref-names")
+    _isolated_git(repo, "checkout", "-q", "-b", "config")
+    (repo / "config.txt").write_text("second\n")
+    _isolated_git(repo, "add", "config.txt")
+    _isolated_git(repo, "commit", "-q", "-m", "config branch")
+    _isolated_git(repo, "branch", "hooks")
+    _isolated_git(repo, "branch", "objects/nested")
+    _isolated_git(repo, "tag", "objects")
+
+    commands = (
+        ("rev-list", "--count", "--all"),
+        ("show-ref",),
+        ("log", "--oneline", "--all"),
+    )
+    for arguments in commands:
+        expected = subprocess.run(
+            ["git", *arguments], cwd=str(repo), capture_output=True, check=False,
+            env=_fixture_environment(),
+        )
+        assert expected.returncode == 0, expected.stderr
+        actual = gitread._run(repo, *arguments, text=False)
+        assert actual == expected.stdout, f"governed {' '.join(arguments)} differs from real Git"
+
+    shown = subprocess.run(
+        ["git", "show-ref"], cwd=str(repo), capture_output=True, check=True,
+        env=_fixture_environment(),
+    ).stdout
+    for ref in (b"refs/heads/config\n", b"refs/heads/hooks\n", b"refs/tags/objects\n",
+                b"refs/heads/objects/nested\n"):
+        assert ref in shown
+
+
+def test_a_relative_alternate_reaches_the_same_history_as_real_git(tmp_path):
+    """A relative alternate is resolved against the subject common objects root."""
+    repo = _isolated_committed_repo(tmp_path, "relative-alternate")
+    objects = repo / ".git" / "objects"
+    alternate = tmp_path / "alternate-objects"
+    alternate.mkdir()
+    for entry in list(objects.iterdir()):
+        if entry.name != "info":
+            entry.rename(alternate / entry.name)
+    info = objects / "info"
+    info.mkdir(exist_ok=True)
+    relative = os.path.relpath(alternate, objects)
+    (info / "alternates").write_text(relative + "\n", encoding="utf-8")
+
+    expected = subprocess.run(
+        ["git", "log", "--oneline", "--all"], cwd=str(repo), capture_output=True,
+        check=False, env=_fixture_environment(),
+    )
+    assert expected.returncode == 0, expected.stderr
+    actual = gitread._run(repo, "log", "--oneline", "--all", text=False)
+    assert actual == expected.stdout
 
 
 def test_the_constructed_configuration_points_hooks_at_an_empty_harness_directory(tmp_path):

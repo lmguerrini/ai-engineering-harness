@@ -113,8 +113,9 @@ REMOTE_TRACKING_KEYS = frozenset({"fetch"})
 #: `config`.  In other words every route by which the subject's configuration can
 #: enter is declared in that one subject-owned root.  Replacing both roots with
 #: the harness's generated `config` therefore excludes the whole graph; copying a
-#: list of include keys could never make that claim.  The names are ignored at
-#: every level because `modules/` and `worktrees/` contain the same Git layouts.
+#: list of include keys could never make that claim.  These are root entries of
+#: the git directory this build is replacing; a nested pathname named `config`
+#: is ordinary state, not another configuration root for this Git invocation.
 CONFIGURATION_ROOTS = frozenset({"config", "config.worktree"})
 
 #: Executable programs the SUBJECT wrote, which are not state to reproduce.
@@ -123,9 +124,9 @@ CONFIGURATION_ROOTS = frozenset({"config", "config.worktree"})
 #: constructed index is refreshed, before the local no-child barrier exists.
 #: Frozen 2.4.0 neutralised this with `core.hooksPath`; that closure was deleted
 #: with the environment layer and nothing replaced it.  Enumerating the
-#: directory is the right rule for STATE and the wrong rule for PROGRAMS.
-#: `shutil.ignore_patterns` is applied at every directory level, so this also
-#: covers `modules/*/hooks` for a subject carrying submodule git directories.
+#: directory is the right rule for STATE and the wrong rule for PROGRAMS.  The
+#: excluded `hooks` entry is the root Git directory's hook search path; a nested
+#: pathname named `hooks` is ordinary carried state for this invocation.
 _PROGRAM_ROOTS = frozenset({"hooks"})
 
 #: `commondir` is a layout pointer, not state to reproduce verbatim.  A linked
@@ -211,7 +212,8 @@ def where_is(repository) -> dict:
 _CONFIG_VALUE_ESCAPES = frozenset({'"', "\\", "n", "t", "b"})
 
 
-def _config_value_as_data(text: str, *, path: Path, line: int) -> str:
+def _config_value_as_data(text: str, *, path: Path, line: int,
+                          preserve_terminal_cr: bool = False) -> str:
     """Decode one Git configuration VALUE without asking Git to read it.
 
     Git strips whitespace only when it is outside quoted runs.  Keeping the
@@ -252,9 +254,19 @@ def _config_value_as_data(text: str, *, path: Path, line: int) -> str:
     if quoted:
         _refuse_config(path, line, "a Git configuration value has an unclosed quote")
 
-    while characters and not characters[0][1] and characters[0][0] in " \t":
+    # A continuation's final backslash is physical syntax, not value data.  A
+    # CR immediately before it was therefore not at the source value's edge;
+    # if the continued physical part is empty it becomes terminal only after
+    # that syntax has been removed. Git preserves that CR. This records an
+    # existing physical-line fact for trimming without accepting new VALUE
+    # grammar.
+    if (preserve_terminal_cr and characters and characters[-1] == ("\r", False)
+            and any(character not in " \t\r" for character, _quoted in characters[:-1])):
+        characters[-1] = ("\r", True)
+
+    while characters and not characters[0][1] and characters[0][0] in " \t\r":
         characters.pop(0)
-    while characters and not characters[-1][1] and characters[-1][0] in " \t":
+    while characters and not characters[-1][1] and characters[-1][0] in " \t\r":
         characters.pop()
     return "".join(character for character, _quoted in characters)
 
@@ -580,6 +592,7 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
 
         value_parts = [value]
         source_value_parts = [(number, value)]
+        terminal_cr_before_continuation = False
         # The old parser unfolded a line before knowing whether it was a value.
         # This test remains intentionally local to value parsing: an even run
         # is escaped backslashes, and no header or comment reaches this branch.
@@ -593,6 +606,7 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
                     path, number,
                     "a Git configuration value has whitespace before a continuation",
                 )
+            terminal_cr_before_continuation |= value_parts[-1].endswith("\r\\")
             value_parts[-1] = value_parts[-1][:-1]
             index += 1
             if index == len(physical):
@@ -600,23 +614,14 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
             _next_number, next_raw = physical[index]
             value_parts.append(next_raw)
             source_value_parts.append((_next_number, next_raw))
-        for source_line, source_value in source_value_parts:
-            # NO SECOND NUL GUARD HERE. The whole file is refused on any NUL
-            # before a line is ever classified, so this branch was unreachable —
-            # and while it existed the mutant that removes the file-level guard
-            # SURVIVED, because this one still caught the value case. Two
-            # handlers for one question means neither is pinned, which is the
-            # defect limitation 16 says this line removed on principle.
-            if "\r" in source_value:
-                _refuse_config(
-                    path, source_line,
-                    "a Git configuration value contains a bare carriage return",
-                )
         _refuse_unaccepted_value_backslashes(source_value_parts, path=path)
         value = "".join(_decode_trailing_value_backslashes(part) for part in value_parts)
         records.append((
             f"{section}.{key}",
-            _config_value_as_data(value, path=path, line=number),
+            _config_value_as_data(
+                value, path=path, line=number,
+                preserve_terminal_cr=terminal_cr_before_continuation and value.endswith("\r"),
+            ),
         ))
         index += 1
     return records
@@ -839,6 +844,23 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     (into / "config").write_text("".join(lines), encoding="utf-8")
 
 
+def _ignore_git_directory_root_entries(root: Path):
+    """Return an ignore rule for entries Git interprets only at its directory root.
+
+    ``shutil.ignore_patterns`` compares basenames at every depth.  That is too
+    broad for names such as ``config``, ``hooks``, and ``objects``: loose refs
+    are legal below ``refs/`` with exactly those names.  The names below remain
+    the complete excluded set; only their position, the root being copied, is
+    part of the rule.
+    """
+    excluded = CONFIGURATION_ROOTS | _PROGRAM_ROOTS | _LAYOUT_MARKERS | {"objects"}
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        return set(names) & excluded if Path(directory) == root else set()
+
+    return ignore
+
+
 def _copy_git_state(source: Path, into: Path) -> None:
     """Carry every git-directory file except configuration roots and objects.
 
@@ -862,12 +884,7 @@ def _copy_git_state(source: Path, into: Path) -> None:
             into,
             dirs_exist_ok=True,
             symlinks=False,
-            ignore=shutil.ignore_patterns(
-                *CONFIGURATION_ROOTS,
-                *_PROGRAM_ROOTS,
-                *_LAYOUT_MARKERS,
-                "objects",
-            ),
+            ignore=_ignore_git_directory_root_entries(source),
         )
         _materialise_symbolic_refs(source, into)
     except (OSError, shutil.Error) as exc:
@@ -928,7 +945,8 @@ def build_git_directory(subject: Path, into: Path) -> tuple:
     chained = common / "objects" / "info" / "alternates"
     if chained.is_file():
         alternates += [
-            line for line in chained.read_text(encoding="utf-8", errors="surrogateescape").splitlines()
+            line if Path(line).is_absolute() else str((common / "objects" / line).resolve())
+            for line in chained.read_text(encoding="utf-8", errors="surrogateescape").splitlines()
             if line.strip()
         ]
     (into / "objects" / "info" / "alternates").write_text("\n".join(alternates) + "\n", encoding="utf-8")
