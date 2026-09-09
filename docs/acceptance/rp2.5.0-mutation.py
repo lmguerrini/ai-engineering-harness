@@ -247,6 +247,41 @@ MUTANTS = [
      '    with Path(path).open("r", encoding="utf-8", errors="surrogateescape") as handle:',
      "tools/tests/test_gitread.py::"
      "test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value"),
+# The strict parser deliberately has five independently mutable boundary rules.
+# These entries are appended to preserve the historical mutation record above.
+    ("a comment ending in a backslash is unfolded into the next physical line",
+     "tools/sterile.py",
+     '        if line.startswith(("#", ";")):',
+     "        if False:",
+     "tools/tests/test_gitread.py::"
+     "test_a_comment_ending_in_a_backslash_does_not_consume_the_next_header"),
+    ("a section header ending in a backslash swallows its next physical line",
+     "tools/sterile.py",
+     '            section = _config_section_as_data(raw, path=path, line=number)\n'
+     '            index += 1\n'
+     '            continue',
+     '            section = _config_section_as_data(raw, path=path, line=number)\n'
+     '            index += 2 if raw.endswith("\\\\") else 1\n'
+     '            continue',
+     "tools/tests/test_gitread.py::"
+     "test_a_header_ending_in_a_backslash_does_not_consume_the_next_line"),
+    ("every trailing backslash is treated as a continuation",
+     "tools/sterile.py",
+     "    return trailing % 2 == 1",
+     "    return trailing > 0",
+     "tools/tests/test_gitread.py::"
+     "test_the_strict_configuration_accept_list_agrees_with_git_byte_for_byte"),
+    ("a leading UTF-8 BOM is not consumed before configuration matching",
+     "tools/sterile.py",
+     '    if text.startswith("\\ufeff"):',
+     "    if False:",
+     "tools/tests/test_gitread.py::test_a_bom_before_include_is_seen_and_refused"),
+    ("a variable name outside the accept-list is treated as configuration data",
+     "tools/sterile.py",
+     '    if index == len(raw) or not raw[index].isascii() or not raw[index].isalpha():',
+     "    if False:",
+     "tools/tests/test_gitread.py::"
+     "test_the_strict_configuration_refusal_list_names_its_file_and_line"),
 ]
 
 

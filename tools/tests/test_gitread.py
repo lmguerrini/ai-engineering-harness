@@ -1986,6 +1986,157 @@ def _isolated_committed_repo(tmp_path, name):
     return repo
 
 
+def _config_data_as_git_list_bytes(config, *, bare_keys=frozenset()):
+    """Render the single-valued data view in Git's ``--list --null`` shape.
+
+    The closed accept-list below deliberately gives every key one value, so
+    ``config_as_data`` is its exact representation and retains source order.
+    Multi-value carrying has its own regression tests elsewhere in this file.
+    """
+    rendered = []
+    for name, value in _sterile.config_as_data(config).items():
+        key = name.encode("utf-8", "surrogateescape")
+        # `--list --null` preserves Git's distinct *no explicit value* list
+        # encoding as `key\\0`, while this data API deliberately presents the
+        # resolved boolean as `"true"` to its callers.
+        rendered.append(
+            key + b"\0" if name in bare_keys
+            else key + b"\n" + value.encode("utf-8", "surrogateescape") + b"\0"
+        )
+    return b"".join(rendered)
+
+
+@pytest.mark.parametrize(
+    "shape, contents, bare_keys",
+    (
+        (
+            "empty-comment-header-and-implicit-true",
+            b" \t\r\n# a hash comment\n\t; a semicolon comment ending in a backslash \\\n"
+            b"[core]  # a header comment\n\tbare\n",
+            frozenset({"core.bare"}),
+        ),
+        ("utf8-bom", b"\xef\xbb\xbf[core]\n\tvalue = bom\n", frozenset()),
+        ("escaped-backslash-value", b'[core]\n\tvalue = "tail\\\\"\n', frozenset()),
+        ("even-trailing-backslashes", b"[core]\n\tvalue = tail\\\\\n", frozenset()),
+        ("odd-backslash-continuation", b"[core]\n\tvalue = left\\\nright\n", frozenset()),
+        (
+            "quoted-subsection-escapes",
+            b'[remote "quo\\"te\\\\slash"]\n\turl = local\n',
+            frozenset(),
+        ),
+        ("tab-separated-subsection", b'[branch\t"Topic"]\n\tmerge = refs/heads/main\n', frozenset()),
+        ("crlf", b"[core]\r\n\tfilemode = true\r\n", frozenset()),
+    ),
+)
+def test_the_strict_configuration_accept_list_agrees_with_git_byte_for_byte(
+        tmp_path, shape, contents, bare_keys):
+    """The closed positive oracle: accepted input has exactly Git's answer.
+
+    This is intentionally a finite table, not a growing corpus of Git syntax.
+    It exercises every accepted construct, including the BOM, CRLF, header and
+    comment rules, the two accepted subsection escapes, and the one permitted
+    continuation site.  Any configuration outside this table's grammar belongs
+    to the refusal oracle below rather than to parser expansion.
+    """
+    config = tmp_path / f"accepted-{shape}.gitconfig"
+    config.write_bytes(contents)
+
+    oracle = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=False,
+    )
+    assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
+    assert _config_data_as_git_list_bytes(config, bare_keys=bare_keys) == oracle.stdout
+
+
+@pytest.mark.parametrize(
+    "shape, contents, line",
+    (
+        ("unclosed-header", b"[core\n", 1),
+        ("legacy-dotted-section", b"[core.foo]\n\tvalue = yes\n", 1),
+        ("header-with-variable", b"[core] value = yes\n", 1),
+        ("stray-token", b"[core]\n\tvalue then more\n", 2),
+        ("bad-variable-name", b"[core]\n\t1value = yes\n", 2),
+        ("unterminated-continuation", b"[core]\n\tvalue = last\\", 2),
+    ),
+)
+def test_the_strict_configuration_refusal_list_names_its_file_and_line(
+        tmp_path, shape, contents, line):
+    """The closed negative oracle: an unlisted spelling never becomes data."""
+    config = tmp_path / f"rejected-{shape}.gitconfig"
+    config.write_bytes(contents)
+
+    with _pytest.raises(_GitRefusal) as raised:
+        _sterile.config_as_data(config)
+    assert raised.value.detail["configuration"] == str(config)
+    assert raised.value.detail["line"] == line
+
+
+def test_a_bom_before_include_is_seen_and_refused(tmp_path):
+    """BOM removal occurs before include detection, never before key matching."""
+    repo = _isolated_committed_repo(tmp_path, "bom-include")
+    config = repo / ".git" / "config"
+    config.write_bytes(b"\xef\xbb\xbf[include]\n\tpath = unseen.gitconfig\n")
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(repo, "status", "--porcelain")
+    assert "includes another configuration file" in raised.value.render()
+
+
+@pytest.mark.parametrize("trailing_backslashes", (2, 3))
+def test_even_and_triple_trailing_backslashes_route_ls_remote_like_git(
+        tmp_path, trailing_backslashes):
+    """Only the last backslash in an odd run continues a value physical line."""
+    target = _isolated_committed_repo(tmp_path, "backslash-target\\")
+    reader = _isolated_committed_repo(tmp_path, f"backslash-reader-{trailing_backslashes}")
+    config = reader / ".git" / "config"
+    address = str(target)
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write(f'\n[remote "origin"]\n\turl = {address}')
+        handle.write("\\" * (trailing_backslashes - 1))
+        handle.write("\n")
+        if trailing_backslashes == 3:
+            handle.write("\n")
+
+    oracle = _isolated_real_git(reader, "ls-remote", "origin", "HEAD")
+    assert oracle.returncode == 0, oracle.stderr
+    actual = gitread._run(reader, "ls-remote", "origin", "HEAD", text=False)
+    assert actual == oracle.stdout.encode("utf-8", "surrogateescape")
+
+
+def test_a_comment_ending_in_a_backslash_does_not_consume_the_next_header(tmp_path):
+    config = tmp_path / "comment-does-not-continue.gitconfig"
+    config.write_bytes(b"# comment ends here \\\n[core]\n\tfilemode = true\n")
+    assert _sterile.config_as_data(config) == {"core.filemode": "true"}
+
+
+def test_a_trailing_value_comment_ending_in_a_backslash_does_not_continue(tmp_path):
+    config = tmp_path / "value-comment-does-not-continue.gitconfig"
+    config.write_bytes(b"[core]\n\tvalue = kept # comment ends here \\\n\tfilemode = true\n")
+    assert _sterile.config_as_data(config) == {
+        "core.value": "kept",
+        "core.filemode": "true",
+    }
+
+
+def test_a_header_ending_in_a_backslash_does_not_consume_the_next_line(tmp_path):
+    config = tmp_path / "header-does-not-continue.gitconfig"
+    config.write_bytes(b"[core] # header ends here \\\n\tfilemode = true\n")
+    assert _sterile.config_as_data(config) == {"core.filemode": "true"}
+
+
+def test_invalid_configuration_grammar_refuses_instead_of_answering_cleanly(tmp_path):
+    repo = _isolated_committed_repo(tmp_path, "invalid-grammar")
+    config = repo / ".git" / "config"
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write("\n[core] this-is-not-a-variable = true\n")
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(repo, "status", "--porcelain")
+    assert raised.value.detail["configuration"] == str(config)
+    assert raised.value.detail["line"] > 0
+
+
 @pytest.mark.parametrize(
     "shape, spelling",
     (

@@ -207,25 +207,6 @@ def where_is(repository) -> dict:
     }
 
 
-def _without_config_comment(text: str) -> str:
-    """Return the part before Git's next unquoted comment introducer."""
-    quoted = False
-    index = 0
-    while index < len(text):
-        character = text[index]
-        if quoted and character == "\\":
-            # The following quote, if any, is escaped.  Whether the escape is
-            # valid is the value decoder's concern; it cannot end this run.
-            index += 2
-            continue
-        if character == '"':
-            quoted = not quoted
-        elif not quoted and character in "#;":
-            return text[:index]
-        index += 1
-    return text
-
-
 def _config_value_as_data(text: str) -> str:
     """Decode one Git configuration VALUE without asking Git to read it.
 
@@ -307,105 +288,188 @@ def _config_value_as_text(value: str) -> str:
     return f'"{escaped}"'
 
 
-_CONFIG_HEADER_WHITESPACE = " \t\r"
+_CONFIG_HORIZONTAL_WHITESPACE = " \t"
 
 
-def _config_lines_as_data(text: str, path: Path):
-    """Yield logical Git-config lines, unfolding only physical newlines.
+def _refuse_config(path: Path, line: int, cause: str, **detail: object) -> None:
+    """Refuse an unlisted configuration spelling with a useful location."""
+    raise GitRefusal(cause, configuration=str(path), line=line, **detail)
 
-    ``str.splitlines`` is deliberately not used here.  It treats form feed,
-    vertical tab, record separators and Unicode line separators as line ends;
-    Git does not.  A CR belongs to the physical line except when it is the CR
-    half of CRLF.  Git removes a trailing backslash and that physical newline
-    before it applies either the header or value grammar.
+
+def _physical_config_lines(text: str):
+    """Yield ``(number, text)`` for LF/CRLF physical lines only.
+
+    Configuration is deliberately read as bytes and decoded with
+    ``surrogateescape`` before this function runs.  Do not use
+    ``str.splitlines`` here: Git does not turn form feed, a Unicode separator,
+    or a bare CR into a line boundary.  A CR is removed only when it is the CR
+    half of a CRLF spelling.
     """
-    logical = ""
-    starts_at = 1
-    continued = False
     physical = text.split("\n")
     for number, raw in enumerate(physical, 1):
-        # A final bare CR is data.  Only CR immediately before a physical LF is
-        # the other spelling of a physical newline.
         if number < len(physical) and raw.endswith("\r"):
             raw = raw[:-1]
-        logical += raw
-        if raw.endswith("\\"):
-            logical = logical[:-1]
-            continued = True
+        yield number, raw
+
+
+def _ends_with_an_odd_number_of_backslashes(value: str) -> bool:
+    """Whether the final backslash is a physical-line continuation marker."""
+    trailing = 0
+    for character in reversed(value):
+        if character != "\\":
+            break
+        trailing += 1
+    return trailing % 2 == 1
+
+
+def _value_before_an_unquoted_comment(value: str) -> str:
+    """Find a value's physical end without duplicating value decoding.
+
+    This has just one job: a trailing slash in a comment is not a trailing
+    slash in the value and cannot continue a physical line.  Decoding, quote
+    validity, whitespace trimming, and the returned value all remain the work
+    of `_config_value_as_data`.
+    """
+    quoted = False
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if not quoted:
+            if character in "#;":
+                return value[:index]
+            if character == '"':
+                quoted = True
+            index += 1
             continue
-        yield starts_at, logical
-        logical = ""
-        starts_at = number + 1
-        continued = False
-    if continued:
-        raise GitRefusal(
-            "a Git configuration line ends in an unfinished continuation",
-            configuration=str(path), line=starts_at,
-        )
+        if character == "\\":
+            index += 2
+            continue
+        if character == '"':
+            quoted = False
+        index += 1
+    return value
+
+
+def _decode_trailing_value_backslashes(value: str) -> str:
+    """Turn the non-continuation half of a trailing backslash run into data.
+
+    This is physical-line handling, not a second value decoder.  Once an odd
+    run has donated its last slash to the newline, each remaining pair denotes
+    one literal trailing slash.  The established general value decoder remains
+    responsible for all value quoting and escaping syntax.
+    """
+    trailing = 0
+    for character in reversed(value):
+        if character != "\\":
+            break
+        trailing += 1
+    return value[:-trailing] + "\\" * (trailing // 2) if trailing else value
 
 
 def _config_section_as_data(header: str, *, path: Path, line: int) -> str:
-    """Decode one already-commentless section header by Git's header grammar.
+    """Decode one section header from the finite configuration accept-list.
 
-    Section names fold to lower case.  A subsection follows the name after
-    whitespace, is quoted, and keeps its case; a backslash in that quoted run
-    quotes its next character.  There is intentionally no permissive fallback:
-    treating an unrecognised header as a variable is a successful answer about
-    a configuration Git itself rejected.
+    A header has no continuation rule.  Its trailing comment is part of this
+    parser rather than a pre-processing pass, which keeps a comment ending in a
+    backslash from consuming the next header.
     """
-    def refuse() -> None:
-        raise GitRefusal(
-            "a Git configuration section header cannot be parsed confidently",
-            configuration=str(path), line=line, header=header,
-        )
-
-    if not header.startswith("[") or not header.endswith("]"):
-        refuse()
-    inner = header[1:-1]
     index = 0
-    while index < len(inner) and inner[index] not in _CONFIG_HEADER_WHITESPACE:
+    while index < len(header) and header[index] in _CONFIG_HORIZONTAL_WHITESPACE:
         index += 1
-    name = inner[:index]
-    if not name or any(
-        not character.isascii() or not (character.isalnum() or character == "-")
-        for character in name
-    ):
-        refuse()
-    if index == len(inner):
-        return name.lower()
-
-    # Git accepts a tab (and the CR half of a CRLF spelling) wherever the old
-    # parser accepted only one literal ASCII space.  Whitespace with no quoted
-    # subsection is still malformed.
-    while index < len(inner) and inner[index] in _CONFIG_HEADER_WHITESPACE:
-        index += 1
-    if index == len(inner) or inner[index] != '"':
-        refuse()
+    if index == len(header) or header[index] != "[":
+        _refuse_config(path, line, "a Git configuration section header is outside the accepted grammar")
     index += 1
-    subsection: list[str] = []
-    while index < len(inner):
-        character = inner[index]
-        if character == '"':
-            index += 1
-            break
-        if character == "\\":
-            index += 1
-            if index == len(inner):
-                refuse()
-            subsection.append(inner[index])
-            index += 1
-            continue
-        subsection.append(character)
+
+    name_start = index
+    while (index < len(header) and header[index].isascii()
+           and (header[index].isalnum() or header[index] in ".-")):
         index += 1
+    name = header[name_start:index]
+    # Git still accepts this old spelling as a subsection, but the narrow
+    # grammar owns only the explicit quoted-subsection form.  A dot would make
+    # the spelling ambiguous, so it is refused by name rather than guessed.
+    if not name or "." in name:
+        _refuse_config(path, line, "a Git configuration section name is outside the accepted grammar",
+                       header=header)
+
+    subsection: str | None = None
+    if index < len(header) and header[index] == "]":
+        index += 1
+    elif index < len(header) and header[index] in _CONFIG_HORIZONTAL_WHITESPACE:
+        while index < len(header) and header[index] in _CONFIG_HORIZONTAL_WHITESPACE:
+            index += 1
+        if index == len(header) or header[index] != '"':
+            _refuse_config(path, line, "a Git configuration section header is outside the accepted grammar",
+                           header=header)
+        index += 1
+        decoded: list[str] = []
+        while index < len(header):
+            character = header[index]
+            if character == '"':
+                index += 1
+                break
+            if character == "\\":
+                index += 1
+                if index == len(header) or header[index] not in {'"', "\\"}:
+                    _refuse_config(
+                        path, line,
+                        "a Git configuration subsection has an unaccepted escape",
+                        header=header,
+                    )
+                decoded.append(header[index])
+                index += 1
+                continue
+            decoded.append(character)
+            index += 1
+        else:
+            _refuse_config(path, line, "a Git configuration section header is outside the accepted grammar",
+                           header=header)
+        if index == len(header) or header[index] != "]":
+            _refuse_config(path, line, "a Git configuration section header is outside the accepted grammar",
+                           header=header)
+        index += 1
+        subsection = "".join(decoded)
     else:
-        refuse()
-    if index != len(inner):
-        refuse()
-    return f"{name.lower()}.{''.join(subsection)}"
+        _refuse_config(path, line, "a Git configuration section header is outside the accepted grammar",
+                       header=header)
+
+    while index < len(header) and header[index] in _CONFIG_HORIZONTAL_WHITESPACE:
+        index += 1
+    if index < len(header) and header[index] not in "#;":
+        _refuse_config(path, line, "a Git configuration section header is outside the accepted grammar",
+                       header=header)
+    return name.lower() if subsection is None else f"{name.lower()}.{subsection}"
+
+
+def _config_variable_as_data(raw: str, *, path: Path, line: int) -> tuple[str, str | None]:
+    """Parse a variable declaration without interpreting its value yet."""
+    index = 0
+    while index < len(raw) and raw[index] in _CONFIG_HORIZONTAL_WHITESPACE:
+        index += 1
+    start = index
+    if index == len(raw) or not raw[index].isascii() or not raw[index].isalpha():
+        _refuse_config(path, line, "a Git configuration variable name is outside the accepted grammar",
+                       variable=raw)
+    index += 1
+    while (index < len(raw) and raw[index].isascii()
+           and (raw[index].isalnum() or raw[index] == "-")):
+        index += 1
+    name = raw[start:index].lower()
+
+    # Git's normal writer uses whitespace around '=', so the bounded grammar
+    # accepts horizontal separator whitespace while rejecting every other token.
+    while index < len(raw) and raw[index] in _CONFIG_HORIZONTAL_WHITESPACE:
+        index += 1
+    if index == len(raw):
+        return name, None
+    if raw[index] != "=":
+        _refuse_config(path, line, "a Git configuration variable line is outside the accepted grammar",
+                       variable=raw)
+    return name, raw[index + 1:]
 
 
 def config_values_as_data(path: Path) -> dict:
-    """Every value of every key, in file order, under the same value syntax.
+    """Every value of every accepted key, in file order, under value syntax.
 
     Git keeps repeated keys rather than overwriting them, and which one it
     resolves depends on the key: the LAST for a single-valued setting, the FIRST
@@ -414,27 +478,57 @@ def config_values_as_data(path: Path) -> dict:
     """
     values: dict = {}
     section = ""
-    if not Path(path).is_file():
+    path = Path(path)
+    if not path.is_file():
         return values
-    # `Path.read_text` uses universal-newline translation.  The parser below
-    # needs to distinguish CRLF from a bare CR which Git leaves inside a value,
-    # so retain the file's physical newline bytes while decoding its text.
-    with Path(path).open("r", encoding="utf-8", errors="surrogateescape", newline="") as handle:
-        text = handle.read()
-    for number, raw in _config_lines_as_data(text, Path(path)):
-        line = raw.strip()
-        if line.startswith(("#", ";")):
-            continue
+    # Keep the physical bytes until decoding.  Text-mode reads can translate
+    # CRLF before the narrow parser decides what a physical line is.
+    text = path.read_bytes().decode("utf-8", "surrogateescape")
+    if text.startswith("\ufeff"):
+        text = text[1:]                 # Git ignores one UTF-8 BOM at byte zero.
+
+    physical = list(_physical_config_lines(text))
+    index = 0
+    while index < len(physical):
+        number, raw = physical[index]
+        line = raw.lstrip(_CONFIG_HORIZONTAL_WHITESPACE)
         if not line:
+            index += 1
+            continue
+        if line.startswith(("#", ";")):
+            # A comment is complete on its own physical line, even if it ends
+            # in a backslash.  The same rule is deliberately true of headers.
+            index += 1
             continue
         if line.startswith("["):
-            header = _without_config_comment(line).strip()
-            section = _config_section_as_data(header, path=Path(path), line=number)
+            section = _config_section_as_data(raw, path=path, line=number)
+            index += 1
             continue
-        key, sep, value = line.partition("=")
-        name = f"{section}.{key.strip().lower()}" if section else key.strip().lower()
-        values.setdefault(name, []).append(
-            _config_value_as_data(value) if sep else "true")
+        if not section:
+            _refuse_config(path, number, "a Git configuration variable appears before a section", variable=raw)
+        key, value = _config_variable_as_data(raw, path=path, line=number)
+        if value is None:
+            values.setdefault(f"{section}.{key}", []).append("true")
+            index += 1
+            continue
+
+        value_parts = [value]
+        # The old parser unfolded a line before knowing whether it was a value.
+        # This test remains intentionally local to value parsing: an even run
+        # is escaped backslashes, and no header or comment reaches this branch.
+        while _value_before_an_unquoted_comment(value_parts[-1]).endswith("\\"):
+            if not _ends_with_an_odd_number_of_backslashes(
+                    _value_before_an_unquoted_comment(value_parts[-1])):
+                break
+            value_parts[-1] = value_parts[-1][:-1]
+            index += 1
+            if index == len(physical):
+                _refuse_config(path, number, "a Git configuration value ends in an unfinished continuation")
+            _next_number, next_raw = physical[index]
+            value_parts.append(next_raw)
+        value = "".join(_decode_trailing_value_backslashes(part) for part in value_parts)
+        values.setdefault(f"{section}.{key}", []).append(_config_value_as_data(value))
+        index += 1
     return values
 
 
