@@ -601,11 +601,12 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
             value_parts.append(next_raw)
             source_value_parts.append((_next_number, next_raw))
         for source_line, source_value in source_value_parts:
-            if "\0" in source_value:
-                _refuse_config(
-                    path, source_line,
-                    "a Git configuration value contains a NUL byte",
-                )
+            # NO SECOND NUL GUARD HERE. The whole file is refused on any NUL
+            # before a line is ever classified, so this branch was unreachable —
+            # and while it existed the mutant that removes the file-level guard
+            # SURVIVED, because this one still caught the value case. Two
+            # handlers for one question means neither is pinned, which is the
+            # defect limitation 16 says this line removed on principle.
             if "\r" in source_value:
                 _refuse_config(
                     path, source_line,

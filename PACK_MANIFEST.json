@@ -4,7 +4,7 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": "NOT QUALIFIED. The state is IN_PROGRESS and this field records no qualification: it carries the date the candidate's records were last recomputed, 2026-09-07. A release becomes qualified when the founder takes policy/hitl-matrix.md row 2, and this field is rewritten then. An independent certification observed a date sitting here under a state that says the opposite, which is how a reader comes to believe a candidate was qualified on a day nobody qualified it.",
-  "tree_digest_sha256": "655142e5206c9988333aa7de4cdf18d9077eb161597d60bcf2fdeae2a725395f",
+  "tree_digest_sha256": "d70b618ccc52ec030283632d74bb495c41843f28a7d39c0f1e3630391f31b3e7",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
