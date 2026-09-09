@@ -6,6 +6,7 @@ throwaway repo is the fixture.
 
 import json
 import inspect
+import itertools
 import os
 import random
 import subprocess
@@ -2100,6 +2101,25 @@ def test_config_records_as_data_preserves_interleaved_repeated_key_occurrences(t
     }
 
 
+def test_a_nul_byte_in_a_configuration_is_refused_with_its_file_and_line(tmp_path):
+    """NUL is refused rather than approximating Git's truncating list stream."""
+    config = tmp_path / "nul-value.gitconfig"
+    config.write_bytes(b"[core]\nvalue = x\0y\n")
+
+    oracle = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=False,
+    )
+    assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
+    assert oracle.stdout == b"core.value\nx\0"
+
+    with _pytest.raises(_GitRefusal) as raised:
+        _sterile.config_records_as_data(config)
+    assert raised.value.detail["configuration"] == str(config)
+    assert raised.value.detail["line"] == 2
+    assert "NUL byte" in raised.value.render()
+
+
 @pytest.mark.parametrize(
     "shape, contents, line",
     (
@@ -2233,8 +2253,9 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
     """Fixed-seed differential oracle: seed 0x2F50, 512 configuration files.
 
     The small grammar varies BOM and CRLF spellings, comments, quoted
-    subsections, physical continuations, and recognised and unrecognised
-    backslashes both inside and outside quotes.  It also emits bare
+    subsections, physical continuations, NUL bytes in values and elsewhere,
+    and recognised and unrecognised backslashes both inside and outside quotes.
+    It also emits bare
     declarations and repeated keys interleaved with another key.  The ordered
     record view is rendered in the same ``--list --null`` shape as Git.  Every
     case must do exactly one of two things: agree byte-for-byte with real Git
@@ -2250,6 +2271,7 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
         r'[remote "quo\"te"]',
         r'[remote "slash\\name"]',
         r'[remote "unknown\x"]',
+        "[co\0re]",
     )
     values = (
         "plain",
@@ -2263,13 +2285,19 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
         "continued",
         "trailing-run",
         '"unclosed',
+        "nul\0value",
     )
+    comments = ("", "# ignored comment", "; ignored slash \\", "\0comment")
+    saw_nul_in_value = False
+    saw_nul_elsewhere = False
     for number in range(cases):
         newline = "\r\n" if generator.randrange(2) else "\n"
         prefix = "\ufeff" if generator.randrange(2) else ""
-        comment = generator.choice(("", "# ignored comment", "; ignored slash \\"))
+        comment = generator.choice(comments)
         section = generator.choice(sections)
         value = generator.choice(values)
+        saw_nul_in_value |= "\0" in value
+        saw_nul_elsewhere |= "\0" in prefix + comment + section
         def assignment_for(key):
             if value == "continued":
                 return f"{key} = left\\" + newline + "right"
@@ -2307,6 +2335,69 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
             f"git returncode={oracle.returncode}, contents={contents!r}, "
             f"actual={actual!r}, expected={oracle.stdout!r}"
         )
+    assert saw_nul_in_value and saw_nul_elsewhere, (
+        f"seed {seed:#x} must cover NUL bytes both in values and elsewhere"
+    )
+
+
+def test_config_records_as_data_exhaustively_agrees_or_refuses_value_bodies(tmp_path):
+    """Exhaust every VALUE body through length 3 over 10 boundary characters.
+
+    The alphabet is SPACE, TAB, CR, LF, BACKSLASH, DOUBLE QUOTE, HASH,
+    SEMICOLON, NUL, and ``a``.  Lengths zero through three contain exactly
+    1,111 bodies (``1 + 10 + 100 + 1,000``).  In particular this
+    covers bare CR and whitespace-before-continuation without relying on a
+    random generator to happen to emit either shape.  The fixed-seed corpus
+    above remains because it explores headers, BOMs, CRLF, and declarations
+    that this deliberately one-value-body enumeration does not.
+    """
+    alphabet = (b" ", b"\t", b"\r", b"\n", b"\\", b'"', b"#", b";", b"\0", b"a")
+    maximum_length = 3
+    expected_cases = sum(len(alphabet) ** length for length in range(maximum_length + 1))
+    assert expected_cases == 1_111
+    config = tmp_path / "exhaustive-value-body.gitconfig"
+    number = 0
+    for length in range(maximum_length + 1):
+        for pieces in itertools.product(alphabet, repeat=length):
+            body = b"".join(pieces)
+            contents = b"[core]\n\tvalue = " + body + b"\n"
+            config.write_bytes(contents)
+            oracle = subprocess.run(
+                ["git", "config", "--file", str(config), "--list", "--null"],
+                capture_output=True, check=False,
+            )
+            try:
+                actual = _config_records_as_git_list_bytes(config)
+            except _GitRefusal:
+                refused = True
+                actual = None
+            else:
+                refused = False
+            matches = oracle.returncode == 0 and actual == oracle.stdout
+            assert refused != matches, (
+                f"exhaustive value case {number}/{expected_cases}: parser "
+                f"{'refused' if refused else 'answered'} and Git returncode={oracle.returncode}; "
+                f"body={body!r}, actual={actual!r}, expected={oracle.stdout!r}"
+            )
+            number += 1
+    assert number == expected_cases
+
+
+def test_a_bare_carriage_return_in_a_value_is_refused_with_its_location(tmp_path):
+    """Git trims this spelling; the bounded parser refuses it rather than owns it."""
+    config = tmp_path / "bare-carriage-return.gitconfig"
+    config.write_bytes(b"[core]\n\tvalue = \ra\n")
+
+    oracle = subprocess.run(
+        ["git", "config", "--file", str(config), "--get", "core.value"],
+        capture_output=True, check=False,
+    )
+    assert oracle.returncode == 0
+    assert oracle.stdout == b"a\n"
+    with _pytest.raises(_GitRefusal) as raised:
+        _sterile.config_records_as_data(config)
+    assert raised.value.detail == {"configuration": str(config), "line": 2}
+    assert "bare carriage return" in raised.value.render()
 
 
 def test_a_tab_separated_includeif_header_is_refused_not_reported_as_complete(tmp_path):
@@ -2397,20 +2488,32 @@ def test_an_escaped_quote_in_a_remote_subsection_reaches_the_same_address_as_git
 
 
 def test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value(tmp_path):
-    """Only LF and CRLF split physical configuration lines; FF and bare CR are data."""
+    """FF remains data; a bare CR is visible and refused rather than translated.
+
+    The latter narrow refusal supersedes the old acceptance of a quoted CR.  It
+    keeps the byte-read invariant load-bearing: text-mode universal-newline
+    translation must not be allowed to conceal the spelling before this parser
+    refuses it by name.
+    """
     repo = _isolated_committed_repo(tmp_path, "form-feed")
     config = repo / ".git" / "config"
     with config.open("a", encoding="utf-8") as handle:
-        handle.write('\n[remote "origin"]\n\turl = "a\fb\rc"\n')
+        handle.write('\n[remote "origin"]\n\turl = "a\fb"\n')
 
     oracle = subprocess.run(
         ["git", "config", "--null", "--get", "remote.origin.url"], cwd=str(repo),
         capture_output=True, check=False, env=_fixture_environment(),
     )
     assert oracle.returncode == 0
-    assert oracle.stdout == b"a\x0cb\rc\0"
+    assert oracle.stdout == b"a\x0cb\0"
     actual = _sterile.config_as_data(config)["remote.origin.url"]
     assert actual.encode("utf-8", "surrogateescape") == oracle.stdout[:-1]
+
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write('\tvalue = "a\fb\rc"\n')
+    with _pytest.raises(_GitRefusal) as raised:
+        _sterile.config_as_data(config)
+    assert "bare carriage return" in raised.value.render()
 
 
 def test_ls_remote_remote_name_with_a_quoted_hash_url_matches_real_git(tmp_path):
@@ -2916,8 +3019,12 @@ def test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata
     a later `diff-index` came to call a clean file modified.
 
     Content was never at risk, which is why every byte-comparing oracle stayed
-    green through it. This one compares the subject's inode metadata across a
-    read instead, because that is where the damage was.
+    green through it. This one snapshots each regular source file's content,
+    `st_mtime_ns`, `st_ctime_ns`, `st_ino`, `st_size`, and `st_mode` across a
+    read instead, because that is where the damage was. `st_atime_ns` is
+    deliberately excluded: reading a file can update it; restoring it would
+    update `st_ctime_ns`; and every reader, including real Git, has that same
+    read artifact. The asserted fields are the subject-mutation claim.
 
     Bounded deliberately: this asserts the property for an ORDINARY subject. A
     subject whose `.git/index` is an absolute symlink still gets written through,
@@ -2942,20 +3049,25 @@ def test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata
     _git(nested, "add", "inner.txt")
     _git(nested, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "inner")
 
-    def metadata():
+    def snapshot():
         seen = {}
         for path in sorted(root.rglob("*")):
             if path.is_file() and not path.is_symlink():
                 stat = path.lstat()
                 seen[str(path.relative_to(root))] = (
-                    stat.st_ctime_ns, stat.st_mtime_ns, stat.st_size, stat.st_nlink,
+                    path.read_bytes(),
+                    stat.st_mtime_ns,
+                    stat.st_ctime_ns,
+                    stat.st_ino,
+                    stat.st_size,
+                    stat.st_mode,
                 )
         return seen
 
-    before = metadata()
+    before = snapshot()
     assert before, "the fixture produced no files to compare"
     gitread._run(root, "status", "--porcelain")
-    after = metadata()
+    after = snapshot()
 
     assert set(after) == set(before), (
         "a governed read created or removed files in the subject: "
@@ -2963,8 +3075,8 @@ def test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata
     )
     changed = {name: (before[name], after[name]) for name in before if before[name] != after[name]}
     assert not changed, (
-        "a governed read changed the subject's inode metadata, which it must never do — "
-        f"(ctime, mtime, size, nlink) moved for: {changed}"
+        "a governed read changed asserted subject content or metadata, which it must never do — "
+        f"(content, mtime, ctime, inode, size, mode) moved for: {changed}"
     )
 
 
@@ -3214,10 +3326,10 @@ def _exactly_as_real_git(repo, *arguments):
 
 @pytest.mark.parametrize("shape", [
     "autocrlf", "unborn", "detached", "symref chain", "packed refs",
-    "assume unchanged", "info exclude", "sparse checkout",
+    "assume unchanged", "filemode", "info exclude", "sparse checkout",
 ])
 def test_the_sterile_answer_equals_real_gits_answer(tmp_path, shape):
-    """Content-encoding and ref-shape cases, each of which produced a WRONG answer
+    """Storage-descriptor and ref-shape cases, each of which produced a WRONG answer
     at some point in this design's construction rather than a refusal. A wrong
     answer is the worst thing a read can produce, so each is pinned against real
     Git rather than against an expectation typed here."""
@@ -3230,6 +3342,7 @@ def test_the_sterile_answer_equals_real_gits_answer(tmp_path, shape):
         (repo / "f.txt").write_text("one\r\ntwo\r\n", newline="")
         _git(repo, "add", "-A")
         _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c")
+        indexed_stat = (repo / "f.txt").stat()
         # REWRITTEN AFTER THE COMMIT, ON PURPOSE, WITH THE SAME BYTES.
         #
         # Git trusts the index's cached stat and does not re-read a file whose
@@ -3238,9 +3351,20 @@ def test_the_sterile_answer_equals_real_gits_answer(tmp_path, shape):
         # clean" window. It usually did, and occasionally did not: the mutant that
         # drops the content-encoding descriptors was killed on its own every time
         # and SURVIVED intermittently inside a full mutation run. An oracle whose
-        # discrimination depends on the clock is not an oracle. Touching the file
-        # makes the cached stat stale, so Git must compare content every time.
+        # discrimination depends on the clock is not an oracle. A mtime two seconds
+        # before the indexed timestamp makes the stat cache stale on every host, so
+        # Git must compare content every time.
         (repo / "f.txt").write_text("one\r\ntwo\r\n", newline="")
+        os.utime(
+            repo / "f.txt",
+            ns=(indexed_stat.st_atime_ns, indexed_stat.st_mtime_ns - 2_000_000_000),
+        )
+    elif shape == "filemode":
+        _git(repo, "config", "core.filemode", "false")
+        (repo / "f.txt").write_text("one\n")
+        _git(repo, "add", "-A")
+        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c")
+        (repo / "f.txt").chmod(0o755)
     elif shape == "unborn":
         (repo / "f.txt").write_text("x\n")
     else:
@@ -4078,6 +4202,62 @@ def test_a_remote_with_two_urls_is_fetched_from_the_first_like_real_git(tmp_path
     assert governed == real.stdout, (
         "the governed answer names a different remote from the one Git fetches"
     )
+
+
+def test_a_leading_dash_remote_url_refuses_before_launch_and_stays_uncreated(tmp_path):
+    """A subject URL is data, never an option; no executable payload is needed.
+
+    The absent marker is deliberately the value an unsafe command line would
+    select as its upload-pack program.  It is not executable and this test
+    creates no program: the named pre-launch refusal, together with the absent
+    marker, proves the subject value was not handed to Git as an option.
+    """
+    reader = _isolated_committed_repo(tmp_path, "leading-dash-reader")
+    marker = tmp_path / "MARKER_MUST_NOT_BE_CREATED"
+    with (reader / ".git" / "config").open("a", encoding="utf-8") as handle:
+        handle.write(f'\n[remote "origin"]\n\turl = --upload-pack={marker}\n')
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(reader, "ls-remote", "origin", "HEAD", text=False)
+    assert "resolved remote URL begins with `-`" in raised.value.render()
+    assert raised.value.detail["remote"] == "origin"
+    assert raised.value.detail["url"] == f"--upload-pack={marker}"
+    assert not marker.exists(), "the subject-selected marker was created before refusal"
+
+
+def test_ls_remote_origin_is_byte_identical_and_uses_a_positional_separator(
+        tmp_path, monkeypatch):
+    """The transport terminator preserves ordinary Git output and is structural.
+
+    The real-Git comparison is the compatibility half.  The captured governed
+    launch is the independent construction half: removing the terminator makes
+    this assertion fail before any subject value could be reclassified as an
+    option.  The capture returns successfully and launches no helper.
+    """
+    remote = _isolated_committed_repo(tmp_path, "separator-remote")
+    reader = _isolated_committed_repo(tmp_path, "separator-reader")
+    _isolated_git(reader, "remote", "add", "origin", str(remote))
+
+    real = subprocess.run(["git", "ls-remote", "origin", "HEAD"], cwd=reader,
+                          capture_output=True)
+    governed = gitread._run(reader, "ls-remote", "origin", "HEAD", text=False)
+    assert real.returncode == 0, real.stderr
+    assert governed == real.stdout
+
+    commands = []
+    real_launch = gitread.instrument.launch
+
+    def capture(command, **_kwargs):
+        if command[:2] != ("git", "ls-remote"):
+            return real_launch(command, **_kwargs)
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(gitread.instrument, "launch", capture)
+    assert gitread._run(reader, "ls-remote", "origin", "HEAD", text=False) == b""
+    assert commands == [
+        ("git", "ls-remote", "--upload-pack=git-upload-pack", "--", str(remote), "HEAD"),
+    ]
 
 
 def test_a_repeated_fetch_refspec_still_finds_the_branchs_upstream(tmp_path):

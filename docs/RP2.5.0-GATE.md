@@ -230,8 +230,8 @@ is a claim:
 
 ## Mutation scoring
 
-Forty-two well-formed mutants against a verified-green baseline of the oracles
-they name, each reversing one thing the design says is load-bearing. **Forty-two
+Forty-four well-formed mutants against a verified-green baseline of the oracles
+they name, each reversing one thing the design says is load-bearing. **Forty-four
 killed, none survived, none malformed**, and the harness asserts the subject is
 byte-identical afterwards.
 
@@ -323,7 +323,7 @@ the full baseline is spelled out and the two design records are two invocations.
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
 | frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 43 fixtures × 200 read forms = 8,600 comparisons; every residual row is classified in *The floor this release is measured against* below |
 | hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
-| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 42 killed, none survived or malformed, subject byte-identical afterwards |
+| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 44 killed, none survived or malformed, subject byte-identical afterwards |
 | consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
 
 The clean-room clone is the one that matters most for the design records: it
@@ -807,8 +807,11 @@ opposite of what this release is for. **The candidate's answer is the correct re
 one**, and the divergence is stated rather than repaired.
 
 Measured beside it: after one `status --porcelain` against an **ordinary** subject, this
-release now leaves it byte-identical and stat-identical — zero files created, removed, or
-changed in mtime, size or **ctime**. Frozen 2.4.0 rewrites `.git/index`. Until the repair
+release now leaves it byte-identical and unchanged in content, `st_mtime_ns`, `st_ctime_ns`,
+`st_ino`, `st_size`, and `st_mode` — zero regular files created, removed, or changed in those
+fields. `st_atime_ns` is deliberately excluded: reading can update it, restoring it would update
+`st_ctime_ns`, and every reader including real Git has the same artifact. Frozen 2.4.0 rewrites
+`.git/index`. Until the repair
 below, this release bumped the ctime of every working-tree file it hard-linked into its
 view, which is what Git's stat cache compares, and what made a later `diff-index` call a
 clean file modified.

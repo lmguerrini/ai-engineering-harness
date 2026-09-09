@@ -98,6 +98,23 @@ def _transport_repository_operand(arguments: tuple[str, ...]) -> int | None:
     return None
 
 
+def _transport_operands_after_option_terminator(
+        arguments: tuple[str, ...], repository_operand: int) -> tuple[str, ...]:
+    """Make a transport address and every following operand positional.
+
+    A remote alias is resolved from configuration data after the caller has
+    supplied its command line.  That resolved address is not an option chosen
+    by the caller, even when it starts with ``-``.  Preserve caller options
+    before the first structural repository operand, then put Git's ordinary
+    option terminator in front of that operand.  An existing terminator already
+    has this property and is left in place.
+    """
+    index = repository_operand + 1  # account for the verb at arguments[0]
+    if arguments[index - 1] == "--":
+        return arguments
+    return (*arguments[:index], "--", *arguments[index:])
+
+
 def _caller_path_operands(arguments: tuple[str, ...], cwd: Path) -> tuple[Path, ...]:
     """Resolve caller-spelled operands without interpreting a Git verb.
 
@@ -591,6 +608,12 @@ def _run(
         found = declared.get(f"remote.{arguments[index]}.url") or []
         url = found[0] if found else None
         if url:
+            if url.startswith("-"):
+                raise GitRefusal(
+                    "a resolved remote URL begins with `-`, so this read refuses before Git "
+                    "can interpret subject configuration data as an option",
+                    remote=arguments[index], url=url,
+                )
             resolved = list(arguments)
             resolved[index] = url
             arguments = tuple(resolved)
@@ -644,6 +667,15 @@ def _run(
         # cannot be enumerated in advance. The command-line form OVERRIDES the
         # config, which was verified rather than assumed — with the flag the
         # program does not run, without it it does.
+        if transport_operand is not None:
+            # The upload-pack policy is an option; the subject-resolved address
+            # and every following transport operand are positional by
+            # construction.  This remains necessary after the leading-dash
+            # refusal above: a future Git-special spelling must not become a
+            # second option surface.
+            arguments = _transport_operands_after_option_terminator(
+                arguments, transport_operand,
+            )
         arguments = (arguments[0], "--upload-pack=git-upload-pack", *arguments[1:])
     command = ("git", *arguments)
     if local_backend and not _COMPOSING_SUBMODULE_READ.get():

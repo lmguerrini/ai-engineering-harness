@@ -541,7 +541,15 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
         return records
     # Keep the physical bytes until decoding.  Text-mode reads can translate
     # CRLF before the narrow parser decides what a physical line is.
-    text = path.read_bytes().decode("utf-8", "surrogateescape")
+    raw = path.read_bytes()
+    nul = raw.find(b"\0")
+    if nul >= 0:
+        _refuse_config(
+            path,
+            raw.count(b"\n", 0, nul) + 1,
+            "a Git configuration contains a NUL byte",
+        )
+    text = raw.decode("utf-8", "surrogateescape")
     if text.startswith("\ufeff"):
         text = text[1:]                 # Git ignores one UTF-8 BOM at byte zero.
 
@@ -579,6 +587,12 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
             if not _ends_with_an_odd_number_of_backslashes(
                     _value_before_an_unquoted_comment(value_parts[-1])):
                 break
+            if (len(value_parts[-1]) > 1
+                    and value_parts[-1][-2] in _CONFIG_HORIZONTAL_WHITESPACE):
+                _refuse_config(
+                    path, number,
+                    "a Git configuration value has whitespace before a continuation",
+                )
             value_parts[-1] = value_parts[-1][:-1]
             index += 1
             if index == len(physical):
@@ -586,6 +600,17 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
             _next_number, next_raw = physical[index]
             value_parts.append(next_raw)
             source_value_parts.append((_next_number, next_raw))
+        for source_line, source_value in source_value_parts:
+            if "\0" in source_value:
+                _refuse_config(
+                    path, source_line,
+                    "a Git configuration value contains a NUL byte",
+                )
+            if "\r" in source_value:
+                _refuse_config(
+                    path, source_line,
+                    "a Git configuration value contains a bare carriage return",
+                )
         _refuse_unaccepted_value_backslashes(source_value_parts, path=path)
         value = "".join(_decode_trailing_value_backslashes(part) for part in value_parts)
         records.append((

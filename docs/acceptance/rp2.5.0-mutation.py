@@ -95,8 +95,8 @@ MUTANTS = [
      '        "RP_MUTANT_GIT_DIR": os.path.relpath(gitdir, cwd),',
      "tools/tests/test_gitread.py::"
      "test_every_configuration_source_git_reports_is_one_the_harness_wrote"),
-    ("content-encoding descriptors are dropped", "tools/sterile.py",
-     '    "core.autocrlf",\n    "core.eol",', "",
+    ("the core.filemode storage descriptor is dropped", "tools/sterile.py",
+     '    "core.filemode",', "",
      "tools/tests/test_gitread.py::test_the_sterile_answer_equals_real_gits_answer"),
     ("a config read goes back to the harness's own configuration", "tools/gitread.py",
      '        if sources:\n            arguments = (arguments[0], "--file", '
@@ -243,7 +243,7 @@ MUTANTS = [
      "test_an_inactive_worktree_config_is_not_a_second_configuration_source"),
     ("a bare carriage return is translated before the configuration parser sees it",
      "tools/sterile.py",
-     '    text = path.read_bytes().decode("utf-8", "surrogateescape")',
+     '    text = raw.decode("utf-8", "surrogateescape")',
      '    text = path.read_text(encoding="utf-8", errors="surrogateescape")',
      "tools/tests/test_gitread.py::"
      "test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value"),
@@ -308,6 +308,60 @@ MUTANTS = [
      "            for record in records if record[0] == name]\n\n\ndef config_values_as_data",
      "tools/tests/test_gitread.py::"
      "test_config_records_as_data_preserves_interleaved_repeated_key_occurrences"),
+    ("a NUL byte in configuration is accepted as parser data",
+     "tools/sterile.py",
+     '    raw = path.read_bytes()\n'
+     r'    nul = raw.find(b"\0")' '\n'
+     '    if nul >= 0:\n'
+     '        _refuse_config(\n'
+     '            path,\n'
+     r'            raw.count(b"\n", 0, nul) + 1,' '\n'
+     '            "a Git configuration contains a NUL byte",\n'
+     '        )\n'
+     '    text = raw.decode("utf-8", "surrogateescape")',
+     '    text = path.read_bytes().decode("utf-8", "surrogateescape")',
+     "tools/tests/test_gitread.py::"
+     "test_a_nul_byte_in_a_configuration_is_refused_with_its_file_and_line"),
+    ("the view builder writes through to a source file's mtime",
+     "tools/sterile.py",
+     '            shutil.copyfile(source, destination, follow_symlinks=False)\n'
+     '            shutil.copystat(source, destination, follow_symlinks=False)',
+     '            shutil.copyfile(source, destination, follow_symlinks=False)\n'
+     '            shutil.copystat(source, destination, follow_symlinks=False)\n'
+     '            source_stat = source.stat()\n'
+     '            os.utime(source, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns + 1))',
+     "tools/tests/test_gitread.py::"
+     "test_a_governed_read_leaves_the_subject_untouched_down_to_its_inode_metadata"),
+# ARGVFIX appends rather than replaces: every prior mutation remains evidence.
+    ("a leading-dash resolved remote URL reaches Git instead of refusing before launch",
+     "tools/gitread.py",
+     '            if url.startswith("-"):\n',
+     "            if False:\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_leading_dash_remote_url_refuses_before_launch_and_stays_uncreated"),
+    ("a transport address is no longer made positional with Git's option terminator",
+     "tools/gitread.py",
+     '    return (*arguments[:index], "--", *arguments[index:])',
+     "    return arguments",
+     "tools/tests/test_gitread.py::"
+     "test_ls_remote_origin_is_byte_identical_and_uses_a_positional_separator"),
+    ("a bare carriage return in a configuration value is accepted as data",
+     "tools/sterile.py",
+     '            if "\\r" in source_value:\n',
+     "            if False:\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_bare_carriage_return_in_a_value_is_refused_with_its_location"),
+    ("whitespace before a continuation is given parser semantics again",
+     "tools/sterile.py",
+     "            if (len(value_parts[-1]) > 1\n"
+     "                    and value_parts[-1][-2] in _CONFIG_HORIZONTAL_WHITESPACE):\n"
+     "                _refuse_config(\n"
+     "                    path, number,\n"
+     "                    \"a Git configuration value has whitespace before a continuation\",\n"
+     "                )",
+     "            pass",
+     "tools/tests/test_gitread.py::"
+     "test_config_records_as_data_exhaustively_agrees_or_refuses_value_bodies"),
 ]
 
 
