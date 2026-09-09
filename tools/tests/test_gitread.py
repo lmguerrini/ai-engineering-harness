@@ -7,6 +7,7 @@ throwaway repo is the fixture.
 import json
 import inspect
 import os
+import random
 import subprocess
 import time
 from pathlib import Path
@@ -2058,6 +2059,8 @@ def test_the_strict_configuration_accept_list_agrees_with_git_byte_for_byte(
         ("stray-token", b"[core]\n\tvalue then more\n", 2),
         ("bad-variable-name", b"[core]\n\t1value = yes\n", 2),
         ("unterminated-continuation", b"[core]\n\tvalue = last\\", 2),
+        ("unquoted-recognised-escape", b"[core]\n\tvalue = a\\tb\n", 2),
+        ("quoted-unknown-escape", b'[core]\n\tvalue = "a\\xb"\n', 2),
     ),
 )
 def test_the_strict_configuration_refusal_list_names_its_file_and_line(
@@ -2174,6 +2177,74 @@ def test_config_as_data_value_syntax_matches_real_git_byte_for_byte(tmp_path, sh
     assert oracle.stdout.endswith(b"\0")
     actual = _sterile.config_as_data(config)["oracle.value"].encode("utf-8", "surrogateescape")
     assert actual == oracle.stdout[:-1], shape
+
+
+def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path):
+    """Fixed-seed differential oracle: seed 0x2F50, 512 configuration files.
+
+    The small grammar varies BOM and CRLF spellings, comments, quoted
+    subsections, physical continuations, and recognised and unrecognised
+    backslashes both inside and outside quotes.  Every case has one explicit
+    value and one key, so ``config_as_data`` can be rendered in the same
+    ``--list --null`` shape as Git.  It must do exactly one of two things:
+    agree byte-for-byte with real Git or raise the named refusal.  In
+    particular, accepting an unquoted escape is not an approximation this
+    parser is allowed to make.
+    """
+    seed = 0x2F50
+    cases = 512
+    generator = random.Random(seed)
+    sections = (
+        "[core]",
+        '[remote "origin"]',
+        r'[remote "quo\"te"]',
+        r'[remote "slash\\name"]',
+        r'[remote "unknown\x"]',
+    )
+    values = (
+        "plain",
+        "plain value",
+        '"quoted # ; value"',
+        r'"quote \" slash \\ newline \n tab \t backspace \b"',
+        r'"unknown \x escape"',
+        r'unquoted\tknown',
+        r'unquoted\"known',
+        r'C:\temp\x',
+        "continued",
+        "trailing-run",
+        '"unclosed',
+    )
+    for number in range(cases):
+        newline = "\r\n" if generator.randrange(2) else "\n"
+        prefix = "\ufeff" if generator.randrange(2) else ""
+        comment = generator.choice(("", "# ignored comment", "; ignored slash \\"))
+        section = generator.choice(sections)
+        value = generator.choice(values)
+        if value == "continued":
+            assignment = "value = left\\" + newline + "right"
+        elif value == "trailing-run":
+            assignment = "value = tail\\\\"
+        else:
+            assignment = f"value = {value}"
+        contents = prefix + (comment + newline if comment else "") + section + newline + assignment + newline
+        config = tmp_path / f"differential-{number}.gitconfig"
+        config.write_bytes(contents.encode("utf-8", "surrogateescape"))
+        oracle = subprocess.run(
+            ["git", "config", "--file", str(config), "--list", "--null"],
+            capture_output=True, check=False,
+        )
+        try:
+            actual = _config_data_as_git_list_bytes(config)
+            refused = False
+        except _GitRefusal:
+            actual = None
+            refused = True
+        matches = not refused and oracle.returncode == 0 and actual == oracle.stdout
+        assert int(refused) + int(matches) == 1, (
+            f"seed {seed:#x}, case {number}: parser neither refused nor agreed; "
+            f"git returncode={oracle.returncode}, contents={contents!r}, "
+            f"actual={actual!r}, expected={oracle.stdout!r}"
+        )
 
 
 def test_a_tab_separated_includeif_header_is_refused_not_reported_as_complete(tmp_path):
@@ -3828,12 +3899,17 @@ def test_the_constructed_configuration_points_hooks_at_an_empty_harness_director
 
     Git looks for hooks in `core.hooksPath` and falls back to `$GIT_DIR/hooks`.
     Omitting the subject's programs closes the fallback; this closes the
-    declared path, including one the subject declared for itself.  Removing the
-    `core.hooksPath` line from `_write_config` fails this test.
+    declared path, including one a subject plants under a state directory that
+    `_copy_git_state` carries.  The declared directory must be empty and must
+    live OUTSIDE the constructed git directory: otherwise a subject-owned
+    `empty-hooks/post-index-change` is copied exactly where Git will execute
+    it.  Moving the path back under `into` makes the copied file appear in the
+    declared directory and fails this test.
     """
     repo = _isolated_committed_repo(tmp_path, "hooks-path")
-    _isolated_git(repo, "config", "core.hooksPath", str(tmp_path / "subject-chosen"))
-    (tmp_path / "subject-chosen").mkdir()
+    planted = repo / ".git" / "empty-hooks" / "post-index-change"
+    planted.parent.mkdir()
+    planted.write_text("subject data that must not reach the declared hooks path\n")
 
     read = _sterile.build(repo)
     try:
@@ -3844,9 +3920,56 @@ def test_the_constructed_configuration_points_hooks_at_an_empty_harness_director
         assert where.is_dir() and not any(where.iterdir()), (
             f"the constructed hooks path is not an empty directory: {where}"
         )
-        assert str(where).startswith(str(read.scratch)), (
-            f"the constructed hooks path is not one this build owns: {where}"
+        assert where.resolve().parent == Path(read.scratch).resolve(), (
+            f"the constructed hooks path is not a scratch sibling: {where}"
         )
+        assert not where.resolve().is_relative_to(Path(read.gitdir).resolve()), (
+            f"the constructed hooks path is inside copied subject state: {where}"
+        )
+        carried = Path(read.gitdir) / "empty-hooks" / "post-index-change"
+        assert carried.read_text() == planted.read_text(), (
+            "the fixture did not prove that copied subject state and the declared hooks path differ"
+        )
+        assert not (where / planted.name).exists(), (
+            "a file the subject planted can reach the declared hooks directory"
+        )
+    finally:
+        read.discard()
+
+
+def test_a_subject_empty_hooks_program_cannot_run_during_sterile_construction(tmp_path):
+    """Construction itself cannot run a program planted under `empty-hooks`.
+
+    A nested repository forces the constructed working-tree view, and future
+    stat data forces the copied index to be refreshed.  That refresh happens
+    before the later no-child barrier, which is why this calls `sterile.build`
+    directly.  With the hooks path inside `sterile.git`, the copied
+    `post-index-change` writes both witnesses; with the scratch-sibling path it
+    is copied as inert state but never selected for execution.
+    """
+    repo = _isolated_committed_repo(tmp_path, "empty-hooks-program")
+    nested = _isolated_committed_repo(repo, "nested")
+    witness = tmp_path / "empty-hooks-hook-ran.txt"
+    subject_write = repo / "HOOK-WROTE-INTO-SUBJECT.txt"
+    program = repo / ".git" / "empty-hooks" / "post-index-change"
+    program.parent.mkdir()
+    program.write_text(
+        "#!/bin/sh\n"
+        f"printf ran > {witness}\n"
+        f"printf owned > {subject_write}\n",
+    )
+    program.chmod(0o755)
+    future = time.time_ns() + 60_000_000_000
+    os.utime(repo / "f.txt", ns=(future, future))
+
+    read = _sterile.build(repo)
+    try:
+        assert nested.is_dir(), "the fixture did not create the nested repository that forces a view"
+        assert (Path(read.gitdir) / "empty-hooks" / "post-index-change").is_file(), (
+            "the fixture did not carry the subject state that used to populate core.hooksPath"
+        )
+        assert not witness.exists(), "sterile construction ran the subject's hook"
+        assert not subject_write.exists(), "the subject's hook wrote into the subject during construction"
     finally:
         read.discard()
 

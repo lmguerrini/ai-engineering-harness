@@ -282,6 +282,19 @@ MUTANTS = [
      "    if False:",
      "tools/tests/test_gitread.py::"
      "test_the_strict_configuration_refusal_list_names_its_file_and_line"),
+    ("the declared hooks directory is put back inside copied subject state",
+     "tools/sterile.py",
+     '    empty_hooks = into.parent / "empty-hooks"',
+     '    empty_hooks = into / "empty-hooks"',
+     "tools/tests/test_gitread.py::"
+     "test_the_constructed_configuration_points_hooks_at_an_empty_harness_directory"),
+    ("an unquoted or unknown configuration backslash is accepted as data",
+     "tools/sterile.py",
+     '                    _refuse_config(path, line, "a Git configuration value has an unaccepted escape")\n'
+     "                index += 1\n",
+     "                    pass\n                index += 1\n",
+     "tools/tests/test_gitread.py::"
+     "test_config_as_data_either_matches_git_or_refuses_differential_fuzz"),
 ]
 
 

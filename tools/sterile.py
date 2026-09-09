@@ -207,13 +207,18 @@ def where_is(repository) -> dict:
     }
 
 
-def _config_value_as_data(text: str) -> str:
+_CONFIG_VALUE_ESCAPES = frozenset({'"', "\\", "n", "t", "b"})
+
+
+def _config_value_as_data(text: str, *, path: Path, line: int) -> str:
     """Decode one Git configuration VALUE without asking Git to read it.
 
     Git strips whitespace only when it is outside quoted runs.  Keeping the
     provenance of each character until that trim is complete is important:
     applying ``str.strip`` after decoding loses whitespace that a pair of
-    quotes deliberately preserved.
+    quotes deliberately preserved.  The accepted grammar deliberately owns
+    only the five quoted escapes below.  Unquoted escapes are refused before
+    this decoder runs rather than reproduced as another slice of Git's grammar.
     """
     characters: list[tuple[str, bool]] = []
     quoted = False
@@ -234,17 +239,17 @@ def _config_value_as_data(text: str) -> str:
             quoted = False
             index += 1
             continue
-        if character == "\\" and index + 1 < len(text):
-            escaped = text[index + 1]
-            # Git accepts precisely these escapes in a quoted configuration
-            # value.  Valid repository configuration reaches this parser; keep
-            # an invalid escape literal here so the caller does not mistake its
-            # spelling for a different, valid value.
-            characters.append((escapes.get(escaped, "\\" + escaped), True))
+        if character == "\\":
+            if index + 1 == len(text) or text[index + 1] not in _CONFIG_VALUE_ESCAPES:
+                _refuse_config(path, line, "a Git configuration value has an unaccepted escape")
+            characters.append((escapes[text[index + 1]], True))
             index += 2
             continue
         characters.append((character, True))
         index += 1
+
+    if quoted:
+        _refuse_config(path, line, "a Git configuration value has an unclosed quote")
 
     while characters and not characters[0][1] and characters[0][0] in " \t":
         characters.pop(0)
@@ -364,6 +369,54 @@ def _decode_trailing_value_backslashes(value: str) -> str:
             break
         trailing += 1
     return value[:-trailing] + "\\" * (trailing // 2) if trailing else value
+
+
+def _refuse_unaccepted_value_backslashes(parts: list[tuple[int, str]], *, path: Path) -> None:
+    """Refuse escape syntax outside the deliberately accepted quoted subset.
+
+    Git decodes its five recognised escapes whether or not the characters occur
+    in quotes.  Mirroring that would add Git configuration grammar to this
+    boundary.  A terminal physical-line run is retained for the established
+    continuation rule; every other backslash must be one of those five escapes
+    inside quotes.  The scan is validation only: it never gives unquoted
+    escapes a meaning.
+    """
+    quoted = False
+    for line, value in parts:
+        index = 0
+        while index < len(value):
+            character = value[index]
+            if not quoted:
+                if character in "#;":
+                    break
+                if character == '"':
+                    quoted = True
+                    index += 1
+                    continue
+                if character == "\\":
+                    # A final run is physical-line syntax.  It is normalised
+                    # below before value decoding, so this does not make an
+                    # unquoted escape into data syntax.
+                    if all(one == "\\" for one in value[index:]):
+                        break
+                    _refuse_config(path, line, "a Git configuration value has an unaccepted escape")
+                index += 1
+                continue
+            if character == '"':
+                quoted = False
+                index += 1
+                continue
+            if character == "\\":
+                # A final run can donate its final slash to physical-line
+                # continuation.  Any non-terminal spelling is a quoted escape
+                # and must be one of the closed accepted set.
+                if all(one == "\\" for one in value[index:]):
+                    break
+                if value[index + 1] not in _CONFIG_VALUE_ESCAPES:
+                    _refuse_config(path, line, "a Git configuration value has an unaccepted escape")
+                index += 2
+                continue
+            index += 1
 
 
 def _config_section_as_data(header: str, *, path: Path, line: int) -> str:
@@ -513,6 +566,7 @@ def config_values_as_data(path: Path) -> dict:
             continue
 
         value_parts = [value]
+        source_value_parts = [(number, value)]
         # The old parser unfolded a line before knowing whether it was a value.
         # This test remains intentionally local to value parsing: an even run
         # is escaped backslashes, and no header or comment reaches this branch.
@@ -526,8 +580,12 @@ def config_values_as_data(path: Path) -> dict:
                 _refuse_config(path, number, "a Git configuration value ends in an unfinished continuation")
             _next_number, next_raw = physical[index]
             value_parts.append(next_raw)
+            source_value_parts.append((_next_number, next_raw))
+        _refuse_unaccepted_value_backslashes(source_value_parts, path=path)
         value = "".join(_decode_trailing_value_backslashes(part) for part in value_parts)
-        values.setdefault(f"{section}.{key}", []).append(_config_value_as_data(value))
+        values.setdefault(f"{section}.{key}", []).append(
+            _config_value_as_data(value, path=path, line=number)
+        )
         index += 1
     return values
 
@@ -668,10 +726,14 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     # Git looks for hooks in `core.hooksPath`, falling back to `$GIT_DIR/hooks`.
     # `_PROGRAM_ROOTS` keeps the subject's programs out of the constructed
     # directory; this closes the other half, so a `hooksPath` the subject
-    # declared cannot reach outside it either.  An empty directory this build
-    # owns, rather than `/dev/null`, for the same reason the empty config file
-    # is a real file: the mechanism is then the same on a platform without it.
-    empty_hooks = into / "empty-hooks"
+    # declared cannot reach outside it either.  Crucially, this is a SIBLING of
+    # the copied git directory, not an entry inside it: `_copy_git_state`
+    # carries subject state by enumeration, so a subject-owned `empty-hooks/`
+    # must have no path to the directory Git is told to search.  `into.parent`
+    # is this build's scratch directory for both the main and nested views.
+    # An empty directory this build owns, rather than `/dev/null`, keeps the
+    # mechanism the same on a platform without that device.
+    empty_hooks = into.parent / "empty-hooks"
     empty_hooks.mkdir(parents=True, exist_ok=True)
     core["hookspath"] = str(empty_hooks)
     lines = ["[core]\n"] + [f"\t{key} = {_config_value_as_text(value)}\n"
