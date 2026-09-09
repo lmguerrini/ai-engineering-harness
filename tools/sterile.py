@@ -290,6 +290,23 @@ def config_as_data(path: Path) -> dict:
     return {name: found[-1] for name, found in config_values_as_data(path).items()}
 
 
+def _config_value_as_text(value: str) -> str:
+    """Render a decoded value back into Git's VALUE syntax, so it stays ONE value.
+
+    `_config_value_as_data` DECODES `\\n`, `\\t` and `\\b` into real control
+    characters. Writing that decoded text back verbatim let a subject's value
+    carry a real newline into the configuration root this build owns, and every
+    line after it was a configuration line the SUBJECT wrote — including
+    `core.hooksPath`, which is half the hook closure and which sorts after the
+    harness's own entry, so the subject's line won. A blind certification drove
+    that to `ls-remote` answering at exit 0 with the subject's program having
+    run. Parsing and rendering must be inverses; this is the missing half.
+    """
+    escaped = (value.replace("\\", "\\\\").replace('"', '\\"')
+                    .replace("\n", "\\n").replace("\t", "\\t").replace("\b", "\\b"))
+    return f'"{escaped}"'
+
+
 def config_values_as_data(path: Path) -> dict:
     """Every value of every key, in file order, under the same value syntax.
 
@@ -443,7 +460,12 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
                 configuration=str(gitdir / "config.worktree"),
             )
         declared.update(worktree_declared)
-        all_declared.update(config_values_as_data(gitdir / "config.worktree"))
+        # MERGE, DO NOT REPLACE. `dict.update` swaps the whole value LIST, so a
+        # key declared in BOTH roots lost the main config's values entirely --
+        # the third instance of the repeated-key class, found by certification.
+        for name, found in config_values_as_data(gitdir / "config.worktree").items():
+            all_declared.setdefault(name, [])
+            all_declared[name] = all_declared[name] + found
     core = {
         name[len("core."):]: value
         for name, value in declared.items()
@@ -463,7 +485,8 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     empty_hooks = into / "empty-hooks"
     empty_hooks.mkdir(parents=True, exist_ok=True)
     core["hookspath"] = str(empty_hooks)
-    lines = ["[core]\n"] + [f"\t{key} = {value}\n" for key, value in sorted(core.items())]
+    lines = ["[core]\n"] + [f"\t{key} = {_config_value_as_text(value)}\n"
+                        for key, value in sorted(core.items())]
     # `objectFormat` describes the common object store's encoding.  It is read
     # from `config`, not `config.worktree`, so only the common declaration may
     # describe the alternates attached below.  `worktreeConfig` does NOT belong
@@ -478,7 +501,8 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     }
     if extensions:
         lines.append("[extensions]\n")
-        lines += [f"\t{key} = {value}\n" for key, value in sorted(extensions.items())]
+        lines += [f"\t{key} = {_config_value_as_text(value)}\n"
+                  for key, value in sorted(extensions.items())]
     branch_tracking: dict[str, dict[str, str]] = {}
     for name, value in declared.items():
         if not name.startswith("branch."):
@@ -488,7 +512,7 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
             branch_tracking.setdefault(branch, {})[setting] = all_declared.get(name, [value])
     for branch, settings in sorted(branch_tracking.items()):
         lines.append(f'[branch "{branch}"]\n')
-        lines += [f"\t{key} = {one}\n"
+        lines += [f"\t{key} = {_config_value_as_text(one)}\n"
                   for key, found in sorted(settings.items()) for one in found]
     # CARRIED VERBATIM MEANS EVERY VALUE, IN FILE ORDER.
     #
@@ -511,7 +535,7 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
             remote_tracking.setdefault(remote, {})[setting] = all_declared.get(name, [value])
     for remote, settings in sorted(remote_tracking.items()):
         lines.append(f'[remote "{remote}"]\n')
-        lines += [f"\t{key} = {one}\n"
+        lines += [f"\t{key} = {_config_value_as_text(one)}\n"
                   for key, found in sorted(settings.items()) for one in found]
     (into / "config").write_text("".join(lines), encoding="utf-8")
 

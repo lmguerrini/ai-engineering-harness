@@ -192,6 +192,18 @@ MUTANTS = [
      "        for name in ()\n    ):",
      "tools/tests/test_gitread.py::"
      "test_a_main_configuration_include_is_refused_rather_than_answered_around"),
+    ("a carried configuration value is written without being re-escaped",
+     "tools/sterile.py",
+     '    lines = ["[core]\\n"] + [f"\\t{key} = {_config_value_as_text(value)}\\n"',
+     '    lines = ["[core]\\n"] + [f"\\t{key} = {value}\\n"',
+     "tools/tests/test_gitread.py::"
+     "test_a_subject_value_cannot_write_a_line_into_the_generated_configuration"),
+    ("the worktree root replaces a value list instead of layering over it",
+     "tools/sterile.py",
+     "            all_declared[name] = all_declared[name] + found",
+     "            all_declared[name] = found",
+     "tools/tests/test_gitread.py::"
+     "test_a_repeated_key_declared_in_both_roots_keeps_both_values"),
 ]
 
 

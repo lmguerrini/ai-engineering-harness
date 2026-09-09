@@ -3673,3 +3673,93 @@ def test_a_main_configuration_include_is_refused_rather_than_answered_around(tmp
     with _pytest.raises(_GitRefusal) as raised:
         gitread._run(repo, "status", "--porcelain=v2", text=False)
     assert "includes another configuration file" in raised.value.render()
+
+
+@_pytest.mark.parametrize("hostile", [
+    'true\n\thooksPath = .git/hooks',
+    'true\n[include]\n\tpath = /etc/gitconfig',
+    'a"b',
+    'back\\slash',
+    'tab\there',
+])
+def test_a_subject_value_cannot_write_a_line_into_the_generated_configuration(tmp_path, hostile):
+    """Parsing and rendering a configuration value must be inverses.
+
+    `_config_value_as_data` DECODES `\\n`, `\\t` and `\\b`.  Writing the decoded
+    text back verbatim let a subject's value carry a real newline into the
+    configuration root this build owns, so every line after it was a
+    configuration line the SUBJECT wrote — including `core.hooksPath`, which is
+    half the hook closure and sorts after the harness's own entry, so the
+    subject's line won.  A blind certification drove that to `ls-remote`
+    answering at exit 0 with the subject's program having run.
+
+    Removing `_config_value_as_text` from the rendering makes real Git read a
+    key this test never declared, and the round-trip assertion below fails.
+    """
+    repo = _committed(tmp_path, "rendered")
+    encoded = (hostile.replace("\\", "\\\\").replace('"', '\\"')
+                      .replace("\n", "\\n").replace("\t", "\\t"))
+    # THROUGH A KEY THE BUILD ACTUALLY CARRIES. A key outside `STORAGE_KEYS` is
+    # never rendered, so injecting through one tests nothing — the first version
+    # of this test did exactly that and passed with the repair reverted.
+    config = repo / ".git" / "config"
+    text = config.read_text(encoding="utf-8").splitlines(True)
+    text.insert(1, f'\tsymlinks = "{encoded}"\n')
+    config.write_text("".join(text), encoding="utf-8")
+    assert _git(repo, "config", "--get", "core.symlinks") == hostile + "\n"
+
+    generated = tmp_path / "generated"
+    generated.mkdir()
+    _sterile._write_config(generated, repo / ".git", repo / ".git", bare=False)
+
+    # Ask REAL Git what the generated file declares. Nothing the subject wrote
+    # may appear as a KEY, and any value carried must come back whole.
+    listed = subprocess.run(
+        ["git", "config", "--file", str(generated / "config"), "--list", "-z"],
+        capture_output=True, text=True, check=True,
+    )
+    declared = {}
+    for record in listed.stdout.split("\0"):
+        if not record:
+            continue
+        name, _, value = record.partition("\n")
+        declared[name] = value
+    assert "core.hookspath" in declared, "the hook closure vanished from the generated root"
+    assert declared["core.hookspath"].endswith("empty-hooks"), (
+        f"the subject moved the hooks path to {declared['core.hookspath']!r}"
+    )
+    assert "include.path" not in declared, "the subject wrote an include into the generated root"
+    if "core.symlinks" in declared:
+        assert declared["core.symlinks"] == hostile, (
+            "the carried value did not survive the round trip whole"
+        )
+
+
+def test_a_repeated_key_declared_in_both_roots_keeps_both_values(tmp_path):
+    """`config.worktree` LAYERS over `config`; it does not replace a value list.
+
+    Merging the two roots with `dict.update` swapped the whole list, so a key
+    declared in BOTH lost the main config's values — the third instance of the
+    repeated-key class.  With the default refspec in `config` and a second one
+    in `config.worktree`, upstream resolution needs both.
+
+    Restoring `dict.update` here drops the first refspec and this test loses the
+    branch relation real Git reports.
+    """
+    repo = _committed(tmp_path, "both-roots")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    _git(repo, "update-ref", "refs/remotes/origin/main", head)
+    _git(repo, "config", "branch.main.remote", "origin")
+    _git(repo, "config", "branch.main.merge", "refs/heads/main")
+    _git(repo, "config", "remote.origin.url", str(repo))
+    _git(repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    (repo / ".git" / "config.worktree").write_text(
+        '[remote "origin"]\n\tfetch = +refs/heads/other:refs/remotes/origin/other\n',
+        encoding="utf-8")
+
+    real = subprocess.run(["git", "status", "--porcelain=v2", "--branch"],
+                          cwd=repo, capture_output=True)
+    governed = gitread._run(repo, "status", "--porcelain=v2", "--branch", text=False)
+    assert b"# branch.upstream" in real.stdout, "the control found no upstream"
+    assert governed == real.stdout, "a value declared in the main root was dropped"

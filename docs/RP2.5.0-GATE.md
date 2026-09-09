@@ -230,8 +230,8 @@ is a claim:
 
 ## Mutation scoring
 
-Twenty-four well-formed mutants against a verified-green baseline of the oracles
-they name, each reversing one thing the design says is load-bearing. **Twenty-four
+Twenty-six well-formed mutants against a verified-green baseline of the oracles
+they name, each reversing one thing the design says is load-bearing. **Twenty-six
 killed, none survived, none malformed**, and the harness asserts the subject is
 byte-identical afterwards.
 
@@ -323,7 +323,7 @@ the full baseline is spelled out and the two design records are two invocations.
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
 | frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 43 fixtures × 200 read forms = 8,600 comparisons; every residual row is classified in *The floor this release is measured against* below |
 | hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
-| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 24 killed, none survived or malformed, subject byte-identical afterwards |
+| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 26 killed, none survived or malformed, subject byte-identical afterwards |
 | consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
 
 The clean-room clone is the one that matters most for the design records: it
