@@ -295,6 +295,19 @@ MUTANTS = [
      "                    pass\n                index += 1\n",
      "tools/tests/test_gitread.py::"
      "test_config_as_data_either_matches_git_or_refuses_differential_fuzz"),
+    ("a valueless declaration is collapsed to the resolved string true",
+     "tools/sterile.py",
+     '            records.append((f"{section}.{key}", None))',
+     '            records.append((f"{section}.{key}", "true"))',
+     "tools/tests/test_gitread.py::"
+     "test_config_records_as_data_preserves_a_valueless_declaration"),
+    ("ordered records are grouped by key instead of preserving file order",
+     "tools/sterile.py",
+     "    return records\n\n\ndef config_values_as_data",
+     "    return [record for name in dict.fromkeys(name for name, _value in records)\n"
+     "            for record in records if record[0] == name]\n\n\ndef config_values_as_data",
+     "tools/tests/test_gitread.py::"
+     "test_config_records_as_data_preserves_interleaved_repeated_key_occurrences"),
 ]
 
 

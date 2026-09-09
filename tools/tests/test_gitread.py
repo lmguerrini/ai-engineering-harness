@@ -1987,50 +1987,40 @@ def _isolated_committed_repo(tmp_path, name):
     return repo
 
 
-def _config_data_as_git_list_bytes(config, *, bare_keys=frozenset()):
-    """Render the single-valued data view in Git's ``--list --null`` shape.
-
-    The closed accept-list below deliberately gives every key one value, so
-    ``config_as_data`` is its exact representation and retains source order.
-    Multi-value carrying has its own regression tests elsewhere in this file.
-    """
+def _config_records_as_git_list_bytes(config):
+    """Render the ordered record view in Git's ``--list --null`` shape."""
     rendered = []
-    for name, value in _sterile.config_as_data(config).items():
+    for name, value in _sterile.config_records_as_data(config):
         key = name.encode("utf-8", "surrogateescape")
-        # `--list --null` preserves Git's distinct *no explicit value* list
-        # encoding as `key\\0`, while this data API deliberately presents the
-        # resolved boolean as `"true"` to its callers.
         rendered.append(
-            key + b"\0" if name in bare_keys
+            key + b"\0" if value is None
             else key + b"\n" + value.encode("utf-8", "surrogateescape") + b"\0"
         )
     return b"".join(rendered)
 
 
 @pytest.mark.parametrize(
-    "shape, contents, bare_keys",
+    "shape, contents",
     (
         (
             "empty-comment-header-and-implicit-true",
             b" \t\r\n# a hash comment\n\t; a semicolon comment ending in a backslash \\\n"
             b"[core]  # a header comment\n\tbare\n",
-            frozenset({"core.bare"}),
         ),
-        ("utf8-bom", b"\xef\xbb\xbf[core]\n\tvalue = bom\n", frozenset()),
-        ("escaped-backslash-value", b'[core]\n\tvalue = "tail\\\\"\n', frozenset()),
-        ("even-trailing-backslashes", b"[core]\n\tvalue = tail\\\\\n", frozenset()),
-        ("odd-backslash-continuation", b"[core]\n\tvalue = left\\\nright\n", frozenset()),
+        ("utf8-bom", b"\xef\xbb\xbf[core]\n\tvalue = bom\n"),
+        ("escaped-backslash-value", b'[core]\n\tvalue = "tail\\\\"\n'),
+        ("even-trailing-backslashes", b"[core]\n\tvalue = tail\\\\\n"),
+        ("odd-backslash-continuation", b"[core]\n\tvalue = left\\\nright\n"),
         (
             "quoted-subsection-escapes",
             b'[remote "quo\\"te\\\\slash"]\n\turl = local\n',
-            frozenset(),
         ),
-        ("tab-separated-subsection", b'[branch\t"Topic"]\n\tmerge = refs/heads/main\n', frozenset()),
-        ("crlf", b"[core]\r\n\tfilemode = true\r\n", frozenset()),
+        ("tab-separated-subsection", b'[branch\t"Topic"]\n\tmerge = refs/heads/main\n'),
+        ("crlf", b"[core]\r\n\tfilemode = true\r\n"),
     ),
 )
 def test_the_strict_configuration_accept_list_agrees_with_git_byte_for_byte(
-        tmp_path, shape, contents, bare_keys):
+        tmp_path, shape, contents):
     """The closed positive oracle: accepted input has exactly Git's answer.
 
     This is intentionally a finite table, not a growing corpus of Git syntax.
@@ -2047,7 +2037,67 @@ def test_the_strict_configuration_accept_list_agrees_with_git_byte_for_byte(
         capture_output=True, check=False,
     )
     assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
-    assert _config_data_as_git_list_bytes(config, bare_keys=bare_keys) == oracle.stdout
+    assert _config_records_as_git_list_bytes(config) == oracle.stdout
+
+
+def test_config_records_as_data_preserves_a_valueless_declaration(tmp_path):
+    """A bare declaration is a record with no value, as in Git's list stream."""
+    config = tmp_path / "valueless.gitconfig"
+    config.write_text("[core]\n\tbare\n", encoding="utf-8")
+
+    oracle = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=False,
+    )
+    assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
+    assert _sterile.config_records_as_data(config) == [("core.bare", None)]
+    assert _config_records_as_git_list_bytes(config) == b"core.bare\0" == oracle.stdout
+    # The pre-existing resolved-value views intentionally remain unchanged.
+    assert _sterile.config_as_data(config) == {"core.bare": "true"}
+    assert _sterile.config_values_as_data(config) == {"core.bare": ["true"]}
+
+
+def test_config_records_as_data_preserves_an_explicit_true_value(tmp_path):
+    """An explicit ``true`` remains distinguishable from a bare declaration."""
+    config = tmp_path / "explicit-true.gitconfig"
+    config.write_text("[core]\n\tbare = true\n", encoding="utf-8")
+
+    oracle = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=False,
+    )
+    assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
+    assert _sterile.config_records_as_data(config) == [("core.bare", "true")]
+    assert _config_records_as_git_list_bytes(config) == b"core.bare\ntrue\0" == oracle.stdout
+    valueless = tmp_path / "bare-without-equals.gitconfig"
+    valueless.write_text("[core]\n\tbare\n", encoding="utf-8")
+    assert _sterile.config_records_as_data(valueless) != _sterile.config_records_as_data(config)
+    assert _sterile.config_as_data(config) == {"core.bare": "true"}
+    assert _sterile.config_values_as_data(config) == {"core.bare": ["true"]}
+
+
+def test_config_records_as_data_preserves_interleaved_repeated_key_occurrences(tmp_path):
+    """Records retain Git's declaration order instead of grouping repeated keys."""
+    config = tmp_path / "interleaved-repeated.gitconfig"
+    config.write_text("[core]\n\ta = one\n\tb = bee\n\ta = two\n", encoding="utf-8")
+
+    oracle = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=False,
+    )
+    assert oracle.returncode == 0, oracle.stderr.decode("utf-8", "surrogateescape")
+    assert _sterile.config_records_as_data(config) == [
+        ("core.a", "one"),
+        ("core.b", "bee"),
+        ("core.a", "two"),
+    ]
+    assert (_config_records_as_git_list_bytes(config)
+            == b"core.a\none\0core.b\nbee\0core.a\ntwo\0" == oracle.stdout)
+    assert _sterile.config_as_data(config) == {"core.a": "two", "core.b": "bee"}
+    assert _sterile.config_values_as_data(config) == {
+        "core.a": ["one", "two"],
+        "core.b": ["bee"],
+    }
 
 
 @pytest.mark.parametrize(
@@ -2184,12 +2234,12 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
 
     The small grammar varies BOM and CRLF spellings, comments, quoted
     subsections, physical continuations, and recognised and unrecognised
-    backslashes both inside and outside quotes.  Every case has one explicit
-    value and one key, so ``config_as_data`` can be rendered in the same
-    ``--list --null`` shape as Git.  It must do exactly one of two things:
-    agree byte-for-byte with real Git or raise the named refusal.  In
-    particular, accepting an unquoted escape is not an approximation this
-    parser is allowed to make.
+    backslashes both inside and outside quotes.  It also emits bare
+    declarations and repeated keys interleaved with another key.  The ordered
+    record view is rendered in the same ``--list --null`` shape as Git.  Every
+    case must do exactly one of two things: agree byte-for-byte with real Git
+    or raise the named refusal.  In particular, accepting an unquoted escape
+    is not an approximation this parser is allowed to make.
     """
     seed = 0x2F50
     cases = 512
@@ -2220,13 +2270,25 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
         comment = generator.choice(("", "# ignored comment", "; ignored slash \\"))
         section = generator.choice(sections)
         value = generator.choice(values)
-        if value == "continued":
-            assignment = "value = left\\" + newline + "right"
-        elif value == "trailing-run":
-            assignment = "value = tail\\\\"
+        def assignment_for(key):
+            if value == "continued":
+                return f"{key} = left\\" + newline + "right"
+            if value == "trailing-run":
+                return f"{key} = tail\\\\"
+            return f"{key} = {value}"
+
+        # Cycling guarantees that this fixed corpus exercises both kinds of
+        # information the former grouped views discarded, while its seeded
+        # choices retain every pre-existing header, comment, and value shape.
+        declaration_shape = number % 3
+        if declaration_shape == 0:
+            declarations = (assignment_for("value"),)
+        elif declaration_shape == 1:
+            declarations = ("bare", assignment_for("value"))
         else:
-            assignment = f"value = {value}"
-        contents = prefix + (comment + newline if comment else "") + section + newline + assignment + newline
+            declarations = ("a = one", "b = bee", assignment_for("a"))
+        contents = (prefix + (comment + newline if comment else "") + section + newline
+                    + newline.join(declarations) + newline)
         config = tmp_path / f"differential-{number}.gitconfig"
         config.write_bytes(contents.encode("utf-8", "surrogateescape"))
         oracle = subprocess.run(
@@ -2234,7 +2296,7 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
             capture_output=True, check=False,
         )
         try:
-            actual = _config_data_as_git_list_bytes(config)
+            actual = _config_records_as_git_list_bytes(config)
             refused = False
         except _GitRefusal:
             actual = None

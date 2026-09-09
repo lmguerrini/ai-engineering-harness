@@ -63,6 +63,7 @@ __all__ = [
     "SterileRead",
     "build",
     "config_as_data",
+    "config_records_as_data",
     "nested_repository_paths",
 ]
 
@@ -521,19 +522,23 @@ def _config_variable_as_data(raw: str, *, path: Path, line: int) -> tuple[str, s
     return name, raw[index + 1:]
 
 
-def config_values_as_data(path: Path) -> dict:
-    """Every value of every accepted key, in file order, under value syntax.
+def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
+    """Accepted declarations as ``(name, value)`` records in file order.
 
-    Git keeps repeated keys rather than overwriting them, and which one it
-    resolves depends on the key: the LAST for a single-valued setting, the FIRST
-    of `remote.<name>.url` for the address a fetch contacts.  Deciding that is
-    the caller's business, so this reports all of them and decides nothing.
+    A declaration without ``=`` has ``None`` as its value; an explicit value is
+    decoded by the same narrow value decoder used for every other configuration
+    read.  This is the lossless representation of the parser's accepted input:
+    it retains both the distinction between a bare declaration and ``true`` and
+    repeated-key occurrences interleaved with other names.
+
+    Nothing in this accessor widens the accepted grammar.  It is the parser
+    behind the grouped data views below, with no additional Git syntax.
     """
-    values: dict = {}
+    records: list[tuple[str, str | None]] = []
     section = ""
     path = Path(path)
     if not path.is_file():
-        return values
+        return records
     # Keep the physical bytes until decoding.  Text-mode reads can translate
     # CRLF before the narrow parser decides what a physical line is.
     text = path.read_bytes().decode("utf-8", "surrogateescape")
@@ -561,7 +566,7 @@ def config_values_as_data(path: Path) -> dict:
             _refuse_config(path, number, "a Git configuration variable appears before a section", variable=raw)
         key, value = _config_variable_as_data(raw, path=path, line=number)
         if value is None:
-            values.setdefault(f"{section}.{key}", []).append("true")
+            records.append((f"{section}.{key}", None))
             index += 1
             continue
 
@@ -583,10 +588,27 @@ def config_values_as_data(path: Path) -> dict:
             source_value_parts.append((_next_number, next_raw))
         _refuse_unaccepted_value_backslashes(source_value_parts, path=path)
         value = "".join(_decode_trailing_value_backslashes(part) for part in value_parts)
-        values.setdefault(f"{section}.{key}", []).append(
-            _config_value_as_data(value, path=path, line=number)
-        )
+        records.append((
+            f"{section}.{key}",
+            _config_value_as_data(value, path=path, line=number),
+        ))
         index += 1
+    return records
+
+
+def config_values_as_data(path: Path) -> dict:
+    """Every value of every accepted key, grouped without changing its value.
+
+    Git keeps repeated keys rather than overwriting them, and which one it
+    resolves depends on the key: the LAST for a single-valued setting, the FIRST
+    of `remote.<name>.url` for the address a fetch contacts.  Deciding that is
+    the caller's business, so this reports all of them and decides nothing.
+    """
+    values: dict = {}
+    for name, value in config_records_as_data(path):
+        # Keep the original grouped API's resolved-boolean presentation for a
+        # bare declaration.  The record API retains the omitted ``=`` instead.
+        values.setdefault(name, []).append("true" if value is None else value)
     return values
 
 
