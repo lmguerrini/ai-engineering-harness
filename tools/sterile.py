@@ -307,6 +307,103 @@ def _config_value_as_text(value: str) -> str:
     return f'"{escaped}"'
 
 
+_CONFIG_HEADER_WHITESPACE = " \t\r"
+
+
+def _config_lines_as_data(text: str, path: Path):
+    """Yield logical Git-config lines, unfolding only physical newlines.
+
+    ``str.splitlines`` is deliberately not used here.  It treats form feed,
+    vertical tab, record separators and Unicode line separators as line ends;
+    Git does not.  A CR belongs to the physical line except when it is the CR
+    half of CRLF.  Git removes a trailing backslash and that physical newline
+    before it applies either the header or value grammar.
+    """
+    logical = ""
+    starts_at = 1
+    continued = False
+    physical = text.split("\n")
+    for number, raw in enumerate(physical, 1):
+        # A final bare CR is data.  Only CR immediately before a physical LF is
+        # the other spelling of a physical newline.
+        if number < len(physical) and raw.endswith("\r"):
+            raw = raw[:-1]
+        logical += raw
+        if raw.endswith("\\"):
+            logical = logical[:-1]
+            continued = True
+            continue
+        yield starts_at, logical
+        logical = ""
+        starts_at = number + 1
+        continued = False
+    if continued:
+        raise GitRefusal(
+            "a Git configuration line ends in an unfinished continuation",
+            configuration=str(path), line=starts_at,
+        )
+
+
+def _config_section_as_data(header: str, *, path: Path, line: int) -> str:
+    """Decode one already-commentless section header by Git's header grammar.
+
+    Section names fold to lower case.  A subsection follows the name after
+    whitespace, is quoted, and keeps its case; a backslash in that quoted run
+    quotes its next character.  There is intentionally no permissive fallback:
+    treating an unrecognised header as a variable is a successful answer about
+    a configuration Git itself rejected.
+    """
+    def refuse() -> None:
+        raise GitRefusal(
+            "a Git configuration section header cannot be parsed confidently",
+            configuration=str(path), line=line, header=header,
+        )
+
+    if not header.startswith("[") or not header.endswith("]"):
+        refuse()
+    inner = header[1:-1]
+    index = 0
+    while index < len(inner) and inner[index] not in _CONFIG_HEADER_WHITESPACE:
+        index += 1
+    name = inner[:index]
+    if not name or any(
+        not character.isascii() or not (character.isalnum() or character == "-")
+        for character in name
+    ):
+        refuse()
+    if index == len(inner):
+        return name.lower()
+
+    # Git accepts a tab (and the CR half of a CRLF spelling) wherever the old
+    # parser accepted only one literal ASCII space.  Whitespace with no quoted
+    # subsection is still malformed.
+    while index < len(inner) and inner[index] in _CONFIG_HEADER_WHITESPACE:
+        index += 1
+    if index == len(inner) or inner[index] != '"':
+        refuse()
+    index += 1
+    subsection: list[str] = []
+    while index < len(inner):
+        character = inner[index]
+        if character == '"':
+            index += 1
+            break
+        if character == "\\":
+            index += 1
+            if index == len(inner):
+                refuse()
+            subsection.append(inner[index])
+            index += 1
+            continue
+        subsection.append(character)
+        index += 1
+    else:
+        refuse()
+    if index != len(inner):
+        refuse()
+    return f"{name.lower()}.{''.join(subsection)}"
+
+
 def config_values_as_data(path: Path) -> dict:
     """Every value of every key, in file order, under the same value syntax.
 
@@ -319,22 +416,20 @@ def config_values_as_data(path: Path) -> dict:
     section = ""
     if not Path(path).is_file():
         return values
-    text = Path(path).read_text(encoding="utf-8", errors="surrogateescape")
-    for raw in text.splitlines():
+    # `Path.read_text` uses universal-newline translation.  The parser below
+    # needs to distinguish CRLF from a bare CR which Git leaves inside a value,
+    # so retain the file's physical newline bytes while decoding its text.
+    with Path(path).open("r", encoding="utf-8", errors="surrogateescape", newline="") as handle:
+        text = handle.read()
+    for number, raw in _config_lines_as_data(text, Path(path)):
         line = raw.strip()
         if line.startswith(("#", ";")):
             continue
         if not line:
             continue
-        header = _without_config_comment(line).strip() if line.startswith("[") else line
-        if header.startswith("[") and header.endswith("]"):
-            inner = header[1:-1].strip()
-            head, _, tail = inner.partition(" ")
-            # Git folds the SECTION and the VARIABLE to lower case and keeps a
-            # SUBSECTION verbatim. 2.4.1 shipped a defect for not knowing that,
-            # and this parser is only ever used to read, so it follows the same
-            # rule rather than a convenient one.
-            section = head.lower() if not tail else f"{head.lower()}.{tail.strip().strip(chr(34))}"
+        if line.startswith("["):
+            header = _without_config_comment(line).strip()
+            section = _config_section_as_data(header, path=Path(path), line=number)
             continue
         key, sep, value = line.partition("=")
         name = f"{section}.{key.strip().lower()}" if section else key.strip().lower()

@@ -1093,6 +1093,32 @@ def test_a_disabled_extension_still_reads_with_several_worktrees(tmp_path):
         assert gitread._run(repository, "ls-files", timeout=30).strip() == "f.txt"
 
 
+def test_an_inactive_worktree_config_is_not_a_second_configuration_source(tmp_path):
+    """A present `config.worktree` is ignored until the extension enables it.
+
+    Git resolves `test.key` from the main config in this layout.  Treating a
+    merely present file as live either refuses the public single-file `config`
+    read or reports the inactive value through `config_with_origin`; both are
+    wrong answers about a source Git did not consult.
+    """
+    repo = _isolated_committed_repo(tmp_path, "inactive-worktree-config")
+    _isolated_git(repo, "config", "test.key", "main")
+    main = repo / ".git" / "config"
+    inactive = repo / ".git" / "config.worktree"
+    inactive.write_text("[test]\n\tkey = worktree\n", encoding="utf-8")
+
+    oracle = _isolated_real_git(repo, "config", "--get", "test.key")
+    assert oracle.returncode == 0, oracle.stderr
+    assert oracle.stdout == "main\n"
+
+    assert gitread._configuration_files_of(repo) == [main]
+    answer = gitread.probe(repo, "config", "--get", "test.key", negative_statuses=(1,))
+    assert answer.answered and answer.ok and answer.value == oracle.stdout.strip()
+    reported = [entry for entry in gitread.config_with_origin(repo) if entry["key"] == "test.key"]
+    assert [entry["value"] for entry in reported] == ["main"]
+    assert all(str(inactive) not in entry["origin"] for entry in reported)
+
+
 def test_only_the_repositorys_own_scopes_are_inspected(tmp_path):
     """O5. The function promises the repository's OWN configuration. A key
     supplied on the command line is applied by Git and labelled `command`, so a
@@ -1997,6 +2023,110 @@ def test_config_as_data_value_syntax_matches_real_git_byte_for_byte(tmp_path, sh
     assert oracle.stdout.endswith(b"\0")
     actual = _sterile.config_as_data(config)["oracle.value"].encode("utf-8", "surrogateescape")
     assert actual == oracle.stdout[:-1], shape
+
+
+def test_a_tab_separated_includeif_header_is_refused_not_reported_as_complete(tmp_path):
+    """Git accepts a TAB before an includeIf subsection, and applies its file.
+
+    The generated configuration cannot reproduce included storage descriptors,
+    so this route must refuse rather than list only the main file and call that
+    partial list complete.  Replacing header whitespace with literal-space-only
+    parsing makes `config_with_origin` return at exit zero after the real-Git
+    control below has established that `core.bare` came from the include.
+    """
+    repo = _isolated_committed_repo(tmp_path, "tab-includeif")
+    config = repo / ".git" / "config"
+    included = repo / ".git" / "storage.inc"
+    included.write_text("[core]\n\tbare = true\n", encoding="utf-8")
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write(
+            f'\n[includeIf\t"gitdir:{(repo / ".git").resolve()}"]\n'
+            f"\tpath = {included}\n"
+        )
+
+    oracle = _isolated_real_git(repo, "config", "--get", "core.bare")
+    assert oracle.returncode == 0, oracle.stderr
+    assert oracle.stdout == "true\n", "the TAB form did not make Git apply the include"
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread.config_with_origin(repo)
+    assert "did not follow the include" in raised.value.render()
+
+
+def test_a_continued_remote_url_reaches_the_same_address_as_real_git(tmp_path):
+    """A trailing backslash unfolds a remote URL before the transport resolver sees it.
+
+    The old physical-line parser kept the backslash and routed `origin` to a
+    different address.  This asks both implementations for the remote's HEAD;
+    no URL is merely inspected without being consumed by the governed route.
+    """
+    target = _isolated_committed_repo(tmp_path, "continued-target")
+    reader = _isolated_committed_repo(tmp_path, "continued-reader")
+    config = reader / ".git" / "config"
+    address = str(target)
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write('\n[remote "origin"]\n\turl = ' + address[:-2] + chr(92)
+                     + "\n" + address[-2:] + "\n")
+
+    oracle = _isolated_real_git(reader, "ls-remote", "origin", "HEAD")
+    assert oracle.returncode == 0, oracle.stderr
+    actual = gitread._run(reader, "ls-remote", "origin", "HEAD", text=False)
+    assert actual == oracle.stdout.encode("utf-8", "surrogateescape")
+
+
+def test_a_malformed_header_is_refused_by_the_data_parser_and_governed_report(tmp_path):
+    """A bare opening bracket is invalid to Git and cannot become a data answer.
+
+    Calling `config_with_origin` alone would be vacuous here because its later
+    real-Git invocation also refuses.  `program_valued_config` consumes the
+    pure parser directly, so both assertions below prove that the handwritten
+    parser, not an incidental subprocess failure, refuses the malformed root.
+    """
+    repo = _isolated_committed_repo(tmp_path, "malformed-header")
+    config = repo / ".git" / "config"
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write("\n[broken\n")
+
+    oracle = _isolated_real_git(repo, "config", "--list")
+    assert oracle.returncode == 128
+    assert "bad config line" in oracle.stderr
+
+    with _pytest.raises(_GitRefusal) as raised:
+        _sterile.config_as_data(config)
+    assert raised.value.detail["line"] > 0
+    with _pytest.raises(_GitRefusal):
+        gitread.program_valued_config(repo)
+
+
+def test_an_escaped_quote_in_a_remote_subsection_reaches_the_same_address_as_git(tmp_path):
+    """Quoted subsection escapes are decoded before a remote name is resolved."""
+    target = _isolated_committed_repo(tmp_path, "escaped-subsection-target")
+    reader = _isolated_committed_repo(tmp_path, "escaped-subsection-reader")
+    config = reader / ".git" / "config"
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write('\n[remote "foo' + chr(92) + f'"bar"]\n\turl = {target}\n')
+
+    oracle = _isolated_real_git(reader, "ls-remote", 'foo"bar', "HEAD")
+    assert oracle.returncode == 0, oracle.stderr
+    actual = gitread._run(reader, "ls-remote", 'foo"bar', "HEAD", text=False)
+    assert actual == oracle.stdout.encode("utf-8", "surrogateescape")
+
+
+def test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value(tmp_path):
+    """Only LF and CRLF split physical configuration lines; FF and bare CR are data."""
+    repo = _isolated_committed_repo(tmp_path, "form-feed")
+    config = repo / ".git" / "config"
+    with config.open("a", encoding="utf-8") as handle:
+        handle.write('\n[remote "origin"]\n\turl = "a\fb\rc"\n')
+
+    oracle = subprocess.run(
+        ["git", "config", "--null", "--get", "remote.origin.url"], cwd=str(repo),
+        capture_output=True, check=False, env=_fixture_environment(),
+    )
+    assert oracle.returncode == 0
+    assert oracle.stdout == b"a\x0cb\rc\0"
+    actual = _sterile.config_as_data(config)["remote.origin.url"]
+    assert actual.encode("utf-8", "surrogateescape") == oracle.stdout[:-1]
 
 
 def test_ls_remote_remote_name_with_a_quoted_hash_url_matches_real_git(tmp_path):

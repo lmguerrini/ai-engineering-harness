@@ -204,6 +204,49 @@ MUTANTS = [
      "            all_declared[name] = found",
      "tools/tests/test_gitread.py::"
      "test_a_repeated_key_declared_in_both_roots_keeps_both_values"),
+    ("a TAB no longer separates a section name from its quoted subsection",
+     "tools/sterile.py",
+     r'_CONFIG_HEADER_WHITESPACE = " \t\r"',
+     '_CONFIG_HEADER_WHITESPACE = " "',
+     "tools/tests/test_gitread.py::"
+     "test_a_tab_separated_includeif_header_is_refused_not_reported_as_complete"),
+    ("a physical trailing backslash no longer continues a configuration line",
+     "tools/sterile.py",
+     r'        if raw.endswith("\\"):',
+     "        if False:",
+     "tools/tests/test_gitread.py::"
+     "test_a_continued_remote_url_reaches_the_same_address_as_real_git"),
+    ("a malformed section header is treated as an ordinary variable line",
+     "tools/sterile.py",
+     '        if line.startswith("["):',
+     "        if False:",
+     "tools/tests/test_gitread.py::"
+     "test_a_malformed_header_is_refused_by_the_data_parser_and_governed_report"),
+    ("an escaped subsection quote stays escaped during remote-name resolution",
+     "tools/sterile.py",
+     "            subsection.append(inner[index])",
+     r'            subsection.append("\\" + inner[index])',
+     "tools/tests/test_gitread.py::"
+     "test_an_escaped_quote_in_a_remote_subsection_reaches_the_same_address_as_git"),
+    ("form feed is made a physical line ending again",
+     "tools/sterile.py",
+     r'    physical = text.split("\n")',
+     "    physical = text.splitlines()",
+     "tools/tests/test_gitread.py::"
+     "test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value"),
+    ("a present but inactive config.worktree is treated as a live source",
+     "tools/gitread.py",
+     '    if (sterile._enabled(sterile.config_as_data(main).get("extensions.worktreeconfig"))\n'
+     '            and worktree_config.is_file()):',
+     "    if worktree_config.is_file():",
+     "tools/tests/test_gitread.py::"
+     "test_an_inactive_worktree_config_is_not_a_second_configuration_source"),
+    ("a bare carriage return is translated before the configuration parser sees it",
+     "tools/sterile.py",
+     '    with Path(path).open("r", encoding="utf-8", errors="surrogateescape", newline="") as handle:',
+     '    with Path(path).open("r", encoding="utf-8", errors="surrogateescape") as handle:',
+     "tools/tests/test_gitread.py::"
+     "test_config_parser_keeps_non_newline_separators_that_git_keeps_in_a_value"),
 ]
 
 

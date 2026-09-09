@@ -1781,7 +1781,12 @@ def _configuration_files_of(repository: str | Path) -> list[Path]:
         target = target.strip()
         gitdir = Path(target) if os.path.isabs(target) else (subject / target).resolve()
     worktree_config = gitdir / "config.worktree"
-    if worktree_config.is_file():
+    # Its presence is not enough.  Git reads this second root only after the
+    # common configuration explicitly enables it; otherwise listing it here
+    # turns an ordinary one-file answer into a false multi-source refusal (or a
+    # value from a configuration source Git never consulted).
+    if (sterile._enabled(sterile.config_as_data(main).get("extensions.worktreeconfig"))
+            and worktree_config.is_file()):
         found.append(worktree_config)
     return found
 

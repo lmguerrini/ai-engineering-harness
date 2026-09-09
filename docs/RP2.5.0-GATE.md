@@ -230,8 +230,8 @@ is a claim:
 
 ## Mutation scoring
 
-Twenty-six well-formed mutants against a verified-green baseline of the oracles
-they name, each reversing one thing the design says is load-bearing. **Twenty-six
+Thirty-three well-formed mutants against a verified-green baseline of the oracles
+they name, each reversing one thing the design says is load-bearing. **Thirty-three
 killed, none survived, none malformed**, and the harness asserts the subject is
 byte-identical afterwards.
 
@@ -319,11 +319,11 @@ the full baseline is spelled out and the two design records are two invocations.
 | design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md --repository .` (and the A1/A2 history records by the same command) | DESIGN FROZEN; A7.1 is authoritative |
 | surface derivation | `python3 tools/surface_diff.py . 9d906ce64bd69cb1a29594a7110829da7df5d996 HEAD` | additions only over the NON-TEST modules; every removal and every signature change it reports is inside `tools/tests/`. No totals are quoted here — see *Why this release is not 2.4.2* for why |
 | full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
-| clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | every gate passed and the suite was green, with a tree reporting nothing changed |
+| clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | the suite was green and the tree reported nothing changed. Four raw gate results were non-zero by design and were not rewritten as passes: the frozen-floor differential `EXIT=1` after 8,600 comparisons with 403 adjudicated differences; the commit-range checker `EXIT=1` for 12 deliberately raw violations over 4 commits; surface derivation `EXIT=1` because it reports test-module removals; and the outgoing scan `EXIT=1` for unscoped heuristics. |
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
 | frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 43 fixtures × 200 read forms = 8,600 comparisons; every residual row is classified in *The floor this release is measured against* below |
 | hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
-| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 26 killed, none survived or malformed, subject byte-identical afterwards |
+| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 33 killed, none survived or malformed, subject byte-identical afterwards |
 | consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
 
 The clean-room clone is the one that matters most for the design records: it
