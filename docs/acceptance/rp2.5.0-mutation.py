@@ -186,6 +186,12 @@ MUTANTS = [
      "            remote_tracking.setdefault(remote, {})[setting] = [value]",
      "tools/tests/test_gitread.py::"
      "test_a_repeated_fetch_refspec_still_finds_the_branchs_upstream"),
+    ("an include in the main configuration is answered around instead of refused",
+     "tools/sterile.py",
+     "        for name in common_declared\n    ):",
+     "        for name in ()\n    ):",
+     "tools/tests/test_gitread.py::"
+     "test_a_main_configuration_include_is_refused_rather_than_answered_around"),
 ]
 
 

@@ -1808,8 +1808,14 @@ def test_every_configuration_source_git_reports_is_one_the_harness_wrote(tmp_pat
     `GIT_DIR` repair makes Git rediscover the subject from its working directory,
     so this test reports the subject's `config` as an origin and fails."""
     repo = _isolated_committed_repo(tmp_path, "subject")
-    (repo / ".git" / "extra").write_text("[subject]\n\tsentinel = outside\n")
-    _git(repo, "config", "include.path", "extra")
+    # `config.worktree` rather than `include.path`: a main-config include is now
+    # REFUSED, because the root is replaced rather than followed and a storage
+    # descriptor inside the included file would otherwise go missing from the
+    # answer. `extensions.worktreeConfig` is the other live second root and is
+    # still read, so the invariant is still exercised against a real one.
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    (repo / ".git" / "config.worktree").write_text(
+        "[subject]\n\tsentinel = outside\n", encoding="utf-8")
 
     read = _sterile.build(repo)
     try:
@@ -1890,6 +1896,16 @@ def test_replacing_the_configuration_root_excludes_every_subject_config_route(tm
             handle.write('\n[includeIf "onbranch:main"]\n\tpath = conditional\n')
 
     assert _git(repo, "config", "--get", key).strip() == value
+    if route in ("include.path", "includeIf"):
+        # AN INCLUDE IS REFUSED RATHER THAN EXCLUDED, WHICH IS STRICTLY STRONGER.
+        # Excluding it kept the read working while silently dropping whatever the
+        # included file declared, and a storage descriptor declared there made an
+        # ordinary `status` call a clean tracked file modified. Frozen 2.4.0
+        # refuses such a repository too, so this is the floor's own answer.
+        with _pytest.raises(_GitRefusal) as raised:
+            _sterile.build(repo)
+        assert "includes another configuration file" in raised.value.render()
+        return
     read = _sterile.build(repo)
     try:
         result = subprocess.run(
@@ -3630,3 +3646,30 @@ def test_a_repeated_fetch_refspec_still_finds_the_branchs_upstream(tmp_path):
     assert governed == real.stdout, (
         "the governed answer lost a branch relation Git reports"
     )
+
+
+def test_a_main_configuration_include_is_refused_rather_than_answered_around(tmp_path):
+    """An include in the MAIN config is refused, as one in `config.worktree` is.
+
+    The configuration root is REPLACED, not copied, so an `include.path` names a
+    file whose contents never reach the constructed directory.  Its storage
+    descriptors are then simply absent and Git answers about different storage
+    semantics without saying so: declaring `core.autocrlf` through an include
+    made a clean tracked file report as modified, at exit 0.  Frozen 2.4.0
+    refuses such a repository, so refusing is the floor's own answer.
+
+    Removing the refusal makes this test receive a porcelain record for a file
+    real Git reports as clean.
+    """
+    repo = _committed(tmp_path, "main-include")
+    included = repo / ".git" / "storage.inc"
+    _git(repo, "config", "include.path", str(included))
+    _git(repo, "config", "--file", str(included), "core.autocrlf", "true")
+
+    real = subprocess.run(["git", "status", "--porcelain=v2"], cwd=repo,
+                          capture_output=True)
+    assert real.returncode == 0
+
+    with _pytest.raises(_GitRefusal) as raised:
+        gitread._run(repo, "status", "--porcelain=v2", text=False)
+    assert "includes another configuration file" in raised.value.render()

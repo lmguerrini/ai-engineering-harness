@@ -408,6 +408,28 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     # descriptor resolves to; this one is what the carried-verbatim sections are
     # written from, so a multi-valued setting reaches Git whole.
     all_declared = config_values_as_data(common / "config")
+    # AN INCLUDE IN THE MAIN CONFIG IS REFUSED, EXACTLY AS ONE IN AN ACTIVE
+    # `config.worktree` IS.
+    #
+    # This root is replaced, not copied, so an `include.path` here is a
+    # configuration file whose contents never reach the constructed directory.
+    # The storage descriptors in it are then simply absent, and Git answers
+    # about DIFFERENT storage semantics without saying so: a certification
+    # declared `core.autocrlf` through an include and got a clean tracked file
+    # reported as modified, at exit 0. Frozen 2.4.0 refuses such a repository,
+    # so refusing is the floor's own answer and not a reduction; following the
+    # include instead would mean reimplementing Git's include resolution, which
+    # is a configuration source this build would then have to own.
+    if any(
+        name == "include.path"
+        or (name.startswith("includeif.") and name.endswith(".path"))
+        for name in common_declared
+    ):
+        raise GitRefusal(
+            "this repository's configuration includes another configuration file, so its "
+            "storage descriptors cannot be reproduced as a partial configuration",
+            configuration=str(common / "config"),
+        )
     if _enabled(common_declared.get("extensions.worktreeconfig")):
         worktree_declared = config_as_data(gitdir / "config.worktree")
         if any(
