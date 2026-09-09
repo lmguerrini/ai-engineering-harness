@@ -403,6 +403,11 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
     """
     common_declared = config_as_data(common / "config")
     declared = dict(common_declared)
+    # The same declarations, keeping every value a repeated key carries. The
+    # single-valued view above still decides what is PRESENT and what a storage
+    # descriptor resolves to; this one is what the carried-verbatim sections are
+    # written from, so a multi-valued setting reaches Git whole.
+    all_declared = config_values_as_data(common / "config")
     if _enabled(common_declared.get("extensions.worktreeconfig")):
         worktree_declared = config_as_data(gitdir / "config.worktree")
         if any(
@@ -416,6 +421,7 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
                 configuration=str(gitdir / "config.worktree"),
             )
         declared.update(worktree_declared)
+        all_declared.update(config_values_as_data(gitdir / "config.worktree"))
     core = {
         name[len("core."):]: value
         for name, value in declared.items()
@@ -457,20 +463,34 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
             continue
         branch, separator, setting = name[len("branch."):].rpartition(".")
         if separator and setting in BRANCH_TRACKING_KEYS:
-            branch_tracking.setdefault(branch, {})[setting] = value
+            branch_tracking.setdefault(branch, {})[setting] = all_declared.get(name, [value])
     for branch, settings in sorted(branch_tracking.items()):
         lines.append(f'[branch "{branch}"]\n')
-        lines += [f"\t{key} = {value}\n" for key, value in sorted(settings.items())]
-    remote_tracking: dict[str, dict[str, str]] = {}
+        lines += [f"\t{key} = {one}\n"
+                  for key, found in sorted(settings.items()) for one in found]
+    # CARRIED VERBATIM MEANS EVERY VALUE, IN FILE ORDER.
+    #
+    # `remote.<name>.fetch` is multi-valued: Git uses the WHOLE refspec list to
+    # decide a branch's upstream. Reconstructing this section from the
+    # single-valued view kept only the last one, and an ordinary
+    # `status --porcelain=v2 --branch` then answered with no `branch.upstream`
+    # and no `branch.ab` at exit 0 — a false answer, not a refusal, and a
+    # regression against the floor. A certification found it in the neighbour of
+    # the `remote.<name>.url` repair, which is where a second instance of a
+    # class this shape belongs. `core` and `extensions` above stay single-valued
+    # deliberately: they are storage descriptors this build OWNS, and Git
+    # resolves the last value for them, which is what it is given.
+    remote_tracking: dict[str, dict[str, list]] = {}
     for name, value in declared.items():
         if not name.startswith("remote."):
             continue
         remote, separator, setting = name[len("remote."):].rpartition(".")
         if separator and setting in REMOTE_TRACKING_KEYS:
-            remote_tracking.setdefault(remote, {})[setting] = value
+            remote_tracking.setdefault(remote, {})[setting] = all_declared.get(name, [value])
     for remote, settings in sorted(remote_tracking.items()):
         lines.append(f'[remote "{remote}"]\n')
-        lines += [f"\t{key} = {value}\n" for key, value in sorted(settings.items())]
+        lines += [f"\t{key} = {one}\n"
+                  for key, found in sorted(settings.items()) for one in found]
     (into / "config").write_text("".join(lines), encoding="utf-8")
 
 

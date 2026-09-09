@@ -179,7 +179,14 @@ MUTANTS = [
      "        url = found[0] if found else None",
      "        url = found[-1] if found else None",
      "tools/tests/test_gitread.py::"
-     "test_a_remote_with_two_urls_is_fetched_from_the_first_like_real_git"),]
+     "test_a_remote_with_two_urls_is_fetched_from_the_first_like_real_git"),
+    ("a repeated remote setting is carried as its last value only",
+     "tools/sterile.py",
+     "            remote_tracking.setdefault(remote, {})[setting] = all_declared.get(name, [value])",
+     "            remote_tracking.setdefault(remote, {})[setting] = [value]",
+     "tools/tests/test_gitread.py::"
+     "test_a_repeated_fetch_refspec_still_finds_the_branchs_upstream"),
+]
 
 
 def collect(selectors, timeout=900):

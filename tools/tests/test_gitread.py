@@ -3596,3 +3596,37 @@ def test_a_remote_with_two_urls_is_fetched_from_the_first_like_real_git(tmp_path
     assert governed == real.stdout, (
         "the governed answer names a different remote from the one Git fetches"
     )
+
+
+def test_a_repeated_fetch_refspec_still_finds_the_branchs_upstream(tmp_path):
+    """`remote.<name>.fetch` is multi-valued and Git uses the whole list.
+
+    Reconstructing the carried `[remote]` section from the single-valued view
+    kept only the LAST refspec, so an ordinary `status --porcelain=v2 --branch`
+    answered with no `branch.upstream` and no `branch.ab` at exit 0 — a false
+    answer rather than a refusal, and a regression against frozen 2.4.0, which
+    agrees with Git here.  This is the same class as the two-URL defect, in the
+    neighbouring consumer.
+
+    Reverting `_write_config` to write `all_declared`'s single-valued sibling
+    drops the first refspec and this test loses both upstream lines.
+    """
+    repo = _committed(tmp_path, "repeated-fetch")
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    _git(repo, "update-ref", "refs/remotes/origin/main", head)
+    _git(repo, "config", "branch.main.remote", "origin")
+    _git(repo, "config", "branch.main.merge", "refs/heads/main")
+    _git(repo, "config", "remote.origin.url", str(repo))
+    _git(repo, "config", "--add", "remote.origin.fetch",
+         "+refs/heads/*:refs/remotes/origin/*")
+    _git(repo, "config", "--add", "remote.origin.fetch",
+         "+refs/heads/other:refs/remotes/origin/other")
+
+    real = subprocess.run(["git", "status", "--porcelain=v2", "--branch"],
+                          cwd=repo, capture_output=True)
+    governed = gitread._run(repo, "status", "--porcelain=v2", "--branch", text=False)
+
+    assert b"# branch.upstream" in real.stdout, "the control found no upstream"
+    assert governed == real.stdout, (
+        "the governed answer lost a branch relation Git reports"
+    )
