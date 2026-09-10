@@ -2,13 +2,13 @@
 
 ## Result
 
-The repaired composition passes **183 byte-exact answer rows**, reproduces
-**25 frozen refusals** exactly, and makes **13 declared refusals** for a
-populated gitlink governed by `submodule.<name>.ignore`: **221/221 corpus rows**. Every composed answer
+The repaired composition passes **195 byte-exact answer rows**, reproduces
+**26 frozen refusals** exactly, and makes **13 declared refusals** for a
+populated gitlink governed by `submodule.<name>.ignore`: **234/234 corpus rows**. Every composed answer
 recorded zero Git Trace2 `child_start` events. Every governed primitive has a
 fresh, bound Trace2 witness: `version`, `start.argv`, and terminal `exit`
 share one session id. All 12 positive controls are detected. Each primitive is
-run through frozen 2.4.0's `gitread` boundary, so these 221 rows and 12 controls
+run through frozen 2.4.0's `gitread` boundary, so these 234 rows and 12 controls
 establish the production `compose()` differential, not this candidate's `_run()`
 integration.
 
@@ -21,7 +21,7 @@ frozen behavioral floor is selected with `FLOOR_FROZEN_ROOT`.
 FLOOR_FROZEN_ROOT=/path/to/rp240 \
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
   python3 docs/acceptance/rp2.5.0-submodule-differential.py
-# PASS: 221 matrix rows and 12 positive controls
+# PASS: 234 matrix rows and 12 positive controls
 ```
 
 ## Repaired composition rule
@@ -35,9 +35,11 @@ FLOOR_FROZEN_ROOT=/path/to/rp240 \
    under the governed configuration, including C quoting. Newline porcelain
    and raw diff use it; NUL status uses the raw path. Diff prefixes go inside
    the already measured quoted representation; no quote algorithm is guessed.
-3. If the index contains a gitlink, an `ignore` key token in a regular
-   `.gitmodules` file refuses composition. It does not decode a section name or
-   path, so the full Git configuration grammar is not pulled into this boundary.
+3. If the index contains a populated gitlink, an `ignore` key token in a regular
+   `.gitmodules` file refuses composition. An uninitialised gitlink has no child
+   answer for that policy to shape and remains byte-exact with the floor. The
+   check does not decode a section name or path, so the full Git configuration
+   grammar is not pulled into this boundary.
 4. `lstat`, not a following existence test, classifies each worktree. Missing
    is deletion; a real directory with no `.git` is uninitialised. A symbolic
    link delegates the requested frozen form: that measured childless call
@@ -67,6 +69,7 @@ No configuration or `.gitmodules` value is read to identify gitlinks.
 | NUL public status forms | all fixtures, focused `nul-status-forms` | v1, v2, and short preserve exact NUL separators and raw paths |
 | tab in gitlink path | `quoted-gitlink-path` | newline forms use Git's `"sub\\tmodule"`; NUL forms retain a tab byte |
 | parent sorted after link | `ordered-parent-after-gitlink` | `sub` precedes `zzz.txt` in status, patch, summary, and raw output |
+| uninitialised link plus ignore | `uninitialised-ignore-policy` | all forms retain the floor's clean answer/refusal; the policy is inactive without a child `.git` |
 
 ## Differential matrix
 
@@ -87,6 +90,7 @@ refusal. There are no failing cells.
 | detached child HEAD | P | P | P | P | P | P | P | R | P | P | P | P | P |
 | nested submodules | P | P | P | P | P | P | P | R | P | P | P | P | P |
 | uninitialised submodule | P | P | P | P | P | P | P | R | P | P | P | P | P |
+| uninitialised submodule plus ignore | P | P | P | P | P | P | P | R | P | P | P | P | P |
 | deleted submodule worktree | P | P | P | P | P | P | P | R | P | P | P | P | P |
 | moved submodule worktree | P | P | P | P | P | P | P | R | P | P | P | P | P |
 | symlinked submodule worktree | R | R | R | R | P | R | R | R | P | P | R | R | R |
@@ -125,7 +129,7 @@ earlier traces cannot hide a recursive call which dropped the caller overlay.
 | ignore-dirty, cached, uninitialised, deleted, moved | 0 | 0 | 4 or 9 |
 | symlink refusal/typechange | 0 | 0 | 4 |
 
-All 183 answer rows have zero composed child starts. The 25 refusal rows are
+All 195 answer rows have zero composed child starts. The 26 refusal rows are
 also bound when Git starts; the `--submodule=diff` API refusal is recorded as
 pre-invocation on both sides.
 

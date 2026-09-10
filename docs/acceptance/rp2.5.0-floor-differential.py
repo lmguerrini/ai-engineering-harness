@@ -572,6 +572,21 @@ def build_literal_dotgit(root: Path) -> Context:
     return ctx
 
 
+def set_git_state_read_only(ctx: Context, read_only: bool) -> None:
+    """Lock the ordinary fixture's Git state, or make it removable again."""
+    gitdir = ctx.subject / ".git"
+    paths = [gitdir, *gitdir.rglob("*")]
+    ordered = sorted(paths, key=lambda item: len(item.parts), reverse=read_only)
+    for path in ordered:
+        if path.is_symlink():
+            continue
+        if read_only:
+            path.chmod(0o555 if path.is_dir() else 0o444)
+        else:
+            current = path.stat().st_mode
+            path.chmod(current | 0o700 if path.is_dir() else current | 0o600)
+
+
 def add_pack_and_bundle(ctx: Context) -> None:
     """Give every populated fixture the same two object-read surfaces."""
     if not (ctx.subject / "HEAD").exists() and not (ctx.subject / "refs").exists():
@@ -648,9 +663,12 @@ def make_fixture(name: str, root: Path) -> Context:
         "partial-clone": lambda: build_partial_clone(root),
         "many-untracked": lambda: build_many_untracked(root),
         "literal-dotgit-directory": lambda: build_literal_dotgit(root),
+        "read-only-git-state": lambda: ordinary(root / "repo", worktree_changes=False),
     }
     ctx = builders[name]()
     add_pack_and_bundle(ctx)
+    if name == "read-only-git-state":
+        set_git_state_read_only(ctx, True)
     if ctx.remote is None:
         ctx.remote = ctx.subject
     return ctx
@@ -1060,8 +1078,9 @@ def write_report(rows: list[dict], fixture_names: list[str]) -> None:
         "a later unresolved conflict, binary/long/Unicode names, an explicit empty tree "
         "directory, both ignoreCase settings, attributes/eol, shallow and partial local "
         "clones, 512 untracked files, a non-repository nested `.git` directory, four "
-        "answer-shaping configuration keys, and one active content filter. Each of the "
-        "last five asserts the corresponding real-Git positive control during setup.",
+        "answer-shaping configuration keys, one active content filter, and read-only "
+        "git-directory state. Each answer-shaping fixture asserts the corresponding "
+        "real-Git positive control during setup.",
         "",
         "## Forms and limits",
         "",
@@ -1088,9 +1107,9 @@ def write_report(rows: list[dict], fixture_names: list[str]) -> None:
         "target forms are covered and refusals are compared.",
         "- Git features requiring submodules are intentionally omitted per the task (the "
         "separate submodule corpus owns them).",
-        "- Platform-specific case-insensitive filesystem spellings and unreadable-permission "
-        "fixtures were not portable to this checkout; the corpus records the portable `.git` "
-        "file, symlink, and HEAD-symlink forms.",
+        "- Platform-specific case-insensitive filesystem spellings and fully unreadable "
+        "permission fixtures were not portable to this checkout; the corpus records read-only "
+        "git-directory state plus the portable `.git` file, symlink, and HEAD-symlink forms.",
         "",
     ])
     # NOT into the checkout: this script ships, and a run that leaves a 100 KB
@@ -1118,7 +1137,14 @@ def main() -> int:
         "config-core-attributesfile", "config-core-abbrev", "config-content-filter",
         "shallow-clone",
         "partial-clone", "many-untracked", "literal-dotgit-directory",
+        "read-only-git-state",
     ]
+    requested = tuple(filter(None, os.environ.get("RP250_FIXTURES", "").split(",")))
+    if requested:
+        unknown = sorted(set(requested) - set(fixture_names))
+        if unknown:
+            raise SystemExit(f"unknown fixture(s): {', '.join(unknown)}")
+        fixture_names = [name for name in fixture_names if name in requested]
     rows: list[dict] = []
     stop_after = int(os.environ.get("RP250_STOP_AFTER", "0"))
     with tempfile.TemporaryDirectory(prefix="rp250-floor-", dir="/private/tmp") as temp:
@@ -1139,6 +1165,8 @@ def main() -> int:
                 )
                 for label, arguments in candidate_forms
             }
+            if fixture == "read-only-git-state":
+                set_git_state_read_only(candidate_context, False)
             shutil.rmtree(comparison_root)
             frozen_context = make_fixture(fixture, comparison_root)
             frozen_forms = forms(frozen_context)
@@ -1149,6 +1177,8 @@ def main() -> int:
                 )
                 for label, arguments in frozen_forms
             }
+            if fixture == "read-only-git-state":
+                set_git_state_read_only(frozen_context, False)
             if [label for label, _ in candidate_forms] != [label for label, _ in frozen_forms]:
                 raise RuntimeError(f"fixture form catalogue changed between builds: {fixture}")
             for label, arguments in candidate_forms:

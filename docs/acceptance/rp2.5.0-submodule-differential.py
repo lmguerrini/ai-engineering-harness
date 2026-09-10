@@ -75,6 +75,7 @@ FIXTURES = (
     "detached-submodule-head",
     "nested-submodules",
     "uninitialised-submodule",
+    "uninitialised-ignore-policy",
     "deleted-submodule-worktree",
     "moved-submodule-worktree",
     "symlinked-submodule-worktree",
@@ -161,6 +162,11 @@ def fixture(name: str) -> Iterator[Path]:
         elif name == "uninitialised-submodule":
             shutil.rmtree(sub)
             sub.mkdir()
+        elif name == "uninitialised-ignore-policy":
+            shutil.rmtree(sub)
+            sub.mkdir()
+            _git(superproject, "config", "-f", ".gitmodules", "submodule.sub.ignore", "all")
+            _commit(superproject, "declare ignore for uninitialised child")
         elif name == "deleted-submodule-worktree":
             shutil.rmtree(sub)
         elif name == "moved-submodule-worktree":

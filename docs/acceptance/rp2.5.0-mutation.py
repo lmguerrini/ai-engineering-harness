@@ -455,6 +455,31 @@ MUTANTS = [
      "    return False\n",
      "tools/tests/test_gitread.py::"
      "test_a_submodule_ignore_declaration_refuses_before_dirty_state_is_invented"),
+# CROSSVENDOR-11 appends only. Each mutant reinstates one independently
+# reproduced bounded failure found after SIXFIX.
+    ("read-only subject modes are preserved into writable scratch state",
+     "tools/sterile.py",
+     "        _make_copied_state_writable(into)\n",
+     "        pass\n",
+     "tools/tests/test_gitread.py::"
+     "test_read_only_subject_git_state_is_writable_only_in_private_scratch"),
+    ("a gitlink is mistaken for a populated submodule when applying ignore policy",
+     "tools/submodule_no_child.py",
+     "    if not any(\n"
+     "        stat.S_ISDIR(os.lstat(repository / gitlink.path.decode(\n"
+     "            \"utf-8\", \"surrogateescape\",\n"
+     "        )).st_mode)\n"
+     "        and os.path.lexists(repository / gitlink.path.decode(\n"
+     "            \"utf-8\", \"surrogateescape\",\n"
+     "        ) / \".git\")\n"
+     "        for gitlink in index.gitlinks\n"
+     "        if os.path.lexists(repository / gitlink.path.decode(\n"
+     "            \"utf-8\", \"surrogateescape\",\n"
+     "        ))\n"
+     "    ):\n",
+     "    if not index.gitlinks:\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_submodule_ignore_declaration_does_not_refuse_an_uninitialised_gitlink"),
 ]
 
 

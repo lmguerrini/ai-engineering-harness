@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -941,6 +942,7 @@ def _copy_git_state(source: Path, into: Path) -> None:
             symlinks=False,
             ignore=_ignore_git_directory_root_entries(source),
         )
+        _make_copied_state_writable(into)
         _materialise_symbolic_refs(source, into)
     except (OSError, shutil.Error) as exc:
         raise GitRefusal(
@@ -948,6 +950,22 @@ def _copy_git_state(source: Path, into: Path) -> None:
             "or unreadable symbolic link is refused rather than skipped",
             source=str(source), because=f"{type(exc).__name__}: {exc}",
         ) from exc
+
+
+def _make_copied_state_writable(root: Path) -> None:
+    """Give the harness owner write access to its copied scratch state.
+
+    copytree preserves source modes. The destination is a private
+    construction which the harness must finish writing. A read-only subject
+    stays read-only while its plain-file scratch copy becomes owner-writable.
+    Existing execute bits are preserved and no file becomes executable.
+    """
+    for directory, _directories, files in os.walk(root, followlinks=False):
+        here = Path(directory)
+        here.chmod(here.stat().st_mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        for name in files:
+            carried = here / name
+            carried.chmod(carried.stat().st_mode | stat.S_IRUSR | stat.S_IWUSR)
 
 
 def _materialise_symbolic_refs(source: Path, into: Path) -> None:

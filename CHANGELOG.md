@@ -141,6 +141,13 @@ anything missed makes a read fail loudly instead of running a program.
   refused because the no-child composition cannot reproduce that dirty-state
   suppression without widening its measured grammar. The same declaration in
   main or active worktree configuration is refused by the answer-shaping boundary.
+- An uninitialised gitlink remains readable when `.gitmodules` declares ignore:
+  without a child `.git`, the policy shapes no child answer. Real Git and frozen
+  2.4.0 report the cross-product clean; the previous blanket refusal regressed it.
+- A filesystem-read-only subject Git directory is copied into owner-writable
+  private scratch before the harness writes its configuration or refreshes its
+  copied index. The subject's modes are left unchanged; only the harness-owned
+  copy changes permissions, and existing file execute bits are preserved.
 - **`verify-pack` is refused, and remains one explicit read reduction.**
   Frozen 2.4.0 answers it; this release does not, because `git verify-pack`
   spawns `git index-pack --verify-stat` and a local governed read creates no

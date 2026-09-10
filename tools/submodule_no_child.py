@@ -188,10 +188,23 @@ def _refuse_declared_submodule_ignore(repository: Path, index: IndexState) -> No
 
     Names and paths in ``.gitmodules`` use Git's full configuration grammar.
     Decoding them here made the previously qualified quoted-path fixture refuse.
-    The bounded policy needs only the declaration's presence: if the index has a
-    gitlink, a line whose key token is ``ignore`` is enough to fail closed.
+    The bounded policy needs only the declaration's presence, and only when a
+    gitlink is populated: an uninitialised gitlink has no child answer for the
+    declaration to shape. A line whose key token is ``ignore`` is then enough
+    to fail closed.
     """
-    if not index.gitlinks:
+    if not any(
+        stat.S_ISDIR(os.lstat(repository / gitlink.path.decode(
+            "utf-8", "surrogateescape",
+        )).st_mode)
+        and os.path.lexists(repository / gitlink.path.decode(
+            "utf-8", "surrogateescape",
+        ) / ".git")
+        for gitlink in index.gitlinks
+        if os.path.lexists(repository / gitlink.path.decode(
+            "utf-8", "surrogateescape",
+        ))
+    ):
         return
     configuration = repository / ".gitmodules"
     try:

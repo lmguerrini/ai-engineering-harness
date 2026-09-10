@@ -1799,7 +1799,7 @@ def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpu
     This deliberately does not run the 45-minute differential.  It reads the
     corpus's fixture list and literal form catalogue, then checks the gate's
     stated population and residual-class arithmetic.  Reverting this guard
-    makes ``48 × 200 = 9,600`` and the residual total editable prose again: a change to
+    makes ``49 × 200 = 9,800`` and the residual total editable prose again: a change to
     the corpus or to one class total could ship without a cheap, derived check.
     """
     import ast
@@ -1831,7 +1831,7 @@ def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpu
     form_count = len(returned_forms.elts)
     fixture_count = len(fixtures)
     comparisons = fixture_count * form_count
-    assert (fixture_count, form_count, comparisons) == (48, 200, 9600), (
+    assert (fixture_count, form_count, comparisons) == (49, 200, 9800), (
         f"the corpus now derives {fixture_count} fixtures × {form_count} forms = "
         f"{comparisons} comparisons"
     )
@@ -1854,7 +1854,7 @@ def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpu
     assert accounting, "the gate record has no parseable residual-accounting table"
     stated_total = int(accounting.group(1))
     class_totals = [int(value) for value in re.findall(r"^\| (\d+) \|", accounting.group("rows"), re.MULTILINE)]
-    assert sum(class_totals) == stated_total == 1348, (
+    assert sum(class_totals) == stated_total == 1356, (
         f"residual classes sum to {sum(class_totals)}, while the record states {stated_total}"
     )
 
@@ -1912,11 +1912,12 @@ def test_the_submodule_record_population_is_derived_from_the_corpus():
     )
     row_count = len(ast.literal_eval(reads)) * len(ast.literal_eval(fixtures))
     control_count = len(ast.literal_eval(controls))
-    assert (row_count, control_count) == (221, 12)
+    assert (row_count, control_count) == (234, 12)
     proof = (ROOT / "docs/acceptance/RP2.5.0-submodule-proof.md").read_text(encoding="utf-8")
     assert f"**{row_count}/{row_count} corpus rows**" in proof
     assert f"All {control_count} positive controls" in proof
     assert "| submodule ignore policy |" in proof
+    assert "| uninitialised submodule plus ignore |" in proof
 
 
 def test_the_release_packet_and_the_manifest_agree_on_the_prose_breach():

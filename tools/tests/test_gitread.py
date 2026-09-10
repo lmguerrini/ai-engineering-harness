@@ -9,6 +9,7 @@ import inspect
 import itertools
 import os
 import random
+import stat
 import subprocess
 import time
 from pathlib import Path
@@ -2524,6 +2525,61 @@ def test_a_submodule_ignore_declaration_refuses_before_dirty_state_is_invented(
     )
     assert expected in raised.value.render()
     assert "sub" in raised.value.render()
+
+
+def test_a_submodule_ignore_declaration_does_not_refuse_an_uninitialised_gitlink(
+    tmp_path,
+):
+    """An ignore declaration has no child answer to shape until the child exists.
+
+    Real Git and frozen 2.4.0 both report this cross-product clean. Replacing
+    the population test with a bare gitlink test makes this oracle fail.
+    """
+    sup, _marker = _superproject(tmp_path, "uninitialised-ignored", populate=False)
+    _git(sup, "config", "-f", ".gitmodules", "submodule.sub.ignore", "all")
+    _git(sup, "add", ".gitmodules")
+    _git(sup, "commit", "-qm", "declare ignore for uninitialised child")
+    assert not os.path.lexists(sup / "sub" / ".git")
+
+    expected, governed = _exactly_as_real_git(sup, "status", "--porcelain")
+    assert expected == "", "real Git did not report the uninitialised fixture clean"
+    assert governed == expected
+
+
+def test_read_only_subject_git_state_is_writable_only_in_private_scratch(tmp_path):
+    """Source permissions cannot prevent construction or be changed by a read.
+
+    Without scratch normalisation, copied git state remains read-only and the
+    harness-owned configuration cannot be written. The mode snapshot also
+    proves that the repair never writes through to the subject.
+    """
+    repo = _committed(tmp_path, "read-only-git-state")
+    gitdir = repo / ".git"
+    paths = [gitdir, *gitdir.rglob("*")]
+    original = {path: stat.S_IMODE(path.lstat().st_mode) for path in paths}
+    try:
+        for path in sorted(paths, key=lambda item: len(item.parts), reverse=True):
+            if not path.is_symlink():
+                path.chmod(0o555 if path.is_dir() else 0o444)
+        locked = {path: stat.S_IMODE(path.lstat().st_mode) for path in paths}
+        assert locked[gitdir] == 0o555 and locked[gitdir / "index"] == 0o444
+
+        expected, governed = _exactly_as_real_git(repo, "status", "--porcelain")
+        assert expected == "", "real Git did not read the locked fixture"
+        assert governed == expected
+        assert {path: stat.S_IMODE(path.lstat().st_mode) for path in paths} == locked
+
+        read = _sterile.build(repo)
+        try:
+            scratch = Path(read.gitdir)
+            assert stat.S_IMODE(scratch.stat().st_mode) & stat.S_IWUSR
+            assert stat.S_IMODE((scratch / "index").stat().st_mode) & stat.S_IWUSR
+        finally:
+            read.discard()
+    finally:
+        for path in sorted(paths, key=lambda item: len(item.parts)):
+            if path.exists() and not path.is_symlink():
+                path.chmod(original[path])
 
 
 @pytest.mark.parametrize("contents", (
