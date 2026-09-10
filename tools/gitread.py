@@ -692,7 +692,8 @@ def _run(
             )
         arguments = (arguments[0], "--upload-pack=git-upload-pack", *arguments[1:])
     command = ("git", *arguments)
-    if local_backend and not _COMPOSING_SUBMODULE_READ.get():
+    if (local_backend and caller_arguments[0] != "config"
+            and not _COMPOSING_SUBMODULE_READ.get()):
         # The composition is orchestration *above* the single launch boundary:
         # each primitive below re-enters `_run` with the ContextVar set and is
         # therefore a separately barriered, top-level local read.  A form the
@@ -780,6 +781,7 @@ def _run(
         read = sterile.build(
             repository, overlay=build_overlay,
             extra_config=transport_config or None, timeout=timeout,
+            refuse_answer_shaping=(local_backend and caller_arguments[0] != "config"),
         )
     except BaseException:
         if temporary is not None:

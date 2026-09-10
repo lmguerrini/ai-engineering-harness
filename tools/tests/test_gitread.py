@@ -724,11 +724,11 @@ def test_a_smudge_filter_the_attributes_select_cannot_run(tmp_path):
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "base")
 
-    # The refusal this used to assert is gone; the MEASUREMENT it carried is the
-    # half that mattered and is stronger without it. `cat-file --filters` is a
-    # third route by which a subject names a program, and it now reads.
+    # A filter which shapes this answer is now a named refusal. It remains
+    # important to prove the program did not run before that refusal.
     answer = gitread.probe(repo, "cat-file", "--filters", "HEAD:f.txt", negative_statuses=())
-    assert answer.answered, answer.cause
+    assert not answer.answered
+    assert "content filter" in answer.cause
     assert not (repo / "FILTER_RAN").exists(), "the repository's smudge filter ran"
 
 
@@ -1490,12 +1490,17 @@ def _marker_script(tmp_path):
     return script, marker
 
 
-def _hostile(repo, script, *, attributes="* diff=evil filter=evil\n"):
+def _hostile(repo, script, *, attributes="* diff=evil filter=evil\n", filters=True):
     """Every ordinary route by which a repository names a program for Git to run."""
-    for key in ("filter.evil.clean", "filter.evil.smudge", "diff.evil.textconv",
-                "diff.external", "core.fsmonitor", "core.alternateRefsCommand",
-                "core.pager", "core.editor", "credential.helper", "gpg.program",
-                "sequence.editor", "uploadpack.packObjectsHook", "core.gitProxy"):
+    keys = [
+        "diff.evil.textconv", "diff.external", "core.fsmonitor",
+        "core.alternateRefsCommand", "core.pager", "core.editor",
+        "credential.helper", "gpg.program", "sequence.editor",
+        "uploadpack.packObjectsHook", "core.gitProxy",
+    ]
+    if filters:
+        keys[:0] = ["filter.evil.clean", "filter.evil.smudge"]
+    for key in keys:
         _git(repo, "config", key, str(script))
     if attributes is not None:
         (repo / ".gitattributes").write_text(attributes)
@@ -1585,7 +1590,7 @@ def _superproject_with_nested(tmp_path, script, spelling):
     inner = tmp_path / "inner"
     inner.mkdir()
     _git(inner, "init", "-q", "-b", "main")
-    (inner / ".gitattributes").write_text("* diff=evil filter=evil\n")
+    (inner / ".gitattributes").write_text("* diff=evil\n")
     _commit_all(inner, "i.txt")
     sup = tmp_path / "sup"
     sup.mkdir()
@@ -1594,7 +1599,7 @@ def _superproject_with_nested(tmp_path, script, spelling):
     _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "mod")
     _git(sup, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "sub")
     module = sup / ".git" / "modules" / "mod"
-    for key in ("filter.evil.clean", "diff.evil.textconv", "diff.external"):
+    for key in ("diff.evil.textconv", "diff.external"):
         _git(module, "config", key, str(script))
     entry = sup / "mod" / ".git"
     if spelling != "gitlink file":
@@ -2341,20 +2346,20 @@ def test_config_as_data_either_matches_git_or_refuses_differential_fuzz(tmp_path
 
 
 def test_config_records_as_data_exhaustively_agrees_or_refuses_value_bodies(tmp_path):
-    """Exhaust every VALUE body through length 3 over 10 boundary characters.
+    """Exhaust every VALUE body through length 4 over 10 boundary characters.
 
     The alphabet is SPACE, TAB, CR, LF, BACKSLASH, DOUBLE QUOTE, HASH,
-    SEMICOLON, NUL, and ``a``.  Lengths zero through three contain exactly
-    1,111 bodies (``1 + 10 + 100 + 1,000``).  In particular this
+    SEMICOLON, NUL, and ``a``. Lengths zero through four contain exactly
+    11,111 bodies. In particular this
     covers bare CR and whitespace-before-continuation without relying on a
     random generator to happen to emit either shape.  The fixed-seed corpus
     above remains because it explores headers, BOMs, CRLF, and declarations
     that this deliberately one-value-body enumeration does not.
     """
     alphabet = (b" ", b"\t", b"\r", b"\n", b"\\", b'"', b"#", b";", b"\0", b"a")
-    maximum_length = 3
+    maximum_length = 4
     expected_cases = sum(len(alphabet) ** length for length in range(maximum_length + 1))
-    assert expected_cases == 1_111
+    assert expected_cases == 11_111
     config = tmp_path / "exhaustive-value-body.gitconfig"
     number = 0
     for length in range(maximum_length + 1):
@@ -2381,6 +2386,144 @@ def test_config_records_as_data_exhaustively_agrees_or_refuses_value_bodies(tmp_
             )
             number += 1
     assert number == expected_cases
+
+
+@pytest.mark.parametrize("contents, expected", (
+    (b"[core]\n\tk = a\r\\\n; c\n", b"core.k\na\r\0"),
+    (b"[core]\n\tk = a\r\\\n \t\n", b"core.k\na\r\0"),
+    (b"[core]\n\tk = a\\\n\r\r\n", b"core.k\na\0"),
+    (b"[core]\n\tk = a\r\\\n\r\r\n", b"core.k\na\r\0"),
+    (b"[core]\n\tk = a\\\n\tk = \"\"\n", b"core.k\na\tk = \0"),
+))
+def test_a_continuation_cannot_erase_preceding_value_data(tmp_path, contents, expected):
+    """Physical continuation syntax cannot turn earlier data into edge whitespace."""
+    config = tmp_path / "continued.gitconfig"
+    config.write_bytes(contents)
+    oracle = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=False,
+    )
+    assert oracle.returncode == 0
+    assert oracle.stdout == expected
+    assert _config_records_as_git_list_bytes(config) == oracle.stdout
+
+
+def test_an_empty_quoted_run_preserves_the_remote_address_whitespace(tmp_path):
+    """A governed transport must not resolve a different address from real Git."""
+    donor = _committed(tmp_path, "quoted-donor")
+    repo = _committed(tmp_path, "quoted-subject")
+    config = repo / ".git" / "config"
+    with config.open("a") as stream:
+        stream.write(f'[remote "wrong"]\n\turl = {donor} ""\n')
+
+    listed = subprocess.run(
+        ["git", "config", "--file", str(config), "--list", "--null"],
+        capture_output=True, check=True,
+    )
+    assert b"remote.wrong.url\n" + str(donor).encode() + b" \0" in listed.stdout
+    with pytest.raises(GitRefusal):
+        gitread._run(repo, "ls-remote", "wrong", text=False)
+
+
+def test_a_used_clean_filter_refuses_before_disclosing_worktree_content(tmp_path):
+    """Dropping an active clean filter made a clean file dirty and exposed it."""
+    repo = _committed(tmp_path, "clean-filter")
+    _git(repo, "config", "filter.redact.clean", "sed s/SECRET/REDACTED/")
+    (repo / ".gitattributes").write_text("*.txt filter=redact\n")
+    (repo / "filtered.txt").write_text("value=SECRET\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "filtered")
+    assert _git(repo, "status", "--porcelain") == ""
+    assert _git(repo, "show", "HEAD:filtered.txt") == "value=REDACTED\n"
+    with pytest.raises(GitRefusal) as raised:
+        gitread._run(repo, "diff", text=False)
+    assert "content filter" in raised.value.render()
+    assert "filter.redact.clean" in raised.value.render()
+
+
+@pytest.mark.parametrize("key,arguments", (
+    ("core.excludesFile", ("status", "--porcelain")),
+    ("status.showUntrackedFiles", ("status", "--porcelain")),
+    ("core.attributesFile", ("diff",)),
+    ("core.abbrev", ("log", "--oneline", "-1")),
+))
+def test_answer_shaping_configuration_refuses_instead_of_being_dropped(
+    tmp_path, key, arguments,
+):
+    """Each known answer-shaping declaration reaches one named fail-closed rule."""
+    repo = _committed(tmp_path, "answer-shaping")
+    if key == "core.excludesFile":
+        declaration = repo / "declared-ignore"
+        declaration.write_text("*.tmp\n")
+        _git(repo, "config", key, str(declaration))
+        (repo / "hidden.tmp").write_text("hidden\n")
+        (repo / "visible").write_text("visible\n")
+        assert _git(repo, *arguments) == "?? declared-ignore\n?? visible\n"
+    elif key == "status.showUntrackedFiles":
+        _git(repo, "config", key, "no")
+        (repo / "hidden").write_text("hidden\n")
+        assert _git(repo, *arguments) == ""
+    elif key == "core.attributesFile":
+        declaration = repo / "declared-attributes"
+        declaration.write_text("*.txt -diff\n")
+        _git(repo, "config", key, str(declaration))
+        (repo / "f.txt").write_text("changed\n")
+        assert "Binary files" in _git(repo, *arguments)
+    else:
+        _git(repo, "config", key, "12")
+        assert len(_git(repo, *arguments).split()[0]) == 12
+    with pytest.raises(GitRefusal) as raised:
+        gitread._run(repo, *arguments, text=False)
+    assert "answer-shaping configuration" in raised.value.render()
+    assert key.lower() in raised.value.render()
+
+
+@pytest.mark.parametrize("key,value", (
+    ("core.abbrev", "12"),
+    ("filter.redact.clean", "sed s/SECRET/REDACTED/"),
+))
+def test_active_worktree_answer_shaping_configuration_is_also_refused(
+    tmp_path, key, value,
+):
+    """An active second configuration root cannot bypass either refusal class."""
+    repo = _committed(tmp_path, "worktree-answer-shaping")
+    _git(repo, "config", "extensions.worktreeConfig", "true")
+    _git(repo, "config", "--worktree", key, value)
+    if key == "core.abbrev":
+        assert len(_git(repo, "rev-parse", "--short", "HEAD").strip()) == 12
+    else:
+        (repo / ".gitattributes").write_text("filtered.txt filter=redact\n")
+        (repo / "filtered.txt").write_text("value=SECRET\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "filtered")
+        assert _git(repo, "status", "--porcelain") == ""
+    with pytest.raises(GitRefusal) as raised:
+        gitread._run(repo, "status", "--porcelain", text=False)
+    assert key.split(".", 1)[0] in raised.value.render()
+
+
+@pytest.mark.parametrize("source", ("gitmodules", "local-config"))
+def test_a_submodule_ignore_declaration_refuses_before_dirty_state_is_invented(
+    tmp_path, source,
+):
+    """Neither configuration source can silently suppress submodule dirt."""
+    sup, _marker = _superproject(tmp_path, "ignored-submodule")
+    if source == "gitmodules":
+        _git(sup, "config", "-f", ".gitmodules", "submodule.sub.ignore", "all")
+        _git(sup, "add", ".gitmodules")
+        _git(sup, "commit", "-qm", "ignore submodule dirt")
+    else:
+        _git(sup, "config", "submodule.sub.ignore", "all")
+    (sup / "sub" / "s.txt").write_text("dirty\n")
+    assert _git(sup, "status", "--porcelain") == ""
+    with pytest.raises(GitRefusal) as raised:
+        gitread._run(sup, "status", "--porcelain", text=False)
+    expected = (
+        "submodule declares an ignore policy"
+        if source == "gitmodules" else "answer-shaping configuration"
+    )
+    assert expected in raised.value.render()
+    assert "sub" in raised.value.render()
 
 
 @pytest.mark.parametrize("contents", (
@@ -2798,8 +2941,8 @@ def test_a_projection_reports_without_refusing(tmp_path):
     """`program_valued_config` used to decide whether a read happened. It reports
     now, and reporting must not make a repository unreadable — which is exactly
     the over-refusal that broke `workspace_report`."""
-    repo = _repo_setting(tmp_path, "filter.f.clean")
-    assert gitread.program_valued_config(repo) == ["filter.f.clean"]
+    repo = _repo_setting(tmp_path, "alias.x")
+    assert gitread.program_valued_config(repo) == ["alias.x"]
     assert gitread.probe(repo, "status", "--porcelain", negative_statuses=()).answered
 
 
@@ -2809,14 +2952,16 @@ def test_a_projection_reports_without_refusing(tmp_path):
     "filter.f.clean", "filter.f.smudge", "filter.f.process",
     "core.pager", "core.editor", "diff.external", "credential.helper",
 ])
-def test_a_program_valued_key_is_reported_and_the_repository_still_reads(tmp_path, key):
-    """The same key set the removed refusal test carried, asserting the stronger
-    property. Every one of these used to divide into "refused" and "closed"; the
-    division is gone because neither outcome can execute anything now."""
+def test_a_program_valued_key_is_reported_and_gets_its_declared_disposition(tmp_path, key):
+    """Reporting stays passive while active content filters refuse by policy."""
     repo = _repo_setting(tmp_path, key)
     assert gitread.program_valued_config(repo) == [key.lower()]
     answer = gitread.probe(repo, "status", "--porcelain", negative_statuses=())
-    assert answer.answered, answer.cause
+    if key.startswith("filter."):
+        assert not answer.answered
+        assert "content filter" in answer.cause
+    else:
+        assert answer.answered, answer.cause
 
 
 def test_no_refusal_depends_on_a_projection(tmp_path, monkeypatch):
@@ -3773,11 +3918,12 @@ def test_the_standing_transport_refusal_reaches_the_read(tmp_path, monkeypatch):
     real_launch = gitread.instrument.launch
 
     def watch_build(repository, *, needs_working_tree=True, overlay=None, extra_config=None,
-                    timeout=30.0):
+                    timeout=30.0, refuse_answer_shaping=False):
         captured.update(extra_config or {})
         return real_build(
             repository, needs_working_tree=needs_working_tree, overlay=overlay,
             extra_config=extra_config, timeout=timeout,
+            refuse_answer_shaping=refuse_answer_shaping,
         )
 
     def stop_before_transport(command, **kwargs):
@@ -3945,7 +4091,7 @@ def test_concurrent_governed_reads_do_not_share_state(tmp_path):
         repo = tmp_path / f"r{index}"
         repo.mkdir()
         _git(repo, "init", "-q", "-b", "main")
-        _hostile(repo, script)
+        _hostile(repo, script, filters=False)
         _commit_all(repo)
         repos.append(repo)
     results = {}

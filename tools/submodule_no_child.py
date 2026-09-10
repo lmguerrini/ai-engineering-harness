@@ -20,6 +20,8 @@ from pathlib import Path
 import stat
 from typing import Any, Callable
 
+from errors import GitRefusal
+
 
 Run = Callable[..., str | bytes]
 Overlay = dict[str, str] | None
@@ -179,6 +181,43 @@ def has_gitlinks(repository: str | Path, *, runner: Run, env_overlay: Overlay = 
     working tree or configuration whether it wants recursive semantics.
     """
     return bool(_gitlinks(runner, Path(repository), env_overlay=env_overlay).gitlinks)
+
+
+def _refuse_declared_submodule_ignore(repository: Path, index: IndexState) -> None:
+    """Refuse a local ``ignore`` declaration without parsing submodule grammar.
+
+    Names and paths in ``.gitmodules`` use Git's full configuration grammar.
+    Decoding them here made the previously qualified quoted-path fixture refuse.
+    The bounded policy needs only the declaration's presence: if the index has a
+    gitlink, a line whose key token is ``ignore`` is enough to fail closed.
+    """
+    if not index.gitlinks:
+        return
+    configuration = repository / ".gitmodules"
+    try:
+        mode = configuration.lstat().st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(mode):
+        raise GitRefusal(
+            "a populated submodule has a non-regular .gitmodules file, so ignore "
+            "policy cannot be ruled out",
+            configuration=str(configuration),
+        )
+    for number, line in enumerate(configuration.read_bytes().splitlines(), 1):
+        stripped = line.lstrip(b" \t")
+        if not stripped or stripped.startswith((b"#", b";", b"[")):
+            continue
+        key = stripped
+        for separator in (b" ", b"\t", b"="):
+            key = key.split(separator, 1)[0]
+        if key.lower() == b"ignore":
+            raise GitRefusal(
+                "a populated submodule declares an ignore policy which the no-child "
+                "composition cannot reproduce",
+                configuration=str(configuration),
+                line=number,
+            )
 
 
 def _v2_flags(value: bytes) -> tuple[bool, bool]:
@@ -592,6 +631,7 @@ def _compose_for_control(
         _read(runner, repo, "status", "--porcelain=v2", "-uno", env_overlay=None)
 
     index = _gitlinks(runner, repo, env_overlay=env_overlay)
+    _refuse_declared_submodule_ignore(repo, index)
     # ``lstat`` is the classification boundary: unlike Path.exists(), it does
     # not follow the gitlink worktree.  Git itself refuses a symlinked
     # submodule for recursive forms and gives a typechange for raw diff-index.

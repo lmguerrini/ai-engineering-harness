@@ -499,6 +499,49 @@ def build_attributes(root: Path) -> Context:
     return ctx
 
 
+def build_answer_shaping(root: Path, key: str) -> Context:
+    """A subject declaration whose omission changes an ordinary read answer."""
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    if key == "core.excludesFile":
+        declaration = ctx.subject / "declared-ignore"
+        write(declaration, "*.tmp\n")
+        run_git("config", key, str(declaration), cwd=ctx.subject)
+        write(ctx.subject / "hidden.tmp", "hidden\n")
+        write(ctx.subject / "visible", "visible\n")
+        status = run_git("status", "--porcelain", cwd=ctx.subject).stdout
+        assert b"hidden.tmp" not in status and b"visible" in status
+    elif key == "status.showUntrackedFiles":
+        run_git("config", key, "no", cwd=ctx.subject)
+        write(ctx.subject / "hidden", "hidden\n")
+        assert run_git("status", "--porcelain", cwd=ctx.subject).stdout == b""
+    elif key == "core.attributesFile":
+        declaration = ctx.subject / "declared-attributes"
+        write(declaration, "*.txt -diff\n")
+        run_git("config", key, str(declaration), cwd=ctx.subject)
+        write(ctx.subject / "dir" / "alpha.txt", "answer shaped by attributes\n")
+        assert b"Binary files" in run_git("diff", cwd=ctx.subject).stdout
+    elif key == "core.abbrev":
+        run_git("config", key, "12", cwd=ctx.subject)
+        abbreviated = run_git("rev-parse", "--short", "HEAD", cwd=ctx.subject).stdout.strip()
+        assert len(abbreviated) == 12
+    else:
+        raise ValueError(key)
+    ctx.head, ctx.parent = "HEAD", "HEAD^"
+    return ctx
+
+
+def build_content_filter(root: Path) -> Context:
+    """An active clean filter which makes the committed worktree genuinely clean."""
+    ctx = ordinary(root / "repo", worktree_changes=False)
+    run_git("config", "filter.redact.clean", "sed s/SECRET/REDACTED/", cwd=ctx.subject)
+    write(ctx.subject / ".gitattributes", "filtered.txt filter=redact\n")
+    write(ctx.subject / "filtered.txt", "value=SECRET\n")
+    commit(ctx.subject, "filtered content")
+    assert run_git("status", "--porcelain", cwd=ctx.subject).stdout == b""
+    ctx.head, ctx.parent = "HEAD", "HEAD^"
+    return ctx
+
+
 def build_shallow_clone(root: Path) -> Context:
     source = ordinary(root / "source", worktree_changes=False)
     repo = root / "repo"
@@ -594,6 +637,13 @@ def make_fixture(name: str, root: Path) -> Context:
         "ignorecase-true": lambda: build_ignore_case(root, True),
         "ignorecase-false": lambda: build_ignore_case(root, False),
         "attributes-eol": lambda: build_attributes(root),
+        "config-core-excludesfile": lambda: build_answer_shaping(root, "core.excludesFile"),
+        "config-status-showuntrackedfiles": lambda: build_answer_shaping(
+            root, "status.showUntrackedFiles",
+        ),
+        "config-core-attributesfile": lambda: build_answer_shaping(root, "core.attributesFile"),
+        "config-core-abbrev": lambda: build_answer_shaping(root, "core.abbrev"),
+        "config-content-filter": lambda: build_content_filter(root),
         "shallow-clone": lambda: build_shallow_clone(root),
         "partial-clone": lambda: build_partial_clone(root),
         "many-untracked": lambda: build_many_untracked(root),
@@ -955,7 +1005,9 @@ def write_report(rows: list[dict], fixture_names: list[str]) -> None:
         f"- Newly added-form rows Git rejects on both sides: "
         f"**{len(both_git_rejected_new_forms)}**.",
         "- Submodules: none.",
-        "- Repository configuration naming a helper program: none.",
+        "- Repository configuration naming a helper program: the controlled active-filter "
+        "fixture only; its real-Git clean-tree positive control fires before either release "
+        "is invoked, and the candidate then refuses before that program can launch.",
         "",
         "## Result",
         "",
@@ -1007,7 +1059,9 @@ def write_report(rows: list[dict], fixture_names: list[str]) -> None:
         "tag-chain and detached-tag states, an empty-tree commit, a two-parent merge plus "
         "a later unresolved conflict, binary/long/Unicode names, an explicit empty tree "
         "directory, both ignoreCase settings, attributes/eol, shallow and partial local "
-        "clones, 512 untracked files, and a non-repository nested `.git` directory.",
+        "clones, 512 untracked files, a non-repository nested `.git` directory, four "
+        "answer-shaping configuration keys, and one active content filter. Each of the "
+        "last five asserts the corresponding real-Git positive control during setup.",
         "",
         "## Forms and limits",
         "",
@@ -1059,7 +1113,10 @@ def main() -> int:
         "core-worktree", "moved-main-worktree", "worktree-config", "nested-three-levels",
         "detached-at-tag", "tag-chain", "empty-tree-commit", "merge-after-merge",
         "binary-and-long-name", "unicode-normalisation", "empty-directory-tree",
-        "ignorecase-true", "ignorecase-false", "attributes-eol", "shallow-clone",
+        "ignorecase-true", "ignorecase-false", "attributes-eol",
+        "config-core-excludesfile", "config-status-showuntrackedfiles",
+        "config-core-attributesfile", "config-core-abbrev", "config-content-filter",
+        "shallow-clone",
         "partial-clone", "many-untracked", "literal-dotgit-directory",
     ]
     rows: list[dict] = []

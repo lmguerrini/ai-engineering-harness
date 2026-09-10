@@ -130,8 +130,7 @@ def repo_with_awkward_paths(tmp_path):
     root = tmp_path / "awkward"
     (root / "annotations").mkdir(parents=True)
     subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
-    for key, value in (("user.email", "a@b.c"), ("user.name", "T"),
-                       ("core.excludesFile", "/dev/null")):
+    for key, value in (("user.email", "a@b.c"), ("user.name", "T")):
         subprocess.run(["git", "config", key, value], cwd=root, check=True)
     for path in QUOTED_PATHS:
         (root / path).write_text("x")
@@ -159,8 +158,7 @@ def test_a_declared_directory_exemption_covers_every_one_of_them(tmp_path):
     root = tmp_path / "untracked"
     (root / "annotations").mkdir(parents=True)
     subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
-    for key, value in (("user.email", "a@b.c"), ("user.name", "T"),
-                       ("core.excludesFile", "/dev/null")):
+    for key, value in (("user.email", "a@b.c"), ("user.name", "T")):
         subprocess.run(["git", "config", key, value], cwd=root, check=True)
     (root / "seed.txt").write_text("x")
     subprocess.run(["git", "add", "seed.txt"], cwd=root, check=True)

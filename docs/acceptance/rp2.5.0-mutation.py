@@ -349,11 +349,17 @@ MUTANTS = [
      "tools/sterile.py",
      '    while characters and not characters[0][1] and characters[0][0] in " \\t\\r":\n'
      '        characters.pop(0)\n'
-     '    while characters and not characters[-1][1] and characters[-1][0] in " \\t\\r":\n'
+     '        leading += 1\n'
+     '    quoted_boundary = max(0, quoted_boundary - leading)\n'
+     '    while (len(characters) > quoted_boundary and not characters[-1][1]\n'
+     '           and characters[-1][0] in " \\t\\r"):\n'
      '        characters.pop()\n',
      '    while characters and not characters[0][1] and characters[0][0] in " \\t":\n'
      '        characters.pop(0)\n'
-     '    while characters and not characters[-1][1] and characters[-1][0] in " \\t":\n'
+     '        leading += 1\n'
+     '    quoted_boundary = max(0, quoted_boundary - leading)\n'
+     '    while (len(characters) > quoted_boundary and not characters[-1][1]\n'
+     '           and characters[-1][0] in " \\t"):\n'
      '        characters.pop()\n',
      "tools/tests/test_gitread.py::"
      "test_a_bare_carriage_return_at_a_value_edge_matches_git_byte_for_byte"),
@@ -395,6 +401,60 @@ MUTANTS = [
      "            line",
      "tools/tests/test_gitread.py::"
      "test_a_relative_alternate_reaches_the_same_history_as_real_git"),
+# SIXFIX appends only. These mutations reinstate the four certified behavioural
+# blockers across the main and active worktree configuration roots. B1 has two
+# independent representation sites and therefore two separately falsifiable
+# mutants.
+    ("an empty quoted run leaves no boundary for terminal whitespace",
+     "tools/sterile.py",
+     "            quoted_boundary = len(characters)\n",
+     "            quoted_boundary = 0\n",
+     "tools/tests/test_gitread.py::"
+     "test_config_records_as_data_exhaustively_agrees_or_refuses_value_bodies"),
+    ("a carriage return before continuation syntax becomes terminal whitespace",
+     "tools/sterile.py",
+     "                    index in protected_unquoted_whitespace\n"
+     "                    and any(one not in \" \\t\\r\" for one, _quoted in characters)\n",
+     "                    False\n",
+     "tools/tests/test_gitread.py::test_a_continuation_cannot_erase_preceding_value_data"),
+    ("content-filter declarations are silently dropped again",
+     "tools/sterile.py",
+     "    if refuse_answer_shaping and filter_programs:\n",
+     "    if False and filter_programs:\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_used_clean_filter_refuses_before_disclosing_worktree_content"),
+    ("answer-shaping declarations are silently dropped again",
+     "tools/sterile.py",
+     "    if refuse_answer_shaping and answer_shaping:\n",
+     "    if False and answer_shaping:\n",
+     "tools/tests/test_gitread.py::"
+     "test_answer_shaping_configuration_refuses_instead_of_being_dropped"),
+    ("submodule ignore policy is omitted from dirty-state composition again",
+     "tools/submodule_no_child.py",
+     "    _refuse_declared_submodule_ignore(repo, index)\n",
+     "    pass\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_submodule_ignore_declaration_refuses_before_dirty_state_is_invented"),
+    ("an active worktree filter escapes the content-filter refusal",
+     "tools/sterile.py",
+     "        name for name in all_declared\n"
+     "        if name.startswith(\"filter.\")\n",
+     "        name for name in common_declared\n"
+     "        if name.startswith(\"filter.\")\n",
+     "tools/tests/test_gitread.py::"
+     "test_active_worktree_answer_shaping_configuration_is_also_refused"),
+    ("an active worktree key escapes the answer-shaping refusal",
+     "tools/sterile.py",
+     "    answer_shaping = sorted(name for name in all_declared if _answer_shaping_key(name))\n",
+     "    answer_shaping = sorted(name for name in common_declared if _answer_shaping_key(name))\n",
+     "tools/tests/test_gitread.py::"
+     "test_active_worktree_answer_shaping_configuration_is_also_refused"),
+    ("local submodule ignore configuration is silently dropped again",
+     "tools/sterile.py",
+     "    return name.startswith(\"submodule.\") and name.endswith(\".ignore\")\n",
+     "    return False\n",
+     "tools/tests/test_gitread.py::"
+     "test_a_submodule_ignore_declaration_refuses_before_dirty_state_is_invented"),
 ]
 
 

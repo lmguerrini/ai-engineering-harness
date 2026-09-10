@@ -2,12 +2,13 @@
 
 ## Result
 
-The repaired composition passes **183 byte-exact answer rows** and reproduces
-**25 frozen refusals** exactly: **208/208 corpus rows**. Every composed answer
+The repaired composition passes **183 byte-exact answer rows**, reproduces
+**25 frozen refusals** exactly, and makes **13 declared refusals** for a
+populated gitlink governed by `submodule.<name>.ignore`: **221/221 corpus rows**. Every composed answer
 recorded zero Git Trace2 `child_start` events. Every governed primitive has a
 fresh, bound Trace2 witness: `version`, `start.argv`, and terminal `exit`
 share one session id. All 12 positive controls are detected. Each primitive is
-run through frozen 2.4.0's `gitread` boundary, so these 208 rows and 12 controls
+run through frozen 2.4.0's `gitread` boundary, so these 221 rows and 12 controls
 establish the production `compose()` differential, not this candidate's `_run()`
 integration.
 
@@ -20,7 +21,7 @@ frozen behavioral floor is selected with `FLOOR_FROZEN_ROOT`.
 FLOOR_FROZEN_ROOT=/path/to/rp240 \
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
   python3 docs/acceptance/rp2.5.0-submodule-differential.py
-# PASS: 208 matrix rows and 12 positive controls
+# PASS: 221 matrix rows and 12 positive controls
 ```
 
 ## Repaired composition rule
@@ -34,22 +35,25 @@ FLOOR_FROZEN_ROOT=/path/to/rp240 \
    under the governed configuration, including C quoting. Newline porcelain
    and raw diff use it; NUL status uses the raw path. Diff prefixes go inside
    the already measured quoted representation; no quote algorithm is guessed.
-3. `lstat`, not a following existence test, classifies each worktree. Missing
+3. If the index contains a gitlink, an `ignore` key token in a regular
+   `.gitmodules` file refuses composition. It does not decode a section name or
+   path, so the full Git configuration grammar is not pulled into this boundary.
+4. `lstat`, not a following existence test, classifies each worktree. Missing
    is deletion; a real directory with no `.git` is uninitialised. A symbolic
    link delegates the requested frozen form: that measured childless call
    retains frozen refusal or typechange rather than inventing an answer.
-4. A directory-backed populated child is separately composed as top-level
+5. A directory-backed populated child is separately composed as top-level
    porcelain-v2 plus `rev-parse HEAD`, recursively by this same rule. These
    supply worktree HEAD `W`, tracked `m`, and untracked `u`; v2 uses the
    measured `S<c><m><u>` field. `diff-index HEAD` emits `H I M` when `H != I`.
-5. Parent reads use `--ignore-submodules=all`. Generated gitlink records merge
+6. Parent reads use `--ignore-submodules=all`. Generated gitlink records merge
    before the next greater stage-zero index position. This one index-order rule
    is used for status, patches, submodule summaries, and raw `diff-index`;
    untracked status has no index position and is not a splice heuristic.
-6. Status removes `-z` only to choose the same grammar. Its renderer receives
+7. Status removes `-z` only to choose the same grammar. Its renderer receives
    the separator and path source as parameters (`\n` plus rendered path, or
    `\0` plus raw path); NUL forms are not separate dispatch cases.
-7. `diff --submodule=diff` remains frozen's pre-invocation refusal, with no
+8. `diff --submodule=diff` remains frozen's pre-invocation refusal, with no
    structural read or output bytes on either side.
 
 No configuration or `.gitmodules` value is read to identify gitlinks.
@@ -68,7 +72,9 @@ No configuration or `.gitmodules` value is read to identify gitlinks.
 
 `P` is an exact frozen byte match, including final newline or NUL separator,
 with a bound trace and composed child count zero. `R` is an exact frozen
-refusal, so no answer bytes exist. There are no `F` cells.
+refusal, so no answer bytes exist. `A` is the declared ignore-policy refusal,
+where the frozen side otherwise answers or makes its earlier pre-invocation
+refusal. There are no failing cells.
 
 | fixture | SP | SV2 | SS | SU | SID | D | DSM | DSD | DC | DI | SPZ | SV2Z | SSZ |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -88,6 +94,7 @@ refusal, so no answer bytes exist. There are no `F` cells.
 | NUL status forms | P | P | P | P | P | P | P | R | P | P | P | P | P |
 | quoted gitlink path | P | P | P | P | P | P | P | R | P | P | P | P | P |
 | ordered parent after gitlink | P | P | P | P | P | P | P | R | P | P | P | P | P |
+| submodule ignore policy | A | A | A | A | A | A | A | A | A | A | A | A | A |
 
 Key: SP = `status --porcelain`; SV2 = `status --porcelain=v2`; SS =
 `status --short`; SU = `status --porcelain -uall`; SID = `status --porcelain

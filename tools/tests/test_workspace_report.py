@@ -110,7 +110,6 @@ def test_an_ordinary_not_ignored_path_still_says_so(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
     subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
-    subprocess.run(["git", "config", "core.excludesFile", "/dev/null"], cwd=root, check=True)
     (root / ".git" / "info" / "exclude").write_text("")
 
     assert "no ignore rule" in workspace_report._ignore_rule(str(root), "ordinary.txt")

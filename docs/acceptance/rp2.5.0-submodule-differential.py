@@ -82,6 +82,7 @@ FIXTURES = (
     "nul-status-forms",
     "quoted-gitlink-path",
     "ordered-parent-after-gitlink",
+    "submodule-ignore-policy",
 )
 
 
@@ -188,6 +189,10 @@ def fixture(name: str) -> Iterator[Path]:
             (superproject / "zzz.txt").write_text("base\n")
             _commit(superproject, "add zzz")
             (superproject / "zzz.txt").write_text("parent dirty\n")
+            (sub / "tracked.txt").write_text("child dirty\n")
+        elif name == "submodule-ignore-policy":
+            _git(superproject, "config", "-f", ".gitmodules", "submodule.sub.ignore", "all")
+            _commit(superproject, "declare submodule ignore")
             (sub / "tracked.txt").write_text("child dirty\n")
         yield superproject
 
@@ -363,7 +368,26 @@ def main() -> int:
                     actual, refusal, children, bound, trace_detail = _candidate_call(
                         frozen, repo, arguments, candidate_trace
                     )
-                    if expected.refusal:
+                    if fixture_name == "submodule-ignore-policy":
+                        ok = (
+                            (expected.value == b"" or expected.refusal is not None)
+                            and refusal is not None
+                            and (
+                                "submodule declares an ignore policy" in refusal
+                                or (
+                                    expected.refusal is not None
+                                    and expected.refusal.startswith("IntegrityError:")
+                                    and refusal.startswith("UnsupportedFrozenForm:")
+                                )
+                            )
+                            and expected.trace_bound and bound
+                        )
+                        detail = (
+                            "declared refusal for submodule ignore policy; "
+                            f"frozen_refusal={expected.refusal!r}; "
+                            f"frozen_trace={expected.trace_bound}; composed_trace={bound}"
+                        )
+                    elif expected.refusal:
                         if expected.refusal.startswith("IntegrityError:"):
                             refusal_matches = refusal is not None and refusal.startswith("UnsupportedFrozenForm:")
                         else:

@@ -10,7 +10,7 @@ answers, because a release can be signature-compatible and answer-incompatible
 and this one is.
 
 **The grade rests on a stated ground, not on the absence of a signature change.**
-This release changes what callers are TOLD in the five ways listed under *What a
+This release changes what callers are TOLD in the ways listed under *What a
 consumer will notice*. D11 grades an incompatible contract change MAJOR, so the
 reason 2.5.0 stands is that its `state` is `IN_PROGRESS`, **no project pins it**,
 and 2.4.0 remains the release projects pin — a contract nothing has adopted
@@ -83,11 +83,11 @@ anything missed makes a read fail loudly instead of running a program.
 
 ### What a consumer will notice
 
-- A repository that merely *declares* a filter, textconv driver, hook or
+- A repository that merely *declares* a textconv driver, hook or
   transport is now **read**, not refused. Refusal was a proxy for "this might
-  execute something", and prevention makes the proxy unnecessary. Refusals get
-  strictly rarer. A repository carrying an **executable hook on disk** is read
-  too: the subject's own programs are not carried into the constructed git
+  execute something", and prevention makes the proxy unnecessary. Refusals are
+  strictly rarer for these declarations. A repository carrying an **executable
+  hook on disk** is read too: the subject's own programs are not carried into the constructed git
   directory, and the constructed configuration points `core.hooksPath` at an
   empty directory this build owns. A certification found that an ordinary read
   of such a repository ran the subject's `post-index-change` hook and then
@@ -103,6 +103,16 @@ anything missed makes a read fail loudly instead of running a program.
   index refresh at the subject's own index.
 - A diff of content with a text conversion or external diff driver is now the
   **raw** diff, because no driver runs.
+- A repository declaring `filter.*.clean`, `.smudge`, or `.process` is refused
+  before Git launches. Omitting an active filter made a clean file appear dirty
+  and exposed its pre-clean content through `diff`; executing it is outside the
+  sterile boundary, so the safe bounded answer is a named refusal.
+- `core.excludesFile`, `status.showUntrackedFiles`, `core.attributesFile`, and
+  `core.abbrev` are named refusals. Each changes ordinary answer bytes, and
+  silently dropping each produced a wrong exit-zero answer.
+- Accepted configuration values preserve whitespace before an empty quoted run
+  and data before continuation syntax. Losing the former let a governed remote
+  name resolve to a different address from real Git and answer at exit zero.
 - A repository whose ref store this build cannot import is refused **by name**
   rather than answered wrongly.
 - `probe` on a directory that is **not a repository** now reports *cannot ask*
@@ -127,7 +137,11 @@ anything missed makes a read fail loudly instead of running a program.
   `remote.<name>.uploadpack` no longer names something that runs.
 - On a populated submodule, local forms outside the measured composition report
   the committed gitlink state and suppress the submodule's dirty detail.
-- **`verify-pack` is refused, and it is the one read this release takes away.**
+- A populated submodule with `submodule.<name>.ignore` in `.gitmodules` is
+  refused because the no-child composition cannot reproduce that dirty-state
+  suppression without widening its measured grammar. The same declaration in
+  main or active worktree configuration is refused by the answer-shaping boundary.
+- **`verify-pack` is refused, and remains one explicit read reduction.**
   Frozen 2.4.0 answers it; this release does not, because `git verify-pack`
   spawns `git index-pack --verify-stat` and a local governed read creates no
   child process. The refusal is explicit and names its cause. Nothing in this
@@ -136,13 +150,14 @@ anything missed makes a read fail loudly instead of running a program.
 
   **This release is therefore not free of behavioural reductions, and does not
   claim to be.** It is a strict security and governance improvement in spite of
-  that one, because what it removes is an unused read at the edge of the
+  those reductions, because the boundary refuses instead of returning bytes it
+  cannot reproduce safely, while `verify-pack` remains an unused read at the edge of the
   declared surface and what it adds is structural: every configuration source
   Git consults is a file this harness wrote; a local read creates no child
   process at all, so no repository can name a program that runs; the boundary no
   longer decides anything from a list of verbs, options, helpers or spellings,
   which is the mechanism that failed in six previous generations; and the answers
-  are measured against the previous release over 8,600 comparisons rather than
+  are measured against the previous release by the shipped differential rather than
   asserted. A capability that no caller uses is a smaller thing to lose than
   those are to gain, and the trade is stated here rather than left for a reader
   to discover.
@@ -222,9 +237,10 @@ and now goes through it, so `gitread` is the toolbelt's only path to Git.
   a prototype: it answers a submodule-sensitive read from structural Git
   observations made above the boundary, so the answer is assembled without any
   read recursing into a child's working tree. Gitlink identity comes from the
-  index and the recorded tree, never from `.gitmodules` or configuration.
+  index and the recorded tree. `.gitmodules` is read only to refuse an ignore
+  policy the composition cannot reproduce; it never supplies gitlink identity.
 - `docs/acceptance/rp2.5.0-submodule-differential.py` — the corpus that scores it:
-  208 byte-exact rows against frozen 2.4.0 with 12 deliberate positive controls,
+  its matrix population is derived at runtime against frozen 2.4.0 with deliberate positive controls,
   including a control that detects a trace which was written by an earlier call
   rather than by the read being counted.
 - `docs/acceptance/RP2.5.0-submodule-proof.md` — what that corpus establishes and
@@ -232,8 +248,8 @@ and now goes through it, so `gitread` is the toolbelt's only path to Git.
   of a passing run from the fact that it passed.
 - `docs/acceptance/rp2.5.0-floor-differential.py` — the frozen-floor differential:
   the same public entry point called on this release and on 2.4.0 in separate
-  interpreters, compared as raw bytes, refusals included, over 43 fixtures and 200
-  read forms (8,600 comparisons). It needs a 2.4.0 checkout named by `FLOOR_FROZEN_ROOT`, because the
+  interpreters, compared as raw bytes, refusals included, over a fixture and form
+  population derived by the script. It needs a 2.4.0 checkout named by `FLOOR_FROZEN_ROOT`, because the
   floor is a release and not a file, and it writes its report outside the checkout
   so that running it does not unpin the tree. It found four capability regressions
   that every byte-comparing oracle baselined on this release had passed over.
@@ -287,9 +303,10 @@ previous release answers it by letting Git start a child. It is answered instead
 by composing independently governed childless reads — submodule identities taken
 from stage-zero gitlinks rather than from `.gitmodules`, each submodule observed
 by its own top-level governed read, and the result assembled with Git's own
-porcelain field rather than a reimplementation. Sixteen fixtures across thirteen
-read forms yield 208 byte-exact rows against the previous release, with twelve
-deliberate positive controls to prove the corpus can fail.
+porcelain field rather than a reimplementation. Seventeen fixtures across
+thirteen read forms yield 183 byte-exact answers, 25 matching frozen refusals,
+and 13 declared refusals for submodule ignore policy, with twelve deliberate
+positive controls to prove the corpus can fail.
 
 ### The question was answered, and the seventh design follows from the answer
 

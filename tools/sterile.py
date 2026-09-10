@@ -93,6 +93,26 @@ STORAGE_KEYS = frozenset({
     "core.sparsecheckoutcone",
 })
 
+#: Subject declarations which change the bytes a read reports but which the
+#: constructed configuration cannot safely approximate. These are a closed
+#: refusal surface, not additions to the storage grammar.
+ANSWER_SHAPING_KEYS = frozenset({
+    "core.excludesfile",
+    "status.showuntrackedfiles",
+    "core.attributesfile",
+    "core.abbrev",
+})
+
+#: A configured content filter changes the index/work-tree comparison. Omitting
+#: it made a clean file look modified and let ``diff`` print pre-clean content.
+FILTER_PROGRAM_SETTINGS = frozenset({"clean", "smudge", "process"})
+
+
+def _answer_shaping_key(name: str) -> bool:
+    if name in ANSWER_SHAPING_KEYS:
+        return True
+    return name.startswith("submodule.") and name.endswith(".ignore")
+
 #: Branch tracking is data about the subject's ref relationship, not a choice of
 #: program or transport.  `status --porcelain=v2 --branch` asks Git to render it,
 #: so replacing configuration without carrying these two values made the
@@ -212,8 +232,10 @@ def where_is(repository) -> dict:
 _CONFIG_VALUE_ESCAPES = frozenset({'"', "\\", "n", "t", "b"})
 
 
-def _config_value_as_data(text: str, *, path: Path, line: int,
-                          preserve_terminal_cr: bool = False) -> str:
+def _config_value_as_data(
+    text: str, *, path: Path, line: int,
+    protected_unquoted_whitespace: frozenset[int] = frozenset(),
+) -> str:
     """Decode one Git configuration VALUE without asking Git to read it.
 
     Git strips whitespace only when it is outside quoted runs.  Keeping the
@@ -225,6 +247,7 @@ def _config_value_as_data(text: str, *, path: Path, line: int,
     """
     characters: list[tuple[str, bool]] = []
     quoted = False
+    quoted_boundary = 0
     index = 0
     escapes = {'"': '"', "\\": "\\", "n": "\n", "t": "\t", "b": "\b"}
     while index < len(text):
@@ -235,11 +258,18 @@ def _config_value_as_data(text: str, *, path: Path, line: int,
             if character == '"':
                 quoted = True
             else:
-                characters.append((character, False))
+                protected = (
+                    index in protected_unquoted_whitespace
+                    and any(one not in " \t\r" for one, _quoted in characters)
+                )
+                characters.append((character, protected))
             index += 1
             continue
         if character == '"':
             quoted = False
+            # A quoted run remains syntax even when it emits no character. Git
+            # preserves whitespace immediately before that empty run.
+            quoted_boundary = len(characters)
             index += 1
             continue
         if character == "\\":
@@ -254,19 +284,13 @@ def _config_value_as_data(text: str, *, path: Path, line: int,
     if quoted:
         _refuse_config(path, line, "a Git configuration value has an unclosed quote")
 
-    # A continuation's final backslash is physical syntax, not value data.  A
-    # CR immediately before it was therefore not at the source value's edge;
-    # if the continued physical part is empty it becomes terminal only after
-    # that syntax has been removed. Git preserves that CR. This records an
-    # existing physical-line fact for trimming without accepting new VALUE
-    # grammar.
-    if (preserve_terminal_cr and characters and characters[-1] == ("\r", False)
-            and any(character not in " \t\r" for character, _quoted in characters[:-1])):
-        characters[-1] = ("\r", True)
-
+    leading = 0
     while characters and not characters[0][1] and characters[0][0] in " \t\r":
         characters.pop(0)
-    while characters and not characters[-1][1] and characters[-1][0] in " \t\r":
+        leading += 1
+    quoted_boundary = max(0, quoted_boundary - leading)
+    while (len(characters) > quoted_boundary and not characters[-1][1]
+           and characters[-1][0] in " \t\r"):
         characters.pop()
     return "".join(character for character, _quoted in characters)
 
@@ -592,7 +616,7 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
 
         value_parts = [value]
         source_value_parts = [(number, value)]
-        terminal_cr_before_continuation = False
+        protected_cr_parts: set[int] = set()
         # The old parser unfolded a line before knowing whether it was a value.
         # This test remains intentionally local to value parsing: an even run
         # is escaped backslashes, and no header or comment reaches this branch.
@@ -606,7 +630,8 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
                     path, number,
                     "a Git configuration value has whitespace before a continuation",
                 )
-            terminal_cr_before_continuation |= value_parts[-1].endswith("\r\\")
+            if value_parts[-1].endswith("\r\\"):
+                protected_cr_parts.add(len(value_parts) - 1)
             value_parts[-1] = value_parts[-1][:-1]
             index += 1
             if index == len(physical):
@@ -615,12 +640,19 @@ def config_records_as_data(path: Path) -> list[tuple[str, str | None]]:
             value_parts.append(next_raw)
             source_value_parts.append((_next_number, next_raw))
         _refuse_unaccepted_value_backslashes(source_value_parts, path=path)
-        value = "".join(_decode_trailing_value_backslashes(part) for part in value_parts)
+        decoded_parts = [_decode_trailing_value_backslashes(part) for part in value_parts]
+        protected_positions: set[int] = set()
+        offset = 0
+        for part_index, part in enumerate(decoded_parts):
+            if part_index in protected_cr_parts and part.endswith("\r"):
+                protected_positions.add(offset + len(part) - 1)
+            offset += len(part)
+        value = "".join(decoded_parts)
         records.append((
             f"{section}.{key}",
             _config_value_as_data(
                 value, path=path, line=number,
-                preserve_terminal_cr=terminal_cr_before_continuation and value.endswith("\r"),
+                protected_unquoted_whitespace=frozenset(protected_positions),
             ),
         ))
         index += 1
@@ -709,7 +741,10 @@ def _enabled(value: str | None) -> bool:
     return (value or "").strip().lower() in {"true", "yes", "on", "1"}
 
 
-def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None:
+def _write_config(
+    into: Path, common: Path, gitdir: Path, *, bare: bool,
+    refuse_answer_shaping: bool = False,
+) -> None:
     """The only configuration Git will read, written from a blank slate.
 
     ``config.worktree`` is a configuration root, not a file to copy.  Its
@@ -766,6 +801,26 @@ def _write_config(into: Path, common: Path, gitdir: Path, *, bare: bool) -> None
         for name, found in config_values_as_data(gitdir / "config.worktree").items():
             all_declared.setdefault(name, [])
             all_declared[name] = all_declared[name] + found
+    filter_programs = sorted(
+        name for name in all_declared
+        if name.startswith("filter.")
+        and name.rpartition(".")[2] in FILTER_PROGRAM_SETTINGS
+    )
+    if refuse_answer_shaping and filter_programs:
+        raise GitRefusal(
+            "this repository declares a content filter which shapes work-tree answers, "
+            "and the sterile configuration cannot omit or execute it",
+            configuration=str(common / "config"),
+            keys=", ".join(filter_programs),
+        )
+    answer_shaping = sorted(name for name in all_declared if _answer_shaping_key(name))
+    if refuse_answer_shaping and answer_shaping:
+        raise GitRefusal(
+            "this repository declares answer-shaping configuration which the sterile "
+            "configuration cannot reproduce",
+            configuration=str(common / "config"),
+            keys=", ".join(answer_shaping),
+        )
     core = {
         name[len("core."):]: value
         for name, value in declared.items()
@@ -924,7 +979,9 @@ def _materialise_symbolic_refs(source: Path, into: Path) -> None:
                 )
 
 
-def build_git_directory(subject: Path, into: Path) -> tuple:
+def build_git_directory(
+    subject: Path, into: Path, *, refuse_answer_shaping: bool = False,
+) -> tuple:
     """Construct a git directory the harness owns over the subject's object store."""
     subject = Path(subject).resolve()
     gitdir = _git_directory(subject)
@@ -938,7 +995,10 @@ def build_git_directory(subject: Path, into: Path) -> tuple:
     _copy_git_state(common, into)
     if gitdir.resolve() != common.resolve():
         _copy_git_state(gitdir, into)
-    _write_config(into, common, gitdir, bare=_is_bare(subject))
+    _write_config(
+        into, common, gitdir, bare=_is_bare(subject),
+        refuse_answer_shaping=refuse_answer_shaping,
+    )
     # Objects are ATTACHED, never copied: a release-sized repository would
     # otherwise pay its whole size on every read.
     alternates = [str(common / "objects")]
@@ -1247,7 +1307,8 @@ def _environment(scratch: Path, gitdir: Path, worktree: Path | None, cwd: Path, 
 
 
 def build(repository, *, needs_working_tree: bool = True, overlay: dict | None = None,
-          extra_config: dict | None = None, timeout: float = 30.0) -> SterileRead:
+          extra_config: dict | None = None, timeout: float = 30.0,
+          refuse_answer_shaping: bool = False) -> SterileRead:
     """Construct the environment a governed read runs in, or refuse.
 
     `needs_working_tree` is false for a question about objects, refs or history,
@@ -1256,7 +1317,10 @@ def build(repository, *, needs_working_tree: bool = True, overlay: dict | None =
     subject = Path(repository).resolve()
     scratch = Path(tempfile.mkdtemp(prefix="rp-sterile-"))
     try:
-        gitdir, head, reproducible = build_git_directory(subject, scratch / "sterile.git")
+        gitdir, head, reproducible = build_git_directory(
+            subject, scratch / "sterile.git",
+            refuse_answer_shaping=refuse_answer_shaping,
+        )
         worktree: Path | None = None
         cwd = subject
         constructed_view = False

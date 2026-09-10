@@ -182,15 +182,16 @@ is corrected afterwards is no longer evidence of what was decided beforehand:
 | Record | Oracle | Selector as frozen | The test that implements it |
 |---|---|---|---|
 | A1 | O2 | `test_a_nested_repositorys_configuration_never_executes` | `test_no_spelling_of_a_nested_git_executes_the_subjects_program`, parametrised over every spelling of a nested `.git` this release could build — A2 widened the property from *a* nested repository to *any spelling of one*, and the name followed. The count is not written here: adding a spelling is exactly the change this table should not have to be edited for, and a stated "four" survived the commit that made it five |
-| A7.1 | O-A71-1 | `test_no_local_read_regresses_the_floor` | **Unimplemented as frozen.** The shipped `rp2.5.0-floor-differential.py` is the current oracle, but its 406-row pre-repair result (403 after the three common-directory repairs below) means the frozen claim that *every* governed local read is byte-exact is not literally true. Its exact rows are governed by the adjudication in *The floor this release is measured against* below, rather than hidden by a selector that selects nothing. |
+| A7.1 | O-A71-1 | `test_no_local_read_regresses_the_floor` | **Unimplemented as frozen.** The shipped `rp2.5.0-floor-differential.py` is the current oracle, but the classified residual table below means the frozen claim that *every* governed local read is byte-exact is not literally true. Its exact rows are governed by that adjudication rather than hidden by a selector that selects nothing. |
 | A7.1 | O-A71-6 | `test_a_missed_key_still_cannot_execute` | `test_the_subjects_own_config_cannot_make_a_read_run_a_program` carries the live execution property; `test_no_refusal_depends_on_a_projection` proves the retired key enumeration cannot be the mechanism. The current boundary removes the subject configuration source rather than trying to recognise a missed key. |
 | A7.1 | O-A71-7 | `test_the_subject_cannot_configure_the_checker` | `test_replacing_the_configuration_root_excludes_every_subject_config_route`, parametrised over `config`, `config.worktree`, `include.path` and `includeIf`. |
 
 Every other oracle in A1 and A2 names a test that exists and runs. A7.1 adds the
 shipped `tools/submodule_no_child.py` composition, its
 `docs/acceptance/rp2.5.0-submodule-differential.py` corpus, and
-`docs/acceptance/RP2.5.0-submodule-proof.md`. The corpus measures 208 byte-exact
-rows and 12 deliberate controls; the proof limits that claim to its composition
+`docs/acceptance/RP2.5.0-submodule-proof.md`. The corpus measures 183 byte-exact
+answers, 25 matching frozen refusals, 13 declared refusals for submodule ignore
+policy, and 12 deliberate controls; the proof limits that claim to its composition
 grammar rather than treating it as a blanket submodule equivalence claim. Each
 composed primitive crosses frozen 2.4.0's `gitread` boundary, so these rows are
 strong evidence for `compose()` but do not exercise this candidate's `_run()`
@@ -205,13 +206,14 @@ checks in `adapter_pin.py` and `close_attestation.py`, as well as `pytest` and
 `ps`; none invokes Git directly, so `gitread` remains the toolbelt's single path
 to Git.
 
-Two exceptions to the behavioural floor are adjudicated, not hidden. First, the
-submodule composition is byte-exact only for the corpus grammar above; outside it,
-the local read reports committed gitlink state with recursive dirty detail
-suppressed rather than permitting a child. Second, `verify-pack` is refused: frozen
-2.4.0 answers it, but its child `index-pack --verify-stat` conflicts with the
-local no-child policy. Its 172 frozen-floor rows remain in the accounting below as
-an intentional capability reduction, not a repaired non-regression.
+Exceptions to the behavioural floor are adjudicated, not hidden. The submodule
+composition is byte-exact only for the corpus grammar above; outside it, the local
+read reports committed gitlink state with recursive dirty detail suppressed rather
+than permitting a child. `verify-pack` is refused because its child `index-pack
+--verify-stat` conflicts with the local no-child policy. Local reads also refuse
+an active content filter, the four exact answer-shaping keys, and submodule ignore
+policy rather than omit them and return a wrong answer. Every measured reduction
+remains in the accounting below.
 
 Eight defects were found in the implementation while building it, each reproduced
 by a test before being repaired, and each recorded because a boundary nobody broke
@@ -230,10 +232,11 @@ is a claim:
 
 ## Mutation scoring
 
-Forty-four well-formed mutants against a verified-green baseline of the oracles
-they name, each reversing one thing the design says is load-bearing. **Forty-four
-killed, none survived, none malformed**, and the harness asserts the subject is
-byte-identical afterwards.
+The shipped mutation harness derives its own population against a verified-green
+baseline of the oracles they name, each reversing one thing the design says is
+load-bearing. A qualifying run requires every attempted mutant killed, none
+survived or malformed, and the subject byte-identical afterwards. The totals are
+printed by the harness and are deliberately not restated here.
 
 The baseline population is **not stated here**. This record used to say
 twenty-four oracle tests; collection said twenty-two, and neither number could be
@@ -257,6 +260,33 @@ times a second, not a property of the subject. The harness now clears
 `__pycache__` and sets `PYTHONDONTWRITEBYTECODE` before every run, because a
 score taken against a stale `.pyc` is wrong in whichever direction happens to
 suit.
+
+## The final same-family reading and its bounded repairs
+
+The mandatory same-family reading of `1746ba25c8dd889e826423a23c9ae7fde7390a00`
+returned NOT READY with six Class-A findings. Every one was independently
+reproduced before repair and classified under the binding convergence rule:
+
+| finding | reproduced defect | bounded result |
+|---|---|---|
+| B1 | an empty quoted run and a continuation boundary lost whitespace Git preserves; a remote name then resolved to a different address and answered at exit zero | preserve those boundaries inside the accepted representation; extend the exhaustive value-body enumeration to length four and add the multiline cases |
+| B2 | omitting an active clean filter reported a clean file modified and exposed pre-clean content through `diff` | refuse `filter.*.clean`, `.smudge`, and `.process` in either active configuration root before Git launches |
+| B3 | four answer-shaping keys were dropped and ordinary reads returned wrong bytes | refuse exactly `core.excludesFile`, `status.showUntrackedFiles`, `core.attributesFile`, and `core.abbrev`; do not expand the storage grammar |
+| B4 | `submodule.<name>.ignore` suppressed dirt in real Git and the floor while composition invented it | refuse the key in main/worktree config; in `.gitmodules`, detect only the local `ignore` key token and never parse submodule names or paths |
+| B5 | mutation totals in this record were stale | remove transcribed totals and make the record-integrity test enforce derivation by the harness |
+| B6 | the manifest simultaneously asserted and withdrew bare-CR refusal | state the current Git-compatible trim/preservation behavior once and bind it with a record-integrity test |
+
+The preserved certification transcript corrects one detail in its final report:
+for `core.attributesFile`, frozen 2.4.0 emitted the same text diff as the old
+candidate rather than real Git's binary diff. The finding remains Class A because
+the candidate still returned a wrong answer at exit zero; it simply was not also
+a floor regression for that one key.
+
+Each production repair has a targeted falsification entry. The first attempted
+`.gitmodules` repair parsed the whole file and the full corpus rejected it on the
+quoted-path fixture, with the path-quoting positive control missed. The shipped
+repair is the narrower token detector described above, and the complete corpus
+restores every prior row and control.
 
 ## Consumer rehearsal
 
@@ -319,11 +349,11 @@ the full baseline is spelled out and the two design records are two invocations.
 | design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md --repository .` (and the A1/A2 history records by the same command) | DESIGN FROZEN; A7.1 is authoritative |
 | surface derivation | `python3 tools/surface_diff.py . 9d906ce64bd69cb1a29594a7110829da7df5d996 HEAD` | additions only over the NON-TEST modules; every removal and every signature change it reports is inside `tools/tests/`. No totals are quoted here — see *Why this release is not 2.4.2* for why |
 | full suite | `python3 -m pytest tools/tests/ -q` | green; the population is `PACK_MANIFEST.json` `tests.passed` |
-| clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | the suite was green and the tree reported nothing changed. Four raw gate results were non-zero by design and were not rewritten as passes: the frozen-floor differential `EXIT=1` after 8,600 comparisons with 403 adjudicated differences; the commit-range checker `EXIT=1` for 12 deliberately raw violations over 4 commits; surface derivation `EXIT=1` because it reports test-module removals; and the outgoing scan `EXIT=1` for unscoped heuristics. |
+| clean-room clone | clone with `--no-local`, check out the revision, run every gate and the suite inside it | the suite is green and the tree reports nothing changed. Raw non-zero gate results stay raw: the frozen-floor differential reports its classified reductions; the commit-range checker retains the adjudicated historical violations; surface derivation reports test-module removals; and the outgoing scan reports unscoped heuristics. |
 | line-ending variants | clone and check out under `core.autocrlf` `true`, `input` and `false`, then verify the pin in each | verified in all three |
-| frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 43 fixtures × 200 read forms = 8,600 comparisons; every residual row is classified in *The floor this release is measured against* below |
+| frozen-floor differential | `FLOOR_FROZEN_ROOT=<a 2.4.0 checkout> python3 docs/acceptance/rp2.5.0-floor-differential.py .` | 48 fixtures × 200 read forms = 9,600 comparisons; every residual row is classified in *The floor this release is measured against* below |
 | hostile Git configuration | `python3 docs/acceptance/rp2.5.0-hostile-matrix.py` | zero executions; the script reports how many rows carry a positive control |
-| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | 44 killed, none survived or malformed, subject byte-identical afterwards |
+| mutation | `python3 docs/acceptance/rp2.5.0-mutation.py` | every attempted mutant killed, none survived or malformed, subject byte-identical afterwards; the harness prints its derived totals |
 | consumer rehearsal | **not shipped as a script** — it copies the machine's real projects, so it cannot run from a checkout. Its behaviours are covered by the six suite modules named under *Consumer rehearsal* below | every check passed, the real project byte-identical |
 
 The clean-room clone is the one that matters most for the design records: it
@@ -733,9 +763,12 @@ and on frozen 2.4.0, in separate interpreters, and compares raw bytes — answer
 It needs a 2.4.0 checkout, named by `FLOOR_FROZEN_ROOT`, because the floor is a *release*, not a
 file, and it writes its report outside the checkout so running it does not unpin the tree.
 
-**43 fixtures × 200 read forms = 8,600 comparisons.** It began at 25 × 153; the population was more
+**48 fixtures × 200 read forms = 9,600 comparisons.** It began at 25 × 153; the population was more
 than doubled deliberately, because a small corpus that finds nothing is weak evidence and this one
-had already proved that four capability regressions can hide from every other oracle. A further 221
+had already proved that capability regressions can hide from every other oracle. Four answer-shaping
+configuration fixtures and an active content-filter fixture were added after the same-family
+certification found that the corpus set none of the declarations used in its claims. Each builder
+asserts the corresponding real-Git answer before either release is invoked. A further 211
 rows were added in which Git itself rejects the form on both sides; those are not differences and
 are not counted as such.
 
@@ -743,12 +776,13 @@ Its first run found **339** differences, of which **183 capability regressions w
 bare repositories (48), direct local-path `ls-remote` (125), a nested repository's `diff-index`
 (8), and sparse-checkout's long status (2).
 
-At the widened population it now reports **403**. Every row is accounted for:
+At the widened population it now reports **1348**. Every row is accounted for:
 
 | rows | what they are | status |
 |---:|---|---|
-| 172 | `config --list` in four spellings | the owned configuration root — declared, not a regression |
-| 172 | `verify-pack` | adjudicated capability reduction: frozen answers it, while the local no-child backend refuses it |
+| 925 | five answer-shaping fixtures × 185 non-configuration forms | named refusal before a local answer can omit the active filter or declared key; explicit capability reductions replacing wrong exit-zero answers |
+| 192 | `config --list` in four spellings | the owned configuration root across all 48 fixtures — declared, not a regression; the configuration itself remains readable as data |
+| 172 | `verify-pack` on the other 43 fixtures | adjudicated capability reduction: frozen answers it, while the local no-child backend refuses it; the five answer-shaping-fixture rows are counted in the 925 above by their earlier refusal cause |
 | 45 | `core.worktree` redirection | **this release is right**: it reads the path the caller supplied, not the sibling the subject names |
 | 8 | source-less `config --get` family | the deliberate refusal directing callers to `config_with_origin` |
 | 4 | `rev-parse` path family | the `linked-worktree`, `moved-main-worktree` and `worktree-config` `--git-common-dir` members were wrong exit-0 answers — each returned the private worktree git directory instead of the common directory — and are now repaired. The four remaining rows are non-dangling path differences. `--git-dir` answers `.git`, exists, and is identical to frozen **on an ordinary repository**; on the `.git`-as-a-file fixture the candidate returns `actual-gitdir` while frozen returns an absolute path. |

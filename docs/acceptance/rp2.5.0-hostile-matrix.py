@@ -59,16 +59,22 @@ def commit(repo, name="f.txt", body="hello\n"):
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c", cwd=repo)
 
 
-def hostile(repo):
+def hostile(repo, *, filters=True):
     """Every ordinary route by which a repository names a program for Git to run."""
-    for key in ("filter.evil.clean", "filter.evil.smudge", "diff.evil.textconv",
-                "diff.external", "core.fsmonitor", "core.alternateRefsCommand",
-                "core.pager", "core.editor", "credential.helper", "gpg.program",
-                "sequence.editor", "uploadpack.packObjectsHook", "core.gitProxy",
-                "core.sshCommand", "core.askPass"):
+    keys = [
+        "diff.evil.textconv", "diff.external", "core.fsmonitor",
+        "core.alternateRefsCommand", "core.pager", "core.editor",
+        "credential.helper", "gpg.program", "sequence.editor",
+        "uploadpack.packObjectsHook", "core.gitProxy", "core.sshCommand",
+        "core.askPass",
+    ]
+    if filters:
+        keys[:0] = ["filter.evil.clean", "filter.evil.smudge"]
+    for key in keys:
         git("config", key, str(EVIL), cwd=repo)
     git("config", "core.hooksPath", str(EVIL.parent), cwd=repo)
-    (repo / ".gitattributes").write_text("* diff=evil filter=evil\n")
+    attributes = "* diff=evil filter=evil\n" if filters else "* diff=evil\n"
+    (repo / ".gitattributes").write_text(attributes)
 
 
 ROWS = []
@@ -141,7 +147,7 @@ VERBOSITY = [("status", spelling) for spelling in
              ("-v", "-vv", "-vvv", "--verbose", "--verb", "--verbo")]
 
 flat = new_repo("flat")
-hostile(flat)
+hostile(flat, filters=False)
 commit(flat)
 (flat / "f.txt").write_text("changed\n")
 git("add", "-A", cwd=flat)
@@ -149,6 +155,15 @@ row("every verbosity spelling", flat, *VERBOSITY)
 row("an explicitly requested driver", flat,
     ("diff", "--textconv", "--cached"), ("diff", "--ext-diff", "--cached"))
 row("history verbs", flat, ("log", "-p", "-1"), ("show", "HEAD"), ("diff", "--cached"))
+
+filtered = new_repo("active-filter")
+git("config", "filter.evil.clean", str(EVIL), cwd=filtered)
+git("config", "filter.evil.smudge", str(EVIL), cwd=filtered)
+(filtered / ".gitattributes").write_text("* filter=evil\n")
+commit(filtered)
+(filtered / "f.txt").write_text("changed\n")
+row("an active content filter", filtered,
+    ("status", "--porcelain"), ("diff",), reference=None)
 
 # AN EXECUTABLE THE SUBJECT WROTE IN ITS OWN HOOKS DIRECTORY.
 # This needs a fixture of its own rather than a line in `hostile()`, and the
@@ -179,14 +194,14 @@ ignored = new_repo("ignored")
 (ignored / ".gitignore").write_text("cache/\n")
 commit(ignored, "keep.txt")
 dependency = new_repo("dependency", at=ignored / "cache")
-hostile(dependency)
+hostile(dependency, filters=False)
 commit(dependency, "d.txt")
 (ignored / "untracked.py").write_text("y = 2\n")
 row("an ignored, never-a-submodule checkout", ignored,
     ("status", "--porcelain"), ("status", "--porcelain", "-uall"), ("ls-files", "-z"))
 
 inner = new_repo("inner")
-(inner / ".gitattributes").write_text("* diff=evil filter=evil\n")
+(inner / ".gitattributes").write_text("* diff=evil\n")
 commit(inner, "i.txt")
 for spelling in ("gitlink file", "symlink to directory", "symlink to gitlink file"):
     sup = new_repo(f"sup-{spelling.replace(' ', '-')}")
@@ -194,7 +209,7 @@ for spelling in ("gitlink file", "symlink to directory", "symlink to gitlink fil
     git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "mod", cwd=sup)
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "sub", cwd=sup)
     module = sup / ".git" / "modules" / "mod"
-    for key in ("filter.evil.clean", "diff.evil.textconv", "diff.external"):
+    for key in ("diff.evil.textconv", "diff.external"):
         git("config", key, str(EVIL), cwd=module)
     entry = sup / "mod" / ".git"
     if spelling != "gitlink file":
@@ -222,7 +237,7 @@ commit(variant, "top.txt")
 git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "mod", cwd=variant)
 git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "sub", cwd=variant)
 variant_module = variant / ".git" / "modules" / "mod"
-for key in ("filter.evil.clean", "diff.evil.textconv", "diff.external"):
+for key in ("diff.evil.textconv", "diff.external"):
     git("config", key, str(EVIL), cwd=variant_module)
 os.rename(variant / "mod" / ".git", variant / "mod" / ".Git")
 (variant / "mod" / "i.txt").write_text("changed\n")
@@ -249,7 +264,7 @@ for label, flag in (("sha256 object format", "--object-format=sha256"),
     directory.mkdir()
     if git("init", "-q", "-b", "main", flag, ".", cwd=directory).returncode:
         continue
-    hostile(directory)
+    hostile(directory, filters=False)
     commit(directory)
     (directory / "f.txt").write_text("changed\n")
     row(label, directory, ("rev-parse", "HEAD"), ("status", "--porcelain"))
@@ -257,7 +272,7 @@ for label, flag in (("sha256 object format", "--object-format=sha256"),
 separate = BASE / "separate"
 elsewhere = BASE / "elsewhere.git"
 git("init", "-q", "-b", "main", "--separate-git-dir", str(elsewhere), str(separate), cwd=BASE)
-hostile(separate)
+hostile(separate, filters=False)
 commit(separate)
 (separate / "f.txt").write_text("changed\n")
 row("a .git that is a file (--separate-git-dir)", separate,
