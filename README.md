@@ -11,7 +11,7 @@ every audit round while its stateless checkers survived every one
 | | |
 |---|---|
 | Version | **2.5.0** — `VERSION` is the single machine-readable authority |
-| State | **IN_PROGRESS** (`PACK_MANIFEST.json` `state`) — a candidate, and **no project may pin it**. It replaces the authority mechanism behind every governed read, after 2.4.1 reached a convergence blocker and was never released. The transition to `QUALIFIED_AND_FROZEN` is a human decision (`policy/hitl-matrix.md` row 2) that has not been taken. 2.4.0 remains frozen, byte-identical and pinnable; nothing here moves it |
+| State | **QUALIFIED_AND_FROZEN** (`PACK_MANIFEST.json` `state`) — **a project may pin it**, at the revision and digest it verifies, at its next capability boundary. It replaces the authority mechanism behind every governed read, after 2.4.1 reached a convergence blocker and was never released. The transition was the founder's decision (`policy/hitl-matrix.md` row 2), taken on 2026-09-10 against a named candidate after two independent certifications ended READY. 2.4.0 remains frozen, byte-identical and pinnable; nothing here moves it, and anything pinned to it stays pinned to it |
 | Gate record | `docs/RP2.5.0-GATE.md` |
 | Identity | root path **+** version **+** full 40-character revision **+** manifest tree digest. All four, or the pin does not discriminate: the root says *which directory*, the rest say *what is in it* |
 
@@ -19,16 +19,16 @@ Verify a checkout — run it, do not read it:
 
 ```bash
 python3 tools/pack_pin.py . --version 2.5.0 --sha <full 40-char revision> \
-    --digest <PACK_MANIFEST.json tree_digest_sha256> --state IN_PROGRESS
+    --digest <PACK_MANIFEST.json tree_digest_sha256> --state QUALIFIED_AND_FROZEN
 ```
 
 `--state` is the state this checkout actually declares. **A project may only
-adopt `QUALIFIED_AND_FROZEN`**, and this candidate declares `IN_PROGRESS`, so
-the command above verifies the checkout completely and still establishes that
-it is **not** adoptable. That is the point of carrying the state in the pin: the
-same command answers *is this the tree you named* and *may you pin it* without
-confusing them, and the only thing that will change at the freeze is a
-recorded human decision.
+adopt `QUALIFIED_AND_FROZEN`**, and this release now declares it, so the command
+above both verifies the checkout completely and establishes that it **is**
+adoptable. That is the point of carrying the state in the pin: the same command
+answers *is this the tree you named* and *may you pin it* without confusing
+them, and the only thing the freeze changed is a recorded human decision — the
+tree it verifies is the certified candidate plus this one recorded transition.
 
 Use the `pack_pin.py` **inside the release being verified**: the digest framing
 is release-local and named in the manifest's `digest_algorithm`, so a

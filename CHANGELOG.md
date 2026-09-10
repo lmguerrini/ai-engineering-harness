@@ -12,14 +12,27 @@ and this one is.
 **The grade rests on a stated ground, not on the absence of a signature change.**
 This release changes what callers are TOLD in the ways listed under *What a
 consumer will notice*. D11 grades an incompatible contract change MAJOR, so the
-reason 2.5.0 stands is that its `state` is `IN_PROGRESS`, **no project pins it**,
-and 2.4.0 remains the release projects pin — a contract nothing has adopted
-cannot be broken by changing it. D28 records that argument and the founder
-authority for it, so a reader does not have to reconstruct either.
-**State `IN_PROGRESS`** — a candidate. **No project may pin it.** The transition
-to `QUALIFIED_AND_FROZEN` is `policy/hitl-matrix.md` row 2 and has not been
-taken. **2.4.0 is untouched**: same revision, same digest, same state, and it
-remains the release a project pins today.
+reason 2.5.0 stands is that **at the moment the contract changed, nothing had
+adopted it**: the `state` was `IN_PROGRESS` throughout the change, no project
+pinned it, and 2.4.0 was and remains the release projects pin — a contract
+nothing has adopted cannot be broken by changing it. D28 records that argument
+and the founder authority for it, so a reader does not have to reconstruct
+either. **The 2026-09-10 freeze does not weaken that ground and is not
+retroactive.** It makes 2.5.0 adoptable from that date forward; it adopts
+nothing, it moves no existing pin, and 2.4.0 stays byte-identical, so anything
+pinned to 2.4.0 is still pinned to exactly what it verified.
+**State `QUALIFIED_AND_FROZEN`** — frozen by the founder on 2026-09-10 at
+`policy/hitl-matrix.md` row 2, against a named candidate whose version,
+revision, tree, digest, pre-freeze state and test population were all stated in
+the authorisation and verified to match before the first freeze mutation. **A
+project may pin it**, at the revision and digest it verifies, at its next
+capability boundary. Both mandatory independent certifications of that exact
+candidate ended READY with no Class A blocker upheld — one cross-vendor, one
+same-family — and the raw verdicts stand unrewritten beside their separate
+adjudications. **2.4.0 is untouched**: same revision, same digest, same state,
+and anything pinned to it remains pinned to exactly what it verified. **Nothing
+is published**: no push, tag, remote, deployment or consumer migration is
+authorised, and none has happened.
 
 ### Why 2.4.1 was never released
 
@@ -398,10 +411,12 @@ contract is the non-regression floor: subject-supplied configuration is input to
 inspect and report where the contract says so, and is not authority over how the
 governed checker itself behaves.
 
-That ruling settles which standard applies. It settles nothing else: 2.5.0
-remains `IN_PROGRESS`, no project may pin it, and 2.4.0 remains the release a
-project pins. In particular the ruling does not authorise losing a capability
-2.4.0 holds — that remains a separate decision under the same two entries.
+That ruling settles which standard applies. It settles nothing else. When it
+was taken, 2.5.0 was still `IN_PROGRESS` and no project could pin it; the
+separate 2026-09-10 row-2 freeze is what changed that, and this ruling neither
+anticipated nor authorised it. In particular the ruling does not authorise
+losing a capability 2.4.0 holds — that remains a separate decision under the
+same two entries.
 
 ## 2.4.1 — the six the full-release audit reproduced
 

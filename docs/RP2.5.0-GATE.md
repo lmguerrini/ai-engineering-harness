@@ -1,8 +1,10 @@
 # RP 2.5.0 — gate record
 
-**This record is being written as the release is built, and says only what has
-been established.** Anything not below has not been done. The release is
-`IN_PROGRESS`; no project may pin it.
+**This record was written as the release was built, and says only what was
+established.** Anything not below was not done. The release is
+`QUALIFIED_AND_FROZEN`, frozen on 2026-09-10; a project may pin it at the
+revision and digest it verifies. The freeze procedure that was executed, and the
+authority it ran under, are the last two sections of this record.
 
 ## Subject
 
@@ -10,7 +12,7 @@ been established.** Anything not below has not been done. The release is
 |---|---|
 | Version | 2.5.0 (`VERSION`) |
 | Baseline | `9d906ce64bd69cb1a29594a7110829da7df5d996` — the 2.4.0 release commit. 2.4.1 was never released |
-| State | `IN_PROGRESS`. **No project may pin this.** |
+| State | `QUALIFIED_AND_FROZEN`, frozen 2026-09-10 at `policy/hitl-matrix.md` row 2. **A project may pin this**, at the revision and digest it verifies, at its next capability boundary. |
 | Digest | `PACK_MANIFEST.json` `tree_digest_sha256`, recomputed over the tree this gate ran against |
 | Revision | **not in the manifest** — `PACK_MANIFEST.json` `revision` says so in as many words, because a file cannot name the commit that contains it. It is `git rev-parse HEAD` here, and a consumer records it in its own pin |
 
@@ -314,7 +316,7 @@ copied, so nothing of it was touched either.
 | Check | Result |
 |---|---|
 | frozen 2.4.0 verifies from a working directory belonging to neither consumer | PASS |
-| the candidate verifies against its own manifest and still declares `IN_PROGRESS`, so no project may pin it | PASS |
+| the candidate verifies against its own manifest and, at the time this rehearsal ran, still declared `IN_PROGRESS`, so no project could pin it | PASS |
 | migration reports a pin class without adopting anything | PASS |
 | both consumers verify concurrently, from a foreign working directory | PASS |
 | a governed read of a directory that is not a repository refuses rather than answering | PASS |
@@ -360,7 +362,7 @@ the full baseline is spelled out and the two design records are two invocations.
 
 | Gate | Command | Result |
 |---|---|---|
-| release identity | `python3 tools/pack_pin.py . --version <VERSION> --sha <HEAD> --digest <manifest digest> --state IN_PROGRESS` | verified |
+| release identity | `python3 tools/pack_pin.py . --version <VERSION> --sha <HEAD> --digest <manifest digest> --state <the state the manifest declares>` | verified. The gates above ran against the candidate while it declared `IN_PROGRESS`; the frozen release declares `QUALIFIED_AND_FROZEN`, and `--state` is read from the manifest rather than remembered |
 | release delta | `python3 tools/release_delta.py . --baseline 9d906ce64bd69cb1a29594a7110829da7df5d996` | DELTA COMPLETE, nothing omitted |
 | design provenance | `python3 tools/design_record.py docs/RP2.5.0-DESIGN-A7.1-capability-scoped-backends.md --repository .` (and the A1/A2 history records by the same command) | DESIGN FROZEN; A7.1 is authoritative |
 | surface derivation | `python3 tools/surface_diff.py . 9d906ce64bd69cb1a29594a7110829da7df5d996 HEAD` | additions only over the NON-TEST modules; every removal and every signature change it reports is inside `tools/tests/`. No totals are quoted here — see *Why this release is not 2.4.2* for why |
@@ -932,13 +934,19 @@ and this record is the reason it will not be a surprise.**
 
 ## Not yet done
 
-The independent certifications, and the terminal gates that depend on them.
+**The independent certifications are done.** Both mandatory certifications of the
+exact frozen candidate completed and are recorded in the next section. `AUTH-4`
+held the Codex/Astra budget for part of this release, and the findings an
+independent design reading produced were that reader's own, so their independent
+closure routed to the other provider against the implementation rather than
+against the prototype. It has now run: no self-review was substituted for it, and
+this record does not treat any repair as confirmed on the strength of the reader
+that proposed it.
 
-`AUTH-4` holds the Codex/Astra budget until its weekly reset, and the findings an
-independent design reading produced are that reader's own, so their independent
-closure must route to the other provider against the implementation rather than
-against the prototype. No self-review substitutes for it, and this record does
-not treat the repair of those findings as confirmed until it has run.
+What remains genuinely not done is deferred by name, not by silence: the
+Evolution Candidates in `PACK_MANIFEST.json` `evolution_candidates` and the
+`deferred` map, and the one non-blocking post-freeze item recorded under *The
+two mandatory certifications of the frozen candidate* below.
 
 One thing this line does not satisfy, and the decision that was taken about it.
 Four of its own commit messages — `154be5f`, `fb2f450`, `f773db9` and `45d87fb` —
@@ -990,3 +998,146 @@ again — which is exactly what it did: this record read "nine violations over t
 commits" while the checker reported twelve over four, and no guard noticed, because
 the release-truth guards check the claims a release makes about its *records* and
 this was a claim about its *history*.
+
+## The two mandatory certifications of the frozen candidate
+
+Both ran against the same immutable candidate — commit
+`6755fe75e4f8d9c26b7118e4d635357595c1619f`, tree
+`810709b43709d3c022870d78e164309478a12deb`, digest
+`43abeede878d35b2d62a38a434db1716ae1e2ee4558bf725876024ba75e7f859` — each in its
+own clean, exact, remote-free, tag-free checkout, each writing its verdict
+OUTSIDE the checkout it audited. Neither verdict was rewritten; where a finding
+needed a ruling, the adjudication is a separate file beside the raw verdict.
+
+| certification | provider | verdict | Class A upheld |
+|---|---|---|---|
+| cross-vendor | the other vendor, fresh context | **READY** | none |
+| same-family | this family, fresh context | **READY** | none |
+
+The cross-vendor report hashes to
+`f5385cdeb54cd966af2c83ea73fba417b841ab29edbdf6026b57047ed87659e0` and the
+same-family report to
+`52adb9f961edd15770e5f36036ab39a10c0bf6a89b1d857590e088d978e5971f`. A bounded
+pre-certification rehearsal ran before them and found no Class A blocker; it was
+recorded as rehearsal and was never allowed to stand in for either certification.
+
+The same-family reading re-executed rather than read the load-bearing gates: the
+full suite (3,011 passed, exit 0), the mutation diagonal (61 killed, zero
+survived, zero malformed, subject restored byte-identical, every verdict line
+identical to the recorded evidence), and the submodule differential (234 rows and
+12 controls, exit 0). It recomputed this manifest's digest with its own
+reimplementation of `sha256-framed-v1` rather than by calling the shipped
+verifier, and digested the frozen floor to the `7bc0a811` figure this release
+claims for it. It recounted the floor differential from the raw log — 8,444 PASS
+plus 1,356 DIFF is 9,800, with the classification reconciling exactly against the
+rows on disk — rather than re-running it, and it named that, together with the
+hostile, clean-room, line-ending and static gates, as artifacts it read rather
+than re-executed. Naming the un-re-executed surface is what makes the rest of the
+report checkable.
+
+**One finding was upheld as non-blocking, and it is recorded rather than
+absorbed.** A CALLER who passes `--upload-pack=<program>` in argv, positioned
+before the address on a transport verb, reaches Git and runs the program: the
+harness's `--` terminator lands ahead of the ADDRESS, which is what protects the
+subject-resolved half, leaving the caller's own spelling after the harness's
+injected `--upload-pack=git-upload-pack` under Git's last-wins rule. It was
+reproduced independently, with one payload and one marker across four rows so the
+negative rows are evidence rather than absence of measurement:
+
+| route | this release | frozen 2.4.0 |
+|---|---|---|
+| subject-controlled `remote.<name>.uploadpack` | **does not execute** | does not execute |
+| caller argv `--upload-pack=<program>` | executes | **executes** |
+
+It is not a release blocker on five grounds, each measured rather than argued:
+**no subject-controlled route reaches it** — the key that would be the subject's
+route does not execute, which is exactly the claim `CHANGELOG.md` makes and it is
+true; it **matches real Git**, whose documented interface this is; it **matches
+the frozen qualified 2.4.0 floor**, measured through the floor's own `gitread`
+with the same argv, so there is **no floor regression** — the only direction that
+could have made it blocking; **no record claims caller argv is closed for this
+option**, so nothing is falsified; and the caller is harness Python that already
+holds arbitrary execution, while the boundary this release defends is the
+SUBJECT boundary, which holds. The repair surface is bounded — a named
+caller-option refusal beside `CODE_ENABLING_OPTIONS` — so it is carried as a
+post-freeze item rather than deferred as unbounded, and it is stated here so the
+next release does not rediscover it as news.
+
+## The governance rule this release converged under
+
+Runtime Pack is a **hybrid governance core, not a universal deterministic
+harness**. Deterministic machinery is for bounded, high-value invariants; where
+judgement is required, a coordinator adjudicates and records the ruling. That is
+a design position, and it decided real outcomes here, so it belongs in the record
+rather than in a decision nobody can find.
+
+Every finding in the closing rounds was classified before it could act:
+
+- **A** — a bounded blocker: it violates a release invariant, creates an
+  unadjudicated wrong answer or an execution escape reachable by the subject, or
+  regresses the qualified floor. Only A may block, and only A may expand
+  deterministic core.
+- **B** — real but non-blocking: a limitation, a coverage gap, or wording
+  imprecision. Recorded, not absorbed, not blocking.
+- **C** — speculative, unbounded, or outside the release claim. Deferred by name.
+
+The question asked before any production change was whether the state space the
+repair requires is **demonstrably bounded**. Where it was not, the answer was to
+narrow the claim or fail closed rather than to grow a handwritten Git grammar, an
+option table or a platform matrix. The refusals this release adds are refusals
+for that reason: `filter.*`, the four answer-shaping keys and the populated
+submodule `ignore` token are bounded named refusals, not attempts to reimplement
+Git. This rule does not license undoing a qualified repair, weakening a security
+boundary, accepting a known wrong answer, or regressing below an adjudicated
+floor, and it was not used for any of those.
+
+## The freeze procedure
+
+**HITL row 2 was taken.** The founder authorised the state transition on
+2026-09-10 against a NAMED candidate, stating its version, revision, tree,
+digest, pre-freeze state and test population; every one of those was verified to
+match before the first freeze mutation. READY is evidence; this authorisation is
+what made the transition legitimate.
+
+These preconditions were checked, in this order, before anything was written:
+
+    cd <2.5.0 root>
+    test "$(git rev-parse HEAD)" = 6755fe75e4f8d9c26b7118e4d635357595c1619f
+    test "$(git rev-parse 'HEAD^{tree}')" = 810709b43709d3c022870d78e164309478a12deb
+    test -z "$(git status --porcelain=v1 --untracked-files=all)"
+    test -z "$(git status --ignored --porcelain=v1)"
+    test -z "$(git remote)" && test -z "$(git tag --list)"
+    test "$(git rev-parse evolution/rp2.4)" = 9d906ce64bd69cb1a29594a7110829da7df5d996
+    test "$(git rev-parse main)" = 4495e61850c08027e47eac6d0db84b4b3380e300
+    python3 tools/pack_pin.py .                       # the candidate verifies against itself
+
+    # both mandatory verdicts end in the word, and nothing follows it
+    tail -n 1 <evidence root>/crossvendor-CERTIFICATION.md | grep -Fx READY
+    tail -n 1 <evidence root>/samefamily-CERTIFICATION.md | grep -Fx READY
+
+Then the four current-state surfaces were moved together — this record,
+`PACK_MANIFEST.json` (`state`, `qualified_at`, and the first limitation),
+`README.md` (state row, pin example, adoptability sentence) and `CHANGELOG.md`
+(the current 2.5.0 state paragraph only) — historical 2.4.0 and 2.4.1 statements
+left historical, and:
+
+    python3 tools/pack_pin.py . --write        # recomputes tree_digest_sha256
+    python3 -m pytest tools/tests/test_release_integrity.py -q
+    python3 -m pytest tools/tests/ -q          # the digest and record guards re-run
+    git diff --check
+    python3 tools/commit_gate.py <message>
+    python3 tools/commit_gate.py --default-terms . <message>
+    git add PACK_MANIFEST.json README.md CHANGELOG.md docs/RP2.5.0-GATE.md
+    git commit -F <message>
+
+**The digest and revision this record's Subject names are the PRE-FREEZE
+candidate's.** The freeze is one commit after it, so the frozen tree has its own
+recomputed digest and its own revision, and a consumer pins THOSE — the manifest
+cannot name the commit that contains it, and this record does not pretend
+otherwise. The commit-range checker's twelve adjudicated historical violations
+are unaffected by this commit and remain raw, exactly as the section above states.
+
+**No push, no tag, no remote, no publication, no deployment, no consumer
+migration.** Those are row 2 as well, they are separate decisions taken
+separately, and none of them has been taken. This release is frozen and
+unpublished.
