@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.6.0 — a provider is a declared record, billing is a proof, and capacity says how fresh it is
+
+**State `IN_PROGRESS`** — a candidate; no project may pin it. Grade to be derived at the freeze from
+`tools/surface_diff.py` over `aa55575b..HEAD` and the answer contract (D11, D28); expected **MINOR**: new
+tools ship and every existing signature stays callable. **2.5.0 is untouched** at `aa55575b`, digest
+`bd5118c7`, and every project pinned to it stays pinned to exactly what it verified.
+
+### Why this release exists
+
+Read at the boundary: the cross-vendor audit leg was qualified on one configuration drawing on one
+shared account-level pool while another pool stood partly unspent; every failover was a human decision;
+cross-pool routing was being re-implemented outside the pack; projects extended the pack's capacity record
+with the freshness and provenance they needed and the frozen reader refused the record, so the shared console
+showed capacity and coordinator positions UNKNOWN; the only official capacity observer never produced a
+machine reading in the desktop workflow. The founder's decisions are D29–D36.
+
+### What this release adds (kept current as the line grows; `tools/release_delta.py` checks it)
+
+- `docs/RP2.6.0-DESIGN-P1-provider-registry-and-billing-safety.md` — the authoritative design, frozen before
+  implementation, with its oracles; `docs/RP2.6.0-DESIGN-P0-third-provider-slot.md` — the design it
+  falsified and supersedes, kept as history.
+- `docs/RP2.6.0-GATE.md` — the gate record, opened with the session counters D35 authorises.
+- `DECISIONS.md` D29–D36 — billing mode not protocol (D29); independence by vendor on the derivation (D30);
+  a provider is a declared manifest, no slots, no count (D31); billing safety as Core invariants (D32);
+  capacity observability as a must-fix with first-class freshness (D33); one live new provider and a dormant
+  fixture (D34); session counters (D35); quarantining readers whose count blocks (D36).
+
+### What a consumer will notice
+
+Nothing yet: no production module has changed in this candidate. Each addition below this line is recorded
+as it lands.
+
 ## 2.5.0 — the boundary stops describing Git and starts constructing the repository
 
 A **MINOR** release (`DECISIONS.md` D11 and D28): a new tool ships, and the

@@ -892,3 +892,199 @@ immutable revision and a version change discovered afterwards invalidates it.
 
 **Reverses on:** a consumer pinning this release before it is frozen, which
 `state: IN_PROGRESS` exists to prevent.
+
+---
+
+## D29 — billing mode, not transport protocol, is what D14 clause 12 forbids (RP2.6.0)
+
+**Question the evidence put:** D14 clause 12 says first-party subscription paths are the preferred cloud
+execution surfaces and provider API-key billing is not an allowed dependency. A third provider's coding
+plan is a fixed subscription reached through an API key at an Anthropic-compatible endpoint. Is that an
+"API-key billing" dependency, or a subscription path?
+
+**Decided.**
+
+*   **The prohibited condition is METERED billing, never the protocol.** An endpoint, API or CLI whose
+    usage is included in a founder-authorised fixed subscription is allowed; pay-as-you-go, metered API,
+    overage, extra-usage credits, automatic top-up, a generic paid-API fallback, and unknown billing
+    behaviour are hard-denied. `billing_mode ∈ {subscription, local, prepaid_existing, metered_api}`;
+    anything not positively established is UNKNOWN, and **UNKNOWN is HARD DENY**.
+*   **Routable as `subscription` means proven for the exact route.** Provider, gateway, endpoint or client,
+    credential reference, billing pool, plan and the authorising decision, together with `overage_enabled`,
+    `auto_topup_enabled` and `metered_fallback_enabled` each established `false` — the billing route
+    fingerprint. A vendor whose subscription path is not mechanically distinguishable from its metered path
+    is NOT ROUTABLE.
+*   **Exhausted subscription quota never means metered.** It means another qualified, authorised
+    subscription or local pool, or PARK / REFUSE_UNTIL_RESET. No reroute may name a metered pool. A metered
+    or generic provider credential must not be present in a worker environment where a subscription route
+    is expected, and its presence never makes a denied route eligible.
+*   **`authentication_class` keeps its meaning.** A plan key under a subscription is `subscription`; `api_key`
+    remains the metered class that exists to be named and refused. Billing detail lives on the manifest
+    and the pool, never in the qualification identity.
+*   **The default project policy** for the founder's projects: `subscription` ALLOW when founder-authorised
+    by name; `local` ALLOW where project policy permits; `prepaid_existing` DENY unless explicitly
+    authorised for that project; `metered_api` HARD DENY.
+
+**Founder authority.** Decided 2026-09-19 on the read-only audit's decision packet and its addendum;
+confirmed at the consolidated HITL of the same day before any entry landed here (row 7).
+
+**Reverses on:** a founder decision authorising a metered pool for a named project under a cap — which
+would be a new `cost_policy` entry, not a change to this rule.
+
+---
+
+## D30 — independence is distinct model vendor, computed on the producer's derivation (RP2.6.0)
+
+**Question the evidence put:** `tools/routing.py` already refuses a cross-provider leg whose two sides
+record the same `provider`, a free string an adapter writes. Two gateways can re-host one vendor's model;
+one gateway can serve four vendors. Which of them is "cross-vendor"?
+
+**Decided.**
+
+*   **A leg declared cross-provider is satisfied only by a distinct model vendor**, whatever gateway served
+    either side; two gateways of one vendor are one vendor's reading. UNKNOWN on either side refuses.
+*   **`Derivation` carries `vendor` and `gateway`.** They are derivation fields — outside the nine keyed
+    qualification dimensions and outside the two pooled fields, so founder conditions 8 and 9 of
+    `docs/RP2.4-FOUNDER-AUTHORISATIONS.md` are untouched and `tools/tests/test_founder_authorisation.py`
+    stays as written. `provider` remains accepted as an alias for `vendor`.
+*   **Convention for the existing key:** `family` is read as the model vendor; `client` carries the tool
+    and, where one exists, the gateway (`claude-code@api.z.ai`); `surface` stays the execution surface. A
+    re-hosted model therefore keys a *different configuration* and the *same vendor*.
+*   **No provider name enters Core.** The one family-literal table (`backend_contract.ROLE_OBSERVATION_CLASSES`)
+    is replaced by a role → task-class map; which families stand behind a role is derived from the log.
+
+**Founder authority.** 2026-09-19, consolidated HITL (row 7).
+
+**Reverses on:** a measured case where two gateways of one vendor produced independent readings — which
+would be evidence about a vendor, recorded, and not a reason to weaken the rule.
+
+---
+
+## D31 — a provider is a declared manifest; the registry has no slots and no count (RP2.6.0)
+
+**Question the evidence put:** adding a third provider as an adapter plus a pool (`docs/RP2.6.0-DESIGN-P0-third-provider-slot.md`)
+makes the fourth a Core release and the count a property of the pack.
+
+**Decided.**
+
+*   **`ProviderRegistry[N]`:** a provider is one manifest record (`runtime-pack-provider-1`) a project
+    declares in `PROJECT.yaml providers:` — provider id, vendor, gateway, surfaces with their protocol,
+    adapter id, credential reference, billing pool and mode with the authorising decision, capacity
+    observer configuration, discovery document, private terms. Core validates it (closed vocabularies,
+    unknown keys refused, digest-pinned like an adapter), joins it to observations, capacity and cost
+    policy, and reports. **No `provider_1…provider_n` logic anywhere; no maximum.**
+*   **Registration routes nothing.** A manifest with `authorised_by: null`, no credential reference, or no
+    observer configuration is NOT_ROUTABLE for every purpose; activation is founder approval recorded,
+    credential reference, observer configuration and qualification evidence — all data.
+*   **The supported protocol vocabulary is `anthropic-compatible` and `openai-compatible`.** A manifest naming
+    another protocol is refused; adding a protocol is a Core change, stated here as the bounded edge of the
+    seam rather than hidden. A provider-native CLI adapter is therefore a future Core vocabulary entry plus
+    an adapter skill outside Core.
+*   **Manifests are project-declared, never a machine-level registry** (D13, D14 clause 7); the pack ships
+    dormant templates under `templates/providers/`.
+
+**Founder authority.** 2026-09-19 (row 7). **Reverses on:** nothing short of D14 clause 11 being
+reversed — a pack that dispatches would need to own the registry.
+
+---
+
+## D32 — billing safety is a Core invariant with discriminating oracles, checked before dispatch (RP2.6.0)
+
+**Decided.** The eight founder invariants are Core invariants of this release: (1) billing not positively
+established as an authorised subscription → NOT ROUTABLE; (2) no automatic fallback from a subscription
+endpoint or key to a metered one; (3) no generic provider credential as a fallback; (4) exhausted
+subscription quota → another qualified authorised subscription provider or PARK, never metered; (5) billing
+identity and pool exposed separately from provider and model identity; (6) cost policy verified before
+dispatch — `capacity.gate` evaluates it before any arithmetic; (7) the dispatch receipt (the `Wait` declared
+before launch) records provider, model, billing mode, billing pool, the cost-policy decision and the
+capacity snapshot with its freshness; (8) a provider-dispatch wait without a cost-policy decision is refused
+at declaration, and undeclared work stays `UNGOVERNED_BACKGROUND_WORK`. Discriminating tests include
+poisoned environments carrying generic and pay-as-you-go credentials, a missing subscription credential,
+exhausted quota, and a metered manifest that stays HARD DENY whatever the environment holds.
+
+**Founder authority.** 2026-09-19 (row 7). **Reverses on:** nothing; a weakening is a row-7 decision that
+would have to say which invariant it removes.
+
+---
+
+## D33 — provider capacity observability is a must-fix acceptance criterion, with freshness first-class (RP2.6.0)
+
+**Question the evidence put:** the pack's one official capacity observer produced no machine reading in
+the desktop workflow; a client-local file stops sampling when idle; projects wrote their own parsers and
+extended the capacity record with fields the frozen reader refused; hours of critical path were lost while
+an old percentage read as current.
+
+**Decided.**
+
+*   **One normalised observation for every pool:** provider, billing pool, `observed_at`, source,
+    provenance, freshness horizon, `freshness ∈ {FRESH, STALE, UNKNOWN, UNAVAILABLE}` computed at read time,
+    and every window the source exposes — used and remaining percentage only where the denominator is
+    established, native remaining/limit/unit otherwise; an unexposed window is UNAVAILABLE, never absent and
+    never zero. **A value past its horizon is STALE and is never presented as live.** Routing consumes a
+    window as available only when FRESH; STALE and UNKNOWN stay conservative.
+*   **Sources are documented readers, not a daemon:** the status-line JSON, the Desktop plan-usage file, the
+    Codex rollout snapshot, a provider quota document, a timestamped human reading. `capacity_record.py` is
+    the only writer of `CAPACITY.json`; project-local parsers become unnecessary on adoption. A bounded
+    `--refresh-claude` renders the official client once at a boundary; where that cannot be produced, the
+    path reports UNAVAILABLE and the limitation is recorded rather than hidden.
+*   **Acceptance at the freeze, on the real machine:** Claude, Codex and (once configured) the third pool
+    each FRESH or truthfully STALE/UNKNOWN/UNAVAILABLE for their windows; no lane-local parser required; the
+    dashboard renders the same observations. UNKNOWN is acceptable when truthful; stale-as-current is not.
+
+**Founder authority.** 2026-09-19 (row 7). **Reverses on:** a documented, continuously refreshed first-party
+source appearing — which adds a reader and removes a limitation, and changes no rule.
+
+---
+
+## D34 — one live new provider; a dormant fixture proves the seam; everything else is deferred (RP2.6.0)
+
+**Decided.** The only new live provider of this release is the founder-authorised Z.ai GLM coding
+subscription, integrated solely as a `subscription` pool; no metered path of that vendor is qualified
+as a fallback. Moonshot Kimi Code is a **dormant, NOT_ROUTABLE fixture**: vendor `moonshot`,
+billing `subscription`, `authorised_by: null`, no credential, no subscription, no qualification campaign,
+no private source sent to it, privacy status UNRESOLVED — retained only because it exercises the same
+Anthropic-compatible seam at negligible cost, and it is the first item dropped if capacity tightens. Other
+vendors are deferred: no adapter, no fixture; the registry must not prevent a later conforming provider.
+
+**Founder authority.** 2026-09-19 (row 7). **Reverses on:** a founder decision activating a further
+provider — manifest, credential reference, observer, qualification; no Core release.
+
+---
+
+## D35 — session-scoped counters for the 2.6.0 pack-evolution session (RP2.6.0)
+
+**Decided.** For this pack-evolution session only, `policy/BUDGETS.md` session-scoped authorisation
+applies with the RP2.2/RP2.3 numbers: repair attempts per reproduced root cause 12, repair rounds per
+capability 8, closure/requalification cycles per capability 4 — raisable to 8 only by a further recorded
+founder decision. Environmental and transient retries are classified first and never charged; three
+consecutive failures on one root-cause hypothesis end that hypothesis. The frozen project-runtime counters
+are untouched. Recorded in `docs/RP2.6.0-GATE.md` as the table requires.
+
+**Founder authority.** 2026-09-19, consolidated HITL (rows 7 and 8).
+
+---
+
+## D36 — a reader quarantines what it cannot trust, counts it, and the count blocks (RP2.6.0)
+
+**Question the evidence put:** the frozen readers refuse a whole record on one element they cannot trust —
+an outcome word outside the vocabulary, a wait whose waiter is not the governed one, a pool with a field
+the reader does not know. Active projects' coordinator positions and capacity
+read UNKNOWN on the shared console for days, while the positions were in fact recorded.
+
+**Decided.**
+
+*   **Per-element quarantine.** A malformed or untrusted observation row, wait, or pool is reported with
+    its reason, counted, and excluded from derivation; the rest of the record derives. **A non-zero
+    quarantine count BLOCKS closure** — it is a blocker the projection shows, never a warning. Nothing is
+    silently counted and nothing is silently dropped.
+*   **The guarantee does not narrow.** Fail-closed remains the posture: what is quarantined contributes
+    nothing to any figure; what cannot be parsed at all still refuses the record. What changes is that one
+    bad element no longer hides the good ones from the person the projection is for.
+*   **Writers are offered a checker and a validated append** (`observations_check.py`,
+    `observation_append.py`, `capacity_record.py`), so keeping a record current is cheaper than extending
+    it by hand.
+
+**Founder authority.** 2026-09-19, consolidated HITL (row 7), with BLOCKING chosen over advisory.
+
+**Reverses on:** a quarantined element being found to have contributed to a derived figure — which is the
+class `projection becoming authority`, and a release-blocking defect.

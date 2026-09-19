@@ -522,7 +522,22 @@ def test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it():
 #: which is a blind spot in the direction the claim is made. Measured when it was
 #: corrected: zero such names exist and the check is green against both, so this
 #: closes a gap rather than reporting a regression.
-QUALIFIED_BASELINE = "9d906ce64bd69cb1a29594a7110829da7df5d996"
+def _qualified_baseline() -> str:
+    """The release this candidate measures its non-regression FROM, read from the
+    manifest's own `baseline_revision` rather than typed here. 2.5.0 carried
+    2.4.0's revision as a literal, and the next release would have measured
+    itself against the wrong floor while the literal read as current."""
+    import json
+    import re
+
+    stated = str(json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+                 .get("baseline_revision") or "")
+    found = re.match(r"[0-9a-f]{40}", stated)
+    assert found, "PACK_MANIFEST.json baseline_revision does not begin with a full revision"
+    return found.group(0)
+
+
+QUALIFIED_BASELINE = _qualified_baseline()
 
 
 def test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline():
@@ -928,17 +943,22 @@ def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_pr
     strict = _non_conforming_range(commit_gate.NO_PRIVATE_TERMS)
     strict_commits = len(strict)
     strict_violations = sum(len(v) for _, v in strict)
-    assert strict_violations, (
-        "this guard exists to keep a non-zero result honestly recorded; the range now "
-        "conforms, so the records it checks should be rewritten rather than this "
-        "assertion relaxed"
-    )
+    gate = _current_gate_record().read_text(encoding="utf-8")
+    if not strict_violations:
+        # A range that conforms is a claim the record must make in a checked form,
+        # not a reason for this guard to fall silent: the 2.5.0 record's twelve stay
+        # bound as history in that record, and this release's own range is measured
+        # from its own baseline.
+        assert "COMMIT-RANGE GATE: REPORTS NO VIOLATION OVER THIS LINE" in gate, (
+            "the checker reports no violation over this line's range, and the gate record "
+            "does not say so in the checked form"
+        )
+        return
 
     shipped = _non_conforming_range(_pack_default_term_set())
     shipped_commits = len(shipped)
     shipped_violations = sum(len(v) for _, v in shipped)
 
-    gate = (ROOT / "docs" / "RP2.5.0-GATE.md").read_text(encoding="utf-8")
     manifest = json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
     entry = next(
         item for item in manifest["known_limitations"]
@@ -959,7 +979,7 @@ def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_pr
     )
     assert entry_listed, "the manifest entry no longer enumerates the failing commits in the checked form"
 
-    for where, listing in (("docs/RP2.5.0-GATE.md", gate_listed), ("the manifest entry", entry_listed)):
+    for where, listing in (("the gate record", gate_listed), ("the manifest entry", entry_listed)):
         named = set(re.findall(r"[0-9a-f]{7,40}", listing.group(1)))
         named = {sha[:7] for sha in named}
         assert named == expected, (
@@ -974,7 +994,7 @@ def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_pr
     said_violations = _NUMBER_WORDS[stated.group(1).lower()]
     said_commits = _NUMBER_WORDS[stated.group(2).lower()]
     assert (said_violations, said_commits) == (strict_violations, strict_commits), (
-        f"docs/RP2.5.0-GATE.md says {said_violations} violations over {said_commits} commits; "
+        f"the gate record says {said_violations} violations over {said_commits} commits; "
         f"the checker reports {strict_violations} over {strict_commits} "
         f"({', '.join(sha[:7] for sha, _ in strict)})"
     )
@@ -989,7 +1009,7 @@ def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_pr
         _NUMBER_WORDS[shipped_stated.group(1).lower()],
         _NUMBER_WORDS[shipped_stated.group(2).lower()],
     ) == (shipped_commits, shipped_violations), (
-        f"docs/RP2.5.0-GATE.md states a --default-terms result of "
+        f"the gate record states a --default-terms result of "
         f"{shipped_stated.group(1).lower()} commits and {shipped_stated.group(2).lower()} "
         f"violations; the checker reports {shipped_commits} and {shipped_violations}"
     )
@@ -1612,12 +1632,22 @@ def _pathmatch_divergence_pattern():
     )
 
 
+def _is_prior_release_design_record(name: str) -> bool:
+    """A previous release's design record is history, left exactly as written,
+    whatever the current manifest's `superseded` list says — that list classifies
+    the release under construction. The prefix is derived, never typed."""
+    import re
+
+    found = re.match(r"docs/(RP[0-9.]+)-DESIGN-", name)
+    return bool(found) and found.group(1) != _release_doc_prefix()
+
+
 def _pathmatch_divergence_offenders(documents, pattern, manifest):
     """Find divergence figures in current release claims, not design history."""
     offenders = []
     exempt_line = ("BASELINE_DIVERGENCES = (", "number = r", "rf\"")
     for name, text in documents:
-        if name in _superseded_design_records(manifest):
+        if name in _superseded_design_records(manifest) or _is_prior_release_design_record(name):
             continue
         # This test carries the pattern's own negative and positive samples;
         # scanning it would turn its proof into a false release finding.
@@ -1646,8 +1676,15 @@ def test_pathmatch_guard_rejects_a_defect_in_the_authoritative_design_record(man
 def test_pathmatch_guard_skips_an_actual_defect_in_superseded_design_history(manifest):
     """The skipped historical record is proven to contain the offending shape."""
     pattern = _pathmatch_divergence_pattern()
+    # History is any release's superseded record AND any prior release's record;
+    # both are left as written. The proof needs one that carries the shape.
+    history = sorted(
+        {*_superseded_design_records(manifest)}
+        | {str(p.relative_to(ROOT)) for p in ROOT.glob("docs/RP*-DESIGN-*.md")
+           if _is_prior_release_design_record(str(p.relative_to(ROOT)))}
+    )
     historical = next(
-        name for name in _superseded_design_records(manifest)
+        name for name in history
         if pattern.search((ROOT / name).read_text(encoding="utf-8"))
     )
     text = (ROOT / historical).read_text(encoding="utf-8")
@@ -1726,8 +1763,7 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own(manifest):
     #: a hand-written list of filenames, which is the shape that let a
     #: restatement hide in the first place.
     changed = subprocess.run(
-        ["git", "diff", "--name-only", "-z",
-         "4495e61850c08027e47eac6d0db84b4b3380e300", "HEAD"],
+        ["git", "diff", "--name-only", "-z", QUALIFIED_BASELINE, "HEAD"],
         cwd=str(ROOT), capture_output=True, check=True,
     ).stdout
     touched = [entry.decode("utf-8") for entry in changed.split(b"\0") if entry]
@@ -1805,6 +1841,11 @@ def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpu
     import ast
 
     corpus = ROOT / "docs/acceptance/rp2.5.0-floor-differential.py"
+    if _release_doc_prefix() != "RP2.5.0":
+        pytest.skip(
+            "the frozen-floor corpus and its adjudicated residual belong to the 2.5.0 gate "
+            "record, which is history; a later release that runs a differential binds its own "
+            "figures under its own guard")
     source = ast.parse(corpus.read_text(encoding="utf-8"), filename=str(corpus))
 
     main = next(
@@ -1862,8 +1903,15 @@ def test_the_floor_population_and_residual_accounting_are_derived_from_the_corpu
 def test_the_gate_does_not_transcribe_a_mutation_total():
     """B5 stays closed when the corpus grows: only the harness owns its total."""
     gate = _current_gate_record().read_text(encoding="utf-8")
-    scoring = gate.split("## Mutation scoring", 1)[1].split("## Consumer rehearsal", 1)[0]
-    mechanical = next(line for line in gate.splitlines() if line.startswith("| mutation |"))
+    mechanical = next((line for line in gate.splitlines() if line.startswith("| mutation |")), None)
+    if mechanical is None:
+        # A candidate whose gate record claims no mutation result yet has nothing to
+        # transcribe. The row and the section arrive together at closure; a row
+        # without its section is caught by the split below.
+        pytest.skip("the gate record records no mutation pass yet")
+    assert "## Mutation scoring" in gate, "a mutation row without its scoring section"
+    scoring = gate.split("## Mutation scoring", 1)[1]
+    scoring = scoring.split("## Consumer rehearsal", 1)[0] if "## Consumer rehearsal" in scoring else scoring
     transcribed = re.compile(
         r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
         r"(?:well-formed\s+)?mutants?\b|\b\d+\s+killed\b",
