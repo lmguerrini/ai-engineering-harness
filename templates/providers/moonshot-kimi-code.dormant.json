@@ -1,0 +1,31 @@
+{
+  "schema": "runtime-pack-provider-1",
+  "provider_id": "moonshot-kimi-code",
+  "vendor": "moonshot",
+  "gateway": "api.kimi.ai",
+  "surfaces": [
+    { "surface": "claude-cli", "client": "claude-code@api.kimi.ai", "protocol": "anthropic-compatible" }
+  ],
+  "adapter": "anthropic-compatible-worker",
+  "credential": {
+    "kind": "subscription_key",
+    "env_file_ref": null,
+    "generic_env_forbidden": ["MOONSHOT_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY"]
+  },
+  "billing": {
+    "billing_mode": "subscription",
+    "billing_pool_id": "moonshot-kimi-code-membership",
+    "windows": ["rolling_5h", "weekly"],
+    "authorised_by": null,
+    "overage_enabled": null,
+    "auto_topup_enabled": null,
+    "metered_fallback_enabled": null
+  },
+  "capacity_observer": {
+    "source": "human-reading",
+    "freshness_horizon_s": 7200,
+    "command": null
+  },
+  "discovery": null,
+  "private_terms": ["kimi", "moonshot"]
+}

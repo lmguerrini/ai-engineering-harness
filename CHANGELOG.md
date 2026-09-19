@@ -26,6 +26,12 @@ machine reading in the desktop workflow. The founder's decisions are D29–D36.
   a provider is a declared manifest, no slots, no count (D31); billing safety as Core invariants (D32);
   capacity observability as a must-fix with first-class freshness (D33); one live new provider and a dormant
   fixture (D34); session counters (D35); quarantining readers whose count blocks (D36).
+- `tools/provider_manifest.py` — a provider as one declared manifest (`runtime-pack-provider-1`), the
+  billing route fingerprint, `routability`, and its CLI.
+- `tools/tests/test_provider_manifest.py` — the suite behind it.
+- `templates/providers/moonshot-kimi-code.dormant.json` — the D34 dormant fixture that proves the seam
+  registers unchanged and routes nothing.
+- `templates/providers/README.md` — what a dormant template promises and does not.
 
 ### What a consumer will notice
 

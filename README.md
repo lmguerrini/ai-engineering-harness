@@ -119,6 +119,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── pack_pin.py             verifies this release against its own manifest
     │   ├── pack_migration.py       pin class, migration gate, rollback, release index
     │   ├── adapter_pin.py          verifies the executable adapters a project declares
+    │   ├── provider_manifest.py    a declared provider manifest; billing safety as a route fingerprint
     │   ├── project_context.py      verifies a project's declared semantic authority
     │   ├── capability_open.py      one readiness path over all of the above, before work starts
     │   ├── backend_contract.py     backend identity and per-family qualification, now prior
