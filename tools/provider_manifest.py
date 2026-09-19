@@ -201,8 +201,10 @@ def _found(value: object) -> str:
     before the refusal is printed, and a field this module exists to keep out
     of any output must not be echoed by the message that refuses it.
     """
-    if isinstance(value, bool) or value is None or isinstance(value, (int, float)):
+    if isinstance(value, bool) or value is None:
         return repr(value)
+    if isinstance(value, (int, float)):
+        return type(value).__name__
     if isinstance(value, str):
         return f"<{len(value)} characters>"
     if isinstance(value, dict):
@@ -238,6 +240,19 @@ def _expect_str(value: object, where: str) -> str:
     return value
 
 
+def _key_name(key: object) -> str:
+    """A key as a refusal may name it: printable, bounded, or described.
+
+    Keys are names a reader wrote, so a refusal may usually repeat one — but a
+    key can be as long or as unprintable as any value, and the message that
+    refuses it must stay one line of bounded length."""
+    if not isinstance(key, str):
+        return type(key).__name__
+    if not key.isprintable() or len(key) > 64:
+        return f"<{len(key)} characters>"
+    return key
+
+
 def _refuse_unknown(mapping: dict, known: frozenset, where: str) -> None:
     unknown = sorted(set(mapping) - known)
     if unknown:
@@ -245,7 +260,7 @@ def _refuse_unknown(mapping: dict, known: frozenset, where: str) -> None:
         # same rule `adapter_pin.declarations_from` applies to `adapters:`.
         raise IntegrityError(
             f"{where} declares field(s) this schema does not implement",
-            unknown=", ".join(unknown), known=", ".join(sorted(known)),
+            unknown=", ".join(_key_name(name) for name in unknown), known=", ".join(sorted(known)),
         )
 
 
@@ -614,7 +629,7 @@ def _refuse_repeated_keys(pairs: list) -> dict:
     for key, _value in pairs:
         if key in seen:
             raise IntegrityError("provider manifest repeats a key; a document with two answers "
-                                 "to one question is refused", key=key)
+                                 "to one question is refused", key=_key_name(key))
         seen.add(key)
     return dict(pairs)
 

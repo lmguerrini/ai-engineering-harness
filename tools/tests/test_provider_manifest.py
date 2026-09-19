@@ -152,6 +152,8 @@ def test_a_client_config_key_with_a_metered_suffix_is_caught_like_an_environment
     assert fp.metered_fallback_enabled is True
     fp = pm.fingerprint(manifest, environment={}, client_config_keys=("providers.vendor_a_api_key",))
     assert fp.metered_fallback_enabled is True
+    fp = pm.fingerprint(manifest, environment={}, client_config_keys=("a.b.c_env_key",))
+    assert fp.metered_fallback_enabled is True
 
 
 def test_a_repeated_key_is_refused_rather_than_resolved_last_wins(tmp_path):
@@ -275,6 +277,7 @@ def test_render_states_the_flags_as_they_were_established():
     unknown = pm.fingerprint(manifest, environment=None)
     unknown_text = pm.render(manifest, unknown, pm.routability(unknown, authorised_pools=("vendor-a-membership",)))
     assert "not established" in unknown_text
+    assert "metered_fallback_enabled=UNKNOWN" in unknown_text
 
 
 def test_the_json_output_carries_the_reasons(tmp_path, capsys):
@@ -391,6 +394,35 @@ def test_a_refusal_never_echoes_the_offending_content(path):
     with pytest.raises(pm.IntegrityError) as caught:
         pm.ProviderManifest.from_mapping(mapping)
     assert "value-that-must-not-print" not in caught.value.render()
+
+
+def test_an_unknown_key_that_is_unprintable_or_huge_is_described_not_echoed():
+    mapping = _manifest()
+    mapping["x" * 200] = 1
+    with pytest.raises(pm.IntegrityError) as caught:
+        pm.ProviderManifest.from_mapping(mapping)
+    assert "x" * 100 not in caught.value.render() and "<200 characters>" in caught.value.render()
+    mapping = _manifest()
+    mapping["k\ndisposition: ROUTABLE"] = 1
+    with pytest.raises(pm.IntegrityError) as caught:
+        pm.ProviderManifest.from_mapping(mapping)
+    assert "disposition: ROUTABLE" not in caught.value.render()
+
+
+def test_a_repeated_unprintable_key_is_described_not_echoed(tmp_path):
+    path = tmp_path / "dup.json"
+    path.write_text('{"schema": "runtime-pack-provider-1", "a\\nb": 1, "a\\nb": 2}')
+    with pytest.raises(pm.IntegrityError) as caught:
+        pm.load(path)
+    assert "\n" not in caught.value.render().split("key:")[-1].strip()
+
+
+def test_a_numeric_value_in_a_refusal_is_named_by_type():
+    mapping = _manifest()
+    mapping["billing"]["authorised_by"] = 12345678901234567890
+    with pytest.raises(pm.IntegrityError) as caught:
+        pm.ProviderManifest.from_mapping(mapping)
+    assert "12345678901234567890" not in caught.value.render()
 
 
 def test_an_unknown_top_level_key_is_refused(tmp_path):
