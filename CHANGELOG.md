@@ -72,9 +72,15 @@ reports additions only); what changes is what a caller is TOLD, recorded here as
 
 - `tools/routing.py`: an observation's `derivation` may now carry `vendor` and `gateway`; a leg declared
   cross-provider is refused when both sides share a **vendor**, whatever gateway served them (`provider` is
-  read as the alias of `vendor`), and the refusal names the vendor. `eligibility(...)` accepts an optional
-  `routability` and refuses every purpose on a `NOT_ROUTABLE_*` disposition; without it every existing call
-  behaves as before. `routing.py --eligibility` is a new report mode; the existing report mode is unchanged.
+  read as the alias of `vendor`), and the refusal names the vendor. **One existing answer changes:**
+  `independence_problems(..., require_distinct_provider=True)` now canonicalises both `provider` values
+  (NFKC, case, whitespace, separators) and requires a vendor slug, so a pair that differed only in spelling
+  (`Vendor-A` / `vendor-a`, `vendor_a` / `vendor_b`) or carried prose (`Acme Corp`) satisfied the leg in 2.5.0
+  and refuses now — fail-closed, by D30. `eligibility(...)` accepts an optional `routability`: `None` asks
+  nothing, exactly `ROUTABLE` passes, anything else refuses every purpose. `routing.py --eligibility` is a new
+  report mode whose JSON rows carry `availability_supposed` and whose report carries `quarantined`; a
+  non-slug `--subject-vendor` is refused with exit 2; `--now` pins the ageing moment. The existing report
+  mode is byte-for-byte unchanged.
 - `tools/provider_manifest.py` is new: a project that declares no manifest sees nothing change.
 - `tools/resource_observation.py`: `--provider-quota PATH` and `--human-reading …` are new modes; the status-line
   path is unchanged; `as_record()` carries new keys (provider, pool, provenance, horizon, per-window natives,

@@ -54,6 +54,7 @@ from typing import Iterable, Mapping
 import capacity
 import provider_manifest
 import qualification
+from errors import IntegrityError
 from backend_contract import TaskClassGrade
 from provider_manifest import (
     NOT_ROUTABLE_BILLING,
@@ -323,13 +324,15 @@ def independence_problems(
         )
     elif reader.producer == subject.producer:
         found.append(
-            f"the proposed reader is the producer of the work ({reader.producer}). A producer "
+            f"the proposed reader is the producer of the work "
+            f"({_bounded(reader.producer, 40)}). A producer "
             f"never closes its own finding, whatever task class it is dispatched under"
         )
     known = reader.session != UNKNOWN and subject.session != UNKNOWN
     if known and reader.session == subject.session:
         found.append(
-            f"the reader would run in the session that produced the work ({reader.session}); a "
+            f"the reader would run in the session that produced the work "
+            f"({_bounded(reader.session, 40)}); a "
             f"blind reading is a fresh context, not a fresh instruction"
         )
     elif not known and reader.fresh is not True:
@@ -369,12 +372,18 @@ def independence_problems(
             )
             spelling_clause = (
                 "" if reader_vendor == subject_vendor
-                else f" — {subject_vendor} differs from it only by separators"
+                else f" — {_bounded(subject_vendor, 32)} differs from it only by separators"
             )
+            # BOUNDED IN PROSE, COMPARED IN FULL (O12, criterion 6): a vendor
+            # slug has no length limit, so a ten-thousand-character pair once
+            # rendered a twenty-thousand-character reason line. The comparison
+            # above reads the whole name; the sentence a human reads does not —
+            # and at 32, because the sentence is itself echoed inside a
+            # "not independent —" reason and must leave the line its margin.
             found.append(
                 f"this leg is declared cross-provider and both sides are vendor "
-                f"{reader_vendor}{spelling_clause}{gateway_clause}; two gateways of one vendor "
-                f"are one vendor's reading"
+                f"{_bounded(reader_vendor, 32)}{spelling_clause}{gateway_clause}; two gateways "
+                f"of one vendor are one vendor's reading"
             )
     return tuple(found)
 
@@ -664,10 +673,13 @@ def eligibility(
     reasons: list[str] = []
     if routability is not None:
         if routability in _NOT_ROUTABLE:
+            # TWO SENTENCES, TWO REASONS (O12, criterion 6): the render puts one
+            # reason on one line, and a single 200+-character sentence made a
+            # line no terminal shows whole. Split where the thought splits.
+            reasons.append(f"billing safety refuses this route: {routability}")
             reasons.append(
-                f"billing safety refuses this route: {routability}. An unauthorised or unproven "
-                f"billing route is refused for every purpose, PROBE included, whatever the "
-                f"configuration's own evidence says (D29)"
+                "an unauthorised or unproven billing route is refused for every purpose, "
+                "PROBE included, whatever the configuration's own evidence says (D29)"
             )
         elif routability != provider_manifest.ROUTABLE:
             reasons.append(
@@ -679,11 +691,16 @@ def eligibility(
         # the two: a candidate declared at one class holding a grade measured at
         # another passed a CRITICAL leg. `unprobed at every other class` is the
         # rule the whole release rests on, and it is worth nothing if the
-        # evidence and the question can name different classes.
+        # evidence and the question can name different classes. The classes are
+        # BOUNDED echoes: a task class is caller-supplied text, and an unbounded
+        # one once rendered a reason line as long as it liked.
         reasons.append(
-            f"this candidate is offered for {candidate.task_class!r} and carries evidence "
-            f"measured at {candidate.grade.task_class!r}. A grade at one task class is unprobed "
-            f"at every other, so this grade answers a different question"
+            f"this candidate is offered for {_bounded(candidate.task_class, 40)} and carries "
+            f"evidence measured at {_bounded(candidate.grade.task_class, 40)}"
+        )
+        reasons.append(
+            "a grade at one task class is unprobed at every other, so this grade answers a "
+            "different question"
         )
     if candidate.availability == UNAVAILABLE:
         reasons.append(
@@ -692,8 +709,8 @@ def eligibility(
         )
     if candidate.grade.grade == "contradicted":
         reasons.append(
-            f"this configuration is CONTRADICTED at {candidate.task_class!r}. Adverse evidence is "
-            f"not absence of evidence"
+            f"this configuration is CONTRADICTED at {_bounded(candidate.task_class, 40)}. "
+            f"Adverse evidence is not absence of evidence"
         )
     if not candidate.identity.complete:
         reasons.append(
@@ -707,8 +724,11 @@ def eligibility(
             reasons.append(
                 f"a mandatory independent audit leg or a critical-domain promotion needs a "
                 f"CONFIRMED configuration at this task class; this one is "
-                f"{candidate.grade.grade!r}. HITL rows 12 and 16 keep their human, and an "
-                f"unavailable qualified worker is never authorization to use an unqualified one"
+                f"{candidate.grade.grade!r}"
+            )
+            reasons.append(
+                "HITL rows 12 and 16 keep their human, and an unavailable qualified worker is "
+                "never authorization to use an unqualified one"
             )
         if candidate.availability != AVAILABLE:
             reasons.append(
@@ -718,9 +738,12 @@ def eligibility(
     elif purpose == ROUTINE:
         if candidate.grade.grade not in ("confirmed", "provisional"):
             reasons.append(
-                f"this configuration is {candidate.grade.grade!r} at {candidate.task_class!r}. An "
-                f"unprobed configuration takes work through a declared PROBE, which records what "
-                f"it tested, not through ordinary routing"
+                f"this configuration is {candidate.grade.grade!r} at "
+                f"{_bounded(candidate.task_class, 40)}"
+            )
+            reasons.append(
+                "an unprobed configuration takes work through a declared PROBE, which records "
+                "what it tested, not through ordinary routing"
             )
         if candidate.availability != AVAILABLE:
             reasons.append("availability is not established by an observed dispatch")
@@ -1044,7 +1067,13 @@ def _match_manifest(
     route. Falls back to VENDOR only when exactly one manifest names it,
     because two manifests sharing a vendor is an ambiguity this function
     refuses to guess through rather than silently pick one.
+
+    Every vendor comparison is CANONICAL (D30): `Vendor-A` and `vendor-a` are
+    one vendor, so a manifest declaring one spelling matches a family recorded
+    in the other — the raw comparison refused a route that existed because two
+    honest writers disagreed about a capital letter.
     """
+    canonical_family = _canonical_vendor(family)
     by_client = [
         (manifest, index)
         for manifest in manifests
@@ -1057,15 +1086,31 @@ def _match_manifest(
         # the configuration's own vendor; what is still ambiguous after that
         # is refused — the answer must not depend on the order the project
         # listed its manifests in.
-        by_client = [pair for pair in by_client if pair[0].vendor == family]
+        by_client = [
+            pair for pair in by_client
+            if _canonical_vendor(pair[0].vendor) == canonical_family
+        ]
     if len(by_client) == 1:
         return by_client[0]
     if len(by_client) > 1:
+        # MANIFESTS ARE COUNTED, not (manifest, surface) pairs: one manifest
+        # declaring the client on two surfaces is ONE manifest with an
+        # ambiguous surface, not two manifests, and a refusal that counts it
+        # as two states a falsehood about the project's own declarations.
+        if len({pair[0] for pair in by_client}) == 1:
+            raise RoutingError(
+                f"manifest {_bounded(by_client[0][0].provider_id)} declares client "
+                f"{_bounded(client)} on {len(by_client)} surfaces; an ambiguous route is refused"
+            )
         raise RoutingError(
-            f"{len(by_client)} declared manifests match client {_bounded(client)} at vendor "
-            f"{_bounded(family)}; an ambiguous route is refused rather than resolved by list order"
+            f"{len({pair[0] for pair in by_client})} declared manifests match client "
+            f"{_bounded(client)} at vendor {_bounded(family)}; an ambiguous route is refused "
+            f"rather than resolved by list order"
         )
-    by_vendor = [manifest for manifest in manifests if manifest.vendor == family]
+    by_vendor = [
+        manifest for manifest in manifests
+        if _canonical_vendor(manifest.vendor) == canonical_family
+    ]
     if len(by_vendor) > 1:
         # Two manifests at one vendor and NEITHER declares this client: the
         # configuration's own vendor cannot choose between them, so this is an
@@ -1172,11 +1217,28 @@ class EligibilityReport:
         }
 
     def render(self) -> str:
-        lines = [f"eligibility report for {self.task_class!r}, purpose {self.purpose}"]
+        # EVERY FIELD A ROW ECHOES crosses `_bounded` on the way to a human
+        # (O12, criterion 6): the four identity dimensions, the vendor, the
+        # gateway, the pool's unit, the task class — all of it text the
+        # observation log, a manifest or a capacity document supplied and none
+        # of it text this module produced. `capacity.Pool` does not validate
+        # `unit`, so a unit carrying a newline and a live escape once rendered
+        # as a second line this report never wrote. JSON mode needs none of
+        # this: it escapes by construction and is unchanged.
+        lines = [
+            f"eligibility report for {_bounded(self.task_class)}, purpose {self.purpose}"
+        ]
         for row in self.rows:
-            lines.append(f"  {'/'.join(row.identity[:4])} @ {row.task_class}")
+            # The header echoes FIVE fields on one line (four identity
+            # dimensions and the class), so the class — the field a row shares
+            # with every other row and the one a hostile spelling put last — is
+            # bounded tighter than the dimensions to keep the whole line bounded.
+            lines.append(
+                f"  {'/'.join(_bounded(value) for value in row.identity[:4])} "
+                f"@ {_bounded(row.task_class, 40)}"
+            )
             lines.append(f"    grade: {row.grade} ({row.observations} observation(s))")
-            lines.append(f"    vendor={row.vendor} gateway={row.gateway}")
+            lines.append(f"    vendor={_bounded(row.vendor)} gateway={_bounded(row.gateway)}")
             lines.append(
                 f"    billing: {row.routability}"
                 + (f" — {row.reasons[0]}" if row.reasons else "")
@@ -1185,7 +1247,8 @@ class EligibilityReport:
                 lines.append("    pool: none observed")
             else:
                 lines.append(
-                    f"    pool {_bounded(row.pool.pool_id)}: {row.pool.remaining} {row.pool.unit} "
+                    f"    pool {_bounded(row.pool.pool_id)}: {row.pool.remaining} "
+                    f"{_bounded(row.pool.unit)} "
                     f"({row.pool.freshness}, age {row.pool.age_seconds})"
                 )
             if row.independence:
@@ -1200,6 +1263,41 @@ class EligibilityReport:
             lines.append(f"    {verdict}")
         lines.extend(f"  note: {note}" for note in self.notes)
         return "\n".join(lines)
+
+
+def _refuse_non_object_observation_lines(source: "str") -> None:
+    """Refuse an observation line that is not an object, in this module's own
+    words, before `qualification` reads the log.
+
+    A JSON line that parses to a list or a scalar reaches
+    `identity_from_observation` and dies on `row.get(...)` — and the
+    interpreter's own words (`'list' object has no attribute 'get'`) reach the
+    caller where a refusal sentence should be. The log is read here first so
+    the refusal names the line and says what it is; everything else about the
+    log stays `qualification`'s to refuse, in the sentences it already has.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    try:
+        lines = _Path(source).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        # An unreadable log gets `qualification`'s own refusal, which is a
+        # sentence; this pre-read exists only for what it would misreport.
+        return
+    for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            value = _json.loads(line)
+        except ValueError:
+            # An unparseable line is `qualification`'s to refuse, in the
+            # sentence it already has.
+            continue
+        if not isinstance(value, dict):
+            raise RoutingError(
+                f"observation line {number} is a {type(value).__name__}, not an object"
+            )
 
 
 def eligibility_report(
@@ -1230,6 +1328,7 @@ def eligibility_report(
             f"purpose {purpose!r} is not one of {', '.join(PURPOSES)}; a report labelled with a "
             "purpose nobody defined would be a report nobody could read"
         )
+    _refuse_non_object_observation_lines(observations_path)
     manifests = tuple(manifests)
     pools = tuple(capacity_pools)
     quarantined = dict(quarantined_pools) if quarantined_pools else {}
@@ -1281,27 +1380,86 @@ def eligibility_report(
             route_reasons = () if ambiguous else (
                 "no declared provider manifest covers this configuration",
             )
+            if not ambiguous:
+                # AND WHERE THE CLIENT IS DECLARED, SAY WHERE. A row whose
+                # family matches no declared vendor used to stop at "no
+                # declared provider manifest covers this configuration" even
+                # while two manifests at OTHER vendors declared its client —
+                # the exact fact a coordinator needs to repair the route,
+                # because it says the client string is right and the family
+                # join is what is missing.
+                elsewhere = sorted(
+                    other.provider_id for other in manifests
+                    if any(surface.client == client for surface in other.surfaces)
+                )
+                if elsewhere:
+                    row_reasons.append(
+                        f"client {_bounded(client)} is declared by manifests at other vendors: "
+                        + ", ".join(_bounded(provider_id) for provider_id in elsewhere)
+                    )
             route = provider_manifest.Routability(NOT_ROUTABLE_UNKNOWN, route_reasons)
         else:
-            vendor, gateway = manifest.vendor, manifest.gateway
+            gateway = manifest.gateway
             provider_id, billing_pool_id = manifest.provider_id, manifest.billing.billing_pool_id
             fp = provider_manifest.fingerprint(
                 manifest, surface_index=surface_index, environment=environment,
             )
             route = provider_manifest.routability(fp, authorised_pools=authorised_pools)
+            # THE OBSERVED FAMILY DECIDES THE VENDOR (D30: "family is read as
+            # the model vendor"). The row's vendor used to be whatever the
+            # manifest DECLARED, so a manifest naming another vendor silently
+            # supplied the independence comparison a vendor nobody observed,
+            # and a leg read as cross-vendor on a declaration alone. The family
+            # is what was observed; where the manifest's canonical vendor
+            # disagrees with it — or the family cannot be canonicalised at all
+            # — the vendor reads UNKNOWN (which refuses the leg), the
+            # disagreement is said in the row's own words, and the route is
+            # NOT_ROUTABLE_UNKNOWN: a manifest that misdescribes the model it
+            # serves does not establish a route, whatever its billing facts.
+            observed_vendor = _canonical_vendor(family)
+            if observed_vendor == UNKNOWN or observed_vendor != _canonical_vendor(manifest.vendor):
+                vendor = UNKNOWN
+                row_reasons.append(
+                    f"the observed family {_bounded(family, 32)} and the declared manifest vendor "
+                    f"{_bounded(manifest.vendor, 32)} disagree; independence cannot be established "
+                    f"on a declaration"
+                )
+                route = provider_manifest.Routability(NOT_ROUTABLE_UNKNOWN, ())
+            else:
+                vendor = observed_vendor
         row_reasons.extend(route.reasons)
 
         pool_state = None
-        for candidate_pool in pools:
-            if candidate_pool.pool_id == billing_pool_id:
-                pool_state = _pool_state(candidate_pool, now=now)
-                break
-        # Three ways a row's capacity is UNKNOWN, in precedence order: the
-        # pool's element was quarantined (its sentence says why — a surviving
-        # reading for the same id never outranks a quarantine), no pool was
-        # observed at all, or the pool exists below but cannot be aged.
+        # A DUPLICATE POOL ID IS AN AMBIGUOUS READING, never a list-order
+        # choice (D36). Two capacity elements carrying one id — one fresh and
+        # one stale, or one quarantined with a surviving duplicate — are two
+        # answers to one question, and reading the first made the row's
+        # capacity depend on the order the document happened to list them in.
+        # The reading is refused: the row's pool is UNKNOWN with the count,
+        # whether the duplicate survived as a readable element or as a
+        # quarantine.
+        carried = [
+            candidate_pool for candidate_pool in pools
+            if candidate_pool.pool_id == billing_pool_id
+        ]
+        ambiguous_pool = len(carried) > 1 or (
+            bool(carried) and billing_pool_id in quarantined
+        )
+        if not ambiguous_pool and len(carried) == 1:
+            pool_state = _pool_state(carried[0], now=now)
+        # Four ways a row's capacity is UNKNOWN, in precedence order: the id is
+        # carried by more than one element (an ambiguous reading is refused),
+        # the pool's element was quarantined, no pool was observed at all, or
+        # the pool exists below but cannot be aged.
         capacity_unknown = False
-        if manifest is not None and billing_pool_id in quarantined:
+        if manifest is not None and ambiguous_pool:
+            row_reasons.append(
+                f"{len(carried) + (1 if billing_pool_id in quarantined else 0)} capacity pools "
+                f"carry id {_bounded(billing_pool_id)}; an ambiguous reading is refused, never "
+                f"resolved by list order"
+            )
+            capacity_unknown = True
+        elif manifest is not None and billing_pool_id in quarantined:
             row_reasons.append(
                 f"the capacity observation for pool {_bounded(billing_pool_id)} was quarantined: "
                 f"{quarantined[billing_pool_id]}"
@@ -1403,13 +1561,109 @@ def eligibility_report(
     )
 
 
-#: The only keys `capacity.Pool` accepts. A capacity document's own `pools`
-#: entry may carry more (a project's own extension); only these are ever
-#: passed through, per element, so an unknown key never reaches a keyword
-#: `Pool` does not accept.
+#: The only keys this capacity reader implements. An element carrying more is
+#: QUARANTINED, never silently trimmed (D36: nothing is silently dropped): a
+#: project's own extension is a declaration to report, and the reader that
+#: filtered it out reported a pool while having read less than the document
+#: said. `provider_manifest` refuses an unknown key the same way, for the same
+#: reason.
 _POOL_KEYS = frozenset({
     "pool_id", "kind", "window", "remaining", "unit", "resets_at", "observed_at", "active_workers",
 })
+
+
+def _refuse_repeated_capacity_keys(pairs: list) -> dict:
+    """A repeated key in a capacity document is refused, not resolved
+    last-wins — the same rule `provider_manifest.load` applies to a manifest
+    through the same means, an `object_pairs_hook` that raises, for the same
+    reason: a document that states `remaining` twice parses as the later value
+    while a person reading the file sees the earlier one, and the capacity a
+    coordinator dispatches against must be the capacity the document's author
+    believed they wrote."""
+    seen: set = set()
+    for key, _value in pairs:
+        if key in seen:
+            raise ValueError(
+                f"the capacity document repeats key {_bounded(key, 40)}; a document with two "
+                f"answers to one question is refused"
+            )
+        seen.add(key)
+    return dict(pairs)
+
+
+def _read_capacity_pool_entry(entry: object) -> "tuple[object, str | None]":
+    """One capacity document pool element as a `capacity.Pool`, or the note
+    that quarantines it (D36).
+
+    Every sentence says what the element lacked or was — a type, a missing id,
+    an unknown key — never an interpreter's own words: `Pool(**entry)` raises
+    `TypeError`, `AttributeError` and `IntegrityError` whose messages carry
+    Python's vocabulary (`Pool.__init__() missing 1 required positional
+    argument: 'pool_id'`, `'int' object has no attribute 'strip'`), and a
+    quarantine is for a coordinator, not a debugger. The fields are checked
+    here, one by one, BEFORE the constructor runs, so the translation names
+    the field rather than paraphrasing whatever the constructor said about it;
+    what still slips past is caught and said without echoing it.
+    """
+    if not isinstance(entry, dict):
+        return None, f"a pool element is a {type(entry).__name__}, not a mapping"
+    raw_id = entry.get("pool_id")
+    named = f"pool {_bounded(raw_id)}" if isinstance(raw_id, str) and raw_id.strip() else None
+    prefix = f"{named} could not be read: " if named else ""
+    # The prefix names the pool at the full echo bound; a sentence that named
+    # it a second time at the same bound rendered a quarter-thousand-character
+    # note for one ten-thousand-character id, so the in-sentence echo is
+    # shorter. The id itself is never echoed raw.
+    short = f"pool {_bounded(raw_id, 24)}"
+    unknown = sorted(set(entry) - _POOL_KEYS)
+    if unknown:
+        return None, (
+            prefix + "a pool element declares key(s) "
+            + ", ".join(_bounded(key, 40) for key in unknown)
+            + ", which this capacity reader does not implement; it is quarantined, never "
+              "silently trimmed"
+        )
+    if not isinstance(raw_id, str) or not raw_id.strip():
+        if raw_id is not None and not isinstance(raw_id, str):
+            return None, (
+                f"field pool_id of a pool element is a {type(raw_id).__name__}, not a string"
+            )
+        return None, "a pool element declares no pool_id"
+    for key in ("kind", "window", "unit", "resets_at", "observed_at"):
+        value = entry.get(key)
+        if value is not None and not isinstance(value, str):
+            return None, (
+                prefix + f"field {key} of {short} is a {type(value).__name__}, not a string"
+            )
+    remaining = entry.get("remaining")
+    if remaining is not None and remaining != capacity.UNKNOWN and (
+            not isinstance(remaining, (int, float)) or isinstance(remaining, bool)):
+        return None, (
+            prefix + f"field remaining of {short} is a {type(remaining).__name__}, "
+            "not a number or UNKNOWN"
+        )
+    if isinstance(remaining, (int, float)) and not isinstance(remaining, bool) and remaining < 0:
+        return None, prefix + f"field remaining of {short} is a negative number, not a quantity"
+    workers = entry.get("active_workers")
+    if workers is not None and (not isinstance(workers, int) or isinstance(workers, bool)):
+        return None, (
+            prefix + f"field active_workers of {short} is a {type(workers).__name__}, not a count"
+        )
+    for key, vocabulary in (("kind", capacity.PoolKind.ALL), ("window", capacity.WindowKind.ALL)):
+        value = entry.get(key)
+        if isinstance(value, str) and value not in vocabulary:
+            return None, (
+                prefix + f"field {key} of {short} is {_bounded(value, 40)}, not one of "
+                + ", ".join(vocabulary)
+            )
+    try:
+        return capacity.Pool(**entry), None
+    except (TypeError, AttributeError, IntegrityError):
+        # Translated, never echoed: whatever the constructor said, a value it
+        # rejected must not ride out of this reader inside its own message.
+        return None, (
+            prefix + "a field of this element is not a value the capacity reader accepts"
+        )
 
 
 def _eligibility_cli(args) -> int:
@@ -1462,7 +1716,10 @@ def _eligibility_cli(args) -> int:
     quarantined_pools = {}
     if args.capacity:
         try:
-            payload = _json.loads(_Path(args.capacity).read_text(encoding="utf-8"))
+            payload = _json.loads(
+                _Path(args.capacity).read_text(encoding="utf-8"),
+                object_pairs_hook=_refuse_repeated_capacity_keys,
+            )
         except Exception as exc:
             print(f"the capacity document could not be read: {exc}", file=sys.stderr)
             return 2
@@ -1479,18 +1736,30 @@ def _eligibility_cli(args) -> int:
         # names that pool reads its capacity as quarantined — with this note's
         # sentence — rather than as an absent pool.
         for entry in pool_entries:
-            pool_id = entry.get("pool_id", "?") if isinstance(entry, dict) else "?"
-            try:
-                if not isinstance(entry, dict):
-                    raise TypeError(f"a pool entry is a {type(entry).__name__}, not a mapping")
-                filtered = {key: value for key, value in entry.items() if key in _POOL_KEYS}
-                capacity_pools.append(capacity.Pool(**filtered))
-            except Exception as exc:
-                note = f"pool {_bounded(pool_id)} could not be read: {exc}"
-                capacity_notes.append(note)
-                quarantine_sentences.append(note)
+            pool, refusal = _read_capacity_pool_entry(entry)
+            if refusal is None:
+                capacity_pools.append(pool)
+                continue
+            capacity_notes.append(refusal)
+            quarantine_sentences.append(refusal)
+            if isinstance(entry, dict):
+                pool_id = entry.get("pool_id")
                 if isinstance(pool_id, str) and pool_id.strip():
-                    quarantined_pools[pool_id] = note
+                    quarantined_pools.setdefault(pool_id, refusal)
+        # AN ID THE DOCUMENT CARRIES TWICE is named here as well as in the row
+        # that joins it: the report refuses the reading, and the reader that
+        # held the document says so at its own level, so the note exists even
+        # for an id no row happened to join against.
+        carried_counts: dict = {}
+        for pool in capacity_pools:
+            carried_counts[pool.pool_id] = carried_counts.get(pool.pool_id, 0) + 1
+        for pool_id in sorted(set(carried_counts) | set(quarantined_pools)):
+            total = carried_counts.get(pool_id, 0) + (1 if pool_id in quarantined_pools else 0)
+            if total > 1:
+                capacity_notes.append(
+                    f"capacity pool id {_bounded(pool_id)} is carried by {total} elements; an "
+                    f"ambiguous reading is refused, never resolved by list order"
+                )
 
     # NAMES ONLY, never a value — the same rule `provider_manifest`'s own flag
     # states, applied here because `eligibility_report` forwards `environment`
@@ -1503,7 +1772,7 @@ def _eligibility_cli(args) -> int:
             require_distinct_vendor=args.require_distinct_vendor, subject=subject,
             manifests=manifests, capacity_pools=capacity_pools,
             authorised_pools=args.authorised_pools, environment=environment,
-            quarantined_pools=quarantined_pools or None,
+            quarantined_pools=quarantined_pools or None, now=args.now,
         )
     except Exception as exc:
         print(f"the eligibility report could not be rendered: {exc}", file=sys.stderr)
@@ -1559,6 +1828,11 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument(
         "--environment-from-current-process", action="store_true",
         help="check this process's environment variable NAMES; a value is never read or printed",
+    )
+    parser.add_argument(
+        "--now", default=None, type=float, metavar="EPOCH_SECONDS",
+        help="the instant the eligibility report ages capacity readings against; pin it and two "
+             "runs over one capacity document are byte-identical",
     )
     args = parser.parse_args(argv)
 

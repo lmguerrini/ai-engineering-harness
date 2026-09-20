@@ -701,9 +701,26 @@ _CONFIRMED_TOKENS = (
 )
 
 
-def _confirmed_log(tmp_path, task_class="T", validations=2):
-    row = {"configuration": _CONFIRMED_TOKENS, "task_class": task_class,
-           "outcome": "validated", "qualification_basis": "field"}
+def _confirmed_configuration(family="vendor-a", client="worker-a@gateway-a.example",
+                             model_observed="confirmed-model"):
+    """The confirmed configuration string with one dimension replaced — the
+    fixture for a row whose family, client or observed model is hostile."""
+    return (
+        f"surface=surface-a family={family} client={client} "
+        f"model={model_observed} model_observed={model_observed} "
+        "identity_method=execution_surface_turn_record auth=subscription "
+        "effort_observed=high isolation=read-only network=none build=1.0.0"
+    )
+
+
+assert _confirmed_configuration() == _CONFIRMED_TOKENS  # the default IS the shipped fixture
+
+
+def _confirmed_log(tmp_path, task_class="T", validations=2, family="vendor-a",
+                   client="worker-a@gateway-a.example", model_observed="confirmed-model"):
+    row = {"configuration": _confirmed_configuration(family=family, client=client,
+                                                    model_observed=model_observed),
+           "task_class": task_class, "outcome": "validated", "qualification_basis": "field"}
     path = tmp_path / "observations.jsonl"
     path.write_text("".join(json.dumps(row) + "\n" for _ in range(validations)), encoding="utf-8")
     return path
@@ -719,21 +736,33 @@ def _billing(**overrides):
     return billing
 
 
-def _provider_manifest(*, provider_id="vendor-a-plan", client="worker-a@gateway-a.example",
-                       vendor="vendor-a", pool_id="vendor-a-membership", billing_overrides=None):
+def _manifest_mapping(*, provider_id="vendor-a-plan", client="worker-a@gateway-a.example",
+                      vendor="vendor-a", pool_id="vendor-a-membership", billing_overrides=None,
+                      surfaces=None):
+    """The manifest fixture as a mapping, so a CLI test can write the same
+    manifest to a file that a library test loads in place."""
     overrides = dict(billing_overrides or {})
     overrides.setdefault("billing_pool_id", pool_id)
-    return provider_manifest.ProviderManifest.from_mapping({
+    return {
         "schema": "runtime-pack-provider-1",
         "provider_id": provider_id, "vendor": vendor, "gateway": "gateway-a.example",
-        "surfaces": [{"surface": "cli-a", "client": client, "protocol": "anthropic-compatible"}],
+        "surfaces": surfaces or [
+            {"surface": "cli-a", "client": client, "protocol": "anthropic-compatible"}],
         "adapter": "anthropic-compatible-worker",
         "credential": {"kind": "subscription_key", "env_file_ref": "VENDOR_A_KEY_FILE",
                        "generic_env_forbidden": ["VENDOR_A_API_KEY"]},
         "billing": _billing(**overrides),
         "capacity_observer": {"source": "human-reading", "freshness_horizon_s": 3600, "command": None},
         "discovery": None, "private_terms": [],
-    })
+    }
+
+
+def _provider_manifest(*, provider_id="vendor-a-plan", client="worker-a@gateway-a.example",
+                       vendor="vendor-a", pool_id="vendor-a-membership", billing_overrides=None,
+                       surfaces=None):
+    return provider_manifest.ProviderManifest.from_mapping(_manifest_mapping(
+        provider_id=provider_id, client=client, vendor=vendor, pool_id=pool_id,
+        billing_overrides=billing_overrides, surfaces=surfaces))
 
 
 def test_not_routable_an_unauthorised_manifest_refuses_every_purpose(tmp_path):
@@ -917,16 +946,33 @@ def test_mutation_ignoring_routability_fails_the_not_routable_oracle(tmp_path, m
     assert honest.rows[0].disposition == routing.NOT_ROUTABLE_UNAUTHORISED, (
         "fixture is inert: the unauthorised route did not read as NOT_ROUTABLE_UNAUTHORISED"
     )
+    # T2 round 3, R8: the SAME mutation aimed one level deeper. The disposition
+    # word is not the verdict — `eligible` is decided in `eligibility`, and a
+    # mutant that ignores routability in BOTH places flips an unauthorised row
+    # to eligible while every disposition-watching oracle still passes. The
+    # un-mutated row must stay ineligible first, or the fixture says nothing.
+    assert honest.rows[0].eligible is False, (
+        "fixture is inert: the unauthorised route must also be ineligible before any mutation"
+    )
 
     monkeypatch.setattr(
         routing, "disposition_with_routability",
         lambda routability_disposition, availability, grade: disposition_of(availability, grade),
+    )
+    real_eligibility = routing.eligibility
+    monkeypatch.setattr(
+        routing, "eligibility",
+        lambda candidate, *, purpose, routability=None: real_eligibility(candidate, purpose=purpose),
     )
     mutated = routing.eligibility_report(log, task_class="T", purpose=ROUTINE,
                                          manifests=[manifest], environment={})
     with pytest.raises(AssertionError):
         assert mutated.rows[0].disposition == routing.NOT_ROUTABLE_UNAUTHORISED, (
             "the not_routable oracle must fail once disposition ignores routability"
+        )
+    with pytest.raises(AssertionError):
+        assert mutated.rows[0].eligible is False, (
+            "the eligibility oracle must fail once the verdict ignores routability too"
         )
 
 
@@ -1494,3 +1540,484 @@ def test_not_routable_critical_over_an_unknowable_pool_is_refused_on_availabilit
     assert not any("dispatch serially" in reason for reason in row.reasons), (
         "a CRITICAL row is refused, not advised"
     )
+
+
+# =============================================================================
+# T2 round 3, B1 — the OBSERVED family decides the vendor, never a declaration
+# =============================================================================
+
+
+def test_vendor_a_manifest_declaring_another_vendor_never_establishes_independence(tmp_path):
+    """The reproduction: a manifest declaring the row's client under ANOTHER
+    vendor used to supply that vendor to the independence comparison, and the
+    leg read as cross-vendor on a declaration alone. The observed family is
+    what was observed; where the declaration disagrees, the vendor is UNKNOWN,
+    the disagreement is said, and the route is not established."""
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest(provider_id="plan-b", vendor="vendor-b", pool_id="pool-b")
+    subject = routing.Derivation(producer="someone", vendor="vendor-a")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, require_distinct_vendor=True, subject=subject,
+        manifests=[manifest], authorised_pools=["pool-b"], environment={})
+    row = report.rows[0]
+    assert row.eligible is False, (
+        "a manifest declaring another vendor made the leg read as cross-vendor"
+    )
+    assert row.vendor == UNKNOWN
+    assert row.routability == routing.NOT_ROUTABLE_UNKNOWN
+    assert row.disposition == routing.NOT_ROUTABLE_UNKNOWN
+    assert any(
+        "the observed family vendor-a and the declared manifest vendor vendor-b disagree; "
+        "independence cannot be established on a declaration"
+        in reason for reason in row.reasons
+    )
+
+
+def test_vendor_an_agreeing_manifest_still_supplies_the_observed_family_as_vendor(tmp_path):
+    """The agreeing case is unchanged: a manifest whose canonical vendor IS the
+    canonicalised observed family supplies that vendor, routes when authorised,
+    and stays eligible for a genuinely cross-vendor subject."""
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    subject = routing.Derivation(producer="somebody-else", vendor="vendor-b")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, require_distinct_vendor=True, subject=subject,
+        manifests=[manifest], authorised_pools=["vendor-a-membership"], environment={})
+    row = report.rows[0]
+    assert row.vendor == "vendor-a"
+    assert row.routability == provider_manifest.ROUTABLE
+    assert not any("disagree" in reason for reason in row.reasons)
+    assert row.eligible is True
+
+
+def test_vendor_a_cased_family_matches_a_manifest_declared_in_lowercase(tmp_path):
+    """N4: the manifest comparison is CANONICAL. `Vendor-A` observed and
+    `vendor-a` declared are one vendor — the raw comparison refused a route
+    that existed because two honest writers disagreed about a capital letter."""
+    log = _confirmed_log(tmp_path, family="Vendor-A")
+    # The manifest does NOT declare the row's client, so the match has to come
+    # from the vendor side of the comparison — the exact comparison under test.
+    manifest = _provider_manifest(client="worker-x@gateway-a.example")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest],
+        authorised_pools=["vendor-a-membership"], environment={})
+    row = report.rows[0]
+    assert row.provider_id == "vendor-a-plan", (
+        "the cased family never matched the lowercase declaration"
+    )
+    assert row.vendor == "vendor-a", "the row carries the canonicalised observed family"
+    assert any("matched by vendor, not by client" in reason for reason in row.reasons)
+
+
+# =============================================================================
+# T2 round 3, B2 — every echoed field is bounded, however hostile the input
+# =============================================================================
+
+
+def _assert_nothing_unbounded_or_injected(rendered: str) -> None:
+    """The B2 criteria, one place: no line over 200 characters, no control
+    character a terminal would act on, no invisible character, and no line
+    that starts a verdict it did not reach."""
+    lines = rendered.splitlines()
+    assert all(len(line) <= 200 for line in lines), (
+        next((line for line in lines if len(line) > 200), "")[:220]
+    )
+    assert all(character == "\n" or ord(character) >= 32 for character in rendered), (
+        "a control character reached the human render"
+    )
+    assert "\u202e" not in rendered and "\u200b" not in rendered, (
+        "an invisible character reached the human render"
+    )
+    assert not any(line.startswith(("ELIGIBLE", "NOT ELIGIBLE")) for line in lines), (
+        "an injected line read as a verdict"
+    )
+
+
+def test_cli_eligibility_bounds_every_field_a_hostile_log_can_carry(tmp_path, capsys):
+    """Untrusted text reaches the human render through every echoed field: the
+    identity dimensions off the log, a structured-identity client, the task
+    class, a capacity unit nobody validates, and vendor names inside the
+    independence sentences. Each fixture makes one field as hostile as it can
+    be — a live escape, an OSC that retitles a terminal, a bidi override, a
+    zero-width space, ten thousand characters — and the whole render stays
+    bounded, printable and unable to forge a verdict line."""
+    hostile_class = "T\nELIGIBLE by injection\x1b[31m"
+    rows = [
+        # an ANSI OSC riding inside the family token
+        {"configuration": _confirmed_configuration(
+            family="vendor-a\x1b]0;pwned\x07", model_observed="model-osc"),
+         "task_class": hostile_class, "outcome": "validated", "qualification_basis": "field"},
+        # a right-to-left override and a zero-width space inside the observed model
+        {"configuration": _confirmed_configuration(model_observed="model-\u202erlo\u200btail"),
+         "task_class": hostile_class, "outcome": "validated", "qualification_basis": "field"},
+        # an observed model ten thousand characters long
+        {"configuration": _confirmed_configuration(model_observed="m" * 10000),
+         "task_class": hostile_class, "outcome": "validated", "qualification_basis": "field"},
+        # a client carrying a newline and an OSC, through the structured identity
+        {"configuration": _confirmed_configuration(),
+         "identity": {"client": "worker-a@gateway-a.example\n\x1b]0;x\x07 ELIGIBLE"},
+         "task_class": hostile_class, "outcome": "validated", "qualification_basis": "field"},
+    ]
+    hostile_log = tmp_path / "hostile.jsonl"
+    hostile_log.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+    status = routing._cli(["--eligibility", "--observations", str(hostile_log),
+                           "--task-class", hostile_class])
+    assert status == 0
+    _assert_nothing_unbounded_or_injected(capsys.readouterr().out)
+
+    # JSON mode is unchanged: it escapes by construction, so the raw values are
+    # carried intact rather than replaced — a different promise, kept by json.
+    status = routing._cli(["--eligibility", "--observations", str(hostile_log),
+                           "--task-class", hostile_class, "--json"])
+    raw = capsys.readouterr().out
+    assert status == 0
+    payload = json.loads(raw)
+    assert payload["task_class"] == hostile_class
+    dimensions = [dimension for row in payload["rows"] for dimension in row["identity"][:4]]
+    assert any("\x1b" in dimension for dimension in dimensions), (
+        "JSON mode began trimming values it exists to carry intact"
+    )
+    assert any("\u202e" in dimension for dimension in dimensions)
+    assert "\\u001b" in raw and "\\u202e" in raw  # escaped by json, never raw
+
+
+def test_cli_eligibility_bounds_a_ten_thousand_character_manifest_vendor(tmp_path, capsys):
+    """A manifest may declare a vendor as long as it likes; where it disagrees
+    with the observed family, the disagreement sentence a human reads carries
+    both names bounded while the comparison reads them in full."""
+    long_vendor = "z" * 10000
+    manifest_path = tmp_path / "manifest-long.json"
+    manifest_path.write_text(json.dumps(_manifest_mapping(
+        provider_id="plan-z", vendor=long_vendor, pool_id="pool-z")), encoding="utf-8")
+    log = _confirmed_log(tmp_path)
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--manifest", str(manifest_path), "--authorised-pool", "pool-z",
+                           "--subject-producer", "someone", "--subject-vendor", "vendor-a",
+                           "--require-distinct-vendor"])
+    assert status == 0
+    printed = capsys.readouterr().out
+    assert any("the observed family vendor-a and the declared manifest vendor" in line
+               and "disagree; independence cannot be established on a declaration" in line
+               for line in printed.splitlines()), "fixture is inert: the disagreement never rendered"
+    _assert_nothing_unbounded_or_injected(printed)
+
+
+def test_cli_eligibility_bounds_a_long_vendor_an_independence_sentence_and_a_unit_carry(
+        tmp_path, capsys):
+    """The same-vendor independence sentence names the vendor twice (reader and
+    subject) and the pool line carries a unit `capacity.Pool` does not
+    validate; a vendor ten thousand characters long and a unit carrying a
+    newline and a live escape must each render as one bounded line."""
+    long_vendor = "z" * 10000
+    hostile_family_log = tmp_path / "long-family.jsonl"
+    hostile_family_log.write_text(json.dumps({
+        "configuration": _confirmed_configuration(family=long_vendor),
+        "task_class": "T", "outcome": "validated", "qualification_basis": "field",
+    }) + "\n", encoding="utf-8")
+    manifest_path = tmp_path / "manifest-long.json"
+    manifest_path.write_text(json.dumps(_manifest_mapping(
+        provider_id="plan-z", vendor=long_vendor, pool_id="pool-z")), encoding="utf-8")
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(json.dumps({"pools": [{
+        "pool_id": "pool-z", "remaining": 100, "unit": "req\n\x1b[31mred\x1b[0m",
+        "observed_at": "2026-09-19T09:00:00+00:00",
+    }]}), encoding="utf-8")
+
+    status = routing._cli(["--eligibility", "--observations", str(hostile_family_log),
+                           "--task-class", "T", "--manifest", str(manifest_path),
+                           "--authorised-pool", "pool-z", "--capacity", str(capacity_doc),
+                           "--now", "1789870000",
+                           "--subject-producer", "someone", "--subject-vendor", long_vendor,
+                           "--require-distinct-vendor"])
+    assert status == 0
+    printed = capsys.readouterr().out
+    assert any("one vendor's reading" in line for line in printed.splitlines()), (
+        "fixture is inert: the same-vendor sentence never rendered"
+    )
+    assert any(line.lstrip().startswith("pool pool-z:") for line in printed.splitlines()), (
+        "fixture is inert: the pool line never rendered"
+    )
+    _assert_nothing_unbounded_or_injected(printed)
+
+
+# =============================================================================
+# T2 round 3, R1 / R2 — the slug grammar and NFKC are pinned, not incidental
+# =============================================================================
+
+
+@pytest.mark.parametrize("spelling", ["vendor--a", "vendor-a-", "-vendor-a"])
+def test_vendor_a_degenerate_hyphen_spelling_is_refused_as_not_a_slug(spelling):
+    """R1: a grammar that accepts a run of hyphens or a trailing one reads
+    `vendor--a` as a clean vendor DISTINCT from `vendor-b`, and the leg passes.
+    The refusal must say the slug requirement, not merely that independence
+    failed."""
+    reader = routing.Derivation(producer="r", fresh=True, vendor=spelling)
+    subject = routing.Derivation(producer="s", vendor="vendor-b")
+    problems = routing.independence_problems(reader, subject, require_distinct_vendor=True)
+    assert problems, f"{spelling!r} was read as a clean vendor distinct from vendor-b"
+    assert any("is not a vendor slug" in problem for problem in problems), (
+        f"{spelling!r} was refused without naming the slug requirement"
+    )
+
+
+@pytest.mark.parametrize("spelling", ["ｖendor-a", "ｖｅｎｄｏｒ－ａ"])
+def test_vendor_full_width_spellings_fold_onto_the_one_vendor(spelling):
+    """R2: without NFKC a full-width spelling fails the slug grammar and reads
+    as a misspelling, silently passing `vendor-a` by as a non-slug instead of
+    recognising it. Two spellings of one vendor are one vendor, and the
+    refusal says exactly that."""
+    reader = routing.Derivation(producer="r", fresh=True, vendor=spelling)
+    subject = routing.Derivation(producer="s", vendor="vendor-a")
+    problems = routing.independence_problems(reader, subject, require_distinct_vendor=True)
+    assert problems, f"{spelling!r} established independence from vendor-a"
+    assert any("one vendor's reading" in problem for problem in problems), (
+        f"{spelling!r} was not recognised as a spelling of vendor-a"
+    )
+
+
+# =============================================================================
+# T2 round 3, R3 — a duplicate pool id is an ambiguous reading, never list order
+# =============================================================================
+
+
+def test_not_routable_duplicate_pool_ids_are_an_ambiguous_reading_in_either_order(tmp_path):
+    """Two capacity elements carrying one id — one fresh, one stale — are two
+    answers to one question. The first used to win, so the row's capacity
+    depended on the order the document happened to list them in; the reading
+    is refused, identically in either order."""
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest(pool_id="pool-a")
+    fresh = datetime.now(timezone.utc).isoformat()
+    stale = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+    readings = [
+        capacity.Pool(pool_id="pool-a", remaining=100, unit="req", observed_at=fresh),
+        capacity.Pool(pool_id="pool-a", remaining=7, unit="req", observed_at=stale),
+    ]
+    rows_by_order = []
+    for pools in (readings, list(reversed(readings))):
+        report = routing.eligibility_report(
+            log, task_class="T", purpose=ROUTINE, manifests=[manifest], capacity_pools=pools,
+            authorised_pools=["pool-a"], environment={})
+        row = report.rows[0]
+        assert row.pool is None, "one of two readings was silently chosen"
+        assert any("2 capacity pools carry id pool-a; an ambiguous reading is refused, never "
+                   "resolved by list order" in reason for reason in row.reasons)
+        rows_by_order.append(row)
+    assert rows_by_order[0] == rows_by_order[1], "the reading was resolved by list order"
+
+
+def test_cli_eligibility_treats_a_quarantine_with_a_surviving_duplicate_as_ambiguous(
+        tmp_path, capsys):
+    """The half-alive shape: one element carrying the id was quarantined and
+    one survived. That is still two capacity documents for one pool, and the
+    row and the reader each say so — the row with the count, the reader with
+    its own note, so the ambiguity is named even where no row joins the id."""
+    log = _confirmed_log(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest_mapping(pool_id="pool-a")), encoding="utf-8")
+    fresh = datetime.now(timezone.utc).isoformat()
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(json.dumps({"pools": [
+        {"pool_id": "pool-a", "remaining": 100, "unit": "req", "observed_at": fresh},
+        {"pool_id": "pool-a", "remaining": -5},
+    ]}), encoding="utf-8")
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--manifest", str(manifest_path), "--authorised-pool", "pool-a",
+                           "--capacity", str(capacity_doc), "--json"])
+    assert status == 0
+    payload = json.loads(capsys.readouterr().out)
+    row = payload["rows"][0]
+    assert row["pool"] is None, "a quarantined duplicate left a reading standing"
+    assert any("2 capacity pools carry id pool-a; an ambiguous reading is refused, never "
+               "resolved by list order" in reason for reason in row["reasons"])
+    assert any("capacity pool id pool-a is carried by 2 elements; an ambiguous reading is "
+               "refused, never resolved by list order" in note for note in payload["notes"])
+
+
+# =============================================================================
+# T2 round 3, R5 — the pool reader drops nothing silently
+# =============================================================================
+
+
+def test_cli_eligibility_quarantines_an_unknown_key_and_names_it(tmp_path, capsys):
+    """An element declaring a key this reader does not implement used to be
+    silently trimmed to the keys it knows and read as a pool. A project's own
+    extension is a declaration to report: the element is quarantined with the
+    key NAMED, and the row that joins it inherits the sentence."""
+    log = _confirmed_log(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest_mapping()), encoding="utf-8")
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(json.dumps({"pools": [
+        {"pool_id": "vendor-a-membership", "remaining": 100, "observed_at": "2026-09-19T09:00:00+00:00",
+         "surprise": "a project extension this reader never implemented"},
+    ]}), encoding="utf-8")
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--manifest", str(manifest_path),
+                           "--authorised-pool", "vendor-a-membership",
+                           "--capacity", str(capacity_doc), "--json"])
+    assert status == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["quarantined"], "an unknown key was dropped without a sentence"
+    assert all("declares key(s) surprise" in sentence for sentence in payload["quarantined"])
+    assert any("was quarantined" in reason and "surprise" in reason
+               for reason in payload["rows"][0]["reasons"]), (
+        "the row that joins the id read a trimmed pool as a reading"
+    )
+
+
+def test_cli_eligibility_refuses_a_capacity_document_that_repeats_a_key(tmp_path, capsys):
+    """A repeated key anywhere in the document resolves last-wins under a plain
+    `json.loads`, so a person reading the file sees one `pool_id` while the
+    reader dispatched against another. Refused at read, one sentence, exit 2 —
+    the same rule `provider_manifest.load` applies, by the same means."""
+    log = _confirmed_log(tmp_path)
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(
+        '{"pools": [{"pool_id": "pool-a", "pool_id": "pool-b", "remaining": 100}]}',
+        encoding="utf-8")
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--capacity", str(capacity_doc)])
+    captured = capsys.readouterr()
+    assert status == 2, "a document with two answers to one question was read"
+    assert captured.out == ""
+    assert "repeats key pool_id" in captured.err
+    assert captured.err.count("\n") == 1, "the refusal is one sentence, not a traceback"
+    assert "Traceback" not in captured.err
+
+
+# =============================================================================
+# T2 round 3, R6 — one manifest declaring a client twice is ONE manifest
+# =============================================================================
+
+
+def test_not_routable_one_manifest_declaring_the_client_on_two_surfaces_is_refused(tmp_path):
+    """(manifest, surface) pairs were counted, so one manifest declaring its
+    client on two surfaces read as "2 declared manifests" — a falsehood about
+    the project's own declarations. The refusal says what is actually
+    ambiguous: one manifest, two surfaces."""
+    log = _confirmed_log(tmp_path)
+    client = "worker-a@gateway-a.example"
+    manifest = _provider_manifest(surfaces=[
+        {"surface": "cli-a", "client": client, "protocol": "anthropic-compatible"},
+        {"surface": "cli-b", "client": client, "protocol": "anthropic-compatible"},
+    ])
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest],
+        authorised_pools=["vendor-a-membership"], environment={})
+    row = report.rows[0]
+    assert row.routability == routing.NOT_ROUTABLE_UNKNOWN and row.eligible is False
+    assert any("manifest vendor-a-plan declares client worker-a@gateway-a.example on 2 surfaces; "
+               "an ambiguous route is refused" in reason for reason in row.reasons)
+
+
+# =============================================================================
+# T2 round 3, R7 — a refusal names what the element lacked or was, never Python's words
+# =============================================================================
+
+
+def test_cli_eligibility_says_what_an_unreadable_pool_element_lacked_or_was(tmp_path, capsys):
+    """A list for an element, a mapping with no pool_id, a non-string field:
+    each used to surface as `Pool.__init__() missing 1 required positional
+    argument` or `'int' object has no attribute 'strip'`. A quarantine is for
+    a coordinator, so each says the field, the type found, and the type
+    expected — and no interpreter text rides out with it."""
+    log = _confirmed_log(tmp_path)
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(json.dumps({"pools": [
+        ["not", "a", "mapping"],
+        {"remaining": 5},
+        {"pool_id": "pool-a", "observed_at": 5},
+    ]}), encoding="utf-8")
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--capacity", str(capacity_doc), "--json"])
+    captured = capsys.readouterr()
+    assert status == 0, "unreadable elements quarantine; the report still renders"
+    payload = json.loads(captured.out)
+    assert len(payload["quarantined"]) == 3
+    sentences = " | ".join(payload["quarantined"])
+    assert "a pool element is a list, not a mapping" in sentences
+    assert "a pool element declares no pool_id" in sentences
+    assert "field observed_at of pool pool-a is a int, not a string" in sentences
+    joined = captured.out + captured.err
+    assert "__init__()" not in joined and "has no attribute" not in joined, (
+        "an interpreter's own words reached a refusal"
+    )
+    assert "Traceback" not in joined
+
+
+def test_an_observation_line_that_is_not_an_object_is_refused_in_routing_words(
+        tmp_path, capsys):
+    """A JSON line that parses to a list used to die inside `qualification`
+    with `'list' object has no attribute 'get'`. The log is read for shape
+    first, so the refusal names the line and says what it is."""
+    log = tmp_path / "observations.jsonl"
+    log.write_text("[1, 2, 3]\n", encoding="utf-8")
+    with pytest.raises(routing.RoutingError) as caught:
+        routing.eligibility_report(str(log), task_class="T")
+    assert "observation line 1 is a list, not an object" in str(caught.value)
+
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T"])
+    captured = capsys.readouterr()
+    assert status == 2
+    assert "observation line 1 is a list, not an object" in captured.err
+    assert captured.err.count("\n") == 1, "the refusal is one sentence, not a traceback"
+    assert "Traceback" not in captured.err and "has no attribute" not in captured.err
+
+
+# =============================================================================
+# T2 round 3, N1 — a pinned `now` makes a report byte-reproducible
+# =============================================================================
+
+
+def test_cli_eligibility_a_pinned_now_renders_byte_identical_reports(tmp_path, capsys):
+    """`--now` fixes the instant capacity readings are aged against. Two runs
+    over the same documents at the same pinned instant are byte-identical, and
+    a one-second move of the pin shows in the age — so the flag reaches the
+    arithmetic and is not merely accepted."""
+    log = _confirmed_log(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest_mapping()), encoding="utf-8")
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(json.dumps({"pools": [
+        {"pool_id": "vendor-a-membership", "remaining": 100, "unit": "req",
+         "observed_at": "2026-09-19T09:00:00+00:00"},
+    ]}), encoding="utf-8")
+    argv = ["--eligibility", "--observations", str(log), "--task-class", "T",
+            "--manifest", str(manifest_path), "--authorised-pool", "vendor-a-membership",
+            "--capacity", str(capacity_doc)]
+
+    assert routing._cli(argv + ["--now", "1789870000"]) == 0
+    first = capsys.readouterr().out
+    assert "age" in first, "fixture is inert: no capacity reading was ever aged"
+    assert routing._cli(argv + ["--now", "1789870000"]) == 0
+    assert capsys.readouterr().out == first, "the same pin rendered two different reports"
+
+    assert routing._cli(argv + ["--now", "1789870001"]) == 0
+    assert capsys.readouterr().out != first, "fixture is inert: --now never moved the age"
+
+
+# =============================================================================
+# T2 round 3, N3 — where the client IS declared, at other vendors, say so
+# =============================================================================
+
+
+def test_not_routable_a_client_declared_at_other_vendors_is_named_in_the_row(tmp_path):
+    """A row whose family matches no declared vendor used to stop at "no
+    declared provider manifest covers this configuration" even while manifests
+    at OTHER vendors declared its client — the exact fact a coordinator needs,
+    because it says the client string is right and the family join is what is
+    missing."""
+    log = _confirmed_log(tmp_path)
+    other_b = _provider_manifest(provider_id="plan-b", vendor="vendor-b", pool_id="pool-b")
+    other_c = _provider_manifest(provider_id="plan-c", vendor="vendor-c", pool_id="pool-c")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[other_b, other_c],
+        authorised_pools=["pool-b", "pool-c"], environment={})
+    row = report.rows[0]
+    assert row.routability == routing.NOT_ROUTABLE_UNKNOWN and row.eligible is False
+    assert any("no declared provider manifest covers this configuration"
+               in reason for reason in row.reasons)
+    assert any("client worker-a@gateway-a.example is declared by manifests at other vendors: "
+               "plan-b, plan-c" in reason for reason in row.reasons)
