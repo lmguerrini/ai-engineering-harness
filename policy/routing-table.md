@@ -18,7 +18,13 @@ boundary — the full log each time, never patched, never a rolling summary that
 overwrites adverse evidence. If this file and `observations.jsonl` disagree, the
 log wins and this file is due for regeneration.
 
-Regenerated 2026-09-05 at the RP2.4 evolution boundary from **51** observations.
+Regenerated 2026-09-20 at the RP2.6.0 checkpoint from **60** observations — the nine rows added since 2026-09-05
+are one `codex-cli` quota refusal at dispatch (environmental) and eight rows of a third family, `zhipu`, reached
+through the `anthropic-compatible-worker` adapter: usability probes, bounded implementation and bounded repair
+probes, and one shadow cross-vendor reading. The role rows below are unchanged because their evidence classes
+name the families they were derived from; the per-configuration reader (`tools/qualification.py`) is the only
+thing that answers about the new configurations, and provider handoff records kept outside the pack carry
+the rest. Rows before that date: regenerated 2026-09-05 at the RP2.4 evolution boundary from 51 observations.
 The observation count,
 every grade and **every count in the evidence column** are compared against the
 log by `test_the_routing_table_grades_are_the_derived_ones` and

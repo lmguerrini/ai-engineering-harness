@@ -5,6 +5,7 @@ else to mutate, because the projection stores nothing — which is asserted
 rather than described, by hashing the tree before and after.
 """
 
+import dataclasses
 import hashlib
 import json
 import subprocess
@@ -193,6 +194,104 @@ def test_an_absent_capacity_observation_says_unknown_rather_than_zero(project_ro
     assert any("no capacity observation" in item for item in view.unknowns), (
         "an absence rendered as an ordinary line is an absence a reader will read as a reading"
     )
+
+
+#: What a CAPACITY.json no `capacity_record.py` wrote renders as, pinned BEFORE the
+#: observation-bearing shape was added to this panel. A pool that carries no
+#: observation is a 2.5.0-shaped declaration, and the migration is only additive
+#: if that shape renders byte for byte as it always has — a coordinator who does
+#: not adopt the new writer must not wake up to a different console.
+_CAPACITY_250_PANEL = (
+    "── capacity ──────────────────────────────────────────────────\n"
+    "  shared [shared_with_coordinator/rolling]: UNKNOWN units remaining, 1 active, "
+    "resets UNKNOWN, observed 2026-09-03T04:00Z\n"
+    "  independent [independent/weekly]: 340 requests remaining, 0 active, "
+    "resets 2026-09-07T00:00:00Z, observed 2026-09-03T04:00:00Z\n"
+    "  reserve: coordinator 10.0, consumption UNKNOWN, repair and audit UNKNOWN"
+    "  (partial, so the total is UNKNOWN)"
+)
+
+
+def test_a_capacity_declaration_with_no_observations_renders_byte_identically(tmp_path):
+    import json as _json
+
+    (tmp_path / "CAPACITY.json").write_text(_json.dumps({
+        "pools": [
+            {"pool_id": "shared", "kind": "shared_with_coordinator", "window": "rolling",
+             "remaining": "UNKNOWN", "active_workers": 1, "observed_at": "2026-09-03T04:00Z"},
+            {"pool_id": "independent", "kind": "independent", "window": "weekly",
+             "remaining": 340, "unit": "requests", "observed_at": "2026-09-03T04:00:00Z",
+             "resets_at": "2026-09-07T00:00:00Z", "active_workers": 0},
+        ],
+        "reserve": {"coordinator": 10},
+    }))
+    assert projection._capacity_panel(tmp_path / "CAPACITY.json").render() == \
+        _CAPACITY_250_PANEL
+
+
+def _observed_capacity(tmp_path, observed_at, *, windows=None):
+    """A CAPACITY.json holding one observation-bearing pool, written through the
+    model that owns the shape rather than hand-typed JSON a test would drift
+    from."""
+    import capacity
+    import resource_observation
+
+    observation = resource_observation.from_provider_quota({
+        "schema": "runtime-pack-quota-1",
+        "provider_id": "provider-a", "billing_pool_id": "pool-a",
+        "observed_at": observed_at,
+        "windows": windows if windows is not None else [
+            {"name": "rolling_5h", "used_percentage": 62.5, "remaining_percentage": 37.5,
+             "resets_at": observed_at + 3600},
+            {"name": "weekly", "availability": "UNAVAILABLE"},
+        ],
+    })
+    pool = capacity.pool_from_observation(
+        observation, pool_id="pool-a", kind="independent", window="rolling",
+        window_name="rolling_5h", billing_mode="subscription", provider_id="provider-a")
+    (tmp_path / "CAPACITY.json").write_text(json.dumps({
+        "pools": [dataclasses.asdict(pool)], "reserve": {"coordinator": 10}}))
+    return tmp_path / "CAPACITY.json"
+
+
+def test_an_observation_bearing_pool_renders_its_windows_and_freshness(tmp_path):
+    """The migration, rendered: a pool that carries an observation shows the
+    windows its source exposed, the windows it did not, how the pool is paid
+    for and who was read — and the freshness verdict travels with the figure
+    rather than living only in the line above it."""
+    import time as _time
+
+    clock = _time.time()
+    path = _observed_capacity(tmp_path, clock - 60)
+    rendered = projection._capacity_panel(path).render()
+
+    assert "0 active · FRESH" in rendered
+    assert "rolling_5h: 62.5% used / 37.5% left · resets " in rendered
+    assert "· FRESH (age 1m)" in rendered
+    # A window the source does not expose is named as such, never absent.
+    assert "weekly: UNAVAILABLE (not exposed by the source)" in rendered
+    assert ("billing subscription · provider provider-a · provenance provider_endpoint"
+            in rendered)
+
+    cell = next(c for c in projection._capacity_panel(path).cells
+                if c.label == "capacity pool-a")
+    assert cell.fields["freshness"] == "FRESH"
+    assert cell.fields["billing_mode"] == "subscription"
+    assert cell.fields["provider_id"] == "provider-a"
+    assert cell.note == "0 active · FRESH"
+
+
+def test_a_stale_observation_is_rendered_as_stale_never_as_live(tmp_path):
+    """A reading from the year 2000 cannot render as a current figure (D33):
+    the verdict is computed at read time against the reading's own horizon, so
+    it is STALE no matter how confidently the remaining percentage reads."""
+    path = _observed_capacity(tmp_path, 946684800.0)
+    rendered = projection._capacity_panel(path).render()
+    assert "0 active · STALE" in rendered
+    assert "· STALE (age " in rendered
+    cell = next(c for c in projection._capacity_panel(path).cells
+                if c.label == "capacity pool-a")
+    assert cell.fields["freshness"] == "STALE"
 
 
 def test_an_unreadable_contract_is_reported_rather_than_skipped(project_root):

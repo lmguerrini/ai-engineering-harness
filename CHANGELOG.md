@@ -48,6 +48,22 @@ machine reading in the desktop workflow. The founder's decisions are D29–D36.
 - `tools/tests/test_adoption_rehearsal.py` — O13's rehearsal of a third family that registers, is
   reported UNAUTHORISED and then authorised, with no vendor name reaching `tools/routing.py` or
   `tools/provider_manifest.py`.
+- `tools/resource_observation.py` — reads the generic provider-quota document `runtime-pack-quota-1` an
+  adapter's observer emits and a timestamped human reading, beside the status line it already read; every
+  reading now answers `freshness(now)` ∈ {FRESH, STALE, UNKNOWN, UNAVAILABLE} at READ time against its source's
+  own horizon — a percentage only with an established denominator, natives preserved, a window the source does
+  not expose UNAVAILABLE, never absent and never zero; `from_record` rebuilds a reading from its own record and
+  refuses anything else (S0-C3, D33, O6, O7).
+- `tools/capacity.py` — `Pool` carries its normalised `observation` and its `billing_mode`; `Pool.freshness(now)`;
+  `pool_from_observation`; `gate` counts a STALE observation as exactly one unknown, so a stale pool never
+  reaches DISPATCH (D33).
+- `tools/capacity_record.py` — the ONE writer of `CAPACITY.json`: validate-on-write, atomic, one pool per
+  invocation, `--keep-existing` that refuses rather than drop a pool it could not read, and `check` with
+  per-element quarantine (D36) and per-pool freshness (S0-C4).
+- `tools/projection.py` — the capacity panel renders every window of an observation-bearing pool with its
+  freshness and age, and a 2.5.0-shaped record exactly as before.
+- `templates/CAPACITY.json.template` — a valid record that reads STALE by construction.
+- `tools/tests/test_capacity_record.py` — the writer's round trip, quarantine, refusal and no-write oracles.
 
 ### What a consumer will notice
 
@@ -60,6 +76,12 @@ reports additions only); what changes is what a caller is TOLD, recorded here as
   `routability` and refuses every purpose on a `NOT_ROUTABLE_*` disposition; without it every existing call
   behaves as before. `routing.py --eligibility` is a new report mode; the existing report mode is unchanged.
 - `tools/provider_manifest.py` is new: a project that declares no manifest sees nothing change.
+- `tools/resource_observation.py`: `--provider-quota PATH` and `--human-reading …` are new modes; the status-line
+  path is unchanged; `as_record()` carries new keys (provider, pool, provenance, horizon, per-window natives,
+  availability) that `from_record` reads back. `tools/capacity.py`: a `Pool` declared as before still reads and
+  gates as before; one carrying an `observation` is aged by its source's horizon. `CAPACITY.json` written by
+  `capacity_record.py` declares `schema: runtime-pack-capacity-1`; a record without it is read as a 2.5.0 record
+  and says so.
 - `tools/tests/test_readonly_modes.py` is new: every touched tool's `--help`, an unrecognised flag and its
   default read path are executed against a fixture governance directory and must leave it byte-identical;
   two negative controls prove the check discriminates. It changes no tool.

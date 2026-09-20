@@ -1106,8 +1106,17 @@ def _capacity_panel(path: Path) -> Panel:
     Read from a declaration rather than measured, and the age of that
     declaration is part of the answer: a reading is evidence about the moment it
     was taken and licenses no claim about what the next dispatch will cost.
+    A pool that carries an observation is judged for freshness by that source's
+    own horizon, at the moment this view is asked (D33) — never by a verdict a
+    writer stored, which would let the record decide when a reader must stop
+    trusting it.
     """
+    from datetime import datetime, timezone
+
     panel = Panel("capacity", group="resources")
+    # ONE MOMENT for the whole render: two pools aged against two reads of the
+    # clock could disagree about "now" by more than one of their horizons.
+    now = datetime.now(timezone.utc).timestamp()
     if not path.is_file():
         panel.unknown.append(
             f"no capacity observation at {path}; no window is known, which is the ordinary case "
@@ -1124,6 +1133,26 @@ def _capacity_panel(path: Path) -> Panel:
         return panel
 
     import capacity
+    import resource_observation
+
+    def _percent(value: object) -> str:
+        # An observation record's windows carry whatever the reader wrote, and
+        # `from_record` validates the SHAPE of a record rather than every value
+        # in it — so anything that is not a number renders as UNKNOWN rather
+        # than raising, because this view may not raise on the record it exists
+        # to display.
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return UNKNOWN
+        return f"{float(value):g}%"
+
+    def _iso(epoch: object) -> str:
+        if isinstance(epoch, bool) or not isinstance(epoch, (int, float)):
+            return UNKNOWN
+        try:
+            return datetime.fromtimestamp(float(epoch), tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ")
+        except (ValueError, OSError, OverflowError):
+            return UNKNOWN
 
     if not pools:
         # AN EMPTY POOL LIST IS AN ANSWER, and it was reaching the panel as an
@@ -1143,16 +1172,51 @@ def _capacity_panel(path: Path) -> Panel:
         # holds a number; this renders it as the count it is.
         remaining = (f"{pool.remaining:g}" if pool.known and isinstance(pool.remaining, float)
                      else (pool.remaining if pool.known else UNKNOWN))
+        # A pool without an observation is a 2.5.0-shaped declaration and keeps
+        # the line it has always had, byte for byte: a migration nobody adopted
+        # must not move a console under the person who did not adopt it.
+        liveness = f"{pool.active_workers} active"
+        extra: dict[str, str] = {}
+        observed = None
+        if pool.observation is not None:
+            observed = resource_observation.from_record(pool.observation)
+            freshness = pool.freshness(now)
+            liveness = f"{pool.active_workers} active · {freshness}"
+            extra = dict(freshness=freshness, billing_mode=pool.billing_mode,
+                         provider_id=pool.provider_id)
         panel.lines.append(
             f"{pool.pool_id} [{pool.kind}/{pool.window}]: {remaining} {pool.unit} remaining, "
-            f"{pool.active_workers} active, resets {pool.resets_at or UNKNOWN}, "
+            f"{liveness}, resets {pool.resets_at or UNKNOWN}, "
             f"observed {pool.observed_at or UNKNOWN}"
         )
+        if observed is not None:
+            for window in observed.windows:
+                if window.availability == "UNAVAILABLE":
+                    panel.lines.append(
+                        f"{window.name}: UNAVAILABLE (not exposed by the source)")
+                    continue
+                age = UNKNOWN
+                if not isinstance(observed.observed_at, bool) and isinstance(
+                        observed.observed_at, (int, float)):
+                    # Clamped at zero because a reading from the future already
+                    # reads UNKNOWN; rendering a negative age would imply a
+                    # precision this reading does not have.
+                    age = f"{int(max(0.0, now - float(observed.observed_at)) // 60)}m"
+                panel.lines.append(
+                    f"{window.name}: {_percent(window.used_percentage)} used / "
+                    f"{_percent(window.remaining_percentage)} left · "
+                    f"resets {_iso(window.resets_at)} · {extra['freshness']} (age {age})"
+                )
+            panel.lines.append(
+                f"billing {pool.billing_mode} · provider {pool.provider_id} "
+                f"· provenance {observed.provenance}"
+            )
         panel.figure(f"capacity {pool.pool_id}", f"{remaining} {pool.unit}",
                      Tone.PLAIN if pool.known else Tone.UNKNOWN,
-                     note=f"{pool.active_workers} active", band="situation", kind="capacity",
+                     note=liveness, band="situation", kind="capacity",
                      pool=pool.pool_id, provider=pool.kind, window=pool.window,
-                     resets=pool.resets_at or UNKNOWN, observed=pool.observed_at or UNKNOWN)
+                     resets=pool.resets_at or UNKNOWN, observed=pool.observed_at or UNKNOWN,
+                     **extra)
     reserve = raw.get("reserve") or {}
     if reserve:
         try:

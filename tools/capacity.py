@@ -58,6 +58,8 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Sequence
 
+import provider_manifest
+import resource_observation
 from errors import IntegrityError, PreconditionError
 
 __all__ = [
@@ -72,6 +74,7 @@ __all__ = [
     "Decision",
     "DispatchOutcome",
     "gate",
+    "pool_from_observation",
 ]
 
 #: Not a number, not zero, and never estimated into one.
@@ -86,11 +89,31 @@ UNKNOWN = "UNKNOWN"
 _STALE_READING_SECONDS = 3600.0
 
 
-def _age_seconds(observed_at) -> "float | None":
+def _age_seconds(observed_at, now: "float | None" = None) -> "float | None":
+    # `now` is an input, not an ambient fact: a rehearsal that aged a reading
+    # against the wall clock could not reproduce a verdict an hour later, which
+    # is the same defect as a fixture whose synthetic clock is compared against
+    # the real one. Absent, it is the clock — exactly as before.
     moment = _moment(observed_at) if isinstance(observed_at, str) and observed_at else None
     if moment is None:
         return None
-    return (datetime.now(timezone.utc) - moment).total_seconds()
+    clock = (datetime.fromtimestamp(now, tz=timezone.utc) if now is not None
+             else datetime.now(timezone.utc))
+    return (clock - moment).total_seconds()
+
+
+def _iso_utc(epoch: object) -> "str | None":
+    """An epoch moment as `YYYY-MM-DDTHH:MM:SSZ`, or None when it is not a moment.
+
+    The pool's own timestamps are ISO text while an observation counts in epoch
+    seconds, and a writer that copied the number across would produce a reading
+    nobody could age — the field exists to be parsed by `_moment`.
+    """
+    if isinstance(epoch, bool) or not isinstance(epoch, (int, float)):
+        return None
+    if not math.isfinite(epoch):
+        return None
+    return datetime.fromtimestamp(float(epoch), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _moment(text: str) -> "datetime | None":
@@ -233,6 +256,20 @@ class Pool:
     observed_at: str | None = None
     #: Dispatches already running against this pool.
     active_workers: int = 0
+    #: How this pool's capacity is paid for. UNKNOWN or one of the declared
+    #: billing modes — read from `provider_manifest` rather than restated here,
+    #: because two vocabularies for one fact is how a metered route comes to read
+    #: as a subscription one (D29).
+    billing_mode: str = UNKNOWN
+    #: Who was read. A figure nobody can attribute cannot be re-derived when the
+    #: provider's surface changes.
+    provider_id: str = UNKNOWN
+    #: The normalised observation this reading came from, exactly as
+    #: `resource_observation.ResourceObservation.as_record()` produces it (D33).
+    #: A pool that carries one is judged for freshness by THAT source's own
+    #: horizon rather than by this module's reporting ceiling; a pool without one
+    #: is a 2.5.0-shaped declaration and behaves exactly as before.
+    observation: dict | None = None
 
     def __post_init__(self) -> None:
         if not (self.pool_id or "").strip():
@@ -246,6 +283,24 @@ class Pool:
         object.__setattr__(self, "remaining", _quantity(self.remaining, field="remaining"))
         if not isinstance(self.active_workers, int) or isinstance(self.active_workers, bool) or self.active_workers < 0:
             raise IntegrityError("active_workers is a count", found=repr(self.active_workers))
+        if self.billing_mode != UNKNOWN and self.billing_mode not in provider_manifest.BILLING_MODES:
+            raise IntegrityError(
+                "a pool's billing_mode is UNKNOWN or one of the declared billing modes; a mode "
+                "nobody declared is how a metered route reads as a subscription one",
+                pool_id=self.pool_id, found=repr(self.billing_mode),
+                known=", ".join(provider_manifest.BILLING_MODES),
+            )
+        if self.observation is not None:
+            # VALIDATED THROUGH THE READER THAT OWNS THE SHAPE, then stored as
+            # that reader's own `as_record()` — a plain dict of plain values, so
+            # `dataclasses.asdict(pool)` and `Pool(**asdict(pool))` round-trip and
+            # equality keeps comparing. `from_record` refuses an unknown key by
+            # name, so a record grown a field no reader implements is a stated
+            # refusal here too, never a silently slimmer observation.
+            object.__setattr__(
+                self, "observation",
+                resource_observation.from_record(self.observation).as_record(),
+            )
 
         # A NUMBER WITH NO MOMENT IS NOT A READING. The docstring two lines up
         # says `observed_at` matters as much as `remaining`, and the class
@@ -275,6 +330,63 @@ class Pool:
     @property
     def known(self) -> bool:
         return self.remaining != UNKNOWN
+
+    def freshness(self, now: float) -> str:
+        """FRESH, STALE, UNKNOWN or UNAVAILABLE — computed now, never stored.
+
+        A pool that carries an observation is judged by that source's own
+        horizon: the horizon travels with the reading so the verdict is about
+        the source that made it, not about whoever happens to ask later (D33).
+        A pool without one falls back to this module's own rule — a reading is
+        STALE past `_STALE_READING_SECONDS`, UNKNOWN when there is no reading to
+        age — which is the same disclosure-by-age the gate has always made.
+        """
+        if self.observation is not None:
+            return resource_observation.from_record(self.observation).freshness(now)
+        if self.remaining == UNKNOWN:
+            return UNKNOWN
+        age = _age_seconds(self.observed_at, now=now)
+        if age is None:
+            return UNKNOWN
+        return "STALE" if age > _STALE_READING_SECONDS else "FRESH"
+
+
+def pool_from_observation(
+    observation, *, pool_id: str, kind: str, window: str, window_name: str,
+    billing_mode: str = UNKNOWN, provider_id: str = UNKNOWN,
+    unit: str = "percent of the window remaining", active_workers: int = 0,
+) -> Pool:
+    """One pool built from one named window of a normalised observation (D33).
+
+    The observation, not the caller, supplies the figures: remaining is the
+    window's own `remaining_percentage` when the source states one, else
+    `100 - used_percentage` when THAT is stated, else UNKNOWN — never zero,
+    because a denominator the source did not establish is not an empty window.
+    The whole observation travels onto the pool as its record, so the pool can
+    be re-judged for freshness by the horizon of the source that read it.
+    """
+    carried = tuple(item.name for item in observation.windows)
+    if window_name not in carried:
+        # Refused rather than defaulted: `ResourceObservation.window` answers a
+        # missing name with an all-UNKNOWN window, and a pool silently measured
+        # against a window the source never exposed is an invented reading.
+        raise IntegrityError(
+            "the observation does not carry the window this pool would be measured against",
+            pool_id=pool_id, wanted=window_name,
+            carried=", ".join(carried) or "none",
+        )
+    reading = observation.window(window_name)
+    remaining: float | str = UNKNOWN
+    if reading.remaining_percentage != UNKNOWN:
+        remaining = float(reading.remaining_percentage)
+    elif reading.used_percentage != UNKNOWN:
+        remaining = 100.0 - float(reading.used_percentage)
+    return Pool(
+        pool_id=pool_id, kind=kind, window=window, remaining=remaining, unit=unit,
+        resets_at=_iso_utc(reading.resets_at), observed_at=_iso_utc(observation.observed_at),
+        active_workers=active_workers, billing_mode=billing_mode, provider_id=provider_id,
+        observation=observation.as_record(),
+    )
 
 
 @dataclass(frozen=True)
@@ -390,21 +502,26 @@ class Decision:
         return "\n".join(lines)
 
 
-def gate(dispatch: Dispatch, pool: Pool, reserve: Reserve) -> Decision:
+def gate(dispatch: Dispatch, pool: Pool, reserve: Reserve, *, now: float | None = None) -> Decision:
     """Whether issuing this dispatch is safe, given what is known.
 
     Order is deliberate. Authority first, because no amount of capacity makes
     rerouting a decision acceptable. Then the arithmetic where it can be done,
     then the conservative posture where it cannot. Nothing here queues, retries
     or chooses what to run next.
+
+    `now` is the moment freshness is judged at, supplied by the caller so a
+    rehearsal can reproduce a verdict; absent, it is the clock.
     """
     # HOW OLD THE READING IS, surfaced as an unknown rather than aged against a
     # built-in ceiling. The class docstring says the moment matters as much as
     # the figure and `gate` never looked at it: a reading from 2020 produced a
     # confident DISPATCH with no unknowns. What "too old" means depends on the
-    # window and the provider, so this module states the age and refuses to
-    # invent a threshold — which is the same refusal it makes about the horizon
-    # in `progress`.
+    # window and the provider — EXCEPT where the reading itself carries the
+    # answer: a pool with an observation is judged by that source's own horizon
+    # (D33), and the sentence it gets names the horizon rather than this
+    # module's reporting ceiling. One sentence for one fact, so where the
+    # observation speaks, the age line is not also added.
     if dispatch.pool_id != pool.pool_id:
         raise IntegrityError(
             "this dispatch was measured against a different pool than the one it names",
@@ -412,9 +529,17 @@ def gate(dispatch: Dispatch, pool: Pool, reserve: Reserve) -> Decision:
         )
 
     unknowns = []
-    age = _age_seconds(pool.observed_at)
-    if age is not None and age > _STALE_READING_SECONDS:
-        unknowns.append(f"whether a reading {age / 3600:.0f}h old still describes this window")
+    if pool.observation is not None:
+        observed = resource_observation.from_record(pool.observation)
+        moment = (datetime.now(timezone.utc).timestamp() if now is None else now)
+        if observed.freshness(moment) == "STALE":
+            unknowns.append(
+                "the pool's own observation is STALE at its source's horizon "
+                f"({observed.freshness_reason(moment)})")
+    else:
+        age = _age_seconds(pool.observed_at, now=now)
+        if age is not None and age > _STALE_READING_SECONDS:
+            unknowns.append(f"whether a reading {age / 3600:.0f}h old still describes this window")
     if not pool.known:
         unknowns.append(f"how much of pool {pool.pool_id} remains")
     if pool.kind == PoolKind.UNKNOWN:

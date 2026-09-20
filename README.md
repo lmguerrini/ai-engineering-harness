@@ -125,7 +125,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── backend_contract.py     backend identity and per-family qualification, now prior
     │   ├── qualification.py        per-configuration qualification, keyed on the evidence
     │   ├── model_discovery.py      what a surface offers now; no model vocabulary anywhere
-    │   ├── routing.py              availability, vendor-independent eligibility and the design-audit route
+    │   ├── routing.py              availability, vendor-distinct eligibility, the eligibility report and the design-audit route
     │   ├── selector_evidence.py    whether a targeted run is evidence that anything ran
     │   ├── release_delta.py       whether a version's entry accounts for what it changed
     │   ├── evolution_evidence.py  whether new evidence is a recurrence, a new class, or a question
@@ -149,6 +149,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── continuation.py         coordinator state derived from artifacts, so silence has a name
     │   ├── progress.py             a disjunction over signals, so a quiet worker is not a dead one
     │   ├── capacity.py             a refusal before a dispatch; never a queue that dispatches
+    │   ├── capacity_record.py     the one writer of CAPACITY.json; a reading in, per-element quarantine out
     │   ├── history_anchor.py       whether anything still keeps a cited commit reachable
     │   ├── task_output.py          bounded durable output, and the four answers before a retry
     │   ├── instrument.py           what a checker must say about itself to be believed

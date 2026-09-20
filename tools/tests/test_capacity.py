@@ -5,9 +5,12 @@ does not move under resource pressure** and that an unmeasurable window produces
 caution rather than either a fabricated number or a deadlock.
 """
 
+import dataclasses
+
 import pytest
 
 import capacity
+import resource_observation
 from capacity import (
     UNKNOWN,
     AuthorityClass,
@@ -433,3 +436,183 @@ def test_the_age_of_a_reading_is_an_unknown_rather_than_something_nobody_asked()
                           Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))
     assert fresh.verdict == Verdict.DISPATCH
     assert not fresh.unknowns
+
+
+# --- the observation a reading came from (D33) ---------------------------------
+#
+# One normalised observation per pool: the pool is judged for freshness by the
+# horizon of the SOURCE that read it, at the moment it is asked, and a pool
+# without one keeps behaving exactly as it always did.
+
+#: A fixed moment, so every verdict here is about the reading and never about
+#: when the suite happened to run.
+_NOW = 1789000000.0
+
+
+def _quota_observation(observed_at, windows=None):
+    """One observation from a quota document, at a caller-supplied moment."""
+    return resource_observation.from_provider_quota({
+        "schema": "runtime-pack-quota-1",
+        "provider_id": "provider-a",
+        "billing_pool_id": "pool-a",
+        "observed_at": observed_at,
+        "windows": windows if windows is not None else [
+            {"name": "rolling_5h", "used_percentage": 62.5, "remaining_percentage": 37.5,
+             "resets_at": observed_at + 3600},
+            {"name": "weekly", "availability": "UNAVAILABLE"},
+        ],
+    })
+
+
+def test_an_observation_on_a_pool_validates_and_survives_a_round_trip():
+    """A pool that carries an observation stores exactly what `as_record()`
+    produces, so the pool survives the document round trip a writer and a
+    reader perform — a stored observation that had drifted from the record
+    shape would be a second, slimmer reading of the one fact."""
+    observation = _quota_observation(_NOW - 60)
+    pool = Pool(pool_id="pool-a", kind=PoolKind.INDEPENDENT, window=WindowKind.ROLLING,
+                remaining=37.5, observed_at="2026-09-10T00:25:40Z",
+                observation=observation.as_record())
+    rebuilt = Pool(**dataclasses.asdict(pool))
+    assert rebuilt == pool
+    assert rebuilt.observation == observation.as_record()
+    # A declaration from before this field existed still constructs: additive,
+    # not a migration a project must perform to keep gating.
+    assert Pool(pool_id="old", remaining=10,
+                observed_at="2026-09-03T12:00:00Z").observation is None
+
+
+def test_an_observation_record_with_an_unknown_key_is_refused_by_name():
+    """The record shape is closed, so a record grown a field no reader
+    implements is a stated refusal — never a silently slimmer observation that
+    still claims to be the reading that was made."""
+    record = _quota_observation(_NOW - 60).as_record()
+    record["lane_local_note"] = "a field no reader implements"
+    with pytest.raises(IntegrityError) as caught:
+        Pool(pool_id="pool-a", observation=record)
+    assert "lane_local_note" in caught.value.render()
+
+
+def test_a_billing_mode_that_misstates_the_cost_of_a_route_is_refused():
+    """`billing_mode` is read from the declared vocabulary because two
+    vocabularies for one fact is how a metered route comes to read as a
+    subscription one."""
+    with pytest.raises(IntegrityError) as caught:
+        Pool(pool_id="pool-a", billing_mode="free_forever")
+    assert "declared billing modes" in caught.value.render()
+    assert Pool(pool_id="pool-a", billing_mode="subscription").billing_mode == "subscription"
+
+
+@pytest.mark.parametrize("reading,expected", [
+    (_quota_observation(_NOW - 60), "FRESH"),
+    (_quota_observation(_NOW - 3600), "STALE"),
+    (resource_observation.from_human_reading(
+        provider_id="provider-a", billing_pool_id="pool-a",
+        windows={"rolling_5h": 40.0}, observed_at=_NOW - 60), "FRESH"),
+    (resource_observation.from_human_reading(
+        provider_id="provider-a", billing_pool_id="pool-a",
+        windows={"rolling_5h": 40.0}, observed_at=_NOW - 8000), "STALE"),
+    (_quota_observation(_NOW - 60, windows=[
+        {"name": "rolling_5h", "availability": "UNAVAILABLE"}]), "UNAVAILABLE"),
+    (_quota_observation(_NOW + 3600), "UNKNOWN"),
+], ids=["quota fresh", "quota stale", "human fresh", "human stale",
+        "nothing exposed", "from the future"])
+def test_freshness_is_judged_at_read_time_against_the_sources_own_horizon(reading, expected):
+    """FRESH, STALE, UNKNOWN and UNAVAILABLE, computed at the moment of asking
+    rather than stored: a quota document is judged at its 15-minute horizon and
+    a human reading at two hours, so the verdict is about the source that made
+    the reading and not about whoever happens to ask later."""
+    pool = Pool(pool_id="pool-a", observation=reading.as_record())
+    assert pool.freshness(_NOW) == expected
+    assert pool.freshness(_NOW) in resource_observation.FRESHNESS
+
+
+def test_a_stale_observation_never_reaches_dispatch():
+    """The presentation rule with teeth: whatever else the arithmetic says, a
+    reading past its own source's horizon cannot produce a clean DISPATCH — and
+    the staleness is named ONCE, by the source's own horizon, not twice by two
+    rules that disagree about what old means."""
+    pool = capacity.pool_from_observation(
+        _quota_observation(_NOW - 3600), pool_id="p1", kind=PoolKind.INDEPENDENT,
+        window=WindowKind.ROLLING, window_name="rolling_5h", billing_mode="subscription")
+    decision = capacity.gate(
+        _dispatch(estimated_cost=1, result_consumption_cost=1), pool,
+        Reserve(coordinator=1, result_consumption=1, repair_and_audit=1), now=_NOW)
+    assert decision.verdict != Verdict.DISPATCH
+    staleness = [u for u in decision.unknowns if "STALE" in u]
+    assert len(staleness) == 1, decision.unknowns
+    assert "past its" in staleness[0]
+    # One sentence for one fact: where the observation speaks, this module's
+    # own age line is not also added beside it.
+    assert "still describes this window" not in " ".join(decision.unknowns)
+
+    # The bound: the same reading, inside its horizon, dispatches cleanly.
+    fresh = capacity.pool_from_observation(
+        _quota_observation(_NOW - 60), pool_id="p1", kind=PoolKind.INDEPENDENT,
+        window=WindowKind.ROLLING, window_name="rolling_5h")
+    clean = capacity.gate(
+        _dispatch(estimated_cost=1, result_consumption_cost=1), fresh,
+        Reserve(coordinator=1, result_consumption=1, repair_and_audit=1), now=_NOW)
+    assert clean.verdict == Verdict.DISPATCH and not clean.unknowns
+
+
+def test_gate_judges_freshness_against_the_clock_when_no_now_is_given():
+    """`now` is an input with a default, not a new requirement on a caller: the
+    calls that existed before behave as before, and the default is the clock."""
+    import time as _time
+
+    clock = _time.time()
+    fresh = capacity.pool_from_observation(
+        _quota_observation(clock - 60), pool_id="p1", kind=PoolKind.INDEPENDENT,
+        window=WindowKind.ROLLING, window_name="rolling_5h")
+    decision = capacity.gate(
+        _dispatch(estimated_cost=1, result_consumption_cost=1), fresh,
+        Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))
+    assert decision.verdict == Verdict.DISPATCH
+    assert not decision.unknowns
+
+    ancient = capacity.pool_from_observation(
+        _quota_observation(clock - 3600), pool_id="p1", kind=PoolKind.INDEPENDENT,
+        window=WindowKind.ROLLING, window_name="rolling_5h")
+    aged = capacity.gate(
+        _dispatch(estimated_cost=1, result_consumption_cost=1), ancient,
+        Reserve(coordinator=1, result_consumption=1, repair_and_audit=1))
+    assert aged.verdict != Verdict.DISPATCH
+
+
+def test_a_pool_from_an_observation_takes_its_figures_from_the_window():
+    """The observation, not the caller, supplies the figure: remaining is the
+    window's own stated remaining, else 100 minus what it says is used, else
+    UNKNOWN — never zero, because a denominator the source did not establish is
+    not an empty window. The timestamps land as ISO UTC a moment reader can
+    actually age."""
+    stated = capacity.pool_from_observation(
+        _quota_observation(_NOW - 60), pool_id="p1", kind=PoolKind.INDEPENDENT,
+        window=WindowKind.ROLLING, window_name="rolling_5h")
+    assert stated.remaining == 37.5
+    assert stated.observation["provenance"] == "provider_endpoint"
+    assert capacity._moment(stated.observed_at).timestamp() == _NOW - 60
+    assert capacity._moment(stated.resets_at).timestamp() == _NOW - 60 + 3600
+
+    derived = capacity.pool_from_observation(
+        _quota_observation(_NOW - 60, windows=[
+            {"name": "rolling_5h", "used_percentage": 62.5}]),
+        pool_id="p1", kind=PoolKind.INDEPENDENT, window=WindowKind.ROLLING,
+        window_name="rolling_5h")
+    assert derived.remaining == 37.5
+
+    unmeasured = capacity.pool_from_observation(
+        _quota_observation(_NOW - 60, windows=[{"name": "rolling_5h"}]),
+        pool_id="p1", kind=PoolKind.INDEPENDENT, window=WindowKind.ROLLING,
+        window_name="rolling_5h")
+    assert unmeasured.remaining == UNKNOWN
+
+    # A window the source never exposed is refused, naming the windows carried:
+    # a pool silently measured against a window that is not there is an
+    # invented reading.
+    with pytest.raises(IntegrityError) as caught:
+        capacity.pool_from_observation(
+            _quota_observation(_NOW - 60), pool_id="p1", kind=PoolKind.INDEPENDENT,
+            window=WindowKind.ROLLING, window_name="monthly")
+    rendered = caught.value.render()
+    assert "monthly" in rendered and "rolling_5h" in rendered and "weekly" in rendered
