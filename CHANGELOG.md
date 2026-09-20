@@ -32,11 +32,19 @@ machine reading in the desktop workflow. The founder's decisions are D29–D36.
 - `templates/providers/moonshot-kimi-code.dormant.json` — the D34 dormant fixture that proves the seam
   registers unchanged and routes nothing.
 - `templates/providers/README.md` — what a dormant template promises and does not.
+- `tools/tests/test_readonly_modes.py` — the read-only-mode oracle (O10): every touched tool's `--help`, one
+  unrecognised flag and its default read path run against a fixture governance tree and must leave it
+  byte-identical, with no traceback; two negative controls (a helper that rewrites, a helper that creates)
+  prove the check discriminates. It changes no tool.
 
 ### What a consumer will notice
 
-Nothing yet: no production module has changed in this candidate. Each addition below this line is recorded
-as it lands.
+No production module has changed in this candidate yet; each addition is recorded here as it lands:
+
+- `tools/provider_manifest.py` is new: a project that declares no manifest sees nothing change.
+- `tools/tests/test_readonly_modes.py` is new: every touched tool's `--help`, an unrecognised flag and its
+  default read path are executed against a fixture governance directory and must leave it byte-identical;
+  two negative controls prove the check discriminates. It changes no tool.
 
 ## 2.5.0 — the boundary stops describing Git and starts constructing the repository
 
