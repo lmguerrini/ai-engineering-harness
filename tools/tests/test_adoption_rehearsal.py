@@ -735,3 +735,109 @@ def test_a_capability_cannot_be_opened_carrying_a_waiter_that_cannot_end(tmp_pat
              not_beyond_seconds=60, declared_at=continuation.now(),
              waiter='while pgrep -qf "pytest tools/tests"; do sleep 20; done')
     assert "cannot be trusted to end" in str(caught.value)
+
+
+# =============================================================================
+# O13: a third family registers and reports without a vendor name in Core
+# =============================================================================
+
+
+def test_a_third_family_registers_and_reports_without_a_vendor_name_in_core(tmp_path):
+    """The rehearsal D31 exists for: adding a provider is data, not a Core edit.
+
+    Two families with history, and a THIRD that has never been dispatched but
+    declares a provider manifest. It appears in the eligibility report as a
+    declared PROBE's own evidence (PROVISIONAL) and stays
+    `NOT_ROUTABLE_UNAUTHORISED` until a founder records `authorised_by` — and
+    neither `routing.py` nor `provider_manifest.py` had to name it to do so.
+    """
+    import capacity
+    import provider_manifest
+
+    established = replace(KNOWN, family="family-one", model_observed="model-one")
+    other = replace(KNOWN, family="family-two", model_observed="model-two")
+    third = replace(KNOWN, family="family-third", client="worker-third@gateway-third.example",
+                    model_observed="model-third")
+
+    rows = ([_row(established, "review", "validated")] * 2
+            + [_row(other, "review", "validated")] * 2
+            # ONE observation: a declared probe, not a track record.
+            + [_row(third, "review", "validated")])
+    log = _log(tmp_path, rows)
+
+    manifest = provider_manifest.ProviderManifest.from_mapping({
+        "schema": "runtime-pack-provider-1",
+        "provider_id": "family-third-plan", "vendor": "family-third",
+        "gateway": "gateway-third.example",
+        "surfaces": [{"surface": "surface-a", "client": "worker-third@gateway-third.example",
+                      "protocol": "anthropic-compatible"}],
+        "adapter": "anthropic-compatible-worker",
+        "credential": {"kind": "subscription_key", "env_file_ref": "FAMILY_THIRD_KEY_FILE",
+                       "generic_env_forbidden": ["FAMILY_THIRD_API_KEY"]},
+        "billing": {"billing_mode": "subscription", "billing_pool_id": "family-third-membership",
+                    "windows": ["rolling_5h"], "authorised_by": None,
+                    "overage_enabled": None, "auto_topup_enabled": None,
+                    "metered_fallback_enabled": None},
+        "capacity_observer": {"source": "human-reading", "freshness_horizon_s": 3600,
+                              "command": None},
+        "discovery": None, "private_terms": [],
+    })
+
+    report = routing.eligibility_report(log, task_class="review", manifests=[manifest],
+                                        environment={})
+    assert len(report.rows) == 3, (
+        "fixture is inert: not every one of the three families produced a graded row"
+    )
+    third_row = next(row for row in report.rows if row.vendor == "family-third")
+    assert third_row.grade in ("unprobed", "provisional"), (
+        f"the third family's declared probe graded {third_row.grade!r}"
+    )
+    assert third_row.routability == provider_manifest.NOT_ROUTABLE_UNAUTHORISED, (
+        "an unauthorised manifest must stay NOT_ROUTABLE however strong its evidence becomes"
+    )
+    assert third_row.eligible is False
+
+    # AND NOW THE FOUNDER AUTHORISES IT — nothing but the manifest's own data
+    # changes, and the disposition follows.
+    authorised = provider_manifest.ProviderManifest.from_mapping({
+        **json.loads(json.dumps({
+            "schema": manifest.schema, "provider_id": manifest.provider_id,
+            "vendor": manifest.vendor, "gateway": manifest.gateway,
+            "surfaces": [{"surface": s.surface, "client": s.client, "protocol": s.protocol}
+                        for s in manifest.surfaces],
+            "adapter": manifest.adapter,
+            "credential": {"kind": manifest.credential.kind,
+                          "env_file_ref": manifest.credential.env_file_ref,
+                          "generic_env_forbidden": list(manifest.credential.generic_env_forbidden)},
+            "billing": {"billing_mode": "subscription",
+                       "billing_pool_id": manifest.billing.billing_pool_id,
+                       "windows": list(manifest.billing.windows),
+                       "authorised_by": "founder-decision-third-1",
+                       "overage_enabled": False, "auto_topup_enabled": False,
+                       "metered_fallback_enabled": False},
+            "capacity_observer": {"source": manifest.capacity_observer.source,
+                                  "freshness_horizon_s": manifest.capacity_observer.freshness_horizon_s,
+                                  "command": manifest.capacity_observer.command},
+            "discovery": manifest.discovery, "private_terms": list(manifest.private_terms),
+        })),
+    })
+    now = continuation.now()
+    pool = capacity.Pool(pool_id="family-third-membership", remaining=100, unit="req",
+                        observed_at=now)
+    reauthorised = routing.eligibility_report(
+        log, task_class="review", purpose=routing.ROUTINE, manifests=[authorised],
+        capacity_pools=[pool], authorised_pools=["family-third-membership"], environment={},
+    )
+    third_reauthorised = next(row for row in reauthorised.rows if row.vendor == "family-third")
+    assert third_reauthorised.routability == provider_manifest.ROUTABLE
+    assert third_reauthorised.eligible is True, (
+        "authorising the manifest and observing FRESH capacity must be enough once the "
+        "configuration's own evidence already supports it"
+    )
+
+    # NO VENDOR NAME IN CORE. The whole point of D31: registering a fourth
+    # family changes no line of either module.
+    for module_name in ("routing.py", "provider_manifest.py"):
+        source = (PACK / "tools" / module_name).read_text(encoding="utf-8")
+        assert "family-third" not in source
+        assert "gateway-third" not in source

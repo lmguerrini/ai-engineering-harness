@@ -125,7 +125,7 @@ Derived from the tracked tree, not maintained by hand
     │   ├── backend_contract.py     backend identity and per-family qualification, now prior
     │   ├── qualification.py        per-configuration qualification, keyed on the evidence
     │   ├── model_discovery.py      what a surface offers now; no model vocabulary anywhere
-    │   ├── routing.py              availability, eligibility and the design-audit route
+    │   ├── routing.py              availability, vendor-independent eligibility and the design-audit route
     │   ├── selector_evidence.py    whether a targeted run is evidence that anything ran
     │   ├── release_delta.py       whether a version's entry accounts for what it changed
     │   ├── evolution_evidence.py  whether new evidence is a recurrence, a new class, or a question

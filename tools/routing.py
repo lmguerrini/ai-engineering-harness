@@ -44,11 +44,21 @@ stronger.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import time
+from dataclasses import replace, dataclass, field
 from datetime import date
+from typing import Iterable, Mapping
 
+import capacity
+import provider_manifest
 import qualification
 from backend_contract import TaskClassGrade
+from provider_manifest import (
+    NOT_ROUTABLE_BILLING,
+    NOT_ROUTABLE_CREDENTIAL,
+    NOT_ROUTABLE_UNAUTHORISED,
+    NOT_ROUTABLE_UNKNOWN,
+)
 from qualification import UNKNOWN, ConfigurationIdentity, Prior
 
 __all__ = [
@@ -57,6 +67,10 @@ __all__ = [
     "UNAVAILABLE",
     "AVAILABILITY_STATES",
     "DISPOSITIONS",
+    "NOT_ROUTABLE_BILLING",
+    "NOT_ROUTABLE_UNAUTHORISED",
+    "NOT_ROUTABLE_CREDENTIAL",
+    "NOT_ROUTABLE_UNKNOWN",
     "PROBE",
     "ROUTINE",
     "CRITICAL",
@@ -69,12 +83,17 @@ __all__ = [
     "availability_for",
     "Candidate",
     "disposition_of",
+    "disposition_with_routability",
     "eligibility",
     "independence_problems",
     "Role",
     "DESIGN_AUDIT_ROLES",
     "RouteReport",
     "design_audit_route",
+    "PoolState",
+    "EligibilityRow",
+    "EligibilityReport",
+    "eligibility_report",
 ]
 
 
@@ -101,6 +120,12 @@ DISPOSITIONS = (
     "AVAILABLE",
     "UNAVAILABLE",
     UNKNOWN,
+    #: D29/D32: billing safety, imported from `provider_manifest` so the two
+    #: modules share one vocabulary rather than each spelling it separately.
+    NOT_ROUTABLE_BILLING,
+    NOT_ROUTABLE_UNAUTHORISED,
+    NOT_ROUTABLE_CREDENTIAL,
+    NOT_ROUTABLE_UNKNOWN,
 )
 
 #: A bounded exploratory dispatch whose purpose is to produce the first evidence.
@@ -137,9 +162,17 @@ class Derivation:
     #: identifier and this pack's own publication scan refuses one — so the log
     #: records the class and this records what the class claims.
     fresh: "bool | None" = None
-    #: For a leg declared cross-provider. Two models from one provider are not a
-    #: cross-provider reading, whatever else differs.
+    #: For a leg declared cross-provider. Kept as the ALIAS source only (D30):
+    #: independence itself is decided on `vendor`, never read here directly.
     provider: str = UNKNOWN
+    #: Whose model this is. A leg declared cross-provider is satisfied only by
+    #: a distinct vendor on both sides (D30) — two gateways of one vendor are
+    #: one vendor's reading, whatever else differs.
+    vendor: str = UNKNOWN
+    #: The gateway that served this reading. Re-hosting keys a different
+    #: configuration and the same vendor (D30); carried for the record and
+    #: NEVER compared for independence.
+    gateway: str = UNKNOWN
     surface: str = UNKNOWN
 
 
@@ -150,8 +183,32 @@ def _named(derivation: "Derivation") -> "Derivation":
     return _replace(derivation, **{
         field: (getattr(derivation, field) if str(getattr(derivation, field)).strip()
                 else UNKNOWN)
-        for field in ("producer", "session", "provider", "surface")
+        for field in ("producer", "session", "provider", "vendor", "gateway", "surface")
     })
+
+
+def _vendor_of(derivation: "Derivation") -> str:
+    """The vendor this derivation names, reading `provider` as its alias when
+    `vendor` itself was never recorded (D30). The ONE place that fallback is
+    read, so a caller comparing two derivations never has to know which field
+    carried the fact."""
+    import backend_contract
+
+    raw = derivation.vendor if derivation.vendor != UNKNOWN else derivation.provider
+    # Two spellings of one vendor are one vendor: the same boundary every
+    # identity value crosses, so `Vendor-A` and `vendor-a ` cannot pass as two.
+    normalised = backend_contract.normalised_identity_value(raw)
+    return normalised if normalised == UNKNOWN else normalised.strip().casefold()
+
+
+def _vendors_distinct(reader: "Derivation", subject: "Derivation") -> bool:
+    """Whether the two sides name different, established vendors.
+
+    Factored out so a mutation can be aimed at this comparison alone (O12):
+    the vendor-equality guard is the property under test, not the caller
+    around it.
+    """
+    return _vendor_of(reader) != _vendor_of(subject)
 
 
 def independence_problems(
@@ -159,6 +216,8 @@ def independence_problems(
     subject: Derivation,
     *,
     require_distinct_provider: bool = False,
+    #: An alias: either flag turns the cross-vendor check on (D30).
+    require_distinct_vendor: bool = False,
 ) -> tuple[str, ...]:
     """Every reason this reader is not independent of this work.
 
@@ -200,16 +259,26 @@ def independence_problems(
             "session freshness cannot be established: no session identifier distinguishes the "
             "reader from the work, and the reader does not declare a fresh context"
         )
-    if require_distinct_provider:
-        if reader.provider == UNKNOWN or subject.provider == UNKNOWN:
+    if require_distinct_provider or require_distinct_vendor:
+        # VENDOR, not provider or gateway (D30). Two gateways of one vendor are
+        # one vendor's reading, whatever else differs, and `provider` is read
+        # only as `vendor`'s alias, through `_vendor_of` — never compared here
+        # in its own right.
+        reader_vendor, subject_vendor = _vendor_of(reader), _vendor_of(subject)
+        if reader_vendor == UNKNOWN or subject_vendor == UNKNOWN:
             found.append(
-                "this leg is declared cross-provider and a provider is not recorded on both "
+                "this leg is declared cross-provider and a vendor is not recorded on both "
                 "sides, so distinctness cannot be established"
             )
-        elif reader.provider == subject.provider:
+        elif not _vendors_distinct(reader, subject):
+            known_gateways = sorted({
+                gateway for gateway in (reader.gateway, subject.gateway) if gateway != UNKNOWN
+            })
+            gateway_clause = f" ({' and '.join(known_gateways)})" if known_gateways else ""
             found.append(
-                f"this leg is declared cross-provider and both sides are {reader.provider}; two "
-                f"models from one provider are one provider's reading"
+                f"this leg is declared cross-provider and both sides are vendor "
+                f"{reader_vendor}{gateway_clause}; two gateways of one vendor are one vendor's "
+                f"reading"
             )
     return tuple(found)
 
@@ -222,7 +291,7 @@ def independence_problems(
 #: whether two readings came from the same producer, the same provider, and
 #: whether each was a fresh context; a class answers all three without naming a
 #: session.
-DERIVATION_FIELDS = ("producer", "provider", "session_class", "role")
+DERIVATION_FIELDS = ("producer", "provider", "session_class", "role", "vendor", "gateway")
 
 
 def derivation_from_observation(row: dict) -> Derivation:
@@ -241,6 +310,10 @@ def derivation_from_observation(row: dict) -> Derivation:
             f"an observation records derivation field(s) {', '.join(unknown)}, which nothing "
             f"reads. Known: {', '.join(DERIVATION_FIELDS)}")
     session_class = str(declared.get("session_class") or "").strip().lower()
+    # VENDOR, aliased from `provider` where it was never declared (D30). The
+    # declared `provider` reading is kept exactly as before; `vendor` is the
+    # new fact and falls back to it only when nothing else named a vendor.
+    vendor = declared.get("vendor") or declared.get("provider") or UNKNOWN
     return _named(Derivation(
         producer=str(declared.get("producer") or UNKNOWN),
         # NOT the session class. A class is shared by every dispatch of its kind,
@@ -249,6 +322,8 @@ def derivation_from_observation(row: dict) -> Derivation:
         session=UNKNOWN,
         fresh=True if session_class.startswith("fresh") else (None if not session_class else False),
         provider=str(declared.get("provider") or UNKNOWN),
+        vendor=str(vendor),
+        gateway=str(declared.get("gateway") or UNKNOWN),
         surface=str(row.get("surface") or UNKNOWN),
     ))
 
@@ -423,6 +498,31 @@ def disposition_of(availability: str, grade: str) -> str:
     return "UNPROBED"
 
 
+#: Every disposition `provider_manifest.routability` can return. Billing
+#: safety precedes availability and grade (D29, D32): a route that is not
+#: provably safe to bill is not routed to for being merely qualified.
+_NOT_ROUTABLE = (
+    NOT_ROUTABLE_BILLING,
+    NOT_ROUTABLE_UNAUTHORISED,
+    NOT_ROUTABLE_CREDENTIAL,
+    NOT_ROUTABLE_UNKNOWN,
+)
+
+
+def disposition_with_routability(routability_disposition: str, availability: str, grade: str) -> str:
+    """One word for a candidate, billing safety checked before either axis.
+
+    A `NOT_ROUTABLE_*` disposition wins before availability or grade is even
+    read — the same precedence `eligibility`'s `routability` keyword applies —
+    so a confirmed, available configuration behind an unauthorised or
+    unproven billing route never reads as merely qualified. Otherwise
+    identical to `disposition_of`, which stays untouched.
+    """
+    if routability_disposition in _NOT_ROUTABLE:
+        return routability_disposition
+    return disposition_of(availability, grade)
+
+
 @dataclass(frozen=True)
 class Eligibility:
     allowed: bool
@@ -434,12 +534,19 @@ class Eligibility:
         )
 
 
-def eligibility(candidate: Candidate, *, purpose: str) -> Eligibility:
+def eligibility(
+    candidate: Candidate, *, purpose: str, routability: "str | None" = None,
+) -> Eligibility:
     """Whether this candidate may take this work, for this purpose.
 
     The purpose is the caller's, because only the caller knows whether a dispatch
     is a bounded probe or a mandatory audit leg — the same rule
     `capability_open` already applies to the change class, for the same reason.
+
+    `routability` is optional and defaults to `None`, which keeps every
+    existing caller's behaviour unchanged. When it names a `NOT_ROUTABLE_*`
+    disposition, the candidate is refused for EVERY purpose, PROBE included:
+    billing safety precedes evidence of what the configuration can do (D29).
     """
     if purpose not in PURPOSES:
         raise RoutingError(
@@ -447,6 +554,12 @@ def eligibility(candidate: Candidate, *, purpose: str) -> Eligibility:
             f"not a small one: this refuses rather than choosing the lenient reading"
         )
     reasons: list[str] = []
+    if routability is not None and routability in _NOT_ROUTABLE:
+        reasons.append(
+            f"billing safety refuses this route: {routability}. An unauthorised or unproven "
+            f"billing route is refused for every purpose, PROBE included, whatever the "
+            f"configuration's own evidence says (D29)"
+        )
     if candidate.grade.task_class != candidate.task_class:
         # THE GRADE CARRIES THE CLASS IT WAS MEASURED AT, and nothing compared
         # the two: a candidate declared at one class holding a grade measured at
@@ -755,6 +868,437 @@ def design_audit_route(
     return report
 
 
+# =============================================================================
+# The eligibility report (S0-C5, O3)
+#
+# It lists every configuration this task class has evidence for, joined to
+# what it would bill and how fresh its capacity is, and says which of them are
+# eligible and why. **It never dispatches, never ranks by newness and never
+# picks** — those verbs stay with the coordinator, in
+# `policy/routing-policy.md`'s three coordinator-applied stages. An advisory
+# family prior still satisfies no eligibility test here either.
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class PoolState:
+    """One capacity pool's state, as far as this report can read it.
+
+    Never a dispatch decision — `capacity.gate` is the module that takes one.
+    `freshness` is computed against `capacity._STALE_READING_SECONDS`, the same
+    horizon `capacity.gate` itself ages a reading against, and is `UNKNOWN`
+    whenever either `remaining` or `observed_at` is unestablished: a number
+    with no moment is not a reading (`capacity.Pool`'s own contract).
+    """
+
+    pool_id: str
+    remaining: "float | str" = UNKNOWN
+    unit: str = "units"
+    observed_at: "str | None" = None
+    age_seconds: "float | None" = None
+    freshness: str = UNKNOWN
+
+
+def _pool_state(pool: "capacity.Pool", *, now: "float | None") -> PoolState:
+    moment = capacity._moment(pool.observed_at) if pool.observed_at else None
+    if pool.remaining == UNKNOWN or moment is None:
+        return PoolState(pool_id=pool.pool_id, remaining=pool.remaining, unit=pool.unit,
+                          observed_at=pool.observed_at, age_seconds=None, freshness=UNKNOWN)
+    current = now if now is not None else time.time()
+    age = current - moment.timestamp()
+    freshness = "STALE" if age > capacity._STALE_READING_SECONDS else "FRESH"
+    return PoolState(pool_id=pool.pool_id, remaining=pool.remaining, unit=pool.unit,
+                      observed_at=pool.observed_at, age_seconds=age, freshness=freshness)
+
+
+def _match_manifest(
+    client: str, family: str, manifests: "tuple[provider_manifest.ProviderManifest, ...]",
+) -> "tuple[provider_manifest.ProviderManifest | None, int | None]":
+    """The manifest, and the matching surface index, this configuration would
+    route through — or `(None, None)` when none does.
+
+    Matched by CLIENT first, on any surface any manifest declares: the surface
+    a configuration actually dispatches through is the fact that decides its
+    route. Falls back to VENDOR only when exactly one manifest names it,
+    because two manifests sharing a vendor is an ambiguity this function
+    refuses to guess through rather than silently pick one.
+    """
+    by_client = [
+        (manifest, index)
+        for manifest in manifests
+        for index, surface in enumerate(manifest.surfaces)
+        if surface.client == client
+    ]
+    if len(by_client) > 1:
+        # One gateway serving several vendors, or several accounts at one
+        # gateway, declares the same client string more than once. Narrow by
+        # the configuration's own vendor; what is still ambiguous after that
+        # is refused — the answer must not depend on the order the project
+        # listed its manifests in.
+        by_client = [pair for pair in by_client if pair[0].vendor == family]
+    if len(by_client) == 1:
+        return by_client[0]
+    if len(by_client) > 1:
+        raise RoutingError(
+            f"{len(by_client)} declared manifests match client {client!r} at vendor {family!r}; "
+            "an ambiguous route is refused rather than resolved by list order"
+        )
+    by_vendor = [manifest for manifest in manifests if manifest.vendor == family]
+    if len(by_vendor) == 1:
+        # The route the configuration actually dispatches through is not a
+        # surface this manifest declares; the billing facts are the manifest's
+        # and hold for every surface, but the recorded endpoint is not this
+        # configuration's client — the row says so.
+        return by_vendor[0], 0
+    return None, None
+
+
+@dataclass(frozen=True)
+class EligibilityRow:
+    """One configuration's evidence, route and verdict — nothing chosen."""
+
+    identity: tuple
+    task_class: str
+    grade: str
+    observations: int
+    availability: str
+    vendor: str
+    gateway: str
+    provider_id: str
+    billing_pool_id: str
+    routability: str
+    pool: "PoolState | None"
+    independence: "tuple[str, ...]"
+    disposition: str
+    eligible: bool
+    reasons: "tuple[str, ...]"
+
+
+@dataclass(frozen=True)
+class EligibilityReport:
+    """Every configuration this task class has evidence for, joined and
+    explained. Rows are in IDENTITY ORDER — never sorted by grade or
+    newness — because a report that ranks is a router with a different name."""
+
+    task_class: str
+    purpose: str
+    require_distinct_vendor: bool
+    subject: "Derivation | None"
+    rows: "tuple[EligibilityRow, ...]"
+    notes: "tuple[str, ...]" = ()
+
+    def as_dict(self) -> dict:
+        return {
+            "task_class": self.task_class,
+            "purpose": self.purpose,
+            "require_distinct_vendor": self.require_distinct_vendor,
+            "subject": (
+                None if self.subject is None else {
+                    "producer": self.subject.producer, "vendor": self.subject.vendor,
+                    "gateway": self.subject.gateway, "surface": self.subject.surface,
+                }
+            ),
+            "rows": [
+                {
+                    "identity": list(row.identity),
+                    "task_class": row.task_class,
+                    "grade": row.grade,
+                    "observations": row.observations,
+                    "availability": row.availability,
+                    "vendor": row.vendor,
+                    "gateway": row.gateway,
+                    "provider_id": row.provider_id,
+                    "billing_pool_id": row.billing_pool_id,
+                    "routability": row.routability,
+                    "pool": (
+                        None if row.pool is None else {
+                            "pool_id": row.pool.pool_id, "remaining": row.pool.remaining,
+                            "unit": row.pool.unit, "observed_at": row.pool.observed_at,
+                            "age_seconds": row.pool.age_seconds, "freshness": row.pool.freshness,
+                        }
+                    ),
+                    "independence": list(row.independence),
+                    "disposition": row.disposition,
+                    "eligible": row.eligible,
+                    "reasons": list(row.reasons),
+                }
+                for row in self.rows
+            ],
+            "notes": list(self.notes),
+        }
+
+    def render(self) -> str:
+        lines = [f"eligibility report for {self.task_class!r}, purpose {self.purpose}"]
+        for row in self.rows:
+            lines.append(f"  {'/'.join(row.identity[:4])} @ {row.task_class}")
+            lines.append(f"    grade: {row.grade} ({row.observations} observation(s))")
+            lines.append(f"    vendor={row.vendor} gateway={row.gateway}")
+            lines.append(
+                f"    billing: {row.routability}"
+                + (f" — {row.reasons[0]}" if row.reasons else "")
+            )
+            if row.pool is None:
+                lines.append("    pool: none observed")
+            else:
+                lines.append(
+                    f"    pool {row.pool.pool_id}: {row.pool.remaining} {row.pool.unit} "
+                    f"({row.pool.freshness}, age {row.pool.age_seconds})"
+                )
+            if row.independence:
+                lines.append("    independence: " + "; ".join(row.independence))
+            for reason in row.reasons:
+                lines.append(f"    reason: {reason}")
+            lines.append("    " + ("ELIGIBLE" if row.eligible else "NOT ELIGIBLE"))
+        lines.extend(f"  note: {note}" for note in self.notes)
+        return "\n".join(lines)
+
+
+def eligibility_report(
+    observations_path: "str",
+    *,
+    task_class: str,
+    purpose: str = ROUTINE,
+    require_distinct_vendor: bool = False,
+    subject: "Derivation | None" = None,
+    manifests: "Iterable[provider_manifest.ProviderManifest]" = (),
+    capacity_pools: "Iterable[capacity.Pool]" = (),
+    authorised_pools: "Iterable[str]" = (),
+    environment: "Mapping[str, str] | None" = None,
+    now: "float | None" = None,
+) -> EligibilityReport:
+    """Every configuration this task class has evidence for, joined to what it
+    would bill and how fresh its capacity is. **Lists and explains; dispatches
+    nothing, ranks nothing by newness, and picks nothing** — the coordinator
+    chooses among the rows this reports as eligible (S0-C5, O3).
+    """
+    if purpose not in PURPOSES:
+        raise RoutingError(
+            f"purpose {purpose!r} is not one of {', '.join(PURPOSES)}; a report labelled with a "
+            "purpose nobody defined would be a report nobody could read"
+        )
+    manifests = tuple(manifests)
+    pools = tuple(capacity_pools)
+    graded = qualification.qualifications_from_observations(observations_path)
+
+    rows: list[EligibilityRow] = []
+    for key in sorted(graded):
+        if key[-1] != task_class:
+            continue
+        grade = graded[key]
+        named = dict(zip(qualification.KEYED_DIMENSIONS, key))
+        identity_tuple = key[:-1]
+        family, client, model_observed = named["family"], named["client"], named["model_observed"]
+
+        row_reasons: list[str] = []
+        try:
+            manifest, surface_index = _match_manifest(client, family, manifests)
+        except RoutingError as ambiguity:
+            manifest, surface_index = None, None
+            row_reasons.append(str(ambiguity))
+        if manifest is not None and surface_index is not None and not any(
+            surface.client == client for surface in manifest.surfaces
+        ):
+            row_reasons.append(
+                f"the manifest was matched by vendor, not by client: its billing facts hold, but "
+                f"the recorded endpoint {manifest.surfaces[surface_index].client!r} is not this "
+                f"configuration's client {client!r}"
+            )
+        if manifest is None:
+            vendor, gateway, provider_id, billing_pool_id = family, UNKNOWN, UNKNOWN, UNKNOWN
+            route = provider_manifest.Routability(NOT_ROUTABLE_UNKNOWN, (
+                "no declared provider manifest covers this configuration",
+            ))
+        else:
+            vendor, gateway = manifest.vendor, manifest.gateway
+            provider_id, billing_pool_id = manifest.provider_id, manifest.billing.billing_pool_id
+            fp = provider_manifest.fingerprint(
+                manifest, surface_index=surface_index, environment=environment,
+            )
+            route = provider_manifest.routability(fp, authorised_pools=authorised_pools)
+        row_reasons.extend(route.reasons)
+
+        pool_state = None
+        for candidate_pool in pools:
+            if candidate_pool.pool_id == billing_pool_id:
+                pool_state = _pool_state(candidate_pool, now=now)
+                break
+        if manifest is not None and pool_state is None:
+            row_reasons.append(f"no capacity observation for pool {billing_pool_id!r}")
+
+        independence: tuple[str, ...] = ()
+        if subject is not None:
+            # A HYPOTHETICAL fresh dispatch of this configuration — nothing has
+            # actually run, so `fresh=True` is declared rather than observed,
+            # and this note says so.
+            reader = Derivation(
+                producer=model_observed, fresh=True, vendor=vendor, gateway=gateway, provider=vendor,
+            )
+            independence = independence_problems(
+                reader, subject, require_distinct_vendor=require_distinct_vendor,
+            )
+
+        identity = ConfigurationIdentity(
+            surface=named["surface"], family=family, client=client, model_observed=model_observed,
+            effort=named["effort"], isolation=named["isolation"], network=named["network"],
+            authentication_class=named["authentication_class"],
+            # Not a provenance marker (`UNOBSERVED_PROVENANCE`): this key only
+            # exists in `graded` because its identity was already complete.
+            identity_method="already_confirmed_complete_by_qualification",
+        )
+        candidate = Candidate(
+            identity=identity, task_class=task_class, grade=grade, availability=UNKNOWN,
+        )
+        # A report never dispatches, so it can never hold availability evidence.
+        # For ROUTINE and PROBE it asks the frozen predicate the only question it
+        # can answer here — "if a dispatch started, what would still refuse?" —
+        # by supposing availability; the row says so, and an observed refusal at
+        # dispatch time ends it. CRITICAL is asked as it stands: a mandatory leg
+        # needs availability ESTABLISHED, and a report cannot establish it.
+        supposed = candidate if purpose == CRITICAL else replace(candidate, availability=AVAILABLE)
+        verdict = eligibility(supposed, purpose=purpose, routability=route.disposition)
+        disposition = disposition_with_routability(route.disposition, UNKNOWN, grade.grade)
+
+        reasons = list(verdict.reasons) + row_reasons
+        if purpose != CRITICAL:
+            reasons.append(
+                "availability supposed for this verdict: a dispatch establishes it, and an "
+                "observed refusal withdraws the verdict"
+            )
+        reasons.extend(f"not independent — {problem}" for problem in independence)
+        eligible = verdict.allowed and not independence
+        if pool_state is not None:
+            if pool_state.remaining != UNKNOWN and pool_state.remaining <= 0:
+                eligible = False
+                reasons.append(
+                    "the pool is exhausted (0 remaining): REFUSE_UNTIL_RESET or a human PARK "
+                    "decision, never a metered alternative"
+                )
+            if pool_state.freshness == "STALE":
+                eligible = False
+                reasons.append("capacity reading is STALE")
+            elif pool_state.freshness == UNKNOWN:
+                reasons.append("capacity UNKNOWN: dispatch serially")
+                if purpose == CRITICAL:
+                    eligible = False
+
+        rows.append(EligibilityRow(
+            identity=identity_tuple, task_class=task_class, grade=grade.grade,
+            observations=grade.observations, availability=UNKNOWN, vendor=vendor, gateway=gateway,
+            provider_id=provider_id, billing_pool_id=billing_pool_id, routability=route.disposition,
+            pool=pool_state, independence=independence, disposition=disposition, eligible=eligible,
+            reasons=tuple(reasons),
+        ))
+
+    notes = [
+        "this report lists and explains; it dispatches nothing and picks nothing — the "
+        "coordinator chooses among the eligible",
+        "availability is UNKNOWN here: this command reads records and dispatches nothing, so a "
+        "CRITICAL row is never eligible from a report alone",
+    ]
+    if subject is not None:
+        notes.append(
+            "independence is checked against a HYPOTHETICAL fresh dispatch of each configuration, "
+            "not an actual one"
+        )
+    return EligibilityReport(
+        task_class=task_class, purpose=purpose, require_distinct_vendor=require_distinct_vendor,
+        subject=subject, rows=tuple(rows), notes=tuple(notes),
+    )
+
+
+#: The only keys `capacity.Pool` accepts. A capacity document's own `pools`
+#: entry may carry more (a project's own extension); only these are ever
+#: passed through, per element, so an unknown key never reaches a keyword
+#: `Pool` does not accept.
+_POOL_KEYS = frozenset({
+    "pool_id", "kind", "window", "remaining", "unit", "resets_at", "observed_at", "active_workers",
+})
+
+
+def _eligibility_cli(args) -> int:
+    """`routing.py --eligibility ...`. A report, never a verdict: exit 0
+    whenever it renders, 2 only on a refusal (an unreadable log or manifest).
+    """
+    import json as _json
+    import os
+    import sys
+    from dataclasses import replace as _replace
+    from pathlib import Path as _Path
+
+    observations_path = args.eligibility_observations or args.observations
+    if not args.task_class:
+        print("--eligibility requires --task-class", file=sys.stderr)
+        return 2
+
+    subject = None
+    if args.subject_producer is not None:
+        subject = Derivation(producer=args.subject_producer, vendor=args.subject_vendor or UNKNOWN)
+    elif args.require_distinct_vendor or args.subject_vendor:
+        print("--require-distinct-vendor and --subject-vendor describe the work's producer; "
+              "without --subject-producer there is no producer to be independent of", file=sys.stderr)
+        return 2
+
+    manifests = []
+    try:
+        for path in args.manifests:
+            manifests.append(provider_manifest.load(path))
+    except Exception as exc:
+        print(f"a provider manifest could not be read: {exc}", file=sys.stderr)
+        return 2
+
+    capacity_pools = []
+    capacity_notes = []
+    if args.capacity:
+        try:
+            payload = _json.loads(_Path(args.capacity).read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"the capacity document could not be read: {exc}", file=sys.stderr)
+            return 2
+        pool_entries = payload.get("pools", []) if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            capacity_notes.append("the capacity document is not an object; no pool was read")
+            pool_entries = []
+        elif not isinstance(pool_entries, list):
+            capacity_notes.append("the capacity document's `pools` is not a list; no pool was read")
+            pool_entries = []
+        # PER-ELEMENT QUARANTINE (D36): one unreadable pool is a note, not a
+        # refusal of the whole report.
+        for entry in pool_entries:
+            pool_id = entry.get("pool_id", "?") if isinstance(entry, dict) else "?"
+            try:
+                if not isinstance(entry, dict):
+                    raise TypeError(f"a pool entry is a {type(entry).__name__}, not a mapping")
+                filtered = {key: value for key, value in entry.items() if key in _POOL_KEYS}
+                capacity_pools.append(capacity.Pool(**filtered))
+            except Exception as exc:
+                capacity_notes.append(f"pool {pool_id} could not be read: {exc}")
+
+    # NAMES ONLY, never a value — the same rule `provider_manifest`'s own flag
+    # states, applied here because `eligibility_report` forwards `environment`
+    # straight to `provider_manifest.fingerprint`.
+    environment = {name: "" for name in os.environ} if args.environment_from_current_process else None
+
+    try:
+        report = eligibility_report(
+            observations_path, task_class=args.task_class, purpose=args.purpose,
+            require_distinct_vendor=args.require_distinct_vendor, subject=subject,
+            manifests=manifests, capacity_pools=capacity_pools,
+            authorised_pools=args.authorised_pools, environment=environment,
+        )
+    except Exception as exc:
+        print(f"the eligibility report could not be rendered: {exc}", file=sys.stderr)
+        return 2
+
+    if capacity_notes:
+        report = _replace(report, notes=report.notes + tuple(capacity_notes))
+
+    if args.json:
+        print(_json.dumps(report.as_dict(), indent=2))
+    else:
+        print(report.render())
+    return 0
+
+
 def _cli(argv: list[str]) -> int:
     """Report what the observation log and a discovery document jointly support."""
     import argparse
@@ -772,7 +1316,30 @@ def _cli(argv: list[str]) -> int:
     parser.add_argument("--discovery", default=None, help="a discovery document to read")
     parser.add_argument("--task-class", default=None, help="report one task class")
     parser.add_argument("--json", action="store_true")
+    # --- the eligibility report (S0-C5). Inert unless --eligibility is given,
+    # so the existing behaviour above is unchanged when it is absent. ---------
+    parser.add_argument("--eligibility", action="store_true",
+                         help="render the eligibility report instead of the routing state above")
+    parser.add_argument("--observations", dest="eligibility_observations", default=None,
+                         help="observation log for --eligibility (the positional argument is used "
+                              "otherwise)")
+    parser.add_argument("--purpose", default=ROUTINE, choices=list(PURPOSES))
+    parser.add_argument("--require-distinct-vendor", action="store_true")
+    parser.add_argument("--subject-producer", default=None, metavar="NAME")
+    parser.add_argument("--subject-vendor", default=None, metavar="VENDOR")
+    parser.add_argument("--manifest", dest="manifests", action="append", default=[], metavar="PATH",
+                         help="a provider manifest to join against; repeatable")
+    parser.add_argument("--capacity", default=None, metavar="CAPACITY.json")
+    parser.add_argument("--authorised-pool", dest="authorised_pools", action="append", default=[],
+                         metavar="ID", help="a billing_pool_id authorised for this dispatch; repeatable")
+    parser.add_argument(
+        "--environment-from-current-process", action="store_true",
+        help="check this process's environment variable NAMES; a value is never read or printed",
+    )
     args = parser.parse_args(argv)
+
+    if args.eligibility:
+        return _eligibility_cli(args)
 
     try:
         graded = qualification.qualifications_from_observations(args.observations)

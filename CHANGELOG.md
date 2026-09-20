@@ -36,11 +36,29 @@ machine reading in the desktop workflow. The founder's decisions are D29–D36.
   unrecognised flag and its default read path run against a fixture governance tree and must leave it
   byte-identical, with no traceback; two negative controls (a helper that rewrites, a helper that creates)
   prove the check discriminates. It changes no tool.
+- `tools/routing.py` — `Derivation` gains `vendor` and `gateway` (D30): a cross-provider leg is now
+  refused on distinct VENDOR, never on gateway, with `provider` read only as `vendor`'s alias; the
+  `NOT_ROUTABLE_*` dispositions join `DISPOSITIONS` from `provider_manifest`'s own vocabulary;
+  `disposition_with_routability` and `eligibility(..., routability=)` let billing safety refuse a
+  candidate before availability or grade is read; and the new `eligibility_report`
+  (`routing.py --eligibility`) joins per-configuration qualification, a declared manifest's route and a
+  capacity pool's freshness into one report, in identity order, that lists and explains and neither
+  dispatches nor ranks nor picks (S0-C5, O3, O4, O12).
+- `tools/tests/test_routing.py` — the `-k vendor`, `-k not_routable` and `-k mutation` oracles behind it.
+- `tools/tests/test_adoption_rehearsal.py` — O13's rehearsal of a third family that registers, is
+  reported UNAUTHORISED and then authorised, with no vendor name reaching `tools/routing.py` or
+  `tools/provider_manifest.py`.
 
 ### What a consumer will notice
 
-No production module has changed in this candidate yet; each addition is recorded here as it lands:
+Every existing public name and signature still answers as it did (`tools/surface_diff.py` over the baseline
+reports additions only); what changes is what a caller is TOLD, recorded here as each addition lands:
 
+- `tools/routing.py`: an observation's `derivation` may now carry `vendor` and `gateway`; a leg declared
+  cross-provider is refused when both sides share a **vendor**, whatever gateway served them (`provider` is
+  read as the alias of `vendor`), and the refusal names the vendor. `eligibility(...)` accepts an optional
+  `routability` and refuses every purpose on a `NOT_ROUTABLE_*` disposition; without it every existing call
+  behaves as before. `routing.py --eligibility` is a new report mode; the existing report mode is unchanged.
 - `tools/provider_manifest.py` is new: a project that declares no manifest sees nothing change.
 - `tools/tests/test_readonly_modes.py` is new: every touched tool's `--help`, an unrecognised flag and its
   default read path are executed against a fixture governance directory and must leave it byte-identical;

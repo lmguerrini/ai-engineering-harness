@@ -7,10 +7,14 @@ because a gate that refuses everything is as useless as one that refuses nothing
 exactly that direction.
 """
 
+import json
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import capacity
+import provider_manifest
 import routing
 from backend_contract import TaskClassGrade
 from qualification import UNKNOWN, ConfigurationIdentity, Prior
@@ -190,7 +194,9 @@ def test_independence_a_same_provider_pair_is_refused_for_a_cross_provider_leg()
                                provider="vendor-a", surface="a-surface")
     assert independence_problems(same_provider, SUBJECT) == ()
     problems = independence_problems(same_provider, SUBJECT, require_distinct_provider=True)
-    assert any("one provider's reading" in p for p in problems)
+    # VENDOR, not provider (D30): `provider` is read only as `vendor`'s alias
+    # when the latter was never recorded, which is exactly this fixture's shape.
+    assert any("one vendor's reading" in p for p in problems)
 
 
 def test_independence_fails_closed_when_a_producer_is_not_recorded():
@@ -563,7 +569,9 @@ def test_the_two_readings_this_release_dispatched_are_not_independent_of_each_ot
         "different producers in fresh sessions are independent for an ordinary leg"
     )
     problems = independence_problems(first, second, require_distinct_provider=True)
-    assert any("one provider's reading" in problem for problem in problems)
+    # VENDOR, not provider (D30): the log declares `provider`, which
+    # `derivation_from_observation` reads as `vendor`'s alias (D30).
+    assert any("one vendor's reading" in problem for problem in problems)
 
 
 # --- a mandatory independent leg is not a place to find out ------------------
@@ -631,3 +639,457 @@ def test_the_predicate_normalises_even_when_the_reader_did_not():
     subject = Derivation(producer="implementer", session="s1", provider="vendor-a")
     raw = Derivation(producer="  ", session="  ", provider="  ")
     assert independence_problems(raw, subject, require_distinct_provider=True)
+
+
+# =============================================================================
+# D30 / O4 — independence is distinct VENDOR, not a provider string or gateway
+# =============================================================================
+
+
+def test_vendor_same_vendor_different_gateways_is_refused():
+    one = Derivation(producer="w1", session="s1", vendor="vendor-a", gateway="gateway-a")
+    two = Derivation(producer="w2", session="s2", vendor="vendor-a", gateway="gateway-b")
+    problems = independence_problems(one, two, require_distinct_vendor=True)
+    assert any("vendor-a" in p and "one vendor's reading" in p for p in problems)
+
+
+def test_vendor_distinct_vendors_have_no_vendor_problem():
+    one = Derivation(producer="w1", session="s1", vendor="vendor-a", gateway="gateway-a")
+    two = Derivation(producer="w2", session="s2", vendor="vendor-b", gateway="gateway-a")
+    assert independence_problems(one, two, require_distinct_vendor=True) == ()
+
+
+def test_vendor_unknown_on_either_side_is_refused():
+    known = Derivation(producer="w1", session="s1", vendor="vendor-a")
+    unrecorded = Derivation(producer="w2", session="s2")
+    problems = independence_problems(known, unrecorded, require_distinct_vendor=True)
+    assert any("a vendor is not recorded on both sides" in p for p in problems)
+
+
+def test_vendor_the_provider_alias_populates_vendor_when_absent():
+    row = {"derivation": {"producer": "w", "provider": "vendor-z",
+                          "session_class": "fresh-blind-dispatch"}}
+    derivation = routing.derivation_from_observation(row)
+    assert derivation.vendor == "vendor-z", "provider must alias vendor when vendor is absent (D30)"
+    assert derivation.provider == "vendor-z"
+
+
+def test_vendor_an_observation_declaring_gateway_and_vendor_keys_is_read():
+    row = {"derivation": {"producer": "w", "vendor": "vendor-z", "gateway": "gateway-z",
+                          "session_class": "fresh-blind-dispatch"}}
+    derivation = routing.derivation_from_observation(row)
+    assert derivation.vendor == "vendor-z"
+    assert derivation.gateway == "gateway-z"
+
+
+def test_vendor_an_unknown_derivation_key_still_raises():
+    with pytest.raises(RoutingError) as caught:
+        routing.derivation_from_observation(
+            {"derivation": {"vendor": "vendor-z", "gateway": "gateway-z", "vibes": "good"}})
+    assert "nothing reads" in str(caught.value)
+
+
+# =============================================================================
+# the eligibility report (S0-C5, O3): fixtures, then -k not_routable
+# =============================================================================
+
+_CONFIRMED_TOKENS = (
+    "surface=surface-a family=vendor-a client=worker-a@gateway-a.example "
+    "model=confirmed-model model_observed=confirmed-model "
+    "identity_method=execution_surface_turn_record auth=subscription "
+    "effort_observed=high isolation=read-only network=none build=1.0.0"
+)
+
+
+def _confirmed_log(tmp_path, task_class="T", validations=2):
+    row = {"configuration": _CONFIRMED_TOKENS, "task_class": task_class,
+           "outcome": "validated", "qualification_basis": "field"}
+    path = tmp_path / "observations.jsonl"
+    path.write_text("".join(json.dumps(row) + "\n" for _ in range(validations)), encoding="utf-8")
+    return path
+
+
+def _billing(**overrides):
+    billing = dict(
+        billing_mode="subscription", billing_pool_id="vendor-a-membership",
+        windows=["rolling_5h"], authorised_by="decision-a-1",
+        overage_enabled=False, auto_topup_enabled=False, metered_fallback_enabled=False,
+    )
+    billing.update(overrides)
+    return billing
+
+
+def _provider_manifest(*, provider_id="vendor-a-plan", client="worker-a@gateway-a.example",
+                       vendor="vendor-a", pool_id="vendor-a-membership", billing_overrides=None):
+    overrides = dict(billing_overrides or {})
+    overrides.setdefault("billing_pool_id", pool_id)
+    return provider_manifest.ProviderManifest.from_mapping({
+        "schema": "runtime-pack-provider-1",
+        "provider_id": provider_id, "vendor": vendor, "gateway": "gateway-a.example",
+        "surfaces": [{"surface": "cli-a", "client": client, "protocol": "anthropic-compatible"}],
+        "adapter": "anthropic-compatible-worker",
+        "credential": {"kind": "subscription_key", "env_file_ref": "VENDOR_A_KEY_FILE",
+                       "generic_env_forbidden": ["VENDOR_A_API_KEY"]},
+        "billing": _billing(**overrides),
+        "capacity_observer": {"source": "human-reading", "freshness_horizon_s": 3600, "command": None},
+        "discovery": None, "private_terms": [],
+    })
+
+
+def test_not_routable_an_unauthorised_manifest_refuses_every_purpose(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest(billing_overrides={"authorised_by": None})
+    for purpose in routing.PURPOSES:
+        report = routing.eligibility_report(log, task_class="T", purpose=purpose,
+                                            manifests=[manifest], environment={})
+        row = report.rows[0]
+        assert row.routability == routing.NOT_ROUTABLE_UNAUTHORISED, purpose
+        assert row.disposition == routing.NOT_ROUTABLE_UNAUTHORISED, purpose
+        assert row.eligible is False, purpose
+
+
+def test_not_routable_a_metered_manifest_refuses_every_purpose(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest(billing_overrides={"billing_mode": "metered_api"})
+    for purpose in routing.PURPOSES:
+        report = routing.eligibility_report(log, task_class="T", purpose=purpose,
+                                            manifests=[manifest], environment={})
+        row = report.rows[0]
+        assert row.routability == routing.NOT_ROUTABLE_BILLING, purpose
+        assert row.eligible is False, purpose
+
+
+def test_not_routable_no_manifest_matched_is_not_routable_unknown(tmp_path):
+    log = _confirmed_log(tmp_path)
+    report = routing.eligibility_report(log, task_class="T", purpose=ROUTINE,
+                                        manifests=(), environment={})
+    row = report.rows[0]
+    assert row.routability == routing.NOT_ROUTABLE_UNKNOWN
+    assert any("no declared provider manifest covers this configuration" in reason
+               for reason in row.reasons)
+
+
+def test_not_routable_availability_unknown_blocks_critical_but_not_routine(tmp_path):
+    """NOTE: availability is UNKNOWN in every report (no dispatch), so a
+    CRITICAL row is never eligible from a report alone — even fully
+    authorised, credentialed, FRESH and confirmed."""
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    now = datetime.now(timezone.utc).isoformat()
+    pool = capacity.Pool(pool_id="vendor-a-membership", remaining=100, unit="req", observed_at=now)
+
+    critical = routing.eligibility_report(
+        log, task_class="T", purpose=CRITICAL, manifests=[manifest], capacity_pools=[pool],
+        authorised_pools=["vendor-a-membership"], environment={},
+    )
+    routine = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest], capacity_pools=[pool],
+        authorised_pools=["vendor-a-membership"], environment={},
+    )
+    assert critical.rows[0].eligible is False
+    assert routine.rows[0].eligible is True, (
+        "a fully authorised, credentialed, FRESH, confirmed configuration was refused for "
+        "ROUTINE by a report that can never itself supply availability"
+    )
+
+
+def test_not_routable_a_stale_pool_is_ineligible_with_the_stale_reason(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    old = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+    pool = capacity.Pool(pool_id="vendor-a-membership", remaining=100, unit="req", observed_at=old)
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest], capacity_pools=[pool],
+        authorised_pools=["vendor-a-membership"], environment={},
+    )
+    row = report.rows[0]
+    assert row.pool.freshness == "STALE"
+    assert row.eligible is False
+    assert any("STALE" in reason for reason in row.reasons)
+
+
+def test_not_routable_an_exhausted_fresh_pool_never_offers_a_metered_alternative(tmp_path):
+    rows = [
+        {"configuration": _CONFIRMED_TOKENS, "task_class": "T",
+         "outcome": "validated", "qualification_basis": "field"},
+        {"configuration": (
+            "surface=surface-a family=vendor-a client=worker-b@gateway-a.example "
+            "model=metered-model model_observed=metered-model "
+            "identity_method=execution_surface_turn_record auth=subscription "
+            "effort_observed=high isolation=read-only network=none build=1.0.0"),
+         "task_class": "T", "outcome": "validated", "qualification_basis": "field"},
+    ]
+    path = tmp_path / "observations.jsonl"
+    path.write_text("".join((json.dumps(row) + "\n") * 2 for row in rows), encoding="utf-8")
+
+    subscription = _provider_manifest()
+    metered = _provider_manifest(
+        provider_id="vendor-a-metered", client="worker-b@gateway-a.example",
+        pool_id="vendor-a-metered-pool", billing_overrides={"billing_mode": "metered_api"},
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    pool = capacity.Pool(pool_id="vendor-a-membership", remaining=0, unit="req", observed_at=now)
+
+    report = routing.eligibility_report(
+        path, task_class="T", purpose=ROUTINE, manifests=[subscription, metered],
+        capacity_pools=[pool], authorised_pools=["vendor-a-membership"], environment={},
+    )
+    assert len(report.rows) == 2, "fixture is inert: both configurations must have graded"
+    subscription_row = next(row for row in report.rows if row.provider_id == "vendor-a-plan")
+    metered_row = next(row for row in report.rows if row.provider_id == "vendor-a-metered")
+
+    assert subscription_row.routability == provider_manifest.ROUTABLE, (
+        "fixture is inert: exhaustion is a CAPACITY fact, not a billing refusal"
+    )
+    assert subscription_row.eligible is False
+    assert any("REFUSE_UNTIL_RESET" in reason or "PARK" in reason
+               for reason in subscription_row.reasons)
+    assert metered_row.routability == routing.NOT_ROUTABLE_BILLING, (
+        "an exhausted subscription pool must never make a metered alternative eligible (D29)"
+    )
+    assert metered_row.eligible is False
+
+
+def test_not_routable_a_matched_manifest_with_no_capacity_observation_is_noted(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    report = routing.eligibility_report(log, task_class="T", purpose=ROUTINE,
+                                        manifests=[manifest],
+                                        authorised_pools=["vendor-a-membership"], environment={})
+    row = report.rows[0]
+    assert row.pool is None
+    assert any("no capacity observation for pool" in reason for reason in row.reasons)
+
+
+# =============================================================================
+# rows are never sorted by grade or newness
+# =============================================================================
+
+
+def test_rows_are_in_identity_order_not_grade_order(tmp_path):
+    stronger = {"configuration": (
+        "surface=surface-a family=vendor-a client=worker-a@gateway-a.example "
+        "model=z-model model_observed=z-model identity_method=execution_surface_turn_record "
+        "auth=subscription effort_observed=high isolation=read-only network=none build=1.0.0"),
+        "task_class": "T", "outcome": "validated", "qualification_basis": "field"}
+    weaker = {"configuration": (
+        "surface=surface-a family=vendor-a client=worker-a@gateway-a.example "
+        "model=a-model model_observed=a-model identity_method=execution_surface_turn_record "
+        "auth=subscription effort_observed=high isolation=read-only network=none build=1.0.0"),
+        "task_class": "T", "outcome": "validated", "qualification_basis": "field"}
+    path = tmp_path / "observations.jsonl"
+    path.write_text(
+        "\n".join([json.dumps(stronger)] * 2 + [json.dumps(weaker)]) + "\n", encoding="utf-8"
+    )
+    report = routing.eligibility_report(path, task_class="T", purpose=ROUTINE, environment={})
+    grades = [row.grade for row in report.rows]
+    assert grades == ["provisional", "confirmed"], (
+        "fixture is inert unless the two configurations carry different grades"
+    )
+    identities = [row.identity for row in report.rows]
+    assert identities == sorted(identities), (
+        "rows must stay in identity order even though the weaker grade sorts first"
+    )
+
+
+# =============================================================================
+# O12 / -k mutation
+# =============================================================================
+
+
+def test_mutation_disabling_the_vendor_comparison_fails_the_same_vendor_oracle(monkeypatch):
+    one = Derivation(producer="w1", session="s1", vendor="vendor-a", gateway="gateway-a")
+    two = Derivation(producer="w2", session="s2", vendor="vendor-a", gateway="gateway-b")
+    honest = independence_problems(one, two, require_distinct_vendor=True)
+    assert honest, "fixture is inert: two readings of one vendor were not refused"
+
+    monkeypatch.setattr(routing, "_vendors_distinct", lambda reader, subject: True)
+    mutated = independence_problems(one, two, require_distinct_vendor=True)
+    with pytest.raises(AssertionError):
+        assert mutated, "the same-vendor oracle must fail once the comparison is disabled"
+
+
+def test_mutation_ignoring_routability_fails_the_not_routable_oracle(tmp_path, monkeypatch):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest(billing_overrides={"authorised_by": None})
+    honest = routing.eligibility_report(log, task_class="T", purpose=ROUTINE,
+                                        manifests=[manifest], environment={})
+    assert honest.rows[0].disposition == routing.NOT_ROUTABLE_UNAUTHORISED, (
+        "fixture is inert: the unauthorised route did not read as NOT_ROUTABLE_UNAUTHORISED"
+    )
+
+    monkeypatch.setattr(
+        routing, "disposition_with_routability",
+        lambda routability_disposition, availability, grade: disposition_of(availability, grade),
+    )
+    mutated = routing.eligibility_report(log, task_class="T", purpose=ROUTINE,
+                                         manifests=[manifest], environment={})
+    with pytest.raises(AssertionError):
+        assert mutated.rows[0].disposition == routing.NOT_ROUTABLE_UNAUTHORISED, (
+            "the not_routable oracle must fail once disposition ignores routability"
+        )
+
+
+# =============================================================================
+# the CLI
+# =============================================================================
+
+
+def test_cli_eligibility_renders_and_exits_0(tmp_path, capsys):
+    log = _confirmed_log(tmp_path)
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T"])
+    assert status == 0
+    assert "eligibility report" in capsys.readouterr().out
+
+
+def test_cli_eligibility_json_round_trips_as_dict(tmp_path, capsys):
+    log = _confirmed_log(tmp_path)
+    status = routing._cli(
+        ["--eligibility", "--observations", str(log), "--task-class", "T", "--json"])
+    assert status == 0
+    payload = json.loads(capsys.readouterr().out)
+    report = routing.eligibility_report(log, task_class="T")
+    assert payload == report.as_dict()
+
+
+def test_cli_eligibility_quarantines_an_unreadable_capacity_pool_element(tmp_path, capsys):
+    log = _confirmed_log(tmp_path)
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(
+        json.dumps({"pools": [{"pool_id": "bad", "remaining": -5}]}), encoding="utf-8")
+    status = routing._cli(
+        ["--eligibility", "--observations", str(log), "--task-class", "T",
+         "--capacity", str(capacity_doc)])
+    assert status == 0, "one unreadable pool element must not fail the whole report"
+    printed = capsys.readouterr().out
+    assert "pool bad could not be read" in printed
+
+
+def test_cli_eligibility_environment_from_current_process_prints_no_value(
+    tmp_path, capsys, monkeypatch
+):
+    log = _confirmed_log(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "schema": "runtime-pack-provider-1", "provider_id": "vendor-a-plan", "vendor": "vendor-a",
+        "gateway": "gateway-a.example",
+        "surfaces": [{"surface": "cli-a", "client": "worker-a@gateway-a.example", "protocol": "anthropic-compatible"}],
+        "adapter": "anthropic-compatible-worker",
+        "credential": {"kind": "subscription_key", "env_file_ref": "VENDOR_A_KEY_FILE",
+                       "generic_env_forbidden": ["VENDOR_A_TOKEN"]},
+        "billing": _billing(), "capacity_observer": {"source": "human-reading", "freshness_horizon_s": 3600, "command": None},
+        "discovery": None, "private_terms": []}))
+    monkeypatch.setenv("VENDOR_A_TOKEN", "must-not-print")
+    status = routing._cli(
+        ["--eligibility", "--observations", str(log), "--task-class", "T",
+         "--manifest", str(manifest_path), "--authorised-pool", "vendor-a-membership",
+         "--environment-from-current-process", "--json"])
+    printed = capsys.readouterr().out
+    assert status == 0
+    assert "must-not-print" not in printed
+    payload = json.loads(printed)
+    assert payload["rows"][0]["routability"] == routing.NOT_ROUTABLE_BILLING, (
+        "the flag consulted nothing: a forbidden name in the process environment must poison the route"
+    )
+
+
+def test_not_routable_a_same_vendor_row_is_not_eligible_against_a_subject(tmp_path):
+    """The independence join reaches `eligible`: a configuration at the
+    subject's own vendor is listed and refused for a cross-vendor leg."""
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    subject = routing.Derivation(producer="somebody-else", vendor="vendor-a")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, require_distinct_vendor=True, subject=subject,
+        manifests=[manifest], authorised_pools=["vendor-a-membership"], environment={},
+    )
+    assert report.rows[0].independence and report.rows[0].eligible is False
+    other = routing.Derivation(producer="somebody-else", vendor="vendor-b")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, require_distinct_vendor=True, subject=other,
+        manifests=[manifest], authorised_pools=["vendor-a-membership"], environment={},
+    )
+    assert not report.rows[0].independence and report.rows[0].eligible is True
+
+
+def test_not_routable_a_shared_client_is_narrowed_by_vendor_and_order_invariant(tmp_path):
+    """Two manifests declaring the same client string — one gateway serving
+    two vendors — resolve by the configuration's own vendor, in either order,
+    and never by the order the project listed them in."""
+    log = _confirmed_log(tmp_path)
+    a = _provider_manifest(provider_id="plan-a", vendor="vendor-a", pool_id="pool-a")
+    b = _provider_manifest(provider_id="plan-b", vendor="vendor-b", pool_id="pool-b")
+    subject = routing.Derivation(producer="somebody-else", vendor="vendor-a")
+    verdicts = []
+    for order in ([a, b], [b, a]):
+        report = routing.eligibility_report(
+            log, task_class="T", purpose=ROUTINE, require_distinct_vendor=True, subject=subject,
+            manifests=order, authorised_pools=["pool-a", "pool-b"], environment={},
+        )
+        verdicts.append((report.rows[0].vendor, report.rows[0].billing_pool_id, report.rows[0].eligible))
+    assert verdicts[0] == verdicts[1] == ("vendor-a", "pool-a", False)
+
+
+def test_not_routable_two_accounts_at_one_gateway_for_one_vendor_are_refused_as_ambiguous(tmp_path):
+    log = _confirmed_log(tmp_path)
+    one = _provider_manifest(provider_id="plan-one", pool_id="pool-one")
+    two = _provider_manifest(provider_id="plan-two", pool_id="pool-two",
+                             billing_overrides={"authorised_by": None})
+    for order in ([one, two], [two, one]):
+        report = routing.eligibility_report(
+            log, task_class="T", purpose=ROUTINE, manifests=order,
+            authorised_pools=["pool-one", "pool-two"], environment={},
+        )
+        row = report.rows[0]
+        assert row.routability == routing.NOT_ROUTABLE_UNKNOWN and row.eligible is False
+        assert any("ambiguous" in reason for reason in row.reasons)
+
+
+def test_vendor_spellings_of_one_vendor_are_one_vendor():
+    reader = routing.Derivation(producer="r", fresh=True, vendor="Vendor-A ")
+    subject = routing.Derivation(producer="s", vendor="vendor-a")
+    problems = routing.independence_problems(reader, subject, require_distinct_vendor=True)
+    assert any("vendor" in problem for problem in problems)
+    unknown = routing.Derivation(producer="r", fresh=True, vendor="unknown")
+    problems = routing.independence_problems(unknown, subject, require_distinct_vendor=True)
+    assert any("not recorded" in problem for problem in problems)
+
+
+def test_cli_eligibility_refuses_a_vendor_requirement_without_a_subject(tmp_path, capsys):
+    log = _confirmed_log(tmp_path)
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--require-distinct-vendor"])
+    assert status == 2
+
+
+def test_cli_eligibility_renders_every_reason_including_the_supposition(tmp_path, capsys):
+    log = _confirmed_log(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "schema": "runtime-pack-provider-1", "provider_id": "vendor-a-plan", "vendor": "vendor-a",
+        "gateway": "gateway-a.example",
+        "surfaces": [{"surface": "cli-a", "client": "worker-a@gateway-a.example", "protocol": "anthropic-compatible"}],
+        "adapter": "anthropic-compatible-worker",
+        "credential": {"kind": "subscription_key", "env_file_ref": "VENDOR_A_KEY_FILE",
+                       "generic_env_forbidden": ["VENDOR_A_TOKEN"]},
+        "billing": _billing(), "capacity_observer": {"source": "human-reading", "freshness_horizon_s": 3600, "command": None},
+        "discovery": None, "private_terms": []}))
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--manifest", str(manifest_path), "--authorised-pool", "vendor-a-membership"])
+    printed = capsys.readouterr().out
+    assert status == 0 and "availability supposed" in printed
+
+
+def test_cli_eligibility_notes_a_capacity_document_of_the_wrong_shape(tmp_path, capsys):
+    log = _confirmed_log(tmp_path)
+    bad = tmp_path / "CAPACITY.json"
+    bad.write_text(json.dumps({"pools": "not-a-list"}))
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--capacity", str(bad)])
+    assert status == 0 and "not a list" in capsys.readouterr().out
+
+
+def test_a_report_with_an_unknown_purpose_is_refused_before_any_row(tmp_path):
+    log = _confirmed_log(tmp_path)
+    with pytest.raises(routing.RoutingError):
+        routing.eligibility_report(log, task_class="T", purpose="BOGUS")
