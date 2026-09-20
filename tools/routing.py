@@ -44,7 +44,9 @@ stronger.
 
 from __future__ import annotations
 
+import re
 import time
+import unicodedata
 from dataclasses import replace, dataclass, field
 from datetime import date
 from typing import Iterable, Mapping
@@ -99,6 +101,33 @@ __all__ = [
 
 class RoutingError(Exception):
     """A route was asked for on terms that cannot be answered."""
+
+
+def _bounded(text: object, limit: int = 80) -> str:
+    """A printable, single-line, length-bounded description of text this
+    module did not produce and does not trust — a pool id, a client, a vendor,
+    a manifest id echoed into a note or a reason.
+
+    Non-printable characters are replaced with U+FFFD so a newline cannot
+    inject a line and a zero-width space cannot hide; over-long text is
+    truncated with `…`; and anything that had to be altered — or that carries
+    whitespace or a quote, where a reader could no longer see where the echoed
+    value ends and the sentence resumes — is quoted. A clean short token is
+    left bare: quoting `bad` as `"bad"` states nothing `bad` does not, and the
+    notes about ordinary ids read as they always did. The returned string is
+    never longer than `limit` characters.
+    """
+    original = "" if text is None else str(text)
+    cleaned = "".join(
+        character if character.isprintable() else "�" for character in original
+    )
+    if len(cleaned) > limit - 2:
+        cleaned = cleaned[:limit - 3] + "…"
+    if cleaned != original or not cleaned or any(
+        character.isspace() or character == '"' for character in cleaned
+    ):
+        return f'"{cleaned}"'
+    return cleaned
 
 
 #: A dispatch under these preconditions has been observed to start.
@@ -187,18 +216,63 @@ def _named(derivation: "Derivation") -> "Derivation":
     })
 
 
+#: The grammar a vendor name must satisfy to be read as a vendor at all. It
+#: mirrors `provider_manifest._SLUG` and is stricter where that shape is
+#: silent: a run of hyphens and a trailing hyphen are NOT normalised away —
+#: they refuse (D30, fail-closed). Anything else that is not lowercase
+#: alphanumerics joined by single hyphens — an underscore, a space, a dot, a
+#: zero-width space, a Cyrillic look-alike — refuses the same way.
+_VENDOR_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _separatorless(text: str) -> str:
+    """The letters and digits of a vendor name, every separator removed — the
+    form in which two spellings of one vendor are compared."""
+    return "".join(character for character in text if character.isalnum())
+
+
+def _canonical_vendor(text: object) -> str:
+    """The one canonical reading of a vendor name, or `UNKNOWN`.
+
+    Both sides of every vendor comparison cross this boundary (D30):
+    NFKC, strip, casefold — so a full-width `ｖ` and a `V` are the same letter —
+    and then the slug grammar, so a name that is not a slug reads as `UNKNOWN`
+    rather than as a second vendor nothing validates. The honest sentinel word
+    reads as `UNKNOWN` exactly as it does everywhere else in the toolbelt.
+    """
+    if text is None or isinstance(text, bool):
+        return UNKNOWN
+    normalised = unicodedata.normalize("NFKC", str(text)).strip().casefold()
+    if not normalised or _separatorless(normalised) == "unknown":
+        return UNKNOWN
+    return normalised if _VENDOR_SLUG.fullmatch(normalised) else UNKNOWN
+
+
+def _vendor_reading(derivation: "Derivation") -> "tuple[str, bool]":
+    """`(canonical vendor, misspelt)`: the vendor this derivation names in its
+    canonical form, and whether a NON-BLANK vendor was recorded that is not a
+    vendor slug — the fact that turns "not recorded" into "not recorded, or is
+    not a vendor slug" in the refusal, so a misspelling is named as one instead
+    of passing silently as absence."""
+    raw = derivation.vendor if derivation.vendor != UNKNOWN else derivation.provider
+    normalised = unicodedata.normalize("NFKC", "" if raw is None else str(raw)).strip().casefold()
+    canonical = _canonical_vendor(raw)
+    # A blank and the honest sentinel word are ABSENCE, not misspelling; every
+    # other non-blank recording that fails the grammar is.
+    misspelt = (
+        canonical == UNKNOWN
+        and bool(normalised)
+        and _separatorless(normalised) != "unknown"
+    )
+    return canonical, misspelt
+
+
 def _vendor_of(derivation: "Derivation") -> str:
     """The vendor this derivation names, reading `provider` as its alias when
     `vendor` itself was never recorded (D30). The ONE place that fallback is
     read, so a caller comparing two derivations never has to know which field
     carried the fact."""
-    import backend_contract
-
-    raw = derivation.vendor if derivation.vendor != UNKNOWN else derivation.provider
-    # Two spellings of one vendor are one vendor: the same boundary every
-    # identity value crosses, so `Vendor-A` and `vendor-a ` cannot pass as two.
-    normalised = backend_contract.normalised_identity_value(raw)
-    return normalised if normalised == UNKNOWN else normalised.strip().casefold()
+    return _vendor_reading(derivation)[0]
 
 
 def _vendors_distinct(reader: "Derivation", subject: "Derivation") -> bool:
@@ -206,9 +280,18 @@ def _vendors_distinct(reader: "Derivation", subject: "Derivation") -> bool:
 
     Factored out so a mutation can be aimed at this comparison alone (O12):
     the vendor-equality guard is the property under test, not the caller
-    around it.
+    around it. Two spellings of one vendor are one vendor even here: the
+    canonical forms are compared and so are their separator-stripped forms,
+    because a vendor does not become a different vendor by dropping, doubling
+    or re-punctuating a hyphen (D30) — the fail-closed reading of a name that
+    differs only in its separators is that it names the same vendor, never
+    that it established a second one.
     """
-    return _vendor_of(reader) != _vendor_of(subject)
+    left = _vendor_of(reader)
+    right = _vendor_of(subject)
+    if left == UNKNOWN or right == UNKNOWN:
+        return False
+    return left != right and _separatorless(left) != _separatorless(right)
 
 
 def independence_problems(
@@ -266,19 +349,32 @@ def independence_problems(
         # in its own right.
         reader_vendor, subject_vendor = _vendor_of(reader), _vendor_of(subject)
         if reader_vendor == UNKNOWN or subject_vendor == UNKNOWN:
+            # A vendor that was recorded but is not a slug is named as such:
+            # `vendor_a` and `vendor a` are misspellings of a vendor, not two
+            # vendors and not one, and pretending they were simply absent
+            # hides the repair the caller has to make.
+            misspelt = _vendor_reading(reader)[1] or _vendor_reading(subject)[1]
             found.append(
                 "this leg is declared cross-provider and a vendor is not recorded on both "
                 "sides, so distinctness cannot be established"
+                + (", or is not a vendor slug" if misspelt else "")
             )
         elif not _vendors_distinct(reader, subject):
             known_gateways = sorted({
                 gateway for gateway in (reader.gateway, subject.gateway) if gateway != UNKNOWN
             })
-            gateway_clause = f" ({' and '.join(known_gateways)})" if known_gateways else ""
+            gateway_clause = (
+                f" ({' and '.join(_bounded(gateway) for gateway in known_gateways)})"
+                if known_gateways else ""
+            )
+            spelling_clause = (
+                "" if reader_vendor == subject_vendor
+                else f" — {subject_vendor} differs from it only by separators"
+            )
             found.append(
                 f"this leg is declared cross-provider and both sides are vendor "
-                f"{reader_vendor}{gateway_clause}; two gateways of one vendor are one vendor's "
-                f"reading"
+                f"{reader_vendor}{spelling_clause}{gateway_clause}; two gateways of one vendor "
+                f"are one vendor's reading"
             )
     return tuple(found)
 
@@ -310,10 +406,13 @@ def derivation_from_observation(row: dict) -> Derivation:
             f"an observation records derivation field(s) {', '.join(unknown)}, which nothing "
             f"reads. Known: {', '.join(DERIVATION_FIELDS)}")
     session_class = str(declared.get("session_class") or "").strip().lower()
-    # VENDOR, aliased from `provider` where it was never declared (D30). The
-    # declared `provider` reading is kept exactly as before; `vendor` is the
-    # new fact and falls back to it only when nothing else named a vendor.
-    vendor = declared.get("vendor") or declared.get("provider") or UNKNOWN
+    # VENDOR, aliased from `provider` where it was never declared (D30). Both
+    # cross the one canonical vendor boundary on the way in, so an observation
+    # whose derivation names a vendor that is not a slug reads as `UNKNOWN`
+    # here and refuses the leg there — never as a second vendor nothing
+    # validates, and never as a spelling that evades the comparison.
+    provider = _canonical_vendor(declared.get("provider"))
+    vendor = _canonical_vendor(declared.get("vendor") or declared.get("provider"))
     return _named(Derivation(
         producer=str(declared.get("producer") or UNKNOWN),
         # NOT the session class. A class is shared by every dispatch of its kind,
@@ -321,8 +420,8 @@ def derivation_from_observation(row: dict) -> Derivation:
         # readings as the same session — which is exactly what happened.
         session=UNKNOWN,
         fresh=True if session_class.startswith("fresh") else (None if not session_class else False),
-        provider=str(declared.get("provider") or UNKNOWN),
-        vendor=str(vendor),
+        provider=provider,
+        vendor=vendor,
         gateway=str(declared.get("gateway") or UNKNOWN),
         surface=str(row.get("surface") or UNKNOWN),
     ))
@@ -515,11 +614,17 @@ def disposition_with_routability(routability_disposition: str, availability: str
     A `NOT_ROUTABLE_*` disposition wins before availability or grade is even
     read — the same precedence `eligibility`'s `routability` keyword applies —
     so a confirmed, available configuration behind an unauthorised or
-    unproven billing route never reads as merely qualified. Otherwise
-    identical to `disposition_of`, which stays untouched.
+    unproven billing route never reads as merely qualified. `ROUTABLE` hands
+    the word to `disposition_of`, which stays untouched. Anything ELSE —
+    `UNKNOWN`, a lower-case spelling, a word nobody defined — reads as
+    `NOT_ROUTABLE_UNKNOWN`: a value outside the vocabulary is not an
+    established route, and treating it as one is how a refused disposition
+    once outranked nothing at all.
     """
     if routability_disposition in _NOT_ROUTABLE:
         return routability_disposition
+    if routability_disposition != provider_manifest.ROUTABLE:
+        return NOT_ROUTABLE_UNKNOWN
     return disposition_of(availability, grade)
 
 
@@ -544,9 +649,12 @@ def eligibility(
     `capability_open` already applies to the change class, for the same reason.
 
     `routability` is optional and defaults to `None`, which keeps every
-    existing caller's behaviour unchanged. When it names a `NOT_ROUTABLE_*`
-    disposition, the candidate is refused for EVERY purpose, PROBE included:
-    billing safety precedes evidence of what the configuration can do (D29).
+    existing caller's behaviour unchanged. `None` means the question was not
+    asked and `ROUTABLE` means the route is established; a `NOT_ROUTABLE_*`
+    disposition refuses the candidate for EVERY purpose, PROBE included —
+    billing safety precedes evidence of what the configuration can do (D29) —
+    and ANY other value refuses the same way, because a routability outside
+    the vocabulary is not an established route and must never read as one.
     """
     if purpose not in PURPOSES:
         raise RoutingError(
@@ -554,12 +662,18 @@ def eligibility(
             f"not a small one: this refuses rather than choosing the lenient reading"
         )
     reasons: list[str] = []
-    if routability is not None and routability in _NOT_ROUTABLE:
-        reasons.append(
-            f"billing safety refuses this route: {routability}. An unauthorised or unproven "
-            f"billing route is refused for every purpose, PROBE included, whatever the "
-            f"configuration's own evidence says (D29)"
-        )
+    if routability is not None:
+        if routability in _NOT_ROUTABLE:
+            reasons.append(
+                f"billing safety refuses this route: {routability}. An unauthorised or unproven "
+                f"billing route is refused for every purpose, PROBE included, whatever the "
+                f"configuration's own evidence says (D29)"
+            )
+        elif routability != provider_manifest.ROUTABLE:
+            reasons.append(
+                f"routability {_bounded(routability)} is not ROUTABLE, so the route is not "
+                f"established"
+            )
     if candidate.grade.task_class != candidate.task_class:
         # THE GRADE CARRIES THE CLASS IT WAS MEASURED AT, and nothing compared
         # the two: a candidate declared at one class holding a grade measured at
@@ -888,7 +1002,9 @@ class PoolState:
     `freshness` is computed against `capacity._STALE_READING_SECONDS`, the same
     horizon `capacity.gate` itself ages a reading against, and is `UNKNOWN`
     whenever either `remaining` or `observed_at` is unestablished: a number
-    with no moment is not a reading (`capacity.Pool`'s own contract).
+    with no moment is not a reading (`capacity.Pool`'s own contract). A
+    NEGATIVE age — a reading dated in the future — is UNKNOWN the same way:
+    a moment this side of the observation cannot be used to age it.
     """
 
     pool_id: str
@@ -906,6 +1022,12 @@ def _pool_state(pool: "capacity.Pool", *, now: "float | None") -> PoolState:
                           observed_at=pool.observed_at, age_seconds=None, freshness=UNKNOWN)
     current = now if now is not None else time.time()
     age = current - moment.timestamp()
+    if age < 0:
+        # A reading dated AHEAD of the question being asked of it cannot be
+        # aged: there is no honest FRESH or STALE for a negative age, only
+        # UNKNOWN with the size of the future it claims, carried by the row.
+        return PoolState(pool_id=pool.pool_id, remaining=pool.remaining, unit=pool.unit,
+                          observed_at=pool.observed_at, age_seconds=age, freshness=UNKNOWN)
     freshness = "STALE" if age > capacity._STALE_READING_SECONDS else "FRESH"
     return PoolState(pool_id=pool.pool_id, remaining=pool.remaining, unit=pool.unit,
                       observed_at=pool.observed_at, age_seconds=age, freshness=freshness)
@@ -940,10 +1062,20 @@ def _match_manifest(
         return by_client[0]
     if len(by_client) > 1:
         raise RoutingError(
-            f"{len(by_client)} declared manifests match client {client!r} at vendor {family!r}; "
-            "an ambiguous route is refused rather than resolved by list order"
+            f"{len(by_client)} declared manifests match client {_bounded(client)} at vendor "
+            f"{_bounded(family)}; an ambiguous route is refused rather than resolved by list order"
         )
     by_vendor = [manifest for manifest in manifests if manifest.vendor == family]
+    if len(by_vendor) > 1:
+        # Two manifests at one vendor and NEITHER declares this client: the
+        # configuration's own vendor cannot choose between them, so this is an
+        # ambiguity like the client-side one above — refused, never resolved
+        # by list order, and never reported as mere absence, because the
+        # project has declared two routes where one was asked for.
+        raise RoutingError(
+            f"{len(by_vendor)} declared manifests carry vendor {_bounded(family)} and none "
+            f"declares client {_bounded(client)}; an ambiguous route is refused"
+        )
     if len(by_vendor) == 1:
         # The route the configuration actually dispatches through is not a
         # surface this manifest declares; the billing facts are the manifest's
@@ -972,6 +1104,12 @@ class EligibilityRow:
     disposition: str
     eligible: bool
     reasons: "tuple[str, ...]"
+    #: True exactly when this verdict was reached by SUPPOSING availability —
+    #: a report dispatches nothing, so for PROBE and ROUTINE it asks the
+    #: frozen predicate what would still refuse if a dispatch started, and a
+    #: row that owes its verdict to a supposition must never be read as one
+    #: that observed anything. A CRITICAL row never supposes.
+    availability_supposed: bool = False
 
 
 @dataclass(frozen=True)
@@ -986,6 +1124,10 @@ class EligibilityReport:
     subject: "Derivation | None"
     rows: "tuple[EligibilityRow, ...]"
     notes: "tuple[str, ...]" = ()
+    #: The quarantine sentences (D36): one per pool element this report's
+    #: caller could not read. Structured so a count of the unread is a field
+    #: rather than something to re-derive from prose notes.
+    quarantined: "tuple[str, ...]" = ()
 
     def as_dict(self) -> dict:
         return {
@@ -1020,11 +1162,13 @@ class EligibilityReport:
                     "independence": list(row.independence),
                     "disposition": row.disposition,
                     "eligible": row.eligible,
+                    "availability_supposed": row.availability_supposed,
                     "reasons": list(row.reasons),
                 }
                 for row in self.rows
             ],
             "notes": list(self.notes),
+            "quarantined": list(self.quarantined),
         }
 
     def render(self) -> str:
@@ -1041,14 +1185,19 @@ class EligibilityReport:
                 lines.append("    pool: none observed")
             else:
                 lines.append(
-                    f"    pool {row.pool.pool_id}: {row.pool.remaining} {row.pool.unit} "
+                    f"    pool {_bounded(row.pool.pool_id)}: {row.pool.remaining} {row.pool.unit} "
                     f"({row.pool.freshness}, age {row.pool.age_seconds})"
                 )
             if row.independence:
                 lines.append("    independence: " + "; ".join(row.independence))
             for reason in row.reasons:
                 lines.append(f"    reason: {reason}")
-            lines.append("    " + ("ELIGIBLE" if row.eligible else "NOT ELIGIBLE"))
+            verdict = (
+                "ELIGIBLE (availability supposed)"
+                if row.eligible and row.availability_supposed
+                else "ELIGIBLE" if row.eligible else "NOT ELIGIBLE"
+            )
+            lines.append(f"    {verdict}")
         lines.extend(f"  note: {note}" for note in self.notes)
         return "\n".join(lines)
 
@@ -1065,6 +1214,11 @@ def eligibility_report(
     authorised_pools: "Iterable[str]" = (),
     environment: "Mapping[str, str] | None" = None,
     now: "float | None" = None,
+    #: Pool id -> the sentence that quarantined it (D36). A pool whose capacity
+    #: element the caller could not read is capacity UNKNOWN for the row whose
+    #: manifest names it — neither an absent pool nor a reading — and the row
+    #: carries the sentence rather than a bare id, so the coordinator reads WHY.
+    quarantined_pools: "Mapping[str, str] | None" = None,
 ) -> EligibilityReport:
     """Every configuration this task class has evidence for, joined to what it
     would bill and how fresh its capacity is. **Lists and explains; dispatches
@@ -1078,6 +1232,7 @@ def eligibility_report(
         )
     manifests = tuple(manifests)
     pools = tuple(capacity_pools)
+    quarantined = dict(quarantined_pools) if quarantined_pools else {}
     graded = qualification.qualifications_from_observations(observations_path)
 
     rows: list[EligibilityRow] = []
@@ -1090,24 +1245,43 @@ def eligibility_report(
         family, client, model_observed = named["family"], named["client"], named["model_observed"]
 
         row_reasons: list[str] = []
+        ambiguous = False
         try:
             manifest, surface_index = _match_manifest(client, family, manifests)
         except RoutingError as ambiguity:
             manifest, surface_index = None, None
+            ambiguous = True
             row_reasons.append(str(ambiguity))
         if manifest is not None and surface_index is not None and not any(
             surface.client == client for surface in manifest.surfaces
         ):
             row_reasons.append(
                 f"the manifest was matched by vendor, not by client: its billing facts hold, but "
-                f"the recorded endpoint {manifest.surfaces[surface_index].client!r} is not this "
-                f"configuration's client {client!r}"
+                f"the recorded endpoint {_bounded(manifest.surfaces[surface_index].client)} is "
+                f"not this configuration's client {_bounded(client)}"
             )
+            # The row says the configuration's own client is undeclared HERE;
+            # where another manifest does declare it, naming that manifest is
+            # the fact a coordinator needs to repair the route rather than
+            # guess at one.
+            declaring = sorted(
+                other.provider_id for other in manifests
+                if any(surface.client == client for surface in other.surfaces)
+            )
+            if declaring:
+                row_reasons.append(
+                    f"client {_bounded(client)} is declared by other manifests: "
+                    + ", ".join(_bounded(provider_id) for provider_id in declaring)
+                )
         if manifest is None:
             vendor, gateway, provider_id, billing_pool_id = family, UNKNOWN, UNKNOWN, UNKNOWN
-            route = provider_manifest.Routability(NOT_ROUTABLE_UNKNOWN, (
+            # An ambiguity has already said, in its own sentence, exactly what
+            # is wrong; appending "no declared provider manifest covers this
+            # configuration" would say something false — two of them do.
+            route_reasons = () if ambiguous else (
                 "no declared provider manifest covers this configuration",
-            ))
+            )
+            route = provider_manifest.Routability(NOT_ROUTABLE_UNKNOWN, route_reasons)
         else:
             vendor, gateway = manifest.vendor, manifest.gateway
             provider_id, billing_pool_id = manifest.provider_id, manifest.billing.billing_pool_id
@@ -1122,8 +1296,20 @@ def eligibility_report(
             if candidate_pool.pool_id == billing_pool_id:
                 pool_state = _pool_state(candidate_pool, now=now)
                 break
-        if manifest is not None and pool_state is None:
-            row_reasons.append(f"no capacity observation for pool {billing_pool_id!r}")
+        # Three ways a row's capacity is UNKNOWN, in precedence order: the
+        # pool's element was quarantined (its sentence says why — a surviving
+        # reading for the same id never outranks a quarantine), no pool was
+        # observed at all, or the pool exists below but cannot be aged.
+        capacity_unknown = False
+        if manifest is not None and billing_pool_id in quarantined:
+            row_reasons.append(
+                f"the capacity observation for pool {_bounded(billing_pool_id)} was quarantined: "
+                f"{quarantined[billing_pool_id]}"
+            )
+            capacity_unknown = True
+        elif manifest is not None and pool_state is None:
+            row_reasons.append(f"no capacity observation for pool {_bounded(billing_pool_id)}")
+            capacity_unknown = True
 
         independence: tuple[str, ...] = ()
         if subject is not None:
@@ -1177,16 +1363,27 @@ def eligibility_report(
                 eligible = False
                 reasons.append("capacity reading is STALE")
             elif pool_state.freshness == UNKNOWN:
-                reasons.append("capacity UNKNOWN: dispatch serially")
-                if purpose == CRITICAL:
-                    eligible = False
+                capacity_unknown = True
+                if pool_state.age_seconds is not None and pool_state.age_seconds < 0:
+                    reasons.append(
+                        f"observed in the future by {int(-pool_state.age_seconds)} s; the reading "
+                        f"cannot be aged"
+                    )
+        # The caution a coordinator gets for capacity this report could not
+        # establish — quarantined, absent, or unageable. NEVER on a CRITICAL
+        # row: nothing below sets `eligible` for CRITICAL, because the verdict
+        # above has already refused it on availability (a report dispatches
+        # nothing, so it can never establish what CRITICAL requires), and
+        # "dispatch serially" after a refusal would be advice to act on one.
+        if capacity_unknown and purpose != CRITICAL:
+            reasons.append("capacity UNKNOWN: dispatch serially")
 
         rows.append(EligibilityRow(
             identity=identity_tuple, task_class=task_class, grade=grade.grade,
             observations=grade.observations, availability=UNKNOWN, vendor=vendor, gateway=gateway,
             provider_id=provider_id, billing_pool_id=billing_pool_id, routability=route.disposition,
             pool=pool_state, independence=independence, disposition=disposition, eligible=eligible,
-            reasons=tuple(reasons),
+            reasons=tuple(reasons), availability_supposed=purpose != CRITICAL,
         ))
 
     notes = [
@@ -1232,7 +1429,20 @@ def _eligibility_cli(args) -> int:
 
     subject = None
     if args.subject_producer is not None:
-        subject = Derivation(producer=args.subject_producer, vendor=args.subject_vendor or UNKNOWN)
+        if args.subject_vendor and _canonical_vendor(args.subject_vendor) == UNKNOWN:
+            # Refused OUTRIGHT, before any report is read (D30, fail-closed): a
+            # vendor the caller cannot spell is not a vendor the comparison can
+            # canonicalise, and letting one through would either found a second
+            # vendor nothing validates or pass a misspelling as a real one.
+            print(
+                f"--subject-vendor {_bounded(args.subject_vendor)} is not a vendor slug (lowercase "
+                f"letters, digits and single hyphens); a vendor this report does not know is "
+                f"omitted, never misspelt", file=sys.stderr)
+            return 2
+        subject = Derivation(
+            producer=args.subject_producer,
+            vendor=_canonical_vendor(args.subject_vendor) if args.subject_vendor else UNKNOWN,
+        )
     elif args.require_distinct_vendor or args.subject_vendor:
         print("--require-distinct-vendor and --subject-vendor describe the work's producer; "
               "without --subject-producer there is no producer to be independent of", file=sys.stderr)
@@ -1248,6 +1458,8 @@ def _eligibility_cli(args) -> int:
 
     capacity_pools = []
     capacity_notes = []
+    quarantine_sentences = []
+    quarantined_pools = {}
     if args.capacity:
         try:
             payload = _json.loads(_Path(args.capacity).read_text(encoding="utf-8"))
@@ -1262,7 +1474,10 @@ def _eligibility_cli(args) -> int:
             capacity_notes.append("the capacity document's `pools` is not a list; no pool was read")
             pool_entries = []
         # PER-ELEMENT QUARANTINE (D36): one unreadable pool is a note, not a
-        # refusal of the whole report.
+        # refusal of the whole report. A pool id this loop COULD read becomes a
+        # join key the report matches rows against, so a row whose manifest
+        # names that pool reads its capacity as quarantined — with this note's
+        # sentence — rather than as an absent pool.
         for entry in pool_entries:
             pool_id = entry.get("pool_id", "?") if isinstance(entry, dict) else "?"
             try:
@@ -1271,7 +1486,11 @@ def _eligibility_cli(args) -> int:
                 filtered = {key: value for key, value in entry.items() if key in _POOL_KEYS}
                 capacity_pools.append(capacity.Pool(**filtered))
             except Exception as exc:
-                capacity_notes.append(f"pool {pool_id} could not be read: {exc}")
+                note = f"pool {_bounded(pool_id)} could not be read: {exc}"
+                capacity_notes.append(note)
+                quarantine_sentences.append(note)
+                if isinstance(pool_id, str) and pool_id.strip():
+                    quarantined_pools[pool_id] = note
 
     # NAMES ONLY, never a value — the same rule `provider_manifest`'s own flag
     # states, applied here because `eligibility_report` forwards `environment`
@@ -1284,13 +1503,18 @@ def _eligibility_cli(args) -> int:
             require_distinct_vendor=args.require_distinct_vendor, subject=subject,
             manifests=manifests, capacity_pools=capacity_pools,
             authorised_pools=args.authorised_pools, environment=environment,
+            quarantined_pools=quarantined_pools or None,
         )
     except Exception as exc:
         print(f"the eligibility report could not be rendered: {exc}", file=sys.stderr)
         return 2
 
     if capacity_notes:
-        report = _replace(report, notes=report.notes + tuple(capacity_notes))
+        report = _replace(
+            report,
+            notes=report.notes + tuple(capacity_notes),
+            quarantined=tuple(quarantine_sentences),
+        )
 
     if args.json:
         print(_json.dumps(report.as_dict(), indent=2))

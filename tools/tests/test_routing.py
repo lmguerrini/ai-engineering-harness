@@ -1049,7 +1049,10 @@ def test_vendor_spellings_of_one_vendor_are_one_vendor():
     reader = routing.Derivation(producer="r", fresh=True, vendor="Vendor-A ")
     subject = routing.Derivation(producer="s", vendor="vendor-a")
     problems = routing.independence_problems(reader, subject, require_distinct_vendor=True)
-    assert any("vendor" in problem for problem in problems)
+    # The SPECIFIC sentence: a casing-and-padding variant of one vendor was
+    # once read as a second vendor and satisfied the leg the comparison exists
+    # to refuse.
+    assert any("one vendor's reading" in problem for problem in problems)
     unknown = routing.Derivation(producer="r", fresh=True, vendor="unknown")
     problems = routing.independence_problems(unknown, subject, require_distinct_vendor=True)
     assert any("not recorded" in problem for problem in problems)
@@ -1093,3 +1096,401 @@ def test_a_report_with_an_unknown_purpose_is_refused_before_any_row(tmp_path):
     log = _confirmed_log(tmp_path)
     with pytest.raises(routing.RoutingError):
         routing.eligibility_report(log, task_class="T", purpose="BOGUS")
+
+
+# =============================================================================
+# T2 round 2, B1 — vendor canonicalisation is fail-closed
+# =============================================================================
+
+
+def test_vendor_a_misspelt_vendor_is_named_not_read_as_a_second_one():
+    """`vendor_a` is a misspelling of a vendor, not a vendor: the leg is
+    refused with the slug requirement named, never satisfied, and never
+    established as a second vendor nothing validates."""
+    reader = routing.Derivation(producer="r", fresh=True, vendor="vendor_a")
+    subject = routing.Derivation(producer="s", vendor="vendor-b")
+    problems = routing.independence_problems(reader, subject, require_distinct_vendor=True)
+    assert problems, "a misspelt vendor satisfied the cross-vendor requirement"
+    assert any("is not a vendor slug" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("spelling", [
+    "vendor_a",       # an underscore is not a hyphen
+    "vendor-a.",      # a trailing dot
+    "vendor a",       # a space
+    "vendora",        # the hyphen dropped entirely
+    "vendor--a",      # a run of hyphens
+    "vendor-a​",      # a zero-width space riding behind a clean slug
+    "ｖendor-a",      # a full-width v that NFKC folds onto the real one
+    "vendor-а",      # a Cyrillic look-alike а (U+0430), which NFKC does not fold
+])
+def test_vendor_a_variant_spelling_is_never_distinct_and_clean(spelling):
+    """Every way a vendor name can be misspelt, against the vendor it
+    misspells. Two of them fold onto the real slug through NFKC or drop a
+    separator and are refused as ONE vendor; the rest fail the slug grammar
+    and are refused as not slugs. None is ever read as a second vendor."""
+    reader = routing.Derivation(producer="r", fresh=True, vendor=spelling)
+    subject = routing.Derivation(producer="s", vendor="vendor-a")
+    problems = routing.independence_problems(reader, subject, require_distinct_vendor=True)
+    assert problems, f"{spelling!r} was read as a clean vendor distinct from vendor-a"
+    assert any(
+        "is not a vendor slug" in problem or "one vendor's reading" in problem
+        for problem in problems
+    )
+
+
+def test_vendor_an_observation_with_a_non_slug_vendor_reads_as_unknown():
+    """The same boundary at the observation reader: a derivation that names a
+    non-slug vendor is `UNKNOWN` on the way in, so it refuses the leg instead
+    of smuggling a spelling past the comparison. The refusal carries the plain
+    not-recorded reason — the raw misspelling no longer exists to be named."""
+    row = {"derivation": {"producer": "w", "provider": "vendor_a",
+                          "session_class": "fresh-blind-dispatch"}}
+    derivation = routing.derivation_from_observation(row)
+    assert derivation.vendor == UNKNOWN and derivation.provider == UNKNOWN
+    subject = routing.Derivation(producer="s", vendor="vendor-b")
+    problems = routing.independence_problems(derivation, subject, require_distinct_vendor=True)
+    assert any("a vendor is not recorded on both sides" in problem for problem in problems)
+
+
+def test_cli_eligibility_refuses_a_non_slug_subject_vendor(tmp_path, capsys):
+    """The CLI refuses a non-slug `--subject-vendor` outright — one sentence on
+    stderr, exit 2, no traceback — before any report is read."""
+    log = _confirmed_log(tmp_path)
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--subject-producer", "someone", "--subject-vendor", "vendor_a"])
+    captured = capsys.readouterr()
+    assert status == 2
+    assert captured.out == ""
+    assert "vendor slug" in captured.err
+    assert captured.err.count("\n") == 1, "the refusal is one sentence, not a traceback"
+    assert "Traceback" not in captured.err
+
+
+# =============================================================================
+# T2 round 2, R1 — a routability outside the vocabulary is not a route
+# =============================================================================
+
+
+@pytest.mark.parametrize("value", [UNKNOWN, "not_routable_billing", "NOT_ROUTABLE", "garbage"])
+def test_not_routable_a_routability_outside_the_vocabulary_refuses_every_purpose(value):
+    """`UNKNOWN`, a lower-case spelling, the shared prefix `NOT_ROUTABLE` and
+    plain garbage were all read as an established route. None of them is one."""
+    candidate = _candidate()
+    for purpose in routing.PURPOSES:
+        verdict = eligibility(candidate, purpose=purpose, routability=value)
+        assert not verdict.allowed, f"{value!r} was read as an established route for {purpose}"
+        assert any(f"routability {value} is not ROUTABLE" in reason
+                   for reason in verdict.reasons), purpose
+
+
+def test_not_routable_none_and_routable_still_mean_the_question_was_asked():
+    candidate = _candidate()
+    assert eligibility(candidate, purpose=ROUTINE, routability=None).allowed
+    assert eligibility(candidate, purpose=ROUTINE,
+                       routability=provider_manifest.ROUTABLE).allowed
+
+
+def test_not_routable_a_disposition_value_outside_the_vocabulary_is_not_routable_unknown():
+    for value in (UNKNOWN, "not_routable_billing", "NOT_ROUTABLE", "garbage"):
+        assert routing.disposition_with_routability(value, AVAILABLE, "confirmed") == (
+            routing.NOT_ROUTABLE_UNKNOWN), value
+    assert routing.disposition_with_routability(
+        provider_manifest.ROUTABLE, AVAILABLE, "confirmed") == "QUALIFIED"
+    assert routing.disposition_with_routability(
+        routing.NOT_ROUTABLE_BILLING, AVAILABLE, "confirmed") == routing.NOT_ROUTABLE_BILLING
+
+
+# =============================================================================
+# T2 round 2, R2 — a verdict reached by supposing says so
+# =============================================================================
+
+
+def _fresh_pool():
+    return capacity.Pool(pool_id="vendor-a-membership", remaining=100, unit="req",
+                         observed_at=datetime.now(timezone.utc).isoformat())
+
+
+def test_not_routable_a_row_that_supposed_availability_says_so_in_json_and_render(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    for purpose, supposed in ((PROBE, True), (ROUTINE, True), (CRITICAL, False)):
+        report = routing.eligibility_report(
+            log, task_class="T", purpose=purpose, manifests=[manifest], capacity_pools=[_fresh_pool()],
+            authorised_pools=["vendor-a-membership"], environment={})
+        row = report.rows[0]
+        assert row.availability_supposed is supposed, purpose
+        assert report.as_dict()["rows"][0]["availability_supposed"] is supposed, purpose
+
+    routine = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest], capacity_pools=[_fresh_pool()],
+        authorised_pools=["vendor-a-membership"], environment={})
+    critical = routing.eligibility_report(
+        log, task_class="T", purpose=CRITICAL, manifests=[manifest], capacity_pools=[_fresh_pool()],
+        authorised_pools=["vendor-a-membership"], environment={})
+    assert routine.rows[0].eligible is True and critical.rows[0].eligible is False, (
+        "fixture is inert: the routine row must be eligible and the critical row never"
+    )
+    assert "ELIGIBLE (availability supposed)" in routine.render()
+    assert "ELIGIBLE (availability supposed)" not in critical.render()
+
+
+# =============================================================================
+# T2 round 2, R3 — a quarantined pool is capacity UNKNOWN, with its sentence
+# =============================================================================
+
+
+def test_not_routable_a_quarantined_pool_is_capacity_unknown_with_the_sentence(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    sentence = "pool vendor-a-membership could not be read: remaining is a non-negative quantity"
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest],
+        authorised_pools=["vendor-a-membership"], environment={},
+        quarantined_pools={"vendor-a-membership": sentence})
+    row = report.rows[0]
+    assert row.pool is None
+    assert any(f"the capacity observation for pool vendor-a-membership was quarantined: "
+               f"{sentence}" in reason for reason in row.reasons)
+    assert any("capacity UNKNOWN: dispatch serially" in reason for reason in row.reasons)
+
+
+def test_not_routable_an_absent_pool_now_carries_the_serial_caution(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    report = routing.eligibility_report(log, task_class="T", purpose=ROUTINE,
+                                        manifests=[manifest],
+                                        authorised_pools=["vendor-a-membership"], environment={})
+    row = report.rows[0]
+    assert any("no capacity observation for pool vendor-a-membership" in reason
+               for reason in row.reasons)
+    assert any("capacity UNKNOWN: dispatch serially" in reason for reason in row.reasons), (
+        "an absent pool is capacity UNKNOWN, and the coordinator was told to dispatch serially "
+        "only where a pool existed"
+    )
+
+
+def test_not_routable_a_fresh_pool_carries_no_serial_caution(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest], capacity_pools=[_fresh_pool()],
+        authorised_pools=["vendor-a-membership"], environment={})
+    assert not any("dispatch serially" in reason for reason in report.rows[0].reasons)
+
+
+def test_cli_eligibility_a_quarantined_element_reaches_the_row_and_the_json(tmp_path, capsys):
+    log = _confirmed_log(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "schema": "runtime-pack-provider-1", "provider_id": "vendor-a-plan", "vendor": "vendor-a",
+        "gateway": "gateway-a.example",
+        "surfaces": [{"surface": "cli-a", "client": "worker-a@gateway-a.example", "protocol": "anthropic-compatible"}],
+        "adapter": "anthropic-compatible-worker",
+        "credential": {"kind": "subscription_key", "env_file_ref": "VENDOR_A_KEY_FILE",
+                       "generic_env_forbidden": ["VENDOR_A_TOKEN"]},
+        "billing": _billing(), "capacity_observer": {"source": "human-reading", "freshness_horizon_s": 3600, "command": None},
+        "discovery": None, "private_terms": []}))
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(
+        json.dumps({"pools": [{"pool_id": "vendor-a-membership", "remaining": -5}]}),
+        encoding="utf-8")
+    status = routing._cli(
+        ["--eligibility", "--observations", str(log), "--task-class", "T",
+         "--manifest", str(manifest_path), "--authorised-pool", "vendor-a-membership",
+         "--capacity", str(capacity_doc), "--json"])
+    assert status == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert any("was quarantined" in reason for reason in payload["rows"][0]["reasons"]), (
+        "the row still read its pool as merely absent"
+    )
+    assert any("capacity UNKNOWN: dispatch serially" in reason
+               for reason in payload["rows"][0]["reasons"])
+    # N1: the quarantined sentences are a field, not prose to re-derive.
+    assert len(payload["quarantined"]) == 1
+    assert "could not be read" in payload["quarantined"][0]
+
+
+# =============================================================================
+# T2 round 2, R4 — the environment flag forwards NAMES only (test gap)
+# =============================================================================
+
+
+def test_not_routable_environment_from_current_process_forwards_names_only(
+        tmp_path, capsys, monkeypatch):
+    """The flag's contract, pinned at the boundary it could leak through: a
+    spy on `provider_manifest.fingerprint` captures the `environment` mapping
+    the CLI forwards, and every VALUE in it must be the empty string. The
+    fixture poisons `os.environ` with a fixture-only name whose value must
+    never reach the fingerprint, the report, or the output."""
+    captured = []
+    real_fingerprint = provider_manifest.fingerprint
+
+    def spy(manifest, **kwargs):
+        captured.append(kwargs.get("environment"))
+        return real_fingerprint(manifest, **kwargs)
+
+    monkeypatch.setattr(provider_manifest, "fingerprint", spy)
+    monkeypatch.setenv("FIXTURE_ONLY_NAME", "fixture-only-value")
+
+    log = _confirmed_log(tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "schema": "runtime-pack-provider-1", "provider_id": "vendor-a-plan", "vendor": "vendor-a",
+        "gateway": "gateway-a.example",
+        "surfaces": [{"surface": "cli-a", "client": "worker-a@gateway-a.example", "protocol": "anthropic-compatible"}],
+        "adapter": "anthropic-compatible-worker",
+        "credential": {"kind": "subscription_key", "env_file_ref": "VENDOR_A_KEY_FILE",
+                       "generic_env_forbidden": ["VENDOR_A_TOKEN"]},
+        "billing": _billing(), "capacity_observer": {"source": "human-reading", "freshness_horizon_s": 3600, "command": None},
+        "discovery": None, "private_terms": []}))
+    status = routing._cli(
+        ["--eligibility", "--observations", str(log), "--task-class", "T",
+         "--manifest", str(manifest_path), "--environment-from-current-process", "--json"])
+    assert status == 0
+    assert captured, "fixture is inert: the fingerprint was never consulted"
+    for environment in captured:
+        assert environment is None or all(value == "" for value in environment.values()), (
+            "a value from the process environment reached the fingerprint"
+        )
+    assert "fixture-only-value" not in capsys.readouterr().out
+
+
+# =============================================================================
+# T2 round 2, R5/R6 — same-vendor ambiguity, and a fallback row that tells the truth
+# =============================================================================
+
+
+def test_not_routable_two_same_vendor_manifests_neither_declaring_the_client_are_ambiguous(
+        tmp_path):
+    """Two manifests at the row's own vendor, neither declaring its client:
+    the vendor cannot choose between them, so the route is refused as
+    ambiguous — identically in either list order, and never as mere absence."""
+    log = _confirmed_log(tmp_path)
+    one = _provider_manifest(provider_id="plan-one", vendor="vendor-a",
+                             client="worker-x@gateway-a.example", pool_id="pool-one")
+    two = _provider_manifest(provider_id="plan-two", vendor="vendor-a",
+                             client="worker-y@gateway-a.example", pool_id="pool-two")
+    rows_by_order = []
+    for order in ([one, two], [two, one]):
+        report = routing.eligibility_report(
+            log, task_class="T", purpose=ROUTINE, manifests=order,
+            authorised_pools=["pool-one", "pool-two"], environment={})
+        row = report.rows[0]
+        assert row.routability == routing.NOT_ROUTABLE_UNKNOWN and row.eligible is False
+        assert any("declared manifests carry vendor vendor-a and none declares client "
+                   "worker-a@gateway-a.example; an ambiguous route is refused"
+                   in reason for reason in row.reasons)
+        assert not any("no declared provider manifest covers" in reason
+                       for reason in row.reasons), (
+            "an ambiguity row must not also claim no manifest covers the configuration — "
+            "two of them do"
+        )
+        rows_by_order.append(row)
+    assert rows_by_order[0] == rows_by_order[1], "the answer depended on list order"
+
+
+def test_not_routable_a_vendor_fallback_row_names_the_manifests_that_do_declare_the_client(
+        tmp_path):
+    """The row's own vendor has one manifest, which does not declare its
+    client; two other vendors' manifests do. The row is matched by vendor and
+    names the manifests that declare the client — the fact that repairs the
+    route, rather than a bare id the coordinator must go and find."""
+    log = _confirmed_log(tmp_path)
+    home = _provider_manifest(provider_id="plan-a", vendor="vendor-a",
+                              client="worker-x@gateway-a.example", pool_id="pool-a")
+    other_b = _provider_manifest(provider_id="plan-b", vendor="vendor-b", pool_id="pool-b")
+    other_c = _provider_manifest(provider_id="plan-c", vendor="vendor-c", pool_id="pool-c")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[home, other_b, other_c],
+        authorised_pools=["pool-a", "pool-b", "pool-c"], environment={})
+    row = report.rows[0]
+    assert row.provider_id == "plan-a", "fixture is inert: the row must match its own vendor"
+    reasons = " ".join(row.reasons)
+    assert "the manifest was matched by vendor, not by client" in reasons
+    assert "client worker-a@gateway-a.example is declared by other manifests: plan-b, plan-c" \
+        in reasons
+
+
+# =============================================================================
+# T2 round 2, R7 — a reading dated in the future cannot be aged
+# =============================================================================
+
+
+def test_not_routable_a_future_dated_capacity_reading_is_unknown_and_cannot_be_aged(tmp_path):
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    ahead = (datetime.now(timezone.utc) + timedelta(seconds=90)).isoformat()
+    pool = capacity.Pool(pool_id="vendor-a-membership", remaining=100, unit="req",
+                         observed_at=ahead)
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=ROUTINE, manifests=[manifest], capacity_pools=[pool],
+        authorised_pools=["vendor-a-membership"], environment={})
+    row = report.rows[0]
+    assert row.pool.freshness == UNKNOWN, "a negative age was read as FRESH"
+    assert row.pool.age_seconds is not None and row.pool.age_seconds < 0
+    assert any("observed in the future by" in reason and "cannot be aged" in reason
+               for reason in row.reasons)
+    assert any("capacity UNKNOWN: dispatch serially" in reason for reason in row.reasons)
+
+
+# =============================================================================
+# T2 round 2, R8 — echoed input renders as one bounded line
+# =============================================================================
+
+
+def test_bounded_renders_one_printable_bounded_line_however_hostile_the_text():
+    newline = routing._bounded("pool-\nwith-a-line-break")
+    huge = routing._bounded("x" * 10000)
+    for rendered in (newline, huge):
+        assert "\n" not in rendered
+        assert len(rendered) <= 80
+        assert rendered.startswith('"') and rendered.endswith('"')
+    assert newline.startswith('"pool-')
+
+
+def test_cli_eligibility_renders_hostile_pool_ids_as_one_bounded_line_each(tmp_path, capsys):
+    """A pool id carrying a newline and one ten thousand characters long, each
+    quarantined: every note is one line, bounded, and still names its pool."""
+    log = _confirmed_log(tmp_path)
+    capacity_doc = tmp_path / "capacity.json"
+    capacity_doc.write_text(json.dumps({"pools": [
+        {"pool_id": "pool-\nslash", "remaining": -5},
+        {"pool_id": "z" * 10000, "remaining": -5},
+    ]}), encoding="utf-8")
+    status = routing._cli(["--eligibility", "--observations", str(log), "--task-class", "T",
+                           "--capacity", str(capacity_doc)])
+    assert status == 0
+    quarantine_lines = [line for line in capsys.readouterr().out.splitlines()
+                        if "could not be read" in line]
+    assert len(quarantine_lines) == 2, (
+        "a newline inside a pool id must not manufacture or swallow a note line"
+    )
+    for line in quarantine_lines:
+        assert len(line) <= 200, "a hostile pool id made an unbounded line"
+        assert line.lstrip().startswith("note: pool ")
+
+
+# =============================================================================
+# T2 round 2, N2 — the dead CRITICAL line under UNKNOWN freshness, removed on proof
+# =============================================================================
+
+
+def test_not_routable_critical_over_an_unknowable_pool_is_refused_on_availability(tmp_path):
+    """The pin for removing the unreachable `if purpose == CRITICAL: eligible
+    = False` under UNKNOWN freshness: a CRITICAL row over a pool whose
+    remaining is UNKNOWN is ALREADY refused — by availability, which a report
+    cannot establish — so that line decided nothing, and the caution it guarded
+    now belongs to the purposes that can still act on it."""
+    log = _confirmed_log(tmp_path)
+    manifest = _provider_manifest()
+    pool = capacity.Pool(pool_id="vendor-a-membership", unit="req")
+    report = routing.eligibility_report(
+        log, task_class="T", purpose=CRITICAL, manifests=[manifest], capacity_pools=[pool],
+        authorised_pools=["vendor-a-membership"], environment={})
+    row = report.rows[0]
+    assert row.eligible is False
+    assert any("not established by a dispatch" in reason for reason in row.reasons)
+    assert not any("dispatch serially" in reason for reason in row.reasons), (
+        "a CRITICAL row is refused, not advised"
+    )
