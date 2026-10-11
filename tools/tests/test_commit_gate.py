@@ -369,7 +369,7 @@ def _baseline_commit_gate():
 
     root = Path(__file__).resolve().parent.parent.parent
     source = subprocess.run(
-        ["git", "show", "4495e61850c08027e47eac6d0db84b4b3380e300:tools/commit_gate.py"],
+        ["git", "show", "271d10ee393a73bbbd613a3fc779ab3212e6bf8b:tools/commit_gate.py"],
         cwd=str(root), capture_output=True, check=True,
     ).stdout.decode("utf-8")
     with tempfile.TemporaryDirectory() as scratch:

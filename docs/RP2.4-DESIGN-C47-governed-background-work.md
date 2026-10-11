@@ -1,7 +1,7 @@
 # DESIGN — C47 one governed waiting path, and a selector that cannot report zero as green
 
 **Change class:** MATERIAL
-**Base revision:** 215a537c94dcc0d11d71d432eee992409b442fa9
+**Base revision:** 20e826c68ae170cd5db70835ec4ccb4fa4284367
 **Frozen:** yes
 
 Two properties, one architectural lesson, and both were established by live

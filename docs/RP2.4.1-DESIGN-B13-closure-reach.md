@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1: a closure holds only where its mechanism reaches
 
 **Change class:** MATERIAL
-**Base revision:** 796b333a88d3faeee560d16e1e30206e46d79cc8
+**Base revision:** 60d245fea45ea44800ba5220e192c78a653dea2c
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.

@@ -1,7 +1,7 @@
 # DESIGN — RP2.6.0 P0: a third provider as a pool with billing on the pool (SUPERSEDED)
 
 **Change class:** MATERIAL
-**Base revision:** aa55575b614df3ed4454df87f33c8796dc602258
+**Base revision:** c2fcf9cedf178dd00491c52748e6897e5d4fe9be
 **Frozen:** yes
 
 Falsified before any implementation and superseded by `RP2.6.0-DESIGN-P1-provider-registry-and-billing-safety.md`; kept exactly as written, as history.

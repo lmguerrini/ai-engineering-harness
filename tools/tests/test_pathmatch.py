@@ -380,7 +380,7 @@ def test_the_recorded_baseline_divergence_figure_is_the_measured_one(oracle):
     import tempfile
 
     baseline = subprocess.run(
-        ["git", "show", "4495e61850c08027e47eac6d0db84b4b3380e300:tools/pathmatch.py"],
+        ["git", "show", "271d10ee393a73bbbd613a3fc779ab3212e6bf8b:tools/pathmatch.py"],
         cwd=str(PACK_ROOT), capture_output=True, check=True,
     ).stdout.decode("utf-8")
 

@@ -1,7 +1,7 @@
 # DESIGN — RP2.5.0: four sources, and an answer that says what was not in force
 
 **Change class:** MATERIAL
-**Base revision:** 05c4c1528622ebaf7282a6b9d91dd2492b6eae33
+**Base revision:** b97a3ff88d53290c6e892140c196a676684b0f3c
 **Frozen:** yes
 
 ## What two independent design readings falsified

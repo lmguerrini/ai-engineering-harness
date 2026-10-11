@@ -1,7 +1,7 @@
 # DESIGN — RP2.6.0 P1: an N-provider registry of declared manifests, billing safety as a route proof, and capacity that says how fresh it is
 
 **Change class:** MATERIAL
-**Base revision:** aa55575b614df3ed4454df87f33c8796dc602258
+**Base revision:** c2fcf9cedf178dd00491c52748e6897e5d4fe9be
 **Frozen:** yes
 
 Written before the implementation it governs; read by `tools/design_record.py`. It reports; it authorises

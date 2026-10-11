@@ -1,7 +1,7 @@
 # DESIGN — C31 pre-implementation design falsification
 
 **Change class:** MATERIAL
-**Base revision:** 3a6aee4f5e718d9140af9c5391d9d5131d42600b
+**Base revision:** 28e69cbebd49a6faccbc7266c1278fb27aa0e79e
 **Frozen:** yes
 
 Written before any line of the mechanism it describes, and this file is the

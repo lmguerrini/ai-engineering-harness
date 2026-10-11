@@ -1,7 +1,7 @@
 # DESIGN — RP2.5.0: one governing API, two qualified backends, and no child inside a local read
 
 **Change class:** MATERIAL
-**Base revision:** 673d97f94ba4b3406e1afd6ddc52bd5b23e56e29
+**Base revision:** 044a6f005e155ce39f3497c0bc0c479efc237ae6
 **Frozen:** yes
 
 ## What A7 got right, and the one thing that falsified it

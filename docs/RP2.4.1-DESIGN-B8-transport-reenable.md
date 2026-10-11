@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1: the subject of a read must not choose the transport policy
 
 **Change class:** MATERIAL
-**Base revision:** 19565cad519bdbb0665969913e1a58fe093e3345
+**Base revision:** 4e04272de6a1c148a6097daea152228bcea146a1
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.

@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1: which configuration a governed read must inspect
 
 **Change class:** MATERIAL
-**Base revision:** 1dddf116f8818f732dbd81dbed10052a0bf63ef1
+**Base revision:** 8afb462ec78f75b956369d9cabe9d7e810b549f0
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.

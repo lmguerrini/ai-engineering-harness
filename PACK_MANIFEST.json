@@ -4,7 +4,7 @@
   "state": "IN_PROGRESS",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": "not yet — the transition to QUALIFIED_AND_FROZEN is a founder decision at policy/hitl-matrix.md row 2 that has not been taken",
-  "tree_digest_sha256": "a53651bbc696843a524d4dbdc5886fb651d990824fc66270f1bb732442ee7ad5",
+  "tree_digest_sha256": "4c8b1294ab015b10eb22b6befaab087a3f4eb6df8a83008b756cce78379cb693",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
@@ -21,7 +21,7 @@
   },
   "delta_audit": "docs/RP2.5.0-RECURRENCE-MAP.md",
   "supersedes": "2.5.0 — not replaced; runs pinned to it stay pinned to it, and it remains byte-identical at aa55575b with digest bd5118c7. The grade is derived at the freeze, not assumed: tools/surface_diff.py over aa55575b..HEAD for the API surface and the answer contract for what callers are told (D11, D28).",
-  "baseline_revision": "aa55575b614df3ed4454df87f33c8796dc602258 — the 2.5.0 release commit, and the revision this release's CHANGELOG entry states its delta FROM; tools/release_delta.py reads it.",
+  "baseline_revision": "c2fcf9cedf178dd00491c52748e6897e5d4fe9be — the 2.5.0 release commit, and the revision this release's CHANGELOG entry states its delta FROM; tools/release_delta.py reads it.",
   "version_semantics": "PATCH: backward-compatible fixes, metadata/docs corrections, enforcement of already-promised guarantees. MINOR: new backward-compatible policy/tool/capability. MAJOR: incompatible authority, contract or migration change. VERSION is the single machine-readable authority (DECISIONS.md D11).",
   "pin_instruction": "a project records ROOT PATH and version and full 40-character sha and tree digest and state in PROJECT.yaml pack.*, and verifies them rather than copying them. All four identity fields are required: `root_path` says WHICH DIRECTORY, the other three say WHAT is in it, and a pin without the root is UNVERIFIABLE_LEGACY_PIN (tools/pack_migration.py) because the release it names cannot be identified. Adoption happens only at a capability boundary. A frozen release never mutates during a project run; verification failing mid-project is a stop, not a pin to refresh.",
   "concurrent_use": "several projects may pin this same release at once, or different qualified releases, provided each version resolves to a distinct immutable root. Operational state and Evolution Candidate inboxes are project-local and never written into this repository (DECISIONS.md D13).",
@@ -165,7 +165,7 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 222,
+  "digest_file_count": 225,
   "failure_mode_closure": "docs/RP2.3-FAILURE-MODE-CLOSURE.md",
   "evolution_candidates": [
     "A DURABLE EVENT LOG. Seven event classes ship because seven are what durable artifacts date; a capability opening, an audit being dispatched and a finding being recorded are not among them, because nothing writes their time down. Trigger: a project wanting a timeline of governance events rather than of artifacts.",

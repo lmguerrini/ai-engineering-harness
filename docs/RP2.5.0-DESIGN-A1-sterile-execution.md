@@ -1,7 +1,7 @@
 # DESIGN — RP2.5.0: a read Git cannot be told to execute anything by
 
 **Change class:** MATERIAL
-**Base revision:** 71e24f89cf1d0d8084531418ab758ce4f4c945fa
+**Base revision:** 262ed9f9392b98fcad365199216dfd1a9b06567a
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.
