@@ -418,6 +418,19 @@ anticipated nor authorised it. In particular the ruling does not authorise
 losing a capability 2.4.0 holds — that remains a separate decision under the
 same two entries.
 
+### Public edition — not a release (2026-10-11)
+
+This tree is the **public edition** of 2.5.0: neither a new release nor the frozen release itself. Its history was
+rewritten for publication, so its commit ids and its tree digest differ from the frozen release's, and the manifest
+records this tree's own digest. It adds documentation and changes no tool:
+
+- `.github/README.md` — the public landing page;
+- `.github/RELEASE_NOTES.md` — a summary of every release from 2.0.0 to 2.5.0 and of the 2.6.0 line's state;
+- `.github/PUBLIC_EDITION.md` — how the history was prepared, what was preserved and what was sanitized.
+
+The release self-checks and each design record's base revision point at this history's commits; prose references
+keep the ids they were written with, which belong to the private repository.
+
 ## 2.4.1 — the six the full-release audit reproduced
 
 A **PATCH** release (`DECISIONS.md` D11), derived rather than assumed: every
