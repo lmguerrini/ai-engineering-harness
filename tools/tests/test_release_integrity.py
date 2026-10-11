@@ -522,7 +522,7 @@ def test_every_count_the_routing_table_states_is_the_number_of_rows_behind_it():
 #: which is a blind spot in the direction the claim is made. Measured when it was
 #: corrected: zero such names exist and the check is green against both, so this
 #: closes a gap rather than reporting a regression.
-QUALIFIED_BASELINE = "9d906ce64bd69cb1a29594a7110829da7df5d996"
+QUALIFIED_BASELINE = "a0c8d9bc7a48a1fae239132608d395fdbd785fcf"
 
 
 def test_no_tool_removed_a_public_name_or_changed_a_signature_since_the_baseline():
@@ -907,36 +907,51 @@ def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_pr
     """This line's own history is one of the few claims no guard was deriving,
     and it went stale exactly the way every transcribed figure here has.
 
-    The gate record and the manifest both said the range reported **nine
-    violations over three commits**. The checker reported **twelve over four**:
-    `45d87fb` had joined the range after the discipline began, and nothing
-    noticed — the release-truth guards check what a release claims about its
-    *records*, and this is a claim about its *history*.
-
-    So the figures are derived here and the prose is checked against them, in
-    both places that state them. The raw result stays raw: this guard asserts
-    that the records tell the truth about a non-zero checker result, never that
-    the checker passes.
+    PUBLIC EDITION. In the private repository this range reported twelve
+    violations over four commits, and `docs/RP2.5.0-GATE.md` keeps that result as
+    it was recorded. When the history was published every commit message was
+    normalised to one convention, so the same range reports none here. The
+    figures are still derived rather than transcribed, and the edition's own
+    record must state them: `.github/PUBLIC_EDITION.md`. The range itself is
+    bounded below, because a range that resolved to nothing would also report
+    no violations.
     """
-    import json
     import re
     import sys
 
     sys.path.insert(0, str(ROOT / "tools"))
     import commit_gate
+    import gitread
+
+    shas = gitread._run(str(ROOT), "rev-list", f"{QUALIFIED_BASELINE}..HEAD").split()
+    assert len(shas) > 70, (
+        f"the 2.5.0 range resolved to {len(shas)} commits; the checker's silence over it would "
+        f"mean nothing")
 
     strict = _non_conforming_range(commit_gate.NO_PRIVATE_TERMS)
-    strict_commits = len(strict)
-    strict_violations = sum(len(v) for _, v in strict)
-    assert strict_violations, (
-        "this guard exists to keep a non-zero result honestly recorded; the range now "
-        "conforms, so the records it checks should be rewritten rather than this "
-        "assertion relaxed"
+    shipped = _non_conforming_range(_pack_default_term_set())
+    derived = (
+        sum(len(v) for _, v in strict), len(strict),
+        sum(len(v) for _, v in shipped), len(shipped),
     )
 
-    shipped = _non_conforming_range(_pack_default_term_set())
-    shipped_commits = len(shipped)
-    shipped_violations = sum(len(v) for _, v in shipped)
+    edition = (ROOT / ".github" / "PUBLIC_EDITION.md").read_text(encoding="utf-8")
+    stated = re.search(
+        r"COMMIT CONTRACT OVER THE 2\.5\.0 RANGE: (\d+) VIOLATIONS OVER (\d+) COMMITS \(STRICT\); "
+        r"(\d+) VIOLATIONS OVER (\d+) COMMITS \(DEFAULT VOCABULARY\)",
+        edition,
+    )
+    assert stated, (
+        ".github/PUBLIC_EDITION.md no longer states the commit-range result in the checked form")
+    assert tuple(int(x) for x in stated.groups()) == derived, (
+        f".github/PUBLIC_EDITION.md states {stated.group(0)!r}; the checker reports "
+        f"{derived[0]} over {derived[1]} commits (strict) and {derived[2]} over {derived[3]} "
+        f"(default vocabulary): {', '.join(sha[:7] for sha, _ in strict + shipped) or 'none'}")
+
+    # The private range's own result stays, as recorded, in two historical records. It describes a history this
+    # repository does not contain, so it cannot be re-derived here; what can be checked is that both records still
+    # carry it as written and agree with each other.
+    import json
 
     gate = (ROOT / "docs" / "RP2.5.0-GATE.md").read_text(encoding="utf-8")
     manifest = json.loads((ROOT / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
@@ -944,55 +959,34 @@ def test_the_commit_range_figures_this_record_states_are_the_ones_the_checker_pr
         item for item in manifest["known_limitations"]
         if "COMMIT CONTRACT" in item and "commit_gate.py --range" in item
     )
-
-    # Both records ENUMERATE the failing commits, and a substring search anywhere in
-    # the text is not that: the manifest entry mentions the newest of them twice, so a
-    # first version of this guard passed after the enumeration itself had been emptied.
-    # Read each enumeration, and compare it as a set.
-    expected = {sha[:7] for sha, _ in strict}
-    gate_listed = re.search(
-        r"commit messages\s+—\s+(.+?)\s+—\s+do not conform", gate, re.S
-    )
-    assert gate_listed, "the gate record no longer enumerates the failing commits in the checked form"
-    entry_listed = re.search(
-        r"reports [a-z-]+ violations over (.+?) and exits non-zero", entry, re.S
-    )
-    assert entry_listed, "the manifest entry no longer enumerates the failing commits in the checked form"
-
-    for where, listing in (("docs/RP2.5.0-GATE.md", gate_listed), ("the manifest entry", entry_listed)):
-        named = set(re.findall(r"[0-9a-f]{7,40}", listing.group(1)))
-        named = {sha[:7] for sha in named}
-        assert named == expected, (
-            f"{where} enumerates {sorted(named) or 'no commits'} as failing this line's own "
-            f"commit contract; the checker reports {sorted(expected)}"
-        )
-
-    stated = re.search(
-        r"REPORTS ([A-Z-]+) VIOLATIONS OVER THOSE ([A-Z]+) COMMITS AND EXITS NON-ZERO", gate
-    )
-    assert stated, "the gate record no longer states its commit-range result in the checked form"
-    said_violations = _NUMBER_WORDS[stated.group(1).lower()]
-    said_commits = _NUMBER_WORDS[stated.group(2).lower()]
-    assert (said_violations, said_commits) == (strict_violations, strict_commits), (
-        f"docs/RP2.5.0-GATE.md says {said_violations} violations over {said_commits} commits; "
-        f"the checker reports {strict_violations} over {strict_commits} "
-        f"({', '.join(sha[:7] for sha, _ in strict)})"
-    )
-
-    shipped_stated = re.search(
-        r"reports ([A-Z-]+)\s+non-conforming commits and ([A-Z-]+) violations", gate
-    )
-    assert shipped_stated, (
-        "the gate record no longer states its --default-terms result in the checked form"
-    )
-    assert (
-        _NUMBER_WORDS[shipped_stated.group(1).lower()],
-        _NUMBER_WORDS[shipped_stated.group(2).lower()],
-    ) == (shipped_commits, shipped_violations), (
-        f"docs/RP2.5.0-GATE.md states a --default-terms result of "
-        f"{shipped_stated.group(1).lower()} commits and {shipped_stated.group(2).lower()} "
-        f"violations; the checker reports {shipped_commits} and {shipped_violations}"
-    )
+    gate_listed = re.search(r"commit messages\s+—\s+(.+?)\s+—\s+do not conform", gate, re.S)
+    entry_listed = re.search(r"reports [a-z-]+ violations over (.+?) and exits non-zero", entry, re.S)
+    assert gate_listed and entry_listed, (
+        "a historical record no longer carries the private range's enumeration as written")
+    historical = {sha[:7] for sha in re.findall(r"[0-9a-f]{7,40}", gate_listed.group(1))}
+    assert historical, "the historical enumeration is empty"
+    assert historical == {sha[:7] for sha in re.findall(r"[0-9a-f]{7,40}", entry_listed.group(1))}, (
+        "the two historical records disagree about the private range")
+    recorded = re.search(
+        r"REPORTS ([A-Z-]+) VIOLATIONS OVER THOSE ([A-Z]+) COMMITS AND EXITS NON-ZERO", gate)
+    assert recorded and _NUMBER_WORDS[recorded.group(2).lower()] == len(historical), (
+        "the gate record's stated commit count no longer matches its own enumeration")
+    # Pinned to exactly what was recorded, so the historical result cannot drift while staying self-consistent.
+    assert historical == {"154be5f", "45d87fb", "f773db9", "fb2f450"}, (
+        f"the historical enumeration changed: {sorted(historical)}")
+    assert (_NUMBER_WORDS[recorded.group(1).lower()], len(historical)) == (12, 4), (
+        "the recorded strict figures changed from twelve violations over four commits")
+    recorded_shipped = re.search(r"reports ([A-Z-]+)\s+non-conforming commits and ([A-Z-]+) violations", gate)
+    assert recorded_shipped and (
+        _NUMBER_WORDS[recorded_shipped.group(1).lower()], _NUMBER_WORDS[recorded_shipped.group(2).lower()]
+    ) == (13, 23), "the recorded default-vocabulary figures changed from thirteen commits and twenty-three violations"
+    entry_strict = re.search(r"reports ([a-z-]+) violations over (.+?) and exits non-zero", entry, re.S)
+    entry_shipped = re.search(r"reports ([a-z-]+)\s+non-conforming commits and ([a-z-]+) violations", entry)
+    assert entry_strict and _NUMBER_WORDS[entry_strict.group(1)] == 12, (
+        "the manifest entry's recorded strict figure changed from twelve violations")
+    assert entry_shipped and (
+        _NUMBER_WORDS[entry_shipped.group(1)], _NUMBER_WORDS[entry_shipped.group(2)]
+    ) == (13, 23), "the manifest entry's recorded default-vocabulary figures changed"
 
 
 def test_every_pointer_at_the_decision_layer_reaches_the_last_decision(manifest):
@@ -1727,7 +1721,7 @@ def test_no_document_states_a_pathmatch_divergence_figure_of_its_own(manifest):
     #: restatement hide in the first place.
     changed = subprocess.run(
         ["git", "diff", "--name-only", "-z",
-         "4495e61850c08027e47eac6d0db84b4b3380e300", "HEAD"],
+         "271d10ee393a73bbbd613a3fc779ab3212e6bf8b", "HEAD"],
         cwd=str(ROOT), capture_output=True, check=True,
     ).stdout
     touched = [entry.decode("utf-8") for entry in changed.split(b"\0") if entry]

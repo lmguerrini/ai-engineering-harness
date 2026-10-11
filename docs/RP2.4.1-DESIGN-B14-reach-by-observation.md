@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1: reach is a fact about Git, not a description of this module
 
 **Change class:** MATERIAL
-**Base revision:** 20afba26840a4fc5cfccd38785f20bf1c4be9eb3
+**Base revision:** 3dfaf743c371b53a75aeee62ca69a2e82d3831cf
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.

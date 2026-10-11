@@ -1,7 +1,7 @@
 # DESIGN — C40 qualification identity, dynamic discovery and design-audit routing
 
 **Change class:** MATERIAL
-**Base revision:** ab7dea97a12c699e8123bcb5d5be976cd05c075e
+**Base revision:** e96fc4e9ce01e45bbbf1f89430fcdbf0e4645585
 **Frozen:** yes
 
 Frozen against the 2.3.0 release commit, which contains none of the work this

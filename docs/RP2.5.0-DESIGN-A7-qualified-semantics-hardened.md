@@ -1,7 +1,7 @@
 # DESIGN — RP2.5.0: keep the qualified semantics, and take away the capability instead
 
 **Change class:** MATERIAL
-**Base revision:** 4e9386f7845311f049e29e679b588b1cb766f901
+**Base revision:** 998b18edd3bf68b52e5efee81e608bddce4226f5
 **Frozen:** yes
 
 ## What the founder decided, and what it removes from the problem

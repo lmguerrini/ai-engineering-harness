@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1: a closure that holds only sometimes is not a closure
 
 **Change class:** MATERIAL
-**Base revision:** 351f597865a9cd14dd16edeaf82af95e286d1900
+**Base revision:** 9f0478febcf01a3ce2294fb772cd64b33d21d7ea
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.

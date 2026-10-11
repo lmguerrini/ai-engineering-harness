@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1 R1/R2: design strength and design provenance
 
 **Change class:** MATERIAL
-**Base revision:** 9d906ce64bd69cb1a29594a7110829da7df5d996
+**Base revision:** a0c8d9bc7a48a1fae239132608d395fdbd785fcf
 **Frozen:** yes
 
 Written before the implementation it governs. `tools/design_record.py` reads it;

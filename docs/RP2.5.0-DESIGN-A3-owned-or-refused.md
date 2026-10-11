@@ -1,7 +1,7 @@
 # DESIGN — RP2.5.0: what the build does not own, it refuses
 
 **Change class:** MATERIAL
-**Base revision:** 34c8f1209833fe747d12e3faa7db64cbe762a7a7
+**Base revision:** b6be018d7ca291f22d0eb5267e15d9cb203a883f
 **Frozen:** yes
 
 ## What was falsified, and why it is one thing rather than fifteen

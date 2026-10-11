@@ -1,7 +1,7 @@
 # DESIGN — RP2.5.0: read the real repository, and deny the process the ability to execute
 
 **Change class:** MATERIAL
-**Base revision:** e1f92190344279de9b20ad71f93b947b1b3ab1bb
+**Base revision:** 9c7762ddb2e0ac3a148abf06eacee615d1a60336
 **Frozen:** yes
 
 ## The question changes

@@ -1,7 +1,7 @@
 # DESIGN — RP2.5.0: the name decides, and ambient files stop existing
 
 **Change class:** MATERIAL
-**Base revision:** fb2f450e53db1d3b5e5f1b752af3ffb9d4900f97
+**Base revision:** 57767a200b5acdc0aba3ca8d31d26186d649d893
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.

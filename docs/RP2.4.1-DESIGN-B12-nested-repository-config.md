@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1: the inspection's subject must be Git's subject
 
 **Change class:** MATERIAL
-**Base revision:** 3d94c4d78cd72b01019f8662937337835a013460
+**Base revision:** 1421776b9f16dcbadc77188a760f9ea7693210c0
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.

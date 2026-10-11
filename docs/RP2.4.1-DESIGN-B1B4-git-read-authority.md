@@ -1,7 +1,7 @@
 # DESIGN — RP2.4.1 B1–B4: what a governed Git read may execute, and what it may answer about
 
 **Change class:** MATERIAL
-**Base revision:** 8deec51e88d92d9a5c41cecad677cfa001458f5e
+**Base revision:** 16bf9caaf3a1754fcb6fd41379781ac560bfa89a
 **Frozen:** yes
 
 Read by `tools/design_record.py`. This record authorises nothing.
