@@ -91,6 +91,7 @@ Derived from the tracked tree, not maintained by hand
 (`templates/repository-layout.template.md`).
 
     runtime-pack-2/
+    ├── .github/                    the public edition: landing page, release notes, provenance
     ├── VERSION                     the single machine-readable version authority
     ├── PACK_MANIFEST.json          release identity: state, digest, test count, gate
     ├── CHANGELOG.md                per-version record, including errata
