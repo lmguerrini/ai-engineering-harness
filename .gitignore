@@ -3,6 +3,22 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 
+# Local state that must never enter the history: environment files and keys, editor and agent-tool
+# settings, virtual environments and tool caches. These rules prevent accidents in new work; they are
+# not how the published history was sanitized. They are also this release's own exemptions from the
+# stray-file check in tools/pack_pin.py, so each names inert local state only.
+.env
+.env.*
+*.pem
+*.key
+.venv/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+*.swp
+.claude/settings.local.json
+
 # The append-only routing evidence MUST be versioned. The user's global
 # gitignore excludes *.jsonl, which silently kept this file untracked for six
 # commits — the routing table is regenerated from it, so losing it would mean
