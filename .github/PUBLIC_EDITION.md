@@ -4,15 +4,15 @@
 Harness, from its first commit (2026-08-13) through the frozen **2.5.0** release (2026-09-10) and the **2.6.0**
 development line that followed it, up to the checkpoint where that line was paused (2026-09-20). It was prepared from
 the private canonical repository by a reviewed, deterministic history rewrite, followed by a small number of new
-commits on each branch that add this documentation, update `.gitignore`, and adapt the release self-checks to the
-rewritten history.
+commits on each branch that add this documentation, update `.gitignore`, adapt the release self-checks to the
+rewritten history and, later, rewrite the landing README.
 
 ## Branches
 
 | Branch | Contents | State |
 |---|---|---|
-| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's three commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
-| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's three commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
+| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's four commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
+| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's four commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
 
 The two branches share the history up to the 2.5.0 release commit and diverge after it; there are no merge commits.
 2.6.0 is published as development history. It is **not** a release: it is not qualified, not frozen and must not be
@@ -71,10 +71,18 @@ require (the current version's changelog entry and the release README's reposito
 `.gitignore` with rules for local environment, editor and tool state; it prevents future accidents and is not how the
 history was sanitized. The third records the public tree's own digest and rebinds the machine-read revision
 references — the release baseline the self-checks compare against, two test fixtures that name a release commit, and
-the base revision each design record declares — to public commit ids. Prose references are left as they were written.
+the base revision each design record declares — to public commit ids. Prose references are left as they were written. The fourth (2026-10-16) rewrites the landing
+README (`.github/README.md`) for first-time readers and updates this note; it records the tree's digest again and
+changes no tool. On `main` only, it also adds the row for `design-falsification.md` that the skills index
+(`skills/core/README.md`) had lacked since that skill arrived in 2.3.0, and raises the held-prose figure in the 2.6.0
+gate record (`docs/RP2.6.0-GATE.md`) by the one line this adds, as the release checks require. The frozen 2.5.0 is
+left as it was frozen, so the index on `stable/2.5.0` still lists 13 of its 14 skills.
 Likewise, records that describe the private history — for example `docs/RP2.4-PUBLICATION-ADJUDICATION.md` and the
 2.6.0 gate record, which report that a historical file there still names a real machine account — are true of the
-private repository and were kept as written; in this edition that file was sanitized in every version. These commits change no tool.
+private repository and were kept as written; in this edition that file was sanitized in every version. Three policy files (`policy/auditor-strategy.md`,
+`policy/execution-boundaries.md`, `policy/routing-policy.md`) still open with the "Classification: PRIVATE" label
+they carried in the private repository; they are published here as part of the engineering record, with the
+operational figures they once held generalised. These commits change no tool.
 
 The private repository's 2.5.0 range reported twelve commit-contract violations over four commits, and
 `docs/RP2.5.0-GATE.md` keeps that record as it was written. After normalisation, the same range here reports:
@@ -97,4 +105,9 @@ which states that the range reports no violation; it holds for the public messag
 - The exported repository contains exactly the two branches above and no tags, notes, replacement refs, stashes or
   unreachable objects, and none of the original versions of any sanitized file.
 - An independent review by a different vendor's model attempted to falsify all of the above.
-- The full test suite was run on the tip of each branch: stable branch 3,011 of 3,011 passed; development branch 3,317 of 3,319 passed and 2 skipped by the line's own conditions; none failed; on macOS with Python 3.14.0 and Git 2.50.1.
+- Before publication the complete history was audited again (2026-10-16): the strict publication gate, a second
+  scanner written independently of the first, a check of every commit message, and fresh-context reviewers who
+  read the records of both final trees, every line that exists only in earlier versions, and the comments, docstrings
+  and string literals of the tool sources and tests. No blocker was found.
+- The full test suite was run on the tip of each branch: stable branch 3,011 of 3,011 passed; development branch 3,317 of 3,319 passed and 2 skipped by the line's own conditions; none failed; on macOS with Python
+  3.14.0 and Git 2.50.1.
