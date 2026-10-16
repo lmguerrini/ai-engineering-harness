@@ -40,6 +40,7 @@ Two rules keep the layers apart:
 | `oracle-discipline.md` | Deriving an oracle's domain from the mechanism, and proving it reaches it |
 | `continuation.md` | Reconciling from disk, never from a summary, and handing off cleanly |
 | `worker-contract.md` | The dispatch envelope, and why a report is a claim until re-run |
+| `design-falsification.md` | Freezing a material change's alternatives, failure modes and oracles before the first mutation |
 
 **Held prose.** `skills/core/*.md` + `policy/*.md` are loaded every session and
 count against the pack's 2,000-line ceiling together with the two installed

@@ -32,7 +32,7 @@ carry `2.6.0` / `IN_PROGRESS`; the manifest digest is recomputed over this tree 
 
 ## Figures, bound rather than typed
 
-    held prose, in-release (skills/core/*.md + policy/*.md) 1902 (1896 at the version cut; +6 lines of routing-table.md at the 2026-09-20 checkpoint)
+    held prose, in-release (skills/core/*.md + policy/*.md) 1903 (1896 at the version cut; +6 lines of routing-table.md at the 2026-09-20 checkpoint; +1 line, the skills index row for design-falsification.md added by the public edition on 2026-10-16)
 
 measured by `tools/tests/test_release_integrity.py` against the tree, and against the `policy/BUDGETS.md`
 target of 2,000 in-release lines; the two installed adapters outside this envelope are counted by the
