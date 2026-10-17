@@ -100,6 +100,8 @@ tree digest differ from the private line's, and the manifest records this tree's
 and changes no tool:
 
 - `.github/README.md` — the public landing page;
+- `.github/assets/architecture.svg` — the landing page's diagram of the six roles (added 2026-10-17);
+- `.github/assets/repository-layout.svg` — the landing page's drawing of the repository layout (added 2026-10-17);
 - `.github/RELEASE_NOTES.md` — a summary of every release from 2.0.0 to 2.5.0 and of this line's state;
 - `.github/PUBLIC_EDITION.md` — how the history was prepared, what was preserved and what was sanitized.
 
