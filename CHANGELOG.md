@@ -425,6 +425,8 @@ rewritten for publication, so its commit ids and its tree digest differ from the
 records this tree's own digest. It adds documentation and changes no tool:
 
 - `.github/README.md` — the public landing page;
+- `.github/assets/architecture.svg` — the landing page's diagram of the six roles (added 2026-10-17);
+- `.github/assets/repository-layout.svg` — the landing page's drawing of the repository layout (added 2026-10-17);
 - `.github/RELEASE_NOTES.md` — a summary of every release from 2.0.0 to 2.5.0 and of the 2.6.0 line's state;
 - `.github/PUBLIC_EDITION.md` — how the history was prepared, what was preserved and what was sanitized.
 

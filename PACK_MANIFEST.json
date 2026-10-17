@@ -4,7 +4,7 @@
   "state": "QUALIFIED_AND_FROZEN",
   "revision": "not recorded here — a manifest cannot name the commit that contains it, for the same reason it cannot contain its own hash. The release identity is version + revision + digest: two are in-tree, and the consuming project records the revision in its own pin and verifies with `pack_pin.py <root> --version <v> --sha <full-40-char-rev> --digest <d> --state <state>`. See docs/RP2.2-GATE.md.",
   "qualified_at": "2026-09-10",
-  "tree_digest_sha256": "2084efc6993453c54a840576287162bc64cdd5bc98e0554b78e6f81b8ff93fef",
+  "tree_digest_sha256": "6d5e82c28004c3007c7a3932dc19a5579461f9ee4558165893b64158e02d4fe1",
   "digest_excludes": "PACK_MANIFEST.json",
   "digest_algorithm": "sha256-framed-v1",
   "digest_note": "release-local framing. Verify a release with the tools/pack_pin.py that ships inside it; a manifest naming an algorithm the verifier does not implement fails as a version mismatch, not as tampering.",
@@ -171,7 +171,7 @@
   "rejected_for_core": {
     "EC-Z": "project-specific lesson; would couple Core to one project's internals"
   },
-  "digest_file_count": 214,
+  "digest_file_count": 216,
   "failure_mode_closure": "docs/RP2.3-FAILURE-MODE-CLOSURE.md",
   "evolution_candidates": [
     "A DURABLE EVENT LOG. Seven event classes ship because seven are what durable artifacts date; a capability opening, an audit being dispatched and a finding being recorded are not among them, because nothing writes their time down. Trigger: a project wanting a timeline of governance events rather than of artifacts.",

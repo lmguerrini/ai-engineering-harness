@@ -5,14 +5,14 @@ Harness, from its first commit (2026-08-13) through the frozen **2.5.0** release
 development line that followed it, up to the checkpoint where that line was paused (2026-09-20). It was prepared from
 the private canonical repository by a reviewed, deterministic history rewrite, followed by a small number of new
 commits on each branch that add this documentation, update `.gitignore`, adapt the release self-checks to the
-rewritten history and, later, rewrite the landing README.
+rewritten history and, later, rewrite the landing README and add its two images.
 
 ## Branches
 
 | Branch | Contents | State |
 |---|---|---|
-| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's four commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
-| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's four commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
+| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's five commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
+| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's five commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
 
 The two branches share the history up to the 2.5.0 release commit and diverge after it; there are no merge commits.
 2.6.0 is published as development history. It is **not** a release: it is not qualified, not frozen and must not be
@@ -82,7 +82,11 @@ Likewise, records that describe the private history — for example `docs/RP2.4-
 private repository and were kept as written; in this edition that file was sanitized in every version. Three policy files (`policy/auditor-strategy.md`,
 `policy/execution-boundaries.md`, `policy/routing-policy.md`) still open with the "Classification: PRIVATE" label
 they carried in the private repository; they are published here as part of the engineering record, with the
-operational figures they once held generalised. These commits change no tool.
+operational figures they once held generalised. The fifth (2026-10-17) replaces the landing README's Mermaid
+diagram with a static black-and-white drawing of the six roles, adds a drawing of the repository layout (both in
+`.github/assets/`, and named in the current version's changelog entry as the release checks require), revises the
+README for first-time readers, adds the section on timing-sensitive tests below, and records the tree's digest
+again. These commits change no tool.
 
 The private repository's 2.5.0 range reported twelve commit-contract violations over four commits, and
 `docs/RP2.5.0-GATE.md` keeps that record as it was written. After normalisation, the same range here reports:
@@ -109,5 +113,29 @@ which states that the range reports no violation; it holds for the public messag
   scanner written independently of the first, a check of every commit message, and fresh-context reviewers who
   read the records of both final trees, every line that exists only in earlier versions, and the comments, docstrings
   and string literals of the tool sources and tests. No blocker was found.
-- The full test suite was run on the tip of each branch: stable branch 3,011 of 3,011 passed; development branch 3,317 of 3,319 passed and 2 skipped by the line's own conditions; none failed; on macOS with Python
-  3.14.0 and Git 2.50.1.
+- The full test suite was run on the tip of each branch as it stood after the fourth edition commit (2026-10-16):
+  stable branch 3,011 of 3,011 passed; development branch 3,317 of 3,319 passed and 2 were skipped by the line's own
+  conditions; none failed; on macOS with Python 3.14.0 and Git 2.50.1. The fifth commit changes no tool and no test.
+  Two tests are timing-sensitive; see the next section.
+
+## Known timing-sensitive tests
+
+Two tests can fail by chance, on both branches: `test_disposition_orphaned_waiter`
+(`tools/tests/test_background_governance.py`) and
+`test_the_rehearsal_declares_its_background_work_and_reconstructs_it_cold` (`tools/tests/test_adoption_rehearsal.py`).
+Each writes the file a wait is waiting for before it declares the wait. The pack records a declaration only to the
+whole second, so when both steps fall within the same second the file does not look older than its wait and the test
+passes. When a second boundary falls between them, the pack sees that the file is older than its wait, which it is,
+and refuses it, correctly, answering `UNKNOWN` (`tools/continuation.py`: a path must not predate its own wait); the
+test then fails. A heavily loaded machine makes this more likely.
+
+While this edition was being prepared, on 2026-10-16, the full stable suite was started 21 times on its candidate
+commits. Of the 19 runs that finished, 17 passed every test; the other two, on the same commit under Python 3.14 and
+3.12, each failed one of these tests once, and when that commit was run again in full under both versions, all 3,011
+tests passed each time.
+One of the two runs that were stopped before finishing had also failed one of them. All 17 complete runs of the
+development suite passed, and in isolation each of the two tests passed six times out of six.
+
+The fault is in the tests' order of work, not in the pack. It is unresolved: the fix, declaring the wait before
+writing the file, belongs on the development line, for a future release, and the frozen 2.5.0 is not changed after
+its freeze. Until then, this section is where it is tracked.
