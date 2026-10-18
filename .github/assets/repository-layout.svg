@@ -1,44 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="484" height="356" viewBox="0 0 440 324" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500" role="img" aria-labelledby="title desc">
 <title id="title">Repository layout</title>
 <desc id="desc">Root ai-engineering-harness/. README.md: the pack's own guide. VERSION: the version number. PACK_MANIFEST.json: release identity and state. CHANGELOG.md: what changed, per release. DECISIONS.md: recorded design decisions. skills/core/: 14 procedural skills. policy/: routing, budgets, approval. templates/: files a project copies. tools/: checks and project tools. tools/tests/: the test suite. docs/: gate records and designs. .github/: this page, images, notes.</desc>
-<rect x="0.5" y="0.5" width="439" height="323" rx="16" fill="#000000" stroke="#2b2b2b" stroke-width="1"/>
-<path d="M30 42 V296" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M62 241 V252" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 54 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 76 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 98 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 120 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 142 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 164 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 186 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 208 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 230 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M62 252 H77" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 274 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<path d="M30 296 H43" fill="none" stroke="#5c5c5c" stroke-width="1"/>
-<text x="22" y="36" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff" font-weight="600">ai-engineering-harness/</text>
-<text x="48" y="58" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">README.md</text>
-<text x="198" y="58" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># the pack's own guide</text>
-<text x="48" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">VERSION</text>
-<text x="198" y="80" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># the version number</text>
-<text x="48" y="102" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">PACK_MANIFEST.json</text>
-<text x="198" y="102" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># release identity and state</text>
-<text x="48" y="124" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">CHANGELOG.md</text>
-<text x="198" y="124" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># what changed, per release</text>
-<text x="48" y="146" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">DECISIONS.md</text>
-<text x="198" y="146" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># recorded design decisions</text>
-<text x="48" y="168" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">skills/core/</text>
-<text x="198" y="168" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># 14 procedural skills</text>
-<text x="48" y="190" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">policy/</text>
-<text x="198" y="190" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># routing, budgets, approval</text>
-<text x="48" y="212" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">templates/</text>
-<text x="198" y="212" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># files a project copies</text>
-<text x="48" y="234" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">tools/</text>
-<text x="198" y="234" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># checks and project tools</text>
-<text x="82" y="256" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">tests/</text>
-<text x="198" y="256" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># the test suite</text>
-<text x="48" y="278" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">docs/</text>
-<text x="198" y="278" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># gate records and designs</text>
-<text x="48" y="300" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">.github/</text>
-<text x="198" y="300" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8c8c8c"># this page, images, notes</text>
+<rect x="0.5" y="0.5" width="999" height="499" rx="20" fill="#000000" stroke="#2b2b2b" stroke-width="1"/>
+<path d="M1 44 H999" fill="none" stroke="#2b2b2b" stroke-width="1"/>
+<circle cx="28" cy="22" r="6" fill="#3a3a3a"/>
+<circle cx="48" cy="22" r="6" fill="#3a3a3a"/>
+<circle cx="68" cy="22" r="6" fill="#3a3a3a"/>
+<text x="500" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#8a8a8a" text-anchor="middle">ai-engineering-harness</text>
+<path d="M182 102 V464" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<path d="M228 382 V402" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="174" y="96" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff" font-weight="600">ai-engineering-harness/</text>
+<path d="M182 123 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="127" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">README.md</text>
+<text x="510" y="127" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># the pack's own guide</text>
+<path d="M182 154 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="158" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">VERSION</text>
+<text x="510" y="158" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># the version number</text>
+<path d="M182 185 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="189" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">PACK_MANIFEST.json</text>
+<text x="510" y="189" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># release identity and state</text>
+<path d="M182 216 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="220" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">CHANGELOG.md</text>
+<text x="510" y="220" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># what changed, per release</text>
+<path d="M182 247 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="251" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">DECISIONS.md</text>
+<text x="510" y="251" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># recorded design decisions</text>
+<path d="M182 278 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="282" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">skills/core/</text>
+<text x="510" y="282" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># 14 procedural skills</text>
+<path d="M182 309 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="313" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">policy/</text>
+<text x="510" y="313" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># routing, budgets, approval</text>
+<path d="M182 340 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="344" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">templates/</text>
+<text x="510" y="344" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># files a project copies</text>
+<path d="M182 371 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="375" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">tools/</text>
+<text x="510" y="375" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># checks and project tools</text>
+<path d="M228 402 H243" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="248" y="406" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">tests/</text>
+<text x="510" y="406" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># the test suite</text>
+<path d="M182 433 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="437" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">docs/</text>
+<text x="510" y="437" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># gate records and designs</text>
+<path d="M182 464 H195" fill="none" stroke="#5c5c5c" stroke-width="1"/>
+<text x="200" y="468" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#ffffff">.github/</text>
+<text x="510" y="468" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="18" fill="#8a8a8a"># this page, images, notes</text>
 </svg>

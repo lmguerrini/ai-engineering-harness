@@ -1,50 +1,56 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="440" height="583" viewBox="0 0 400 530" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="658" viewBox="0 0 1000 658" role="img" aria-labelledby="title desc">
 <title id="title">How the six roles work together</title>
-<desc id="desc">A person, at the top, sets the goals, limits and budgets and decides at named checkpoints: decisions go down to the AI coordinator and evidence comes back up. The coordinator, the AI workers and the reviewers work inside the Runtime Pack, the versioned procedures, policies, templates and checks that govern them: the coordinator follows those procedures, the workers and reviewers work from the scoped briefs it gives them, and the pack launches nothing. The coordinator plans and delegates the work and checks results with the pack: it sends each AI worker a brief and gets a report back, and it sends the claims to independent reviewers, who challenge them and send findings back. The coordinator reads and writes the project record below: decisions, evidence, findings and progress, in files and Git.</desc>
-<rect x="0.5" y="0.5" width="399" height="529" rx="16" fill="#000000" stroke="#2b2b2b" stroke-width="1"/>
-<rect x="20.5" y="130.5" width="359" height="265" rx="14" fill="none" stroke="#5c5c5c" stroke-width="1" stroke-dasharray="4 4"/>
-<text x="36" y="152" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#ffffff" font-weight="600" letter-spacing="0.6">RUNTIME PACK</text>
-<text x="36" y="168" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#8c8c8c">versioned rules and checks</text>
-<path d="M250.0 90 V178" fill="none" stroke="#9a9a9a" stroke-width="1.25"/>
-<path d="M246.0 178 L250.0 184 L254.0 178 Z" fill="#9a9a9a"/>
-<text x="243.0" y="114.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#a8a8a8" text-anchor="end">decisions</text>
-<path d="M290.0 184 V96" fill="none" stroke="#9a9a9a" stroke-width="1.25"/>
-<path d="M286.0 96 L290.0 90 L294.0 96 Z" fill="#9a9a9a"/>
-<text x="297.0" y="114.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#a8a8a8">evidence</text>
-<path d="M91.0 254 V304" fill="none" stroke="#9a9a9a" stroke-width="1.25"/>
-<path d="M87.0 304 L91.0 310 L95.0 304 Z" fill="#9a9a9a"/>
-<text x="84.0" y="286.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#a8a8a8" text-anchor="end">brief</text>
-<path d="M127.0 310 V260" fill="none" stroke="#9a9a9a" stroke-width="1.25"/>
-<path d="M123.0 260 L127.0 254 L131.0 260 Z" fill="#9a9a9a"/>
-<text x="134.0" y="286.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#a8a8a8">report</text>
-<path d="M273.0 254 V304" fill="none" stroke="#9a9a9a" stroke-width="1.25"/>
-<path d="M269.0 304 L273.0 310 L277.0 304 Z" fill="#9a9a9a"/>
-<text x="266.0" y="286.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#a8a8a8" text-anchor="end">claims</text>
-<path d="M309.0 310 V260" fill="none" stroke="#9a9a9a" stroke-width="1.25"/>
-<path d="M305.0 260 L309.0 254 L313.0 260 Z" fill="#9a9a9a"/>
-<text x="316.0" y="286.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#a8a8a8">findings</text>
-<path d="M200.0 260 V434" fill="none" stroke="#9a9a9a" stroke-width="1.25"/>
-<path d="M196.0 260 L200.0 254 L204.0 260 Z" fill="#9a9a9a"/>
-<path d="M196.0 434 L200.0 440 L204.0 434 Z" fill="#9a9a9a"/>
-<text x="207.0" y="422.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#a8a8a8">reads and writes</text>
-<rect x="20.5" y="20.5" width="359" height="69" rx="10" fill="#0e0e0e" stroke="#e6e6e6" stroke-width="1.25"/>
-<text x="200.0" y="46" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" font-weight="600" text-anchor="middle">Human</text>
-<text x="200.0" y="64" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">sets goals, limits and budgets;</text>
-<text x="200.0" y="81" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">decides at named checkpoints</text>
-<rect x="66.5" y="184.5" width="267" height="69" rx="10" fill="#0e0e0e" stroke="#e6e6e6" stroke-width="1.25"/>
-<text x="200.0" y="210" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" font-weight="600" text-anchor="middle">AI coordinator</text>
-<text x="200.0" y="228" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">plans and delegates the work;</text>
-<text x="200.0" y="245" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">checks results with the pack</text>
-<rect x="34.5" y="310.5" width="149" height="69" rx="10" fill="#0e0e0e" stroke="#7a7a7a" stroke-width="1"/>
-<text x="109.0" y="336" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" font-weight="600" text-anchor="middle">AI workers</text>
-<text x="109.0" y="354" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">do bounded tasks</text>
-<text x="109.0" y="371" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">and report back</text>
-<rect x="216.5" y="310.5" width="149" height="69" rx="10" fill="#0e0e0e" stroke="#7a7a7a" stroke-width="1"/>
-<text x="291.0" y="336" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" font-weight="600" text-anchor="middle">Reviewers</text>
-<text x="291.0" y="354" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">independently</text>
-<text x="291.0" y="371" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">challenge claims</text>
-<rect x="20.5" y="440.5" width="359" height="69" rx="10" fill="#0e0e0e" stroke="#7a7a7a" stroke-width="1"/>
-<text x="200.0" y="466" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="16" fill="#ffffff" font-weight="600" text-anchor="middle">Project record</text>
-<text x="200.0" y="484" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">decisions, evidence, findings</text>
-<text x="200.0" y="501" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13.5" fill="#bdbdbd" text-anchor="middle">and progress, in files and Git</text>
+<desc id="desc">A person, at the top, sets the goals, limits and budgets and decides at named checkpoints: decisions go down to the AI coordinator and evidence comes back up. The coordinator, the AI workers and the reviewers work inside the Runtime Pack, the versioned procedures, policies, templates and checks that govern them: the coordinator follows those procedures, the workers and reviewers work from the scoped briefs it gives them, and the pack launches nothing. The coordinator sends each AI worker a brief and gets a report back, and sends the claims to independent reviewers, who challenge them and send findings back. Below, the coordinator reads and writes the project record: decisions, evidence, findings and progress, in files and Git.</desc>
+<rect x="0.5" y="0.5" width="999" height="657" rx="20" fill="#000000" stroke="#2b2b2b" stroke-width="1"/>
+<rect x="36.5" y="214.5" width="927" height="231" rx="16" fill="none" stroke="#4d4d4d" stroke-width="1" stroke-dasharray="5 5"/>
+<text x="60" y="239" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#ffffff" font-weight="600" letter-spacing="1.4">RUNTIME PACK</text>
+<text x="60" y="258" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#8a8a8a">versioned rules and checks</text>
+<text x="60" y="276" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#6a6a6a">it starts nothing by itself</text>
+<path d="M476 148 V297" fill="none" stroke="#8a8a8a" stroke-width="1.25"/>
+<path d="M472 297 L476 304 L480 297 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<text x="468" y="181" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c" text-anchor="end">decisions</text>
+<path d="M524 304 V155" fill="none" stroke="#8a8a8a" stroke-width="1.25"/>
+<path d="M520 155 L524 148 L528 155 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<text x="532" y="181" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">evidence</text>
+<path d="M348 348 H277" fill="none" stroke="#8a8a8a" stroke-width="1.25"/>
+<path d="M277 344 L270 348 L277 352 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<path d="M270 372 H341" fill="none" stroke="#8a8a8a" stroke-width="1.25"/>
+<path d="M341 368 L348 372 L341 376 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<path d="M652 348 H723" fill="none" stroke="#8a8a8a" stroke-width="1.25"/>
+<path d="M723 344 L730 348 L723 352 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<path d="M730 372 H659" fill="none" stroke="#8a8a8a" stroke-width="1.25"/>
+<path d="M659 368 L652 372 L659 376 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<text x="309" y="331" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c" text-anchor="middle">brief</text>
+<text x="309" y="397" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c" text-anchor="middle">report</text>
+<text x="691" y="331" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c" text-anchor="middle">claims</text>
+<text x="691" y="397" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c" text-anchor="middle">findings</text>
+<path d="M500 423 V503" fill="none" stroke="#8a8a8a" stroke-width="1.25"/>
+<path d="M496 423 L500 416 L504 423 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<path d="M496 503 L500 510 L504 503 Z" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<text x="508" y="485" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">reads and writes</text>
+<rect x="270.5" y="36.5" width="459" height="111" rx="12" fill="#141414" stroke="#e8e8e8" stroke-width="1.25"/>
+<text x="500" y="61" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c" font-weight="600" text-anchor="middle" letter-spacing="1.6">AUTHORITY</text>
+<text x="500" y="88" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="21" fill="#ffffff" font-weight="600" text-anchor="middle">Human</text>
+<text x="500" y="110" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">sets goals, limits and budgets;</text>
+<text x="500" y="131" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">decides at named checkpoints</text>
+<rect x="348.5" y="304.5" width="303" height="111" rx="12" fill="#141414" stroke="#e8e8e8" stroke-width="1.25"/>
+<text x="500" y="329" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c" font-weight="600" text-anchor="middle" letter-spacing="1.6">COORDINATION</text>
+<text x="500" y="356" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="21" fill="#ffffff" font-weight="600" text-anchor="middle">AI coordinator</text>
+<text x="500" y="378" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">plans and delegates the work;</text>
+<text x="500" y="399" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">checks results with the pack</text>
+<rect x="50.5" y="304.5" width="219" height="111" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="160" y="329" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c" font-weight="600" text-anchor="middle" letter-spacing="1.6">EXECUTION</text>
+<text x="160" y="356" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="21" fill="#ffffff" font-weight="600" text-anchor="middle">AI workers</text>
+<text x="160" y="378" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">do bounded tasks</text>
+<text x="160" y="399" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">and report back</text>
+<rect x="730.5" y="304.5" width="219" height="111" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="840" y="329" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c" font-weight="600" text-anchor="middle" letter-spacing="1.6">VERIFICATION</text>
+<text x="840" y="356" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="21" fill="#ffffff" font-weight="600" text-anchor="middle">Reviewers</text>
+<text x="840" y="378" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">independently</text>
+<text x="840" y="399" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">challenge claims</text>
+<rect x="270.5" y="510.5" width="459" height="111" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="500" y="535" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c" font-weight="600" text-anchor="middle" letter-spacing="1.6">MEMORY</text>
+<text x="500" y="562" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="21" fill="#ffffff" font-weight="600" text-anchor="middle">Project record</text>
+<text x="500" y="584" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">decisions, evidence, findings and progress,</text>
+<text x="500" y="605" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15.5" fill="#b8b8b8" text-anchor="middle">kept in files and Git</text>
 </svg>

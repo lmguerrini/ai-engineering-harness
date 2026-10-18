@@ -5,14 +5,14 @@ Harness, from its first commit (2026-08-13) through the frozen **2.5.0** release
 development line that followed it, up to the checkpoint where that line was paused (2026-09-20). It was prepared from
 the private canonical repository by a reviewed, deterministic history rewrite, followed by a small number of new
 commits on each branch that add this documentation, update `.gitignore`, adapt the release self-checks to the
-rewritten history and, later, rewrite the landing README and add its two images.
+rewritten history and, later, rewrite the landing README and add its images.
 
 ## Branches
 
 | Branch | Contents | State |
 |---|---|---|
-| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's five commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
-| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's five commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
+| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's six commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
+| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's six commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
 
 The two branches share the history up to the 2.5.0 release commit and diverge after it; there are no merge commits.
 2.6.0 is published as development history. It is **not** a release: it is not qualified, not frozen and must not be
@@ -86,6 +86,10 @@ operational figures they once held generalised. The fifth (2026-10-17) replaces 
 diagram with a static black-and-white drawing of the six roles, adds a drawing of the repository layout (both in
 `.github/assets/`, and named in the current version's changelog entry as the release checks require), revises the
 README for first-time readers, adds the section on timing-sensitive tests below, and records the tree's digest
+again. The sixth (2026-10-18) redraws that diagram to the full width of the page, with narrower versions of both
+drawings for phones; adds an illustration of the read-only dashboard, in greys with invented data; rewrites the
+README's explanations for readers without a technical background, with a short list of key terms and a note on the
+Git identity the test suite expects; names the new images in the changelog entry; and records the tree's digest
 again. These commits change no tool.
 
 The private repository's 2.5.0 range reported twelve commit-contract violations over four commits, and
@@ -115,7 +119,8 @@ which states that the range reports no violation; it holds for the public messag
   and string literals of the tool sources and tests. No blocker was found.
 - The full test suite was run on the tip of each branch as it stood after the fourth edition commit (2026-10-16):
   stable branch 3,011 of 3,011 passed; development branch 3,317 of 3,319 passed and 2 were skipped by the line's own
-  conditions; none failed; on macOS with Python 3.14.0 and Git 2.50.1. The fifth commit changes no tool and no test.
+  conditions; none failed; on macOS with Python 3.14.0 and Git 2.50.1. The fifth and sixth commits change no tool
+  and no test.
   Two tests are timing-sensitive; see the next section.
 
 ## Known timing-sensitive tests

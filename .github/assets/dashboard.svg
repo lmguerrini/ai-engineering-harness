@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="776" viewBox="0 0 1000 776" role="img" aria-labelledby="title desc">
+<title id="title">Illustration of the read-only dashboard</title>
+<desc id="desc">An illustration, redrawn in greys with invented example data, of the dashboard that tools/projection.py renders from a project's files as one read-only page. At the top, the pack and the project in use. On the left, the project's derived state, WAITING_ON_IDENTIFIED_JOB, and the next authorised action. On the right, the situation: a running job with its deadline, a pending human approval and two audits whose subject is the current candidate. Below, what needs attention: three warnings and two readings that could not be established, shown as unknown. At the bottom, budgets and evidence.</desc>
+<rect x="0.5" y="0.5" width="999" height="775" rx="20" fill="#000000" stroke="#2b2b2b" stroke-width="1"/>
+<path d="M1 44 H999" fill="none" stroke="#2b2b2b" stroke-width="1"/>
+<text x="28" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6a6a6a" letter-spacing="1.2">PACK</text>
+<text x="73.32" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#e8e8e8">2.5.0 QUALIFIED_AND_FROZEN</text>
+<text x="303" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6a6a6a" letter-spacing="1.2">PROJECT</text>
+<text x="373.31" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#e8e8e8">example-project 0.4.0</text>
+<text x="564" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6a6a6a" letter-spacing="1.2">PIN</text>
+<text x="600.99" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#e8e8e8">verified</text>
+<text x="691" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#6a6a6a" letter-spacing="1.2">READ</text>
+<text x="736.32" y="28" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#e8e8e8">3 min ago</text>
+<text x="28" y="75" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#6a6a6a" letter-spacing="3">RUNTIME PACK — MISSION CONTROL</text>
+<text x="28" y="124" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="28" fill="#ffffff" font-weight="700">WAITING_ON_IDENTIFIED_JOB</text>
+<text x="28" y="154" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">WAITING — a named job is running and its deadline is below.</text>
+<rect x="28.5" y="185.5" width="519" height="79" rx="10" fill="#141414" stroke="#cfcfcf" stroke-width="1"/>
+<text x="42" y="212" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#8a8a8a" letter-spacing="2">NEXT AUTHORISED ACTION</text>
+<text x="42" y="245" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="17" fill="#ffffff" font-weight="600">write the 0.4.0 changelog entry</text>
+<text x="580" y="103" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#6a6a6a" letter-spacing="2">SITUATION</text>
+<text x="680" y="103" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">1 running</text>
+<rect x="580.5" y="126.5" width="189" height="73" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<rect x="782.5" y="126.5" width="189" height="73" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<rect x="580.5" y="212.5" width="189" height="73" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<rect x="782.5" y="212.5" width="189" height="73" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<rect x="580.5" y="298.5" width="189" height="73" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<rect x="782.5" y="298.5" width="189" height="73" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="592" y="150" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7c7c7c" letter-spacing="1.5">JOB FULL-SUITE</text>
+<text x="794" y="150" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7c7c7c" letter-spacing="1.5">INTERVENTION</text>
+<text x="592" y="236" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7c7c7c" letter-spacing="1.5">OUTSTANDING</text>
+<text x="794" y="236" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7c7c7c" letter-spacing="1.5">AUDIT FULL-SUITE</text>
+<text x="592" y="322" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7c7c7c" letter-spacing="1.5">AUDIT REVIEW-1</text>
+<text x="794" y="322" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10.5" fill="#7c7c7c" letter-spacing="1.5">CAPACITY POOL-A</text>
+<text x="592" y="172" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#ffffff" font-weight="700">RUNNING</text>
+<text x="592" y="186" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#b8b8b8">27 min left</text>
+<rect x="592" y="194" width="166" height="3" rx="1.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="592" y="194" width="66.4" height="3" rx="1.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<path d="M798.9 164.1 L803.8 173.2 L794 173.2 Z" fill="#e8e8e8" stroke="none" stroke-width="1"/>
+<text x="812" y="174" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">human: release</text>
+<text x="812" y="188" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">approval</text>
+<text x="592" y="261" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#ffffff" font-weight="700">3 items</text>
+<path d="M798.8 254 L802.3 257.5 L808.6 249.8" fill="none" stroke="#e8e8e8" stroke-width="1.8"/>
+<text x="817" y="259" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">the candidate</text>
+<text x="794" y="274" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#8a8a8a">7d3e9a4</text>
+<path d="M596.8 340 L600.3 343.5 L606.6 335.8" fill="none" stroke="#e8e8e8" stroke-width="1.8"/>
+<text x="615" y="345" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">the candidate</text>
+<text x="592" y="360" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#8a8a8a">7d3e9a4</text>
+<text x="794" y="345" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#ffffff" font-weight="700">59 percent left</text>
+<text x="794" y="360" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12.5" fill="#b8b8b8">1 active</text>
+<text x="28" y="414" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#8a8a8a" letter-spacing="2">NEEDS ATTENTION</text>
+<rect x="190.5" y="392.5" width="34" height="34" rx="3" fill="#000000" stroke="#e8e8e8" stroke-width="1"/>
+<text x="207.5" y="415" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#e8e8e8" text-anchor="middle">3</text>
+<rect x="233.5" y="392.5" width="34" height="34" rx="3" fill="#000000" stroke="#8a8a8a" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="250.5" y="415" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#e8e8e8" text-anchor="middle">2</text>
+<rect x="28" y="516" width="944" height="68" rx="6" fill="#141414" stroke="none" stroke-width="1"/>
+<path d="M37 439.05 L42.95 450.1 L31.05 450.1 Z" fill="#e8e8e8" stroke="none" stroke-width="1"/>
+<text x="53" y="449" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">coordinator state — blocked: human release approval for example-project 0.4.0 (row 2)</text>
+<path d="M37 467.05 L42.95 478.1 L31.05 478.1 Z" fill="#e8e8e8" stroke="none" stroke-width="1"/>
+<text x="53" y="477" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">background jobs — full-suite is ungoverned: the wait records no waiter</text>
+<path d="M37 495.05 L42.95 506.1 L31.05 506.1 Z" fill="#e8e8e8" stroke="none" stroke-width="1"/>
+<text x="53" y="505" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">background jobs — 2 declared, 1 holding the capability open</text>
+<text x="40" y="543" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">?</text>
+<text x="60" y="543" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">budgets and standing evidence — the record declares no real consumers</text>
+<text x="40" y="571" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">?</text>
+<text x="60" y="571" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">model routing — no routing observations are declared, so this is UNKNOWN, not "fine"</text>
+<rect x="28.5" y="602.5" width="174" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="40" y="625" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">OUTPUT REVIEW-1</text>
+<text x="40" y="649" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">completed</text>
+<rect x="211.5" y="602.5" width="143" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="223" y="625" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">BACKGROUND JOBS</text>
+<text x="223" y="649" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">2 declared</text>
+<rect x="363.5" y="602.5" width="131" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="375" y="625" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">AUDIT ROUNDS</text>
+<text x="375" y="649" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">2 of 3</text>
+<rect x="375" y="660" width="108" height="3" rx="1.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="375" y="660" width="72" height="3" rx="1.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<rect x="503.5" y="602.5" width="187" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="515" y="625" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">CLOSURE CYCLES</text>
+<text x="515" y="649" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">1 of 4</text>
+<rect x="515" y="660" width="164" height="3" rx="1.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="515" y="660" width="41" height="3" rx="1.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<rect x="699.5" y="602.5" width="142" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="711" y="625" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">WORKER DISPATCHES</text>
+<text x="711" y="649" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">5 used</text>
+<rect x="850.5" y="602.5" width="121" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="862" y="625" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">CANDIDATE</text>
+<text x="862" y="649" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">7d3e9a4</text>
+<rect x="28.5" y="680.5" width="174" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="40" y="703" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">SUITE</text>
+<text x="40" y="727" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#e8e8e8">186 passed, 0 failed</text>
+<rect x="211.5" y="680.5" width="143" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="223" y="703" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">GATES</text>
+<text x="223" y="727" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#e8e8e8">commit gate PASS</text>
+<rect x="363.5" y="680.5" width="131" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="375" y="703" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">LATEST AUDIT</text>
+<text x="375" y="727" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">review-1</text>
+<rect x="503.5" y="680.5" width="187" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="515" y="703" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">CLOSURE</text>
+<text x="515" y="727" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#e8e8e8">open: waits on the job</text>
+<rect x="699.5" y="680.5" width="142" height="67" rx="8" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="711" y="703" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">RECURRENCE</text>
+<text x="711" y="727" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">0 new</text>
+<rect x="850.5" y="680.5" width="121" height="67" rx="8" fill="#0c0c0c" stroke="#8a8a8a" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="862" y="703" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c" letter-spacing="0.8">REAL CONSUMERS</text>
+<text x="862" y="727" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">UNKNOWN</text>
+</svg>
