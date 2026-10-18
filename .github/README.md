@@ -4,33 +4,51 @@
 report is taken on trust and a person keeps the final say.**
 
 In plain terms: one AI *coordinator* breaks a software task into pieces and hands them to other AI coding agents,
-the *workers*. It accepts nothing they report until the checks have been re-run, independent reviewers have tried
-to prove the work wrong, and the result has been recorded.
+the *workers*. Nothing a worker reports is accepted until the coordinator has re-run the checks itself,
+independent reviewers have tried to prove the work wrong, and the result has been written down.
 
-**Why it matters.** Coding agents are fast but unreliable witnesses of their own work. A test an agent wrote can be
-unable to fail, the same model can behave differently in another coding tool, and a long run can stop without anyone
-noticing. Calling several models is easy; knowing which of their results to trust is the hard part.
+**Why it matters.** Coding agents are fast but unreliable witnesses of their own work. A test an agent wrote can
+be unable to fail (a check that always passes proves nothing), the same model can behave differently in another
+coding tool, and a long run can stop without anyone noticing. Calling several models is easy; knowing which of
+their results to trust is the hard part.
 
 **What is different.** Trust is earned, never assumed. A model is trusted only in the exact setup in which it has
-been shown to work; whatever cannot be established is treated as a "no"; and every release, budget and publication
-is a person's recorded decision.
+been shown to work; when something cannot be established, the answer is "no"; and every release, budget and
+publication is a person's recorded decision.
 
 **Who made it.** Designed and directed by one engineer, who set its architecture and governance rules and made the
 release decisions; implemented by AI coding agents (a coordinator model and the workers it dispatches) working under
 the system's own rules.
 
+**What it looks like.** Most of the harness is files, records and command-line tools, but it can also show the
+whole position of a project as one read-only page: what is happening now, the next step it is allowed to take,
+what is waiting for a person, and the budgets and evidence (the records that back each answer). The page is
+rebuilt from the project's files every time the command runs, and it changes nothing.
+
+<picture>
+  <source media="(max-width: 768px)" srcset="assets/dashboard-narrow.svg">
+  <img src="assets/dashboard.svg" width="100%" alt="Illustration of the read-only dashboard, in greys with invented example data. At the top, the pack and the project in use. Then the project's state, WAITING_ON_IDENTIFIED_JOB, and the next authorised action, followed by the situation: a running job with its deadline, a pending human approval, and audits whose subject is the current candidate. Below, what needs attention: warnings, and readings that could not be established, shown as unknown. At the bottom, budgets and evidence.">
+</picture>
+
+*An illustration of that page (`tools/projection.py --html`), redrawn in greys with invented example data; the real
+page also marks warnings and unknown readings in colour.*
+
 **How one task flows through it**
 
 1. A person sets the goal and its limits: the scope and the budget.
-2. The coordinator splits the goal into tasks and gives each worker a brief: what it may change, and which checks
-   must pass.
+2. The coordinator splits the goal into tasks and gives each worker a brief (written instructions): what it may
+   change, and which checks must pass.
 3. A worker agent, possibly from another vendor, does the work and reports back. The report is a claim, not proof.
 4. The coordinator re-runs the checks itself; a test that could never fail does not count.
 5. Independent reviewers, starting fresh, try to prove the work wrong. A significant change (the pack calls it
    material) gets two, one of them from a different vendor where one is available.
-6. Only then is the work recorded as done. Nothing is pushed or released without a person's decision.
+6. Only then is the work recorded as done. Nothing is pushed (sent out to a shared copy) or released without a
+   person's decision.
 
-![Diagram of the six roles. At the top, the human sets goals, limits and budgets and decides at named checkpoints; decisions go down to the AI coordinator and evidence comes back up. The AI coordinator, the AI workers and the reviewers work inside the Runtime Pack, the versioned rules and checks that govern them: the coordinator follows its procedures, and the workers and reviewers work from the scoped briefs the coordinator gives them. The coordinator sends briefs to the AI workers, which return reports, and sends claims to the independent reviewers, who return findings. At the bottom, the coordinator reads and writes the project record: decisions, evidence, findings and progress, in files and Git.](assets/architecture.svg)
+<picture>
+  <source media="(max-width: 768px)" srcset="assets/architecture-narrow.svg">
+  <img src="assets/architecture.svg" width="100%" alt="Diagram of the six roles. At the top, the human sets goals, limits and budgets and decides at named checkpoints; decisions go down to the AI coordinator and evidence comes back up. The AI coordinator, the AI workers and the reviewers work inside the Runtime Pack, the versioned rules and checks that govern them: the coordinator follows its procedures, and the workers and reviewers work from the scoped briefs the coordinator gives them. The coordinator sends briefs to the AI workers, which return reports, and sends claims to the independent reviewers, who return findings. At the bottom, the coordinator reads and writes the project record: decisions, evidence, findings and progress, in files and Git.">
+</picture>
 
 *The six roles and what passes between them. The Runtime Pack (this repository) is the set of rules and checks that
 govern the AI roles; it starts nothing by itself.*
@@ -70,33 +88,53 @@ sections 4–10 are written for engineers; sections 11–16 cover status, limits
 15. [About this public edition](#15-about-this-public-edition)
 16. [Licence](#16-licence)
 
+**Key terms, in plain words**
+
+- **AI coding agent**: a program, driven by a large language model (an AI system trained on very large amounts of
+  text), that reads and writes code when asked.
+- **Coordinator** and **workers**: the coordinator is the AI agent that plans the work, hands out the pieces and
+  checks what comes back; a worker is an AI agent that does one bounded piece and reports on it.
+- **Vendor**: the company behind a model, such as Anthropic, OpenAI or Z.ai.
+- **Configuration**: the exact combination of coding tool, model, settings and kind of task. Trust is earned per
+  configuration, never per brand.
+- **Git**, **commit**, **branch**: Git keeps the history of a project's files; each change recorded in that history
+  is a commit, and a branch is a named line of commits.
+- **Release**, **frozen**, **pin**: a release is a numbered version of the pack's rules and tools. Once frozen it
+  never changes, and a project pins it: it records exactly which release it uses, so that the copy can be checked.
+- **Gate**: a set of checks that must pass before work counts, a release is frozen or anything is published.
+- **Fail-closed**: when something cannot be established, the answer is no.
+- **Test suite**: thousands of small automatic checks that the code still does what it should.
+
 ## 1. What this is, and what it is not
 
 This is not a collection of prompts or scripts. It is a custom engineering system that coordinates several AI
-coding agents, distributes work according to their measured capabilities, enforces safety and verification
-boundaries, preserves evidence, and supports reliable software development across projects. Its core, the **Runtime
-Pack** (this repository), is the part that is versioned and released: procedural skills (written procedures the
-coordinator follows), policy, templates and a toolbelt of stateless Python checkers that keep nothing between runs (40
-modules in 2.5.0, 42 on the 2.6.0 line). Its value lies less in any single checker than in two structures: the
-**architecture of collaboration** between a human, a coordinator, workers and independent reviewers, and the
-**engineering governance of AI-assisted development** — release identity, evidence, budgets and named human
-decisions.
+coding agents, shares out work according to what each agent has been measured to do well, enforces safety and
+verification boundaries, preserves evidence, and supports reliable software development across projects. Its
+core, the **Runtime Pack** (this repository), is the part that is versioned and released: procedural skills
+(written procedures the coordinator follows), policy (its written rules), templates (ready-made files a project
+copies) and a toolbelt of stateless Python checkers that keep nothing between runs (40 modules in 2.5.0, 42 on
+the 2.6.0 line). Its value lies less in any single checker than in two structures: the **architecture of
+collaboration** between a human, a coordinator, workers and independent reviewers, and the **engineering
+governance of AI-assisted development** — release identity, evidence, budgets and named human decisions.
 
 Five properties carry most of the weight:
 
-- **A worker's report is a claim until re-run.** "All tests pass" from an agent is testimony, not evidence. The
-  coordinator re-runs what a worker reported before accepting anything, and a test that cannot fail is not
+- **A worker's report is a claim until it is re-run.** "All tests pass" from an agent is a statement, not proof.
+  The coordinator re-runs what a worker reported before accepting anything, and a test that cannot fail is not
   treated as a test.
-- **Qualification belongs to a configuration, not a model family.** What has been shown to work is an exact
-  combination — the coding tool, the model, its settings and the kind of task — never a vendor's name, and never a
-  model family's track record borrowed by a model that has not run.
-- **Fail-closed safety: unknown means no.** An unprobed configuration qualifies nothing; a reader that cannot
-  trust a record refuses it rather than guessing; a repository that cannot be read safely is not read.
-- **Immutable releases, pinned by four fields.** Root path, version, full revision and tree digest. A frozen
-  release never changes; a fix is a new release.
-- **Human authority at named decision points.** Every push, credential change, budget, waiver, release and
-  publication is a recorded human decision, at a named row of a 17-row matrix — never something the system
-  takes on itself, and coordinator unavailability never implies authorisation.
+- **Qualification belongs to a configuration, not a model family.** A qualification is a shown-to-work record, and
+  a model family is a group of related models from one vendor. What has been shown to work is an exact
+  combination — the coding tool, the model, its settings and the kind of task — never a vendor's name, and never
+  a model family's track record claimed by a model that has not itself been run.
+- **Fail-closed safety: unknown means no.** A configuration that nothing has run (an unprobed one) qualifies
+  nothing; a reader that cannot trust a record refuses it rather than guessing; a repository that cannot be read
+  safely is not read.
+- **Immutable releases, pinned by four fields.** Root path, version, full revision (the commit id) and tree
+  digest (a fingerprint of the files). A frozen release never changes; a fix is a new release.
+- **Human authority at named decision points.** Every push, credential change, budget, waiver (an approved
+  exception to a rule), release and publication is a recorded human decision, listed at a named row of a 17-row
+  matrix (a table of who decides what) — never something the system takes on itself, and the coordinator being
+  unavailable never counts as authorisation.
 
 ## 2. Why it exists
 
@@ -106,22 +144,25 @@ motivated this system:
 - **Self-reports are not evidence.** An agent's "all tests pass" can be wrong, and a test it wrote can be unable
   to fail.
 - **Vendors and configurations differ.** A model that is good at extraction may be poor at review; the same model
-  behaves differently under another client, effort level or sandbox. Availability is not qualification.
-- **Long autonomous runs fail quietly** — a hung process, an exhausted usage window, a finished job nobody
-  noticed.
-- **Repositories can execute code when read.** Git hooks, filters, text-conversion drivers, `fsmonitor`,
-  external diff helpers and transports are all ways a repository under inspection can run a program on the
-  inspector's machine.
-- **Private context leaks** into commit messages, paths, notes refs and history long before anyone pushes.
+  behaves differently under another client (coding tool), effort level (a setting for how hard it works) or
+  sandbox (a restricted running environment). A model being available does not mean it is qualified.
+- **Long unattended runs fail quietly** — a hung process (one stuck doing nothing), an exhausted usage window, a
+  finished job nobody noticed.
+- **Repositories can run code just by being read.** A repository can configure Git to start a program of its
+  choosing when someone merely looks at it: through hooks, filters, text-conversion drivers, `fsmonitor`,
+  external diff helpers or transports, all on the inspector's own machine.
+- **Private information leaks** into commit messages, file paths, notes refs and history long before anything is
+  pushed (sent to another copy of the repository).
 - **The governing documents drift** from what the code actually does, and nobody notices because nobody checks.
 
 Runtime Pack turns each of these into something a tool can check, and leaves to a human only the decisions where
-judgement is irreducible.
+judgement cannot be reduced to a rule.
 
 The design itself came from a measured failure. The predecessor of this pack was a deterministic "kernel" whose
-software held project state and authority; across four audit rounds that stateful authority failed every round,
-while its small stateless checkers survived every one (`CHANGELOG.md`, 2.0.0-wave-a; `DECISIONS.md` D1). Runtime
-Pack keeps only the checkers and moves authority to procedure, durable records and human decisions.
+software held project state and authority (it remembered the project's position between runs); across four audit
+rounds that stateful authority failed every round, while its small stateless checkers survived every one
+(`CHANGELOG.md`, 2.0.0-wave-a; `DECISIONS.md` D1). Runtime Pack keeps only the checkers and moves authority to
+written procedure, durable records and human decisions.
 
 ## 3. Roles and boundaries
 
@@ -141,58 +182,66 @@ The Core's skills name no vendor: they describe roles, not products. Vendor name
 repository: in the policy and its evidence log, some templates, a few tool modules, the tests and the historical
 records. In this project's own use, the coordinator is a Claude Opus session running in Claude Code; workers have
 included Claude Code subagents, the OpenAI Codex CLI and, on the 2.6.0 line, Z.ai's GLM models reached through an
-Anthropic-compatible adapter.
+Anthropic-compatible adapter (a small bridge program).
 
-Nothing in the pack launches a worker by itself: no dispatcher, no daemon. The coordinator dispatches; the pack
-checks what was dispatched, what came back, and whether a claim survives re-execution.
+Nothing in the pack launches a worker by itself: no dispatcher, no daemon (no background program waiting to
+act). The coordinator dispatches; the pack checks what was dispatched, what came back, and whether a claim still
+holds when the work is run again.
 
 ## 4. A unit of work, end to end
 
-The lifecycle of one unit of delegated work, with the module that enforces each step. Every step is `SHIPPED` in
-2.5.0; the 2.6.0 line refines routing (vendor-based independence, billing safety) without changing the shape.
+In short: the life of one piece of delegated work, step by step, with the module that enforces each step. Every
+step is `SHIPPED` in 2.5.0; the 2.6.0 line refines routing (vendor-based independence, billing safety) without
+changing the shape.
 
-1. **Pin and open.** Work starts from a project contract (`PROJECT.yaml`, instantiated from
-   `templates/PROJECT.yaml.template`) that pins an exact release and is verified by the release's own
-   `tools/pack_pin.py`. `tools/capability_open.py` composes pin, adapters, context and design record into one
-   readiness answer before a capability opens. Adapters are verified by digest (`tools/adapter_pin.py`).
+1. **Pin and open.** Work starts from a project contract (`PROJECT.yaml`, created from
+   `templates/PROJECT.yaml.template`) that pins an exact release — records exactly which release the project
+   uses — and is verified by the release's own `tools/pack_pin.py`. `tools/capability_open.py` composes pin,
+   adapters, context and design record into one readiness answer before a capability (one named block of work)
+   opens. Adapters are verified by digest, a fingerprint of their contents (`tools/adapter_pin.py`).
 2. **Design before code.** A material change begins with a frozen design record — alternatives, one rejected
-   with a reason, failure modes, authority boundaries, oracles — that independent readers try to falsify before
-   implementation (`tools/design_record.py`; decision D25 in `DECISIONS.md`). The revision binding refuses a
-   design frozen against a tree that already contains the work it governs.
-3. **Brief and dispatch.** The worker receives a frozen brief with an explicit write ceiling
-   (`templates/task-brief.template.md`) — the entire envelope it sees. A dispatch that can write runs confined, by a
-   generated sandbox profile or the runtime's own, and only read-only work may run unconfined (`tools/confine.py`);
-   the dispatch is refused before it is issued when the capacity it needs is not known to be there
-   (`tools/capacity.py`). Which configuration may take the work is answered by the
-   configuration's own qualification (`tools/qualification.py`) and by `tools/routing.py`.
-4. **Wait durably.** Waits are declared with deadlines before launch; waiting state is derived from artifacts on
-   disk rather than stored, so a job that exits advances the record whether or not anyone notices
-   (`tools/continuation.py`). Liveness is a disjunction of signals, telling a quiet worker from a dead one
-   (`tools/progress.py`); task output is written in bounded pieces and classified before any retry
-   (`tools/task_output.py`).
+   with a reason, failure modes, authority boundaries, oracles (checks whose expected answer is known in
+   advance) — that independent readers try to prove wrong before implementation (`tools/design_record.py`;
+   decision D25 in `DECISIONS.md`). The revision binding refuses a design frozen against a tree that already
+   contains the work it governs, so the design must come first.
+3. **Brief and dispatch.** The worker receives a frozen brief with an explicit write ceiling, the limit of what
+   it may change (`templates/task-brief.template.md`) — the entire envelope it sees. A dispatch that can write
+   runs confined, inside a sandbox profile (a restricted environment) generated for it or the runtime's own, and
+   only read-only work may run unconfined (`tools/confine.py`); the dispatch is refused before it is issued when
+   the capacity it needs is not known to be there (`tools/capacity.py`). Which configuration may take the work
+   is answered by the configuration's own qualification (`tools/qualification.py`) and by `tools/routing.py`.
+4. **Wait durably.** Waits are declared with deadlines before launch; waiting state is worked out afresh from
+   artifacts on disk rather than stored, so a job that exits advances the record whether or not anyone notices
+   (`tools/continuation.py`). Liveness — whether a job is still alive — is a disjunction of signals, any one of which
+   is enough, telling a quiet worker from a dead one (`tools/progress.py`); task output is written in bounded pieces
+   and classified before any retry (`tools/task_output.py`).
 5. **Verify.** The coordinator re-runs the evidence. A targeted test run must prove it selected the tests it
    claims (`tools/selector_evidence.py` — exit status 0 is not evidence that the intended check ran). Evidence
-   is kept content-addressed, owner-only and indexed (`tools/evidence_put.py`, `tools/evidence_index.py`).
+   is kept content-addressed (each item is named by its own contents), owner-only and indexed
+   (`tools/evidence_put.py`, `tools/evidence_index.py`).
 6. **Independent audit and bounded repair.** Closure audits are fresh-context and blind, and the auditors do not
    read the design documents or repair reports. Routine work gets one auditor, plus a cross-vendor review on a
-   seeded sample of changes that the coordinator cannot steer; a material change gets two auditors, one
-   cross-vendor where available, and a substitute only by a recorded human decision
-   (`skills/core/audit-strategy.md`, `policy/auditor-strategy.md`). Repair follows a fixed discipline: reproduce,
-   isolate the root cause, state the invariant, write a discriminating oracle, mutation-check it, then fix
-   (`skills/core/repair.md`) — inside frozen budget counters, where exhausting a budget with an open material finding
-   is a stop (`policy/BUDGETS.md`).
+   seeded sample of changes (picked by a fixed formula) that the coordinator cannot steer; a material change
+   gets two auditors, one cross-vendor where available, and a substitute only by a recorded human decision
+   (`skills/core/audit-strategy.md`, `policy/auditor-strategy.md`). Repair follows a fixed discipline:
+   reproduce, isolate the root cause, state the invariant (the rule that must always hold), write a
+   discriminating oracle, mutation-check it (break the code on purpose to see that the check notices), then fix
+   (`skills/core/repair.md`) — inside frozen budget counters, where exhausting a budget with an open material
+   finding is a stop (`policy/BUDGETS.md`).
 7. **Close.** The closure block is generated from the validation profiles the contract declares, so a declared
-   profile that never ran is enumerated and reported `UNRUN`: omission is unrepresentable
-   (`tools/close_attestation.py`).
-8. **Publish only through the gates.** The complete reachable history is scanned at a strict tier with
-   per-occurrence adjudication (`tools/publication_history.py`, `tools/outgoing_scan.py`); commit messages meet
-   a structural and vocabulary contract (`tools/commit_gate.py`); and publishing itself is a ref-namespace
-   contract — allowed source ref, reachability, one exact push refspec, and a remote postcondition verified
-   afterwards (`tools/publication_gate.py`).
-9. **Release.** The version bump is derived, not asserted: from the public API surface and from the answer
-   contract — a frozen-floor differential that checks callers are still told the same thing
-   (`tools/surface_diff.py`, D28). A recorded human decision freezes the release. Projects adopt a newer
-   release only at capability boundaries, deliberately, with a rollback path (`tools/pack_migration.py`).
+   profile that never ran is enumerated and reported `UNRUN`: omission is unrepresentable — a check that did
+   not run cannot go unmentioned (`tools/close_attestation.py`).
+8. **Publish only through the gates.** The complete reachable history is scanned at a strict tier, with each
+   occurrence judged on its own (`tools/publication_history.py`, `tools/outgoing_scan.py`); commit messages
+   meet a structural and vocabulary contract (`tools/commit_gate.py`); and publishing itself is a ref-namespace
+   contract — allowed source ref (a ref is a named pointer into the history), reachability, one exact push
+   refspec (the source and destination of the push), and a remote postcondition verified afterwards: the
+   receiving copy is checked to be in the expected state (`tools/publication_gate.py`).
+9. **Release.** The version bump is derived, not asserted — worked out from the public API surface (the parts
+   other code relies on) and from the answer contract, a frozen-floor differential (a comparison against the
+   previous frozen release) that checks callers are still told the same thing (`tools/surface_diff.py`, D28).
+   A recorded human decision freezes the release. Projects adopt a newer release only at capability
+   boundaries, deliberately, with a rollback path (`tools/pack_migration.py`).
 
 ## 5. Multi-provider orchestration and routing
 
@@ -205,35 +254,38 @@ rather than to a brand.
 - **Nine dimensions identify a configuration.** Surface, family, client, observed model, effort, isolation,
   network, authentication class and task class. A configuration nothing has run is `unprobed`; an identity with
   an unobserved dimension qualifies nothing; family history is display-only and ranks nothing.
-- **Availability is its own axis.** Whether a configuration can start is different evidence from whether it can
-  do the work, and one is never answered with the other.
-- **The evidence log is the record.** Dispatches land as rows in the append-only `policy/observations.jsonl`
-  (62 observations at the 2.6.0 checkpoint), and the routing table `policy/routing-table.md` is regenerated from
-  it wholesale — never patched, never a rolling summary that overwrites adverse evidence. Tests compare every
-  figure in the table with the rows behind it.
-- **Independence by model vendor, on the 2.6.0 line.** A cross-vendor leg is satisfied only by a distinct model
-  vendor, whatever gateway served it (D30), and a rehearsal on that line checked that a third model family can
-  be adopted without its name entering the Core.
+- **Availability is judged separately.** Whether a configuration can start is different evidence from whether it
+  can do the work, and one question is never answered with the other.
+- **The evidence log is the record.** Dispatches land as rows in `policy/observations.jsonl`, an append-only log
+  (rows can be added but never changed or removed; 62 observations at the 2.6.0 checkpoint), and the routing
+  table `policy/routing-table.md` is regenerated from it wholesale — never patched, never a rolling summary that
+  overwrites adverse evidence (evidence that counts against a favoured result). Tests compare every figure in
+  the table with the rows behind it.
+- **Independence by model vendor, on the 2.6.0 line.** A cross-vendor leg — a review carried out by a second
+  vendor — is satisfied only by a distinct model vendor, whatever gateway (the service in between) served it
+  (D30), and a rehearsal (a practice run) on that line checked that a third model family can be adopted without
+  its name entering the Core.
 
 ## 6. Safety and fail-closed behaviour
 
 In short: when something cannot be established safely, the answer is no.
 
-- **Governed Git reads cannot execute repository-controlled code.** Each local governed read runs against a
-  *constructed* git directory with a blank configuration — no file the repository under inspection wrote is ever
-  read as configuration. Child-process creation is denied by a generated macOS Seatbelt profile (the operating
-  system's sandbox), and the absence of any child is proven from Git's own Trace2 stream. On a host without such a
-  barrier the read is refused, not run unconfined.
+- **Governed Git reads cannot execute repository-controlled code.** Each local governed read (one made under the
+  pack's rules) runs against a *constructed* git directory with a blank configuration — no file the repository
+  under inspection wrote is ever read as configuration. Child-process creation (any program Git might start) is
+  denied by a generated macOS Seatbelt profile (the operating system's sandbox), and the absence of any child is
+  proven from Git's own Trace2 stream. On a host without such a barrier the read is refused, not run unconfined.
 - **Publication is a ref-namespace contract** (D7). A clean working tree proves nothing when notes refs, recovery
   branches or a background service can carry private data: publishing requires an allowed source ref,
-  reachability, one exact push refspec and a remote postcondition verified afterwards
-  (`tools/publication_gate.py`).
+  reachability, one exact push refspec and a remote postcondition verified afterwards — the receiving copy is
+  checked to be in the expected state (`tools/publication_gate.py`).
 - **Public-safe by construction.** Credentials, machine paths, personal identifiers, prompts, session state and
   quota history must never enter version control (`skills/core/public-safety.md`), with a tiered private
-  vocabulary separating words that matter in a commit message from words that are noise in content (D9, D16).
+  vocabulary — a word list in two groups — separating words that matter in a commit message from words that are
+  noise in content (D9, D16).
 - **Unknown means no, billing included** ([section 1](#1-what-this-is-and-what-it-is-not)). On the 2.6.0 line, a
-  route whose billing is not proven to be an authorised subscription or a local pool is not routable, whatever
-  credentials the environment holds (D29, D32).
+  route whose billing is not proven to be an authorised subscription or a local pool is not routable — no work
+  is sent that way — whatever credentials the environment holds (D29, D32).
 - **Bounded autonomy.** Repair and audit budgets are counters, exhausting one with an open material finding is a
   stop, and a 17-row decision matrix names every point where a human must decide — pushes, credentials,
   destructive operations, scope, budgets, waivers (`policy/hitl-matrix.md`).
@@ -242,23 +294,29 @@ In short: when something cannot be established safely, the answer is no.
 
 In short: a frozen release never changes, and each project records exactly which release it uses and checks it.
 
-- **One version authority** (`VERSION`) and one release manifest (`PACK_MANIFEST.json`: state, framed SHA-256
-  tree digest, qualified test population, gate record). A candidate becomes `QUALIFIED_AND_FROZEN` only by a
-  recorded human decision against a named candidate; a frozen release never changes, and a fix is a new release.
-- **The four-field pin.** A project records *root path + version + full 40-character revision + tree digest*, and
-  verifies all four — plus the declared state, since a project may only adopt `QUALIFIED_AND_FROZEN` — with the
-  `tools/pack_pin.py` that ships inside the release being verified (D11, D13, D18).
-- **Several projects, several releases.** Projects may pin different qualified releases concurrently, each at its
-  own immutable root; operational state stays project-local and no project run evolves the pack it is pinned to.
-- **Adoption at capability boundaries.** A newer release is information, never a gate: a project migrates
-  deliberately, at the boundary of a capability, with a rollback path (`tools/pack_migration.py`, D21).
+- **One version authority** (`VERSION`) and one release manifest, `PACK_MANIFEST.json` (the file that describes
+  the release: state, framed SHA-256 tree digest, qualified test population, gate record). A candidate becomes
+  `QUALIFIED_AND_FROZEN` only by a recorded human decision against a named candidate; a frozen release never
+  changes, and a fix is a new release.
+- **The four-field pin.** A project records *root path + version + full 40-character revision (the commit id) + tree
+  digest (a fingerprint of the files)*, and verifies all four — plus the declared state, since a project may only
+  adopt `QUALIFIED_AND_FROZEN` — with the copy of `tools/pack_pin.py` that ships inside the release being verified
+  (D11, D13, D18).
+- **Several projects, several releases.** Projects may pin different qualified releases at the same time, each
+  at its own immutable root; operational state stays with the project, and no project run changes the pack it
+  is pinned to.
+- **Adoption at capability boundaries.** A newer release is information, never an obligation: a project
+  migrates deliberately, at the boundary of a capability, with a rollback path (`tools/pack_migration.py`,
+  D21).
 - **The contract and the context.** Every declaration a checker needs is written once in the project contract
   and read by every gate that enforces it (`tools/project_contract.py`); a project's declared semantic and
-  product authority is verified for identity and never adjudicated for content (`tools/project_context.py`).
+  product authority is verified for identity (that it is the same one) and never judged for content
+  (`tools/project_context.py`).
 
 ## 8. Quick start
 
-Clone the repository with the URL from GitHub's **Code** button, then run the rest from the checkout:
+Clone the repository with the URL from GitHub's **Code** button, then run the rest from the checkout (your local
+copy of the repository):
 
 ```text
 cd ai-engineering-harness
@@ -308,7 +366,7 @@ python3 tools/commit_gate.py --default-terms . /tmp/msg.txt
 ```
 
 The first line says which vocabulary file was applied (with its digest); a message carrying a private term, a
-trailer or a hidden character is refused with the reason.
+trailer (an extra structured line at the end) or a hidden character is refused with the reason.
 
 Derive per-configuration qualification and routing state from the shipped evidence log:
 
@@ -320,31 +378,35 @@ python3 tools/routing.py policy/observations.jsonl
 `qualification.py` prints a derived view ("a view, not a record; the log wins"). It shows how many observations
 the log holds and how many carry a complete configuration identity. Then it shows the per-configuration
 qualification, which is the only thing that answers about a configuration. Last, and separately, it shows the
-family prior, labelled "advisory, display-only, never a track record and never a ranking input". `routing.py`
-prints the routing state those records support: how many configurations are qualified, how many family priors
-are advisory, and why availability stays `UNKNOWN`: the command reads records and dispatches nothing.
+family prior, labelled "advisory,
+display-only, never a track record and never a ranking input". `routing.py` prints the routing state those
+records support: how many configurations are qualified, how many family priors are advisory, and why
+availability stays `UNKNOWN`: the command reads records and dispatches nothing.
 
-The pin check in the [Quick start](#8-quick-start) takes its expected values from the checkout itself, so it shows
-only that the checkout is consistent with its own manifest. A consuming project runs the same tool with the version,
-revision, digest and state it recorded when it pinned the release, and that comparison is what verifies a pin
-([section 7](#7-releases-pinning-and-multiple-projects)).
+The pin check in the [Quick start](#8-quick-start) takes its expected values from the checkout itself, so it
+shows only that the checkout is consistent with its own manifest. A consuming project (a project that uses the
+pack) runs the same tool with the version, revision, digest and state it recorded when it pinned the release,
+and that comparison is what verifies a pin ([section 7](#7-releases-pinning-and-multiple-projects)).
 
 ## 10. Evidence: tests and independent review
+
+In short: the pack is checked by its own tests, by tests that try to break its guards on purpose, and by independent
+AI reviewers; this section says what each of them shows.
 
 - **The suite.** On `stable/2.5.0`, 3,011 pytest tests pass. On `main` (2.6.0), 3,317 of 3,319 pass and 2 are
   skipped by the line's own conditions, because they check records the line has not produced yet. Measured on
   macOS with Python 3.14.0 and Git 2.50.1. Passing tests do not qualify a development line, and two tests are
   known to be timing-sensitive ([section 13](#13-limitations-and-design-boundaries)).
-- **Oracle discipline.** A meta-test sweeps the suite for assertions that cannot fail
-  (`tools/tests/test_no_oracle_is_vacuous.py`), and guards are mutation-tested by breaking them on purpose
-  (`docs/acceptance/rp2.5.0-mutation.py`).
-- **Differential acceptance.** Hostile-repository matrices and differentials against the previous frozen release
-  over its read forms (`docs/acceptance/`).
+- **Oracle discipline.** A meta-test — a test that checks the tests — sweeps the suite for assertions that
+  cannot fail (`tools/tests/test_no_oracle_is_vacuous.py`), and guards are mutation-tested by breaking them on
+  purpose (`docs/acceptance/rp2.5.0-mutation.py`).
+- **Differential acceptance.** Hostile-repository matrices (grids of deliberately dangerous repositories) and
+  differentials against the previous frozen release over its read forms (`docs/acceptance/`).
 - **Records are tested against reality.** Figures in the changelog, manifest and gate records are recomputed by
   tests rather than transcribed (`tools/tests/test_release_integrity.py`).
-- **Blind independent audits.** Since 2.3.0, material changes start from a design that independent readers try to
-  falsify before implementation (D25); releases close with blind independent audits, one of them cross-vendor where
-  available, followed by bounded repair.
+- **Blind independent audits.** Since 2.3.0, material changes start from a design that independent readers try
+  to falsify (prove wrong) before implementation (D25); releases close with blind independent audits, one of
+  them cross-vendor where available, followed by bounded repair.
 
 ## 11. Status: stable 2.5.0 and development 2.6.0
 
@@ -369,9 +431,10 @@ Detailed notes per version: [`.github/RELEASE_NOTES.md`](RELEASE_NOTES.md); the 
 
 **2.5.0** is the version to read, run and evaluate: "the Git boundary constructs the repository it reads". Every
 governed local Git read runs against a constructed git directory; child execution is denied and its absence
-proven. Its qualification evidence — a frozen-floor differential over 49 fixture repositories and 200 read forms
-against 2.4.0, a hostile-repository matrix, a mutation script and two independent certifications that ended
-ready — is in its gate record. Public commit `c2fcf9cedf17`, on branch `stable/2.5.0`.
+proven. Its qualification evidence — a frozen-floor differential over 49 fixture repositories (prepared example
+repositories) and 200 read forms against 2.4.0, a hostile-repository matrix, a mutation script and two
+independent certifications that ended ready — is in its gate record. Public commit `c2fcf9cedf17`, on branch
+`stable/2.5.0`.
 
 **2.6.0** is `IN_PROGRESS` — not qualified, not frozen, not adoptable. Opened on 2026-09-19 and paused at a
 checkpoint on 2026-09-20 (public commit `b7f85623ebe7`, branch `main`): the manifest's state is `IN_PROGRESS`,
@@ -391,13 +454,14 @@ the gate record lists what is not yet done, and no freeze decision exists.
 
 Recorded evidence only; nothing here is a commitment.
 
-- **IN_PROGRESS (2.6.0)** — the remaining items of its design (frozen before implementation, D25), listed in
-  section 11, then closure audits and qualification. Designs: `docs/RP2.6.0-DESIGN-P1-provider-registry-and-billing-safety.md` (authoritative)
-  and `docs/RP2.6.0-DESIGN-P0-third-provider-slot.md` (falsified, kept as history).
+- **IN_PROGRESS (2.6.0)** — the remaining items of its design (frozen before implementation, D25), listed in section
+  11, then closure audits and qualification. Designs: `docs/RP2.6.0-DESIGN-P1-provider-registry-and-billing-safety.md`
+  (authoritative) and `docs/RP2.6.0-DESIGN-P0-third-provider-slot.md` (falsified, kept as history).
 - **PLANNED** — the evolution candidates recorded in `PACK_MANIFEST.json`, each with the observation that would
-  trigger it: a durable event log, a multi-year activity calendar, a measured relative yield between
-  same-family and cross-vendor audits, an execution-trace oracle shipped as a tool, and a read-only way to
-  enumerate a bundle's objects. The manifest's `deferred` section lists further items with their triggers.
+  trigger it: a durable event log, a multi-year activity calendar, a measured relative yield (how much each
+  returns for the effort) between same-family and cross-vendor audits, an execution-trace oracle shipped as a
+  tool, and a read-only way to enumerate a bundle's objects. The manifest's `deferred` section lists further
+  items with their triggers.
 
 ## 13. Limitations and design boundaries
 
@@ -416,16 +480,22 @@ Recorded evidence only; nothing here is a commitment.
 - **Two timing-sensitive tests.** On both branches, two tests write the file a wait is waiting for before they
   declare the wait. The pack records a declaration only to the whole second, so the file usually looks no older
   than its wait and the test passes; when a second boundary falls between the two steps, the pack correctly sees
-  that the file predates its wait, refuses it, and the test fails. The fault is in the tests' order of work, not in
-  the pack. While this edition was being prepared this happened in two of 19 complete runs of the stable suite, and
-  the full suite passed when that commit was run again. The fix, declaring the wait first, belongs on the
-  development line for a future release; the frozen 2.5.0 keeps the tests as they are. Details:
+  that the file predates its wait, refuses it, and the test fails. The fault is in the tests' order of work, not
+  in the pack. While this edition was being prepared this happened in two of 19 complete runs of the stable
+  suite, and the full suite passed when that commit was run again. The fix, declaring the wait first, belongs on
+  the development line for a future release; the frozen 2.5.0 keeps the tests as they are. Details:
   [`.github/PUBLIC_EDITION.md`](PUBLIC_EDITION.md#known-timing-sensitive-tests).
+- **The test suite needs a Git identity.** Some tests create commits in temporary repositories with the machine's
+  own Git identity, so one must be set (for example with `git config --global user.name` and `user.email`), and no
+  `GIT_AUTHOR_*` or `GIT_COMMITTER_*` variable may be exported in the shell that runs the suite.
 - **2.6.0 is unfinished.** Its branch is development history at a checkpoint, with the gaps listed in section 11.
 
 ## 14. Repository layout
 
-![Repository layout, drawn as a file tree. The same tree follows as text.](assets/repository-layout.svg)
+<picture>
+  <source media="(max-width: 768px)" srcset="assets/repository-layout-narrow.svg">
+  <img src="assets/repository-layout.svg" width="100%" alt="Repository layout, drawn as a file tree. The same tree follows as text.">
+</picture>
 
 <details>
 <summary>The same tree as text</summary>
@@ -448,27 +518,29 @@ ai-engineering-harness/
 
 </details>
 
-In 2.5.0 the toolbelt is 40 Python modules, about 30,000 lines of standard-library code, tested by 52 test modules
-with about 34,000 lines of tests; on the 2.6.0 line it is 42 modules and about 33,000 lines, with 55 test modules and
-about 37,000 lines of tests. `policy/` holds the
-routing policy and its evidence log, the budgets, the decision matrix and the private-term defaults; `templates/`
-holds what a governed project instantiates (24 templates in 2.5.0, 27 on the 2.6.0 line): the project contract,
-scope, progress, findings and handoff records, briefs, the publication gate and hooks; `docs/` holds gate records,
-designs, capability maps, acceptance drills and differentials. The recorded architecture decisions are D1–D28 in
-2.5.0 (D29–D36 on the 2.6.0 line).
+In 2.5.0 the toolbelt is 40 Python modules, about 30,000 lines of standard-library code, tested by 52 test
+modules with about 34,000 lines of tests; on the 2.6.0 line it is 42 modules and about 33,000 lines, with 55
+test modules and about 37,000 lines of tests. `policy/` holds the routing policy and its evidence log, the
+budgets, the decision matrix and the private-term defaults; `templates/` holds what a governed project copies
+and fills in (24 templates in 2.5.0, 27 on the 2.6.0 line): the project contract, scope, progress, findings and
+handoff records, briefs, the publication gate and hooks; `docs/` holds gate records, designs, capability maps,
+acceptance drills and differentials. The recorded architecture decisions are D1–D28 in 2.5.0 (D29–D36 on the
+2.6.0 line).
 
 ## 15. About this public edition
 
 This repository is a reviewed, sanitized publication of the private development history, prepared by a
-deterministic history rewrite followed by a small number of new commits; original authorship, dates, times and
-time zones of every historical commit are preserved, names of other private projects are replaced by neutral
-pseudonyms, and private operational details are generalised. Because the history was rewritten, commit ids and
-release tree digests quoted inside historical records refer to the private repository and do not resolve here.
-The details are in [`.github/PUBLIC_EDITION.md`](PUBLIC_EDITION.md).
+deterministic history rewrite (a rewriting of the recorded history by a program whose output is fixed by its
+inputs) followed by a small number of new commits; original authorship, dates, times and time zones of every
+historical commit are preserved, names of other private projects are replaced by neutral pseudonyms, and
+private operational details are generalised. Because the history was rewritten, commit ids and release tree
+digests quoted inside historical records refer to the private repository and do not resolve here. The details
+are in [`.github/PUBLIC_EDITION.md`](PUBLIC_EDITION.md).
 
 ## 16. Licence
 
-No license has been granted yet. Until one is added, all rights are reserved by the author: you are welcome to read the code here, but copying, modifying or redistributing it requires permission.
+No licence has been granted yet. Until one is added, all rights are reserved by the author: you are welcome to
+read the code here, but copying, modifying or redistributing it requires permission.
 
-This is a personal engineering project and is not currently set up for outside contributions; issues and questions
-are welcome.
+This is a personal engineering project and is not currently set up for outside contributions; issues and
+questions are welcome.

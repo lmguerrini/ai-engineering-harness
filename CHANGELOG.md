@@ -102,6 +102,10 @@ and changes no tool:
 - `.github/README.md` — the public landing page;
 - `.github/assets/architecture.svg` — the landing page's diagram of the six roles (added 2026-10-17);
 - `.github/assets/repository-layout.svg` — the landing page's drawing of the repository layout (added 2026-10-17);
+- `.github/assets/architecture-narrow.svg` — the diagram of the six roles, laid out for narrow screens (added 2026-10-18);
+- `.github/assets/repository-layout-narrow.svg` — the repository layout, laid out for narrow screens (added 2026-10-18);
+- `.github/assets/dashboard.svg` — an illustration of the read-only dashboard, in greys with invented data (added 2026-10-18);
+- `.github/assets/dashboard-narrow.svg` — the same illustration, laid out for narrow screens (added 2026-10-18);
 - `.github/RELEASE_NOTES.md` — a summary of every release from 2.0.0 to 2.5.0 and of this line's state;
 - `.github/PUBLIC_EDITION.md` — how the history was prepared, what was preserved and what was sanitized.
 
