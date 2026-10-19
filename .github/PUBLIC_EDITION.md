@@ -11,8 +11,8 @@ rewritten history and, later, rewrite the landing README and add its images.
 
 | Branch | Contents | State |
 |---|---|---|
-| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's eight commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
-| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's eight commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
+| `main` (default) | the history up to the 2.5.0 release commit, the nine commits of the 2.6.0 line, plus this edition's nine commits | development HEAD: 2.6.0 `IN_PROGRESS`, paused at a checkpoint; not a release |
+| `stable/2.5.0` | the history up to the 2.5.0 release commit, plus this edition's nine commits | 2.5.0 `QUALIFIED_AND_FROZEN` — the latest stable release |
 
 The two branches share the history up to the 2.5.0 release commit and diverge after it; there are no merge commits.
 2.6.0 is published as development history. It is **not** a release: it is not qualified, not frozen and must not be
@@ -97,7 +97,11 @@ shortens the limitations and the summary of the 2.6.0 line; names the new images
 records the tree's digest again. The eighth (2026-10-19) redraws the dashboard concept without its project header
 and with step bars for unfinished work, numbers the six steps on the diagram of the six roles, and draws each
 image once, at full width, without its narrow version; names the redrawn images in the changelog entry; and
-records the tree's digest again. These commits change no tool.
+records the tree's digest again. The ninth (2026-10-19) opens the landing page with a second dashboard concept, an
+overall Mission Control view across several projects; moves the project-level concept into section 4 under a
+new title, with its latest test run labelled as such; adds a diagram of projects pinning one frozen release to
+section 7; rewords section 1's note on the dashboards; names the new images in the changelog entry and
+corrects a redraw date there; and records the tree's digest again. These commits change no tool.
 
 The private repository's 2.5.0 range reported twelve commit-contract violations over four commits, and
 `docs/RP2.5.0-GATE.md` keeps that record as it was written. After normalisation, the same range here reports:
@@ -126,7 +130,7 @@ which states that the range reports no violation; it holds for the public messag
   and string literals of the tool sources and tests. No blocker was found.
 - The full test suite was run on the tip of each branch as it stood after the fourth edition commit (2026-10-16):
   stable branch 3,011 of 3,011 passed; development branch 3,317 of 3,319 passed and 2 were skipped by the line's own
-  conditions; none failed; on macOS with Python 3.14.0 and Git 2.50.1. The fifth to eighth commits change no tool
+  conditions; none failed; on macOS with Python 3.14.0 and Git 2.50.1. The fifth to ninth commits change no tool
   and no test.
   Two tests are timing-sensitive; see the next section.
 

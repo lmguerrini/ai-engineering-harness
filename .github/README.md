@@ -3,9 +3,9 @@
 **An engineering system for building software with AI coding agents from several vendors, in which no agent's
 report is taken on trust and a person keeps the final say.**
 
-<img src="assets/dashboard-concept.svg" width="100%" alt="Dashboard concept with synthetic data: the project's state, with a progress ring at 70 percent verified; the next authorised action; work in flight with three AI workers and the step each task has reached; independent checks, with the last 12 test runs and today's reviews; the path from a worker's report to verified work; human approvals; and the capacity left for two vendors, with a third vendor's capacity unknown and not used.">
+<img src="assets/mission-control-concept.svg" width="100%" alt="Mission Control concept with synthetic data: an overall dashboard across six projects. The overall state is in progress, with four of six projects in progress or in review and one decision waiting for a person; the next action, proposed by the AI coordinator, is for a person to approve a release. Over the last 24 hours, 247 of 300 tasks were verified and 262 of 275 reviews passed; evidence is up to date in 11 of 12 repositories, and 7 of 12 AI agents are in use. Further panels show the AI agents and their states, the reviews, the evidence, the verified tasks and agent load over 24 hours, the agent slots, a table of the six projects and recent activity.">
 
-*Dashboard concept · Illustrative design with synthetic data, not a screenshot.*
+*Mission Control concept · Synthetic demonstration data.*
 
 In plain terms: AI coding agents are programs, driven by AI models, that read and write code. Here, one AI
 agent, the *coordinator*, divides a software task and gives each part, with clear limits, to other AI agents,
@@ -110,9 +110,10 @@ file templates and small Python tools that keep no project state between runs. I
 same rules without taking authority away from their owners. Its design brings five things into one workflow: work
 routed by recorded results, independent review, written evidence, fixed budgets and human decisions.
 
-The dashboard at the top of this page is a design concept, not a screenshot. Today, the harness shows a project's
-state as a read-only web page, rebuilt from the project's files by `tools/projection.py --html`;
-`tools/console.py` shows several projects at once.
+The two dashboard images on this page, at the top and in section 4, are design concepts with synthetic data: they
+are not screenshots, and not everything they show exists yet. Today, the harness shows a project's state as a
+read-only web page, rebuilt from the project's files by `tools/projection.py --html`; `tools/console.py` shows
+several projects at once.
 
 Its main boundaries are:
 
@@ -209,6 +210,12 @@ basic flow.
    frozen release (`tools/surface_diff.py`, D28). A human records the freeze decision. Projects move to a new
    version at a named work boundary with a rollback path (`tools/pack_migration.py`).
 
+The concept below shows one project's tasks from brief to review, and the decisions waiting for a person.
+
+<img src="assets/dashboard-concept.svg" width="100%" alt="Project-level verification concept with synthetic data: the project's state, with a progress ring at 70 percent verified; the next authorised action; work in flight with three AI workers and the step each task has reached; independent checks, with the latest test run, the last 12 runs and today's reviews; the path from a worker's report to verified work; human approvals; and the capacity left for two vendors, with a third vendor's capacity unknown and not used.">
+
+*Project-level verification concept · Synthetic demonstration data.*
+
 ## 5. Working with several AI vendors
 
 All vendors' workers follow the same brief, evidence and review rules. A qualification says that one exact
@@ -248,6 +255,10 @@ If a required fact cannot be established safely, a gate refuses the operation an
 ## 7. Releases, pinning and multiple projects
 
 A frozen release never changes. Each project records which one it uses and checks that identity.
+
+<img src="assets/pinned-projects.svg" width="100%" alt="Diagram of two example projects pinning one frozen release. Runtime Pack 2.5.0 is qualified and was frozen by a person's decision; a fix is a new release. Project A and Project B each pin it by four fields (root path, version, revision and tree digest), check the pin with the release's own pin tool, and keep their own records: scope, progress, findings and decisions; their runs never change the pack. A project cannot adopt Runtime Pack 2.6.0, which is in development and not qualified, because it is not frozen.">
+
+*Projects pin one frozen release and keep their own records; the 2.6.0 development line cannot be adopted.*
 
 - **One version and manifest.** `VERSION` names the version. `PACK_MANIFEST.json` records its state, file-tree
   fingerprint, qualified test population and gate record. A human freezes a named candidate after its gate.
