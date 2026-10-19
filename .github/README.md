@@ -3,10 +3,7 @@
 **An engineering system for building software with AI coding agents from several vendors, in which no agent's
 report is taken on trust and a person keeps the final say.**
 
-<picture>
-  <source media="(max-width: 768px)" srcset="assets/dashboard-concept-narrow.svg">
-  <img src="assets/dashboard-concept.svg" width="100%" alt="Dashboard concept with synthetic data: a project's state and verified progress, the next authorised action, work in flight with three AI workers, independent checks and test results, human approvals and capacity.">
-</picture>
+<img src="assets/dashboard-concept.svg" width="100%" alt="Dashboard concept with synthetic data: the project's state, with a progress ring at 70 percent verified; the next authorised action; work in flight with three AI workers and the step each task has reached; independent checks, with the last 12 test runs and today's reviews; the path from a worker's report to verified work; human approvals; and the capacity left for two vendors, with a third vendor's capacity unknown and not used.">
 
 *Dashboard concept · Illustrative design with synthetic data, not a screenshot.*
 
@@ -46,13 +43,10 @@ the system's own rules.
    calls them material) get two reviewers, one from a different vendor where available.
 6. The result is recorded. Nothing is pushed (sent to a shared copy) or released without a person's decision.
 
-<picture>
-  <source media="(max-width: 768px)" srcset="assets/architecture-narrow.svg">
-  <img src="assets/architecture.svg" width="100%" alt="Diagram of the six roles. At the top, the human sets goals, limits and budgets and decides at named checkpoints; decisions go down to the AI coordinator and evidence comes back up. The AI coordinator, the AI workers and the reviewers work inside the Runtime Pack, the versioned rules and checks that govern them: the coordinator follows its procedures, and the workers and reviewers work from the scoped briefs the coordinator gives them. The coordinator sends briefs to the AI workers, which return reports, and sends claims to the independent reviewers, who return findings. At the bottom, the coordinator reads and writes the project record: decisions, evidence, findings and progress, in files and Git.">
-</picture>
+<img src="assets/architecture.svg" width="100%" alt="Diagram of the six roles and how one task passes between them, numbered as the six steps above. The human sets the goal, the scope and the budget (1), and decides at named checkpoints: releases, budgets, pushes. Decisions go down to the AI coordinator and evidence comes back up. The AI coordinator, the AI workers and the AI reviewers work inside the Runtime Pack, the versioned rules and checks that govern them; it starts nothing by itself. The coordinator sends each AI worker a brief (2) and gets a report back (3), re-runs the checks itself (4), and sends the claims to the AI reviewers, who start fresh and return findings (5); findings go back to the workers to be fixed. The coordinator reads and records each step in the project record, in files and Git (6). Rules: every report re-run; fresh reviewers, two for significant changes; every step recorded; nothing released or pushed without a person.">
 
-*The six roles and what passes between them. The Runtime Pack (this repository) is the set of rules and checks that
-govern the AI roles; it starts nothing by itself.*
+*The six roles and how one task passes between them; the numbers follow the six steps above. The Runtime Pack
+(this repository) is the set of rules and checks that govern the AI roles; it starts nothing by itself.*
 
 - **Stable: 2.5.0** — `QUALIFIED_AND_FROZEN` since 2026-09-10 (it passed its release checks and was frozen by a
   recorded human decision; a fix would be a new release), on branch `stable/2.5.0`.

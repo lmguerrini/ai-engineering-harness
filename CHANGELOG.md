@@ -100,16 +100,17 @@ tree digest differ from the private line's, and the manifest records this tree's
 and changes no tool:
 
 - `.github/README.md` — the public landing page;
-- `.github/assets/architecture.svg` — the landing page's diagram of the six roles (added 2026-10-17);
-- `.github/assets/architecture-narrow.svg` — the diagram of the six roles, laid out for narrow screens (added 2026-10-18);
-- `.github/assets/dashboard-concept.svg` — a dashboard concept: an illustrative interface with synthetic data (added 2026-10-18);
-- `.github/assets/dashboard-concept-narrow.svg` — the same concept, laid out for narrow screens (added 2026-10-18);
+- `.github/assets/architecture.svg` — the landing page's diagram of the six roles (added 2026-10-17, redrawn 2026-10-19);
+- `.github/assets/dashboard-concept.svg` — a dashboard concept: an illustrative interface with synthetic data (added 2026-10-18, redrawn 2026-10-19);
 - `.github/RELEASE_NOTES.md` — a summary of every release from 2.0.0 to 2.5.0 and of this line's state;
 - `.github/PUBLIC_EDITION.md` — how the history was prepared, what was preserved and what was sanitized.
 
 Drawings of the repository layout and an illustration of the read-only dashboard, each with a narrow version
 (added 2026-10-17 and 2026-10-18), were replaced on 2026-10-18 by a text tree in the README and by the dashboard
 concept.
+
+The narrow versions of the diagram of the six roles and of the dashboard concept (added 2026-10-18) were removed on
+2026-10-19; each image is now drawn once, at full width.
 
 The release self-checks and each design record's base revision point at this history's commits; prose references
 keep the ids they were written with, which belong to the private repository.

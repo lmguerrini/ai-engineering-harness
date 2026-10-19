@@ -1,22 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="790" viewBox="0 0 1000 790" role="img" aria-labelledby="title desc">
 <title id="title">Dashboard concept with synthetic data</title>
-<desc id="desc">A concept of a project dashboard, with synthetic data. example-project release 0.4.0 is Verifying, with 7 of 10 tasks verified and one approval waiting. The next authorised action is to re-run checks on task 09. Work in flight has a coordinator and three AI workers on a cache layer, parser fix and user guide. Independent checks show 1,284 tests passed, two of three reviews done and 14 of 14 claims confirmed on re-run. Human approvals show a release waiting, a budget increase approved and a push to main approved. Capacity shows 62 percent left in pool A and 18 percent left in pool B.</desc>
-<rect x="0.5" y="0.5" width="999" height="719" rx="16" fill="#000000" stroke="#2b2b2b" stroke-width="1"/>
-<text x="24" y="43" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#ffffff">example-project</text>
-<text x="175" y="43" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#9c9c9c">release 0.4.0</text>
+<desc id="desc">A concept of a project dashboard, with synthetic data. Mission control shows a project in its verifying stage, with 7 of 10 tasks verified (70 percent) and one approval waiting, and the next authorised action: re-run the checks on task 09 within budget, then get a fresh review. Work in flight shows the step each of three AI workers has reached on tasks 08, 09 and 10. Independent checks show 1,284 tests passed and none failed in the latest of 12 runs, with run 4's two failures fixed by run 5, and 2 of 3 reviews done today, 1 by another vendor; review 3 is for task 09 after its re-run. Verification shows 8 tasks reported by AI workers, 7 re-run by the AI coordinator, 7 reviewed by fresh AI reviewers and 7 verified, with the release waiting for a person. Human approvals show the release waiting and two decisions approved. Capacity shows 62 percent left for vendor X, 18 percent for vendor Y, and vendor Z as UNKNOWN and not used, with the readings taken 2 minutes ago.</desc>
+<rect x="0.5" y="0.5" width="999" height="789" rx="16" fill="#000000" stroke="#2b2b2b" stroke-width="1"/>
+<text x="24" y="43" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="15" fill="#ffffff" font-weight="600">Mission control</text>
 <rect x="753.5" y="22.5" width="222" height="28" rx="14" fill="none" stroke="#4d4d4d" stroke-width="1"/>
-<text x="766" y="41" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="10" fill="#7c7c7c">CONCEPT · SYNTHETIC DATA</text>
+<text x="864.5" y="41" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c" text-anchor="middle">CONCEPT · SYNTHETIC DATA</text>
 <path d="M1 64 H999" fill="none" stroke="#2b2b2b" stroke-width="1"/>
 <rect x="24.5" y="76.5" width="575" height="194" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
 <text x="44" y="104" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">PROJECT STATE</text>
 <text x="44" y="146" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="30" fill="#ffffff" font-weight="600">Verifying</text>
-<text x="580" y="146" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="29" fill="#ffffff" text-anchor="end">70%</text>
-<text x="513.44" y="186" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">VERIFIED</text>
+<circle cx="529" cy="146" r="48" fill="none" stroke="#3a3a3a" stroke-width="7"/>
+<path d="M529 98 A48 48 0 1 1 483.349 160.833" fill="none" stroke="#ffffff" stroke-width="7"/>
+<text x="529" y="149" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="24" fill="#ffffff" text-anchor="middle">70%</text>
+<text x="529" y="169" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" text-anchor="middle">VERIFIED</text>
 <text x="44" y="189" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="14" fill="#b8b8b8">7 of 10 tasks verified · 1 approval waiting</text>
 <rect x="44" y="211" width="371" height="10" rx="5" fill="#e8e8e8" stroke="none" stroke-width="1"/>
 <rect x="417" y="211" width="53" height="10" rx="5" fill="#9c9c9c" stroke="none" stroke-width="1"/>
 <rect x="472" y="211" width="53" height="10" rx="5" fill="#6a6a6a" stroke="none" stroke-width="1"/>
-<rect x="527" y="211" width="53" height="10" rx="5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="527" y="211" width="53" height="10" rx="5" fill="none" stroke="#9c9c9c" stroke-width="1"/>
 <circle cx="48" cy="247" r="4" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
 <text x="59" y="251" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">7 verified</text>
 <circle cx="173" cy="247" r="4" fill="#9c9c9c" stroke="#9c9c9c" stroke-width="1"/>
@@ -29,74 +30,113 @@
 <text x="636" y="104" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">NEXT AUTHORISED ACTION</text>
 <text x="636" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="600">Re-run the checks</text>
 <text x="636" y="177" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="18" fill="#ffffff" font-weight="600">on task 09</text>
-<text x="636" y="211" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13" fill="#9c9c9c">proposed by the coordinator</text>
-<text x="636" y="247" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">within budget · audit rounds 2 of 3</text>
-<rect x="24.5" y="287.5" width="467" height="233" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="636" y="211" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13" fill="#9c9c9c">proposed by the AI coordinator</text>
+<text x="636" y="231" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13" fill="#b8b8b8">within budget</text>
+<text x="636" y="251" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13" fill="#b8b8b8">then a fresh review of task 09</text>
+<rect x="24.5" y="287.5" width="467" height="266" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
 <text x="44" y="315" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">WORK IN FLIGHT</text>
-<text x="44" y="346" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">coordinator · 3 workers · 2 vendors</text>
-<text x="44" y="383" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">08</text>
-<text x="77" y="383" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff">cache layer</text>
-<text x="246" y="383" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">worker A</text>
-<text x="472" y="383" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">running</text>
-<rect x="44" y="391" width="428" height="4" rx="2" fill="#3a3a3a" stroke="none" stroke-width="1"/>
-<rect x="44" y="391" width="256.8" height="4" rx="2" fill="#cfcfcf" stroke="none" stroke-width="1"/>
-<text x="44" y="429" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">09</text>
-<text x="77" y="429" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff">parser fix</text>
-<text x="246" y="429" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">worker B</text>
-<text x="472" y="429" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">reported</text>
-<rect x="44" y="437" width="428" height="4" rx="2" fill="#3a3a3a" stroke="none" stroke-width="1"/>
-<rect x="44" y="437" width="385.2" height="4" rx="2" fill="#cfcfcf" stroke="none" stroke-width="1"/>
-<text x="44" y="475" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">10</text>
-<text x="77" y="475" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff">user guide</text>
-<text x="246" y="475" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">worker C</text>
-<text x="472" y="475" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">queued</text>
-<rect x="44" y="483" width="428" height="4" rx="2" fill="none" stroke="#6a6a6a" stroke-width="1" stroke-dasharray="3 3"/>
-<rect x="508.5" y="287.5" width="467" height="233" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="44" y="346" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">AI coordinator · 3 AI workers · 2 vendors</text>
+<text x="44" y="382" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">08</text>
+<text x="77" y="382" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff">cache layer</text>
+<text x="246" y="382" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">worker A</text>
+<text x="472" y="382" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">running</text>
+<rect x="44" y="390" width="83.2" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<rect x="130.95" y="390.5" width="81.7" height="4" rx="2" fill="none" stroke="#e8e8e8" stroke-width="1"/>
+<rect x="216.4" y="390" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="302.6" y="390" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="388.8" y="390" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<text x="44" y="423" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">09</text>
+<text x="77" y="423" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff">parser fix</text>
+<text x="246" y="423" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">worker B</text>
+<text x="472" y="423" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">reported</text>
+<rect x="44" y="431" width="83.2" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<rect x="130.2" y="431" width="83.2" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<rect x="216.4" y="431" width="83.2" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<rect x="303.35" y="431.5" width="81.7" height="4" rx="2" fill="none" stroke="#e8e8e8" stroke-width="1"/>
+<rect x="388.8" y="431" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<text x="44" y="464" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c">10</text>
+<text x="77" y="464" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="14" fill="#ffffff">user guide</text>
+<text x="246" y="464" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">worker C</text>
+<text x="472" y="464" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">queued</text>
+<rect x="44" y="472" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="130.2" y="472" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="216.4" y="472" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="302.6" y="472" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="388.8" y="472" width="83.2" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<text x="85.6" y="498" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#9c9c9c" text-anchor="middle">brief</text>
+<text x="171.8" y="498" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#9c9c9c" text-anchor="middle">work</text>
+<text x="258" y="498" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#9c9c9c" text-anchor="middle">report</text>
+<text x="344.2" y="498" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#9c9c9c" text-anchor="middle">re-run</text>
+<text x="430.4" y="498" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#9c9c9c" text-anchor="middle">review</text>
+<text x="44" y="523" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c">re-run by the AI coordinator · review by fresh AI reviewers</text>
+<rect x="508.5" y="287.5" width="467" height="266" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
 <text x="528" y="315" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">INDEPENDENT CHECKS</text>
-<text x="528" y="343" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">TESTS</text>
-<text x="528" y="370" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8">1,284 passed · 0 failed</text>
-<rect x="851" y="353" width="6" height="17" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="860" y="352" width="6" height="18" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="869" y="352" width="6" height="18" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="878" y="351" width="6" height="19" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="887" y="350" width="6" height="20" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="896" y="349" width="6" height="21" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="905" y="349" width="6" height="21" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="914" y="347" width="6" height="23" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="923" y="346" width="6" height="24" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="932" y="345" width="6" height="25" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="941" y="344" width="6" height="26" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
-<rect x="950" y="342" width="6" height="28" rx="2" fill="#ffffff" stroke="none" stroke-width="1"/>
-<text x="956" y="392" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c" text-anchor="end">last 12 runs</text>
-<text x="528" y="421" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">REVIEWS</text>
-<circle cx="533" cy="444" r="4.5" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
-<circle cx="549" cy="444" r="4.5" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
-<circle cx="565" cy="444" r="4.5" fill="#0c0c0c" stroke="#e8e8e8" stroke-width="1"/>
-<text x="595" y="448" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#b8b8b8">2 of 3 done · 1 cross-vendor</text>
-<text x="528" y="477" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">CLAIMS RE-RUN</text>
-<path d="M529 496 L534 501 L543 490" fill="none" stroke="#e8e8e8" stroke-width="1.8"/>
-<text x="560" y="502" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#b8b8b8">14 of 14 confirmed</text>
-<rect x="24.5" y="537.5" width="467" height="163" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
-<text x="44" y="565" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">HUMAN APPROVALS</text>
-<text x="44" y="602" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="20" fill="#ffffff" font-weight="600">1 waiting</text>
-<circle cx="48" cy="628" r="4" fill="#0c0c0c" stroke="#e8e8e8" stroke-width="1"/>
-<text x="62" y="632" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">release 0.4.0</text>
-<text x="472" y="632" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#9c9c9c" text-anchor="end">waiting · 2 h</text>
-<circle cx="48" cy="652" r="4" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
-<text x="62" y="656" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">budget increase</text>
-<text x="472" y="656" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">approved</text>
-<circle cx="48" cy="676" r="4" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
-<text x="62" y="680" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">push to main</text>
-<text x="472" y="680" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">approved</text>
-<rect x="508.5" y="537.5" width="467" height="163" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
-<text x="528" y="565" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">CAPACITY</text>
-<text x="528" y="590" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">pool A</text>
-<text x="956" y="590" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8" text-anchor="end">62% left</text>
-<rect x="528" y="595" width="428" height="8" rx="4" fill="#3a3a3a" stroke="none" stroke-width="1"/>
-<rect x="528" y="595" width="265.36" height="8" rx="4" fill="#cfcfcf" stroke="none" stroke-width="1"/>
-<text x="528" y="634" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">pool B</text>
-<text x="956" y="634" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#e8e8e8" text-anchor="end">18% left</text>
-<rect x="528" y="639" width="428" height="8" rx="4" fill="#3a3a3a" stroke="none" stroke-width="1"/>
-<rect x="528" y="639" width="77.04" height="8" rx="4" fill="#cfcfcf" stroke="none" stroke-width="1"/>
-<text x="528" y="677" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c">read 2 min ago · stale after 15 min</text>
+<text x="528" y="360" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">TESTS</text>
+<text x="528" y="398" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="17" fill="#ffffff" font-weight="600">1,284 passed · 0 failed</text>
+<rect x="738" y="356.844" width="8" height="41.1558" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="757" y="356.57" width="8" height="41.4299" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="776" y="356.296" width="8" height="41.704" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="795" y="356.056" width="8" height="41.9439" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<path d="M796 349.056 l6 6" fill="none" stroke="#e8e8e8" stroke-width="1.5"/>
+<path d="M802 349.056 l-6 6" fill="none" stroke="#e8e8e8" stroke-width="1.5"/>
+<rect x="814" y="355.816" width="8" height="42.1838" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="833" y="355.611" width="8" height="42.3894" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="852" y="355.336" width="8" height="42.6636" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="871" y="355.097" width="8" height="42.9034" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="890" y="354.788" width="8" height="43.2118" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="909" y="354.548" width="8" height="43.4517" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="928" y="354.274" width="8" height="43.7259" rx="2" fill="#8a8a8a" stroke="none" stroke-width="1"/>
+<rect x="947" y="354" width="8" height="44" rx="2" fill="#ffffff" stroke="none" stroke-width="1"/>
+<text x="528" y="432" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c">last 12 runs · × run 4: 2 failures, fixed by run 5</text>
+<text x="528" y="482" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">REVIEWS · TODAY</text>
+<circle cx="533" cy="516" r="4.5" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
+<circle cx="549" cy="516" r="4.5" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
+<circle cx="565" cy="516" r="4.5" fill="#0c0c0c" stroke="#e8e8e8" stroke-width="1"/>
+<text x="595" y="520" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#b8b8b8">2 of 3 done · 1 by another vendor</text>
+<text x="528" y="538" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c">review 3 is for task 09, after its re-run</text>
+<rect x="24.5" y="570.5" width="305.667" height="200" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="44" y="598" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">VERIFICATION</text>
+<text x="44" y="625" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="12" fill="#b8b8b8">reported by AI workers</text>
+<text x="310.667" y="625" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">8</text>
+<rect x="44" y="630" width="266.667" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="44" y="630" width="266.667" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<text x="44" y="655" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="12" fill="#b8b8b8">re-run by the AI coordinator</text>
+<text x="310.667" y="655" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">7</text>
+<rect x="44" y="660" width="266.667" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="44" y="660" width="233.334" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<text x="44" y="685" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="12" fill="#b8b8b8">reviewed by fresh AI reviewers</text>
+<text x="310.667" y="685" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">7</text>
+<rect x="44" y="690" width="266.667" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="44" y="690" width="233.334" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<text x="44" y="715" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="12" fill="#ffffff" font-weight="600">verified</text>
+<text x="310.667" y="715" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#ffffff" text-anchor="end">7</text>
+<rect x="44" y="720" width="266.667" height="5" rx="2.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="44" y="720" width="233.334" height="5" rx="2.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<text x="44" y="739" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="12" fill="#b8b8b8">release · waiting for a person</text>
+<rect x="44" y="746" width="266.667" height="5" rx="2.5" fill="none" stroke="#6a6a6a" stroke-width="1" stroke-dasharray="3 3"/>
+<rect x="347.167" y="570.5" width="305.666" height="200" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="366.667" y="598" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">HUMAN APPROVALS</text>
+<text x="366.667" y="636" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="20" fill="#ffffff" font-weight="600">1 waiting</text>
+<circle cx="370.667" cy="666" r="4" fill="#0c0c0c" stroke="#e8e8e8" stroke-width="1"/>
+<text x="384.667" y="670" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">release</text>
+<text x="633.333" y="670" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">asked 2 h ago</text>
+<circle cx="370.667" cy="693" r="4" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
+<text x="384.667" y="697" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">budget increase</text>
+<text x="633.333" y="697" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">approved</text>
+<circle cx="370.667" cy="720" r="4" fill="#e8e8e8" stroke="#e8e8e8" stroke-width="1"/>
+<text x="384.667" y="724" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">push to main</text>
+<text x="633.333" y="724" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">approved</text>
+<rect x="669.833" y="570.5" width="305.667" height="200" rx="12" fill="#0c0c0c" stroke="#2e2e2e" stroke-width="1"/>
+<text x="689.333" y="598" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="11" fill="#7c7c7c" letter-spacing="1.5">CAPACITY LEFT</text>
+<text x="689.333" y="626" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">vendor X</text>
+<text x="956" y="626" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#e8e8e8" text-anchor="end">62% left</text>
+<rect x="689.333" y="632" width="266.667" height="7" rx="3.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="689.333" y="632" width="165.334" height="7" rx="3.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<text x="689.333" y="670" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">vendor Y</text>
+<text x="956" y="670" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#e8e8e8" text-anchor="end">18% left</text>
+<rect x="689.333" y="676" width="266.667" height="7" rx="3.5" fill="#3a3a3a" stroke="none" stroke-width="1"/>
+<rect x="689.333" y="676" width="48.0001" height="7" rx="3.5" fill="#cfcfcf" stroke="none" stroke-width="1"/>
+<text x="689.333" y="714" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8">vendor Z</text>
+<text x="956" y="714" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#b8b8b8" text-anchor="end">UNKNOWN · not used</text>
+<text x="689.333" y="747" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="12" fill="#7c7c7c">read 2 min ago · stale after 15 min</text>
 </svg>
